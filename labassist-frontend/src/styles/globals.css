@@ -1,0 +1,51 @@
+@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --primary: #1B4FD8;
+  --primary-50: #EEF2FE;
+  --primary-100: #DCE5FD;
+  --primary-700: #1640AE;
+  --accent: #F59E0B;
+  --green: #16A34A;
+  --green-bg: #E8F6EC;
+  --amber: #D97706;
+  --amber-bg: #FEF3E2;
+  --red: #DC2626;
+  --red-bg: #FDECEC;
+  --blue: #2563EB;
+  --blue-bg: #E8EFFE;
+  --ink-900: #0B1220;
+  --ink-700: #2C3A52;
+  --ink-500: #5B6B82;
+  --ink-400: #8C9AAE;
+  --line: #E2E6EC;
+  --line-soft: #EEF1F5;
+  --bg: #F5F7FA;
+  --sidebar-w: 240px;
+  --topbar-h: 60px;
+  --radius-card: 12px;
+  --radius-input: 8px;
+  --radius-btn: 8px;
+  --radius-pill: 999px;
+  --shadow-sm: 0 1px 2px rgba(15,23,42,0.04);
+  --shadow-md: 0 4px 14px rgba(15,23,42,0.06);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; }
+body {
+  font-family: 'Sarabun', sans-serif;
+  background: var(--bg);
+  color: var(--ink-900);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--primary); text-decoration: none; }
+button, input, textarea, select { font-family: inherit; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.animate-fadeIn { animation: fadeIn .2s ease; }
+.animate-spin { animation: spin .7s linear infinite; }
