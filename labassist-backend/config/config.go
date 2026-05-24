@@ -32,8 +32,12 @@ func Load() *Config {
 }
 
 func (c *Config) DSN() string {
-	return fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=Asia/Bangkok",
-		c.DBHost, c.DBUser, c.DBPassword, c.DBName, c.DBPort)
+	if c.DBPassword != "" {
+		return fmt.Sprintf("postgresql://%s:%s@%s:%s/%s?sslmode=disable",
+			c.DBUser, c.DBPassword, c.DBHost, c.DBPort, c.DBName)
+	}
+	return fmt.Sprintf("postgresql://%s@%s:%s/%s?sslmode=disable",
+		c.DBUser, c.DBHost, c.DBPort, c.DBName)
 }
 
 func getEnv(key, fallback string) string {
