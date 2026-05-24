@@ -20,8 +20,8 @@ type Config struct {
 func Load() *Config {
 	return &Config{
 		DBHost:        getEnv("DB_HOST", "localhost"),
-		DBPort:        getEnv("DB_PORT", "3306"),
-		DBUser:        getEnv("DB_USER", "root"),
+		DBPort:        getEnv("DB_PORT", "5432"),
+		DBUser:        getEnv("DB_USER", "postgres"),
 		DBPassword:    getEnv("DB_PASSWORD", ""),
 		DBName:        getEnv("DB_NAME", "labassist"),
 		JWTSecret:     getEnv("JWT_SECRET", "labassist-secret"),
@@ -32,8 +32,8 @@ func Load() *Config {
 }
 
 func (c *Config) DSN() string {
-	return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true&loc=Local&charset=utf8mb4",
-		c.DBUser, c.DBPassword, c.DBHost, c.DBPort, c.DBName)
+	return fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=Asia/Bangkok",
+		c.DBHost, c.DBUser, c.DBPassword, c.DBName, c.DBPort)
 }
 
 func getEnv(key, fallback string) string {

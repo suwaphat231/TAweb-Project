@@ -20,8 +20,8 @@ type Application struct {
 	Student        User        `gorm:"foreignKey:StudentID" json:"-"`
 	CourseID       uint        `gorm:"not null" json:"course_id"`
 	Course         Course      `gorm:"foreignKey:CourseID" json:"-"`
-	RoleApplied    RoleApplied `gorm:"type:enum('ta','labboy');not null" json:"role_applied"`
-	Status         AppStatus   `gorm:"type:enum('accepted','rejected','withdrawn');default:'accepted'" json:"status"`
+	RoleApplied    RoleApplied `gorm:"type:role_applied;not null" json:"role_applied"`
+	Status         AppStatus   `gorm:"type:app_status;default:'accepted'" json:"status"`
 	Motivation     *string     `gorm:"type:text" json:"motivation,omitempty"`
 	AppliedAt      time.Time   `gorm:"default:CURRENT_TIMESTAMP" json:"applied_at"`
 	ReviewedAt     *time.Time  `json:"reviewed_at,omitempty"`

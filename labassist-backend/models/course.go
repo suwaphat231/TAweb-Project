@@ -24,7 +24,7 @@ type Course struct {
 	LabBoySlots    int          `gorm:"default:0" json:"labboy_slots"`
 	TAAccepted     int          `gorm:"default:0" json:"ta_accepted"`
 	LabBoyAccepted int          `gorm:"default:0" json:"labboy_accepted"`
-	Status         CourseStatus `gorm:"type:enum('open','closing_soon','closed','draft');default:'draft'" json:"status"`
+	Status         CourseStatus `gorm:"type:course_status;default:'draft'" json:"status"`
 	Deadline       *time.Time   `json:"deadline,omitempty"`
 	Description    *string      `gorm:"type:text" json:"description,omitempty"`
 	Requirements   *string      `gorm:"type:text" json:"requirements,omitempty"`

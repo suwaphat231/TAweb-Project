@@ -4,7 +4,7 @@ import (
 	"labassist/config"
 	"log"
 
-	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -13,7 +13,7 @@ var DB *gorm.DB
 
 func Connect(cfg *config.Config) {
 	var err error
-	DB, err = gorm.Open(mysql.Open(cfg.DSN()), &gorm.Config{
+	DB, err = gorm.Open(postgres.Open(cfg.DSN()), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Warn),
 	})
 	if err != nil {

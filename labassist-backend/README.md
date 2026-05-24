@@ -1,8 +1,8 @@
-# LabAssist Backend — Go + MySQL
+# LabAssist Backend — Go + PostgreSQL
 
 ## Tech Stack
 - **Go** 1.22+ with **Gin** framework
-- **GORM** + MySQL driver
+- **GORM** + PostgreSQL driver (pgx v5)
 - **JWT** authentication (golang-jwt/jwt v5)
 - **Google ID Token** verification (google.golang.org/api/idtoken)
 - **bcrypt** password hashing
@@ -14,28 +14,25 @@
 go mod download
 ```
 
-### 2. ตั้งค่า MySQL
+### 2. ตั้งค่า PostgreSQL
 ```sql
-CREATE DATABASE labassist CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE labassist;
 ```
 จากนั้น run schema:
 ```bash
-mysql -u root -p labassist < database/migrations/schema.sql
-```
-
-### 3. Generate bcrypt hash สำหรับ seed
-```bash
-# สร้าง tool สำหรับ hash password
-go run tools/hash_password.go "password123"
-# แล้วแทนที่ placeholder ใน seed.sql
-mysql -u root -p labassist < database/migrations/seed.sql
+psql -U postgres -d labassist -f database/migrations/schema.sql
+psql -U postgres -d labassist -f database/migrations/seed.sql
 ```
 
 ### 4. ตั้งค่า .env
 ```bash
 cp .env.example .env
 # แก้ไข .env:
-#   DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
+#   DB_HOST=localhost
+#   DB_PORT=5432
+#   DB_USER=postgres
+#   DB_PASSWORD=รหัส PostgreSQL ของคุณ
+#   DB_NAME=labassist
 #   JWT_SECRET  (ต้องเปลี่ยนใน production)
 #   GOOGLE_CLIENT_ID  (จาก Google Cloud Console)
 #   CLIENT_URL  (URL ของ frontend)

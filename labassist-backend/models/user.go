@@ -17,7 +17,7 @@ type User struct {
 	PasswordHash *string   `gorm:"size:255" json:"-"`
 	FullName     string    `gorm:"size:200;not null" json:"full_name"`
 	Email        string    `gorm:"uniqueIndex;size:200;not null" json:"email"`
-	Role         UserRole  `gorm:"type:enum('student','instructor','staff','admin');not null" json:"role"`
+	Role         UserRole  `gorm:"type:user_role;not null" json:"role"`
 	StudentID    *string   `gorm:"uniqueIndex;size:20" json:"student_id,omitempty"`
 	GoogleSub    *string   `gorm:"uniqueIndex;size:100" json:"google_sub,omitempty"`
 	GPA          *float64  `gorm:"type:decimal(3,2)" json:"gpa,omitempty"`
