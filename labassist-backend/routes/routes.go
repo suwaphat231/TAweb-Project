@@ -9,6 +9,8 @@ import (
 )
 
 func Setup(r *gin.Engine, cfg *config.Config) {
+	r.Use(middleware.ActivityLogger())
+
 	authH := handlers.NewAuthHandler(cfg)
 	courseH := handlers.NewCourseHandler()
 	appH := handlers.NewApplicationHandler()
@@ -77,6 +79,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			admin.GET("/admin/users", adminH.Users)
 			admin.POST("/admin/users", adminH.CreateUser)
 			admin.PUT("/admin/users/:id/status", adminH.UpdateUserStatus)
+			admin.GET("/admin/logs", adminH.Logs)
 		}
 	}
 }

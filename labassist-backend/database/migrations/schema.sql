@@ -57,6 +57,19 @@ CREATE TABLE IF NOT EXISTS applications (
   UNIQUE (student_id, course_id)
 );
 
+CREATE TABLE IF NOT EXISTS activity_logs (
+  id          SERIAL PRIMARY KEY,
+  user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  user_name   VARCHAR(200),
+  role        VARCHAR(50),
+  method      VARCHAR(10),
+  path        VARCHAR(500),
+  status_code INTEGER,
+  ip          VARCHAR(100),
+  duration_ms BIGINT,
+  created_at  TIMESTAMP DEFAULT NOW()
+);
+
 -- Auto-update updated_at trigger
 CREATE OR REPLACE FUNCTION update_updated_at()
 RETURNS TRIGGER AS $$

@@ -10,6 +10,38 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+func (h *AdminHandler) Logs(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 200 {
+		limit = 50
+	}
+	offset := (page - 1) * limit
+
+	var total int64
+	q := database.DB.Model(&models.ActivityLog{})
+	if userID := c.Query("user_id"); userID != "" {
+		q = q.Where("user_id = ?", userID)
+	}
+	if method := c.Query("method"); method != "" {
+		q = q.Where("method = ?", method)
+	}
+	q.Count(&total)
+
+	var logs []models.ActivityLog
+	q.Order("created_at DESC").Offset(offset).Limit(limit).Find(&logs)
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":  logs,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	})
+}
+
 type AdminHandler struct{}
 
 func NewAdminHandler() *AdminHandler { return &AdminHandler{} }

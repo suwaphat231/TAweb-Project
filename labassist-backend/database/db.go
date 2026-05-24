@@ -2,6 +2,7 @@ package database
 
 import (
 	"labassist/config"
+	"labassist/models"
 	"log"
 
 	"gorm.io/driver/postgres"
@@ -18,6 +19,9 @@ func Connect(cfg *config.Config) {
 	})
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	if err := DB.AutoMigrate(&models.ActivityLog{}); err != nil {
+		log.Fatalf("Failed to migrate activity_logs: %v", err)
 	}
 	log.Println("Database connected")
 }
