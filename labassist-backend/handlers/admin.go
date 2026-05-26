@@ -10,6 +10,18 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// Logs godoc
+// @Summary      ดู activity log (admin)
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Param        page     query     int     false  "หน้าที่ (default 1)"
+// @Param        limit    query     int     false  "จำนวนต่อหน้า (default 50, max 200)"
+// @Param        user_id  query     int     false  "กรองตาม user_id"
+// @Param        method   query     string  false  "กรองตาม HTTP method: GET, POST, PUT, DELETE"
+// @Success      200      {object}  object{data=[]models.ActivityLog,total=int,page=int,limit=int}
+// @Failure      401      {object}  object{error=string}
+// @Router       /admin/logs [get]
 func (h *AdminHandler) Logs(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
@@ -46,6 +58,14 @@ type AdminHandler struct{}
 
 func NewAdminHandler() *AdminHandler { return &AdminHandler{} }
 
+// Stats godoc
+// @Summary      ดูสถิติภาพรวมระบบ (admin)
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  object{total_users=int,total_students=int,total_instructors=int,total_courses=int,open_courses=int,total_applications=int,accepted_applications=int,pending_applications=int}
+// @Failure      401  {object}  object{error=string}
+// @Router       /admin/stats [get]
 func (h *AdminHandler) Stats(c *gin.Context) {
 	var stats struct {
 		TotalUsers           int64 `json:"total_users"`
@@ -68,6 +88,18 @@ func (h *AdminHandler) Stats(c *gin.Context) {
 	c.JSON(http.StatusOK, stats)
 }
 
+// Users godoc
+// @Summary      ดูรายชื่อผู้ใช้ทั้งหมด (admin)
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Param        role    query     string  false  "กรองตาม role: student, instructor, staff, admin"
+// @Param        search  query     string  false  "ค้นหาจากชื่อหรือ email"
+// @Param        limit   query     int     false  "จำนวนต่อหน้า (default 100, max 200)"
+// @Param        offset  query     int     false  "offset"
+// @Success      200     {array}   models.User
+// @Failure      401     {object}  object{error=string}
+// @Router       /admin/users [get]
 func (h *AdminHandler) Users(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
@@ -85,6 +117,19 @@ func (h *AdminHandler) Users(c *gin.Context) {
 	c.JSON(http.StatusOK, users)
 }
 
+// CreateUser godoc
+// @Summary      สร้างผู้ใช้ใหม่ (admin)
+// @Description  สร้าง instructor, staff, หรือ admin — ไม่ใช้สำหรับ student (student สร้างผ่าน Google OAuth)
+// @Tags         admin
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body      object{username=string,password=string,full_name=string,email=string,role=string}  true  "ข้อมูลผู้ใช้"
+// @Success      201   {object}  models.User
+// @Failure      400   {object}  object{error=string}
+// @Failure      401   {object}  object{error=string}
+// @Failure      409   {object}  object{error=string}  "username หรือ email ซ้ำ"
+// @Router       /admin/users [post]
 func (h *AdminHandler) CreateUser(c *gin.Context) {
 	var body struct {
 		Username string          `json:"username" binding:"required"`
@@ -118,6 +163,18 @@ func (h *AdminHandler) CreateUser(c *gin.Context) {
 	c.JSON(http.StatusCreated, user)
 }
 
+// UpdateUserStatus godoc
+// @Summary      เปิด/ปิด account ผู้ใช้ (admin)
+// @Tags         admin
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path      int                        true  "User ID"
+// @Param        body  body      object{is_active=bool}     true  "สถานะ account"
+// @Success      200   {object}  models.User
+// @Failure      401   {object}  object{error=string}
+// @Failure      404   {object}  object{error=string}
+// @Router       /admin/users/{id}/status [put]
 func (h *AdminHandler) UpdateUserStatus(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var body struct{ IsActive bool `json:"is_active"` }

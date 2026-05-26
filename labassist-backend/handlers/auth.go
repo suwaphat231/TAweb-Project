@@ -18,6 +18,18 @@ type AuthHandler struct{ cfg *config.Config }
 
 func NewAuthHandler(cfg *config.Config) *AuthHandler { return &AuthHandler{cfg: cfg} }
 
+// Login godoc
+// @Summary      เข้าสู่ระบบ (instructor / staff / admin)
+// @Description  รับ username และ password แล้วคืน JWT token (สำหรับ role ที่ไม่ใช่ student)
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        body  body      object{username=string,password=string}  true  "ข้อมูลเข้าสู่ระบบ"
+// @Success      200   {object}  object{token=string,user=models.User}
+// @Failure      400   {object}  object{error=string}
+// @Failure      401   {object}  object{error=string}
+// @Failure      403   {object}  object{error=string}
+// @Router       /auth/login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
 	var body struct {
 		Username string `json:"username" binding:"required"`
@@ -52,6 +64,18 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"token": token, "user": user})
 }
 
+// GoogleLogin godoc
+// @Summary      เข้าสู่ระบบด้วย Google (student)
+// @Description  รับ Google ID token แล้วคืน JWT token — สร้างบัญชี student ใหม่อัตโนมัติถ้าเป็น email @silpakorn.edu ที่ยังไม่เคยลงทะเบียน
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        body  body      object{credential=string}  true  "Google ID token"
+// @Success      200   {object}  object{token=string,user=models.User,is_new_user=bool}
+// @Failure      400   {object}  object{error=string}
+// @Failure      401   {object}  object{error=string}
+// @Failure      403   {object}  object{error=string}
+// @Router       /auth/google [post]
 func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 	var body struct {
 		Credential string `json:"credential" binding:"required"`
@@ -116,6 +140,15 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"token": token, "user": user, "is_new_user": isNewUser})
 }
 
+// Me godoc
+// @Summary      ดูข้อมูลผู้ใช้ปัจจุบัน
+// @Tags         auth
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  object{user=models.User}
+// @Failure      401  {object}  object{error=string}
+// @Failure      404  {object}  object{error=string}
+// @Router       /auth/me [get]
 func (h *AuthHandler) Me(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	var user models.User
@@ -126,6 +159,13 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"user": user})
 }
 
+// Logout godoc
+// @Summary      ออกจากระบบ
+// @Tags         auth
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  object{message=string}
+// @Router       /auth/logout [post]
 func (h *AuthHandler) Logout(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "ออกจากระบบแล้ว"})
 }

@@ -6,9 +6,12 @@ import (
 	"labassist/middleware"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 func Setup(r *gin.Engine, cfg *config.Config) {
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	r.Use(middleware.ActivityLogger())
 
 	authH := handlers.NewAuthHandler(cfg)

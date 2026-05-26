@@ -13,6 +13,14 @@ type CourseHandler struct{}
 
 func NewCourseHandler() *CourseHandler { return &CourseHandler{} }
 
+// List godoc
+// @Summary      ดูรายวิชาทั้งหมด (public)
+// @Tags         courses
+// @Produce      json
+// @Param        status  query     string  false  "กรองตาม status: open, closing_soon, closed, draft"
+// @Param        q       query     string  false  "ค้นหาจาก code หรือ title"
+// @Success      200     {array}   models.Course
+// @Router       /courses [get]
 func (h *CourseHandler) List(c *gin.Context) {
 	status := c.Query("status")
 	q := c.Query("q")
@@ -36,6 +44,14 @@ func (h *CourseHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, courses)
 }
 
+// Get godoc
+// @Summary      ดูรายวิชาตาม ID (public)
+// @Tags         courses
+// @Produce      json
+// @Param        id   path      int  true  "Course ID"
+// @Success      200  {object}  models.Course
+// @Failure      404  {object}  object{error=string}
+// @Router       /courses/{id} [get]
 func (h *CourseHandler) Get(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var course models.Course
@@ -47,6 +63,15 @@ func (h *CourseHandler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, course)
 }
 
+// InstructorList godoc
+// @Summary      ดูรายวิชาของอาจารย์ (instructor/admin)
+// @Description  อาจารย์เห็นแค่รายวิชาของตัวเอง admin เห็นทั้งหมด พร้อม applicant_count
+// @Tags         courses
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {array}   models.Course
+// @Failure      401  {object}  object{error=string}
+// @Router       /instructor/courses [get]
 func (h *CourseHandler) InstructorList(c *gin.Context) {
 	instructorID, _ := c.Get("user_id")
 	role, _ := c.Get("role")
@@ -82,6 +107,17 @@ func (h *CourseHandler) InstructorList(c *gin.Context) {
 	c.JSON(http.StatusOK, courses)
 }
 
+// Create godoc
+// @Summary      สร้างรายวิชาใหม่ (instructor/admin)
+// @Tags         courses
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body      object{code=string,title=string,semester=string,academic_year=int,ta_slots=int,labboy_slots=int,status=string,description=string,requirements=string}  true  "ข้อมูลรายวิชา"
+// @Success      201   {object}  models.Course
+// @Failure      400   {object}  object{error=string}
+// @Failure      401   {object}  object{error=string}
+// @Router       /instructor/courses [post]
 func (h *CourseHandler) Create(c *gin.Context) {
 	instructorID, _ := c.Get("user_id")
 	var body struct {
@@ -128,6 +164,18 @@ func (h *CourseHandler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, course)
 }
 
+// Update godoc
+// @Summary      แก้ไขรายวิชา (instructor/admin)
+// @Tags         courses
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path      int             true  "Course ID"
+// @Param        body  body      models.Course   true  "ข้อมูลที่ต้องการแก้ไข"
+// @Success      200   {object}  models.Course
+// @Failure      403   {object}  object{error=string}
+// @Failure      404   {object}  object{error=string}
+// @Router       /instructor/courses/{id} [put]
 func (h *CourseHandler) Update(c *gin.Context) {
 	instructorID, _ := c.Get("user_id")
 	role, _ := c.Get("role")
@@ -149,6 +197,18 @@ func (h *CourseHandler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, course)
 }
 
+// UpdateStatus godoc
+// @Summary      เปลี่ยนสถานะรายวิชา (instructor/admin)
+// @Tags         courses
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path      int                           true  "Course ID"
+// @Param        body  body      object{status=string}         true  "สถานะใหม่: open, closing_soon, closed, draft"
+// @Success      200   {object}  models.Course
+// @Failure      403   {object}  object{error=string}
+// @Failure      404   {object}  object{error=string}
+// @Router       /instructor/courses/{id}/status [put]
 func (h *CourseHandler) UpdateStatus(c *gin.Context) {
 	instructorID, _ := c.Get("user_id")
 	role, _ := c.Get("role")
@@ -170,6 +230,19 @@ func (h *CourseHandler) UpdateStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, course)
 }
 
+// Applicants godoc
+// @Summary      ดูรายชื่อผู้สมัครของรายวิชา (instructor/staff/admin)
+// @Tags         courses
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id           path      int     true   "Course ID"
+// @Param        role_applied query     string  false  "กรองตาม role: ta, labboy"
+// @Param        status       query     string  false  "กรองตาม status: pending, accepted, rejected, withdrawn"
+// @Param        search       query     string  false  "ค้นหาจากชื่อหรือรหัสนักศึกษา"
+// @Success      200          {array}   models.Application
+// @Failure      403          {object}  object{error=string}
+// @Failure      404          {object}  object{error=string}
+// @Router       /instructor/courses/{id}/applicants [get]
 func (h *CourseHandler) Applicants(c *gin.Context) {
 	instructorID, _ := c.Get("user_id")
 	role, _ := c.Get("role")

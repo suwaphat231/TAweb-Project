@@ -1,0 +1,1165 @@
+basePath: /api/v1
+definitions:
+  models.ActivityLog:
+    properties:
+      created_at:
+        type: string
+      duration_ms:
+        type: integer
+      id:
+        type: integer
+      ip:
+        type: string
+      method:
+        type: string
+      path:
+        type: string
+      role:
+        type: string
+      status_code:
+        type: integer
+      user_id:
+        type: integer
+      user_name:
+        type: string
+    type: object
+  models.AppStatus:
+    enum:
+    - pending
+    - accepted
+    - rejected
+    - withdrawn
+    type: string
+    x-enum-varnames:
+    - AppPending
+    - AppAccepted
+    - AppRejected
+    - AppWithdrawn
+  models.Application:
+    properties:
+      applied_at:
+        type: string
+      course_code:
+        type: string
+      course_id:
+        type: integer
+      course_title:
+        type: string
+      id:
+        type: integer
+      motivation:
+        type: string
+      note:
+        type: string
+      reviewed_at:
+        type: string
+      reviewed_by_id:
+        type: integer
+      reviewed_by_name:
+        type: string
+      role_applied:
+        $ref: '#/definitions/models.RoleApplied'
+      status:
+        $ref: '#/definitions/models.AppStatus'
+      student_code:
+        type: string
+      student_email:
+        type: string
+      student_faculty:
+        type: string
+      student_gpa:
+        type: number
+      student_id:
+        type: integer
+      student_name:
+        description: Computed fields (not in DB)
+        type: string
+      student_year:
+        type: integer
+    type: object
+  models.Course:
+    properties:
+      academic_year:
+        type: integer
+      applicant_count:
+        type: integer
+      code:
+        type: string
+      created_at:
+        type: string
+      deadline:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      instructor_id:
+        type: integer
+      instructor_name:
+        type: string
+      labboy_accepted:
+        type: integer
+      labboy_slots:
+        type: integer
+      requirements:
+        type: string
+      semester:
+        type: string
+      status:
+        $ref: '#/definitions/models.CourseStatus'
+      ta_accepted:
+        type: integer
+      ta_slots:
+        type: integer
+      title:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  models.CourseStatus:
+    enum:
+    - open
+    - closing_soon
+    - closed
+    - draft
+    type: string
+    x-enum-varnames:
+    - StatusOpen
+    - StatusClosingSoon
+    - StatusClosed
+    - StatusDraft
+  models.RoleApplied:
+    enum:
+    - ta
+    - labboy
+    type: string
+    x-enum-varnames:
+    - RoleTA
+    - RoleLabBoy
+  models.User:
+    properties:
+      created_at:
+        type: string
+      email:
+        type: string
+      faculty:
+        type: string
+      full_name:
+        type: string
+      google_sub:
+        type: string
+      gpa:
+        type: number
+      id:
+        type: integer
+      is_active:
+        type: boolean
+      role:
+        $ref: '#/definitions/models.UserRole'
+      student_id:
+        type: string
+      updated_at:
+        type: string
+      username:
+        type: string
+      year:
+        type: integer
+    type: object
+  models.UserRole:
+    enum:
+    - student
+    - instructor
+    - staff
+    - admin
+    type: string
+    x-enum-varnames:
+    - RoleStudent
+    - RoleInstructor
+    - RoleStaff
+    - RoleAdmin
+host: localhost:8080
+info:
+  contact:
+    email: watthakicharoen_s@silpakorn.edu
+    name: LabAssist Support
+  description: ระบบจัดการ TA/Lab Boy ภาควิชาคอมพิวเตอร์ มหาวิทยาลัยศิลปากร
+  license:
+    name: MIT
+  termsOfService: http://swagger.io/terms/
+  title: LabAssist API
+  version: "1.0"
+paths:
+  /admin/logs:
+    get:
+      parameters:
+      - description: หน้าที่ (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: จำนวนต่อหน้า (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: กรองตาม user_id
+        in: query
+        name: user_id
+        type: integer
+      - description: 'กรองตาม HTTP method: GET, POST, PUT, DELETE'
+        in: query
+        name: method
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/models.ActivityLog'
+                type: array
+              limit:
+                type: integer
+              page:
+                type: integer
+              total:
+                type: integer
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: ดู activity log (admin)
+      tags:
+      - admin
+  /admin/stats:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              accepted_applications:
+                type: integer
+              open_courses:
+                type: integer
+              pending_applications:
+                type: integer
+              total_applications:
+                type: integer
+              total_courses:
+                type: integer
+              total_instructors:
+                type: integer
+              total_students:
+                type: integer
+              total_users:
+                type: integer
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: ดูสถิติภาพรวมระบบ (admin)
+      tags:
+      - admin
+  /admin/users:
+    get:
+      parameters:
+      - description: 'กรองตาม role: student, instructor, staff, admin'
+        in: query
+        name: role
+        type: string
+      - description: ค้นหาจากชื่อหรือ email
+        in: query
+        name: search
+        type: string
+      - description: จำนวนต่อหน้า (default 100, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.User'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: ดูรายชื่อผู้ใช้ทั้งหมด (admin)
+      tags:
+      - admin
+    post:
+      consumes:
+      - application/json
+      description: สร้าง instructor, staff, หรือ admin — ไม่ใช้สำหรับ student (student
+        สร้างผ่าน Google OAuth)
+      parameters:
+      - description: ข้อมูลผู้ใช้
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            email:
+              type: string
+            full_name:
+              type: string
+            password:
+              type: string
+            role:
+              type: string
+            username:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.User'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: username หรือ email ซ้ำ
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: สร้างผู้ใช้ใหม่ (admin)
+      tags:
+      - admin
+  /admin/users/{id}/status:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: สถานะ account
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            is_active:
+              type: boolean
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.User'
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: เปิด/ปิด account ผู้ใช้ (admin)
+      tags:
+      - admin
+  /auth/google:
+    post:
+      consumes:
+      - application/json
+      description: รับ Google ID token แล้วคืน JWT token — สร้างบัญชี student ใหม่อัตโนมัติถ้าเป็น
+        email @silpakorn.edu ที่ยังไม่เคยลงทะเบียน
+      parameters:
+      - description: Google ID token
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            credential:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              is_new_user:
+                type: boolean
+              token:
+                type: string
+              user:
+                $ref: '#/definitions/models.User'
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      summary: เข้าสู่ระบบด้วย Google (student)
+      tags:
+      - auth
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: รับ username และ password แล้วคืน JWT token (สำหรับ role ที่ไม่ใช่
+        student)
+      parameters:
+      - description: ข้อมูลเข้าสู่ระบบ
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            password:
+              type: string
+            username:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              token:
+                type: string
+              user:
+                $ref: '#/definitions/models.User'
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      summary: เข้าสู่ระบบ (instructor / staff / admin)
+      tags:
+      - auth
+  /auth/logout:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              message:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: ออกจากระบบ
+      tags:
+      - auth
+  /auth/me:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              user:
+                $ref: '#/definitions/models.User'
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: ดูข้อมูลผู้ใช้ปัจจุบัน
+      tags:
+      - auth
+  /courses:
+    get:
+      parameters:
+      - description: 'กรองตาม status: open, closing_soon, closed, draft'
+        in: query
+        name: status
+        type: string
+      - description: ค้นหาจาก code หรือ title
+        in: query
+        name: q
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Course'
+            type: array
+      summary: ดูรายวิชาทั้งหมด (public)
+      tags:
+      - courses
+  /courses/{id}:
+    get:
+      parameters:
+      - description: Course ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Course'
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      summary: ดูรายวิชาตาม ID (public)
+      tags:
+      - courses
+  /instructor/applications/{id}/review:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Application ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 'status: accepted, rejected, withdrawn'
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            note:
+              type: string
+            status:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Application'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: อนุมัติ/ปฏิเสธใบสมัคร (instructor/staff/admin)
+      tags:
+      - applications
+  /instructor/applications/bulk-review:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: รายการ ID และ status ที่ต้องการเปลี่ยน
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            application_ids:
+              items:
+                type: integer
+              type: array
+            note:
+              type: string
+            status:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              updated:
+                type: integer
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: อนุมัติ/ปฏิเสธใบสมัครหลายรายการพร้อมกัน (instructor/staff/admin)
+      tags:
+      - applications
+  /instructor/courses:
+    get:
+      description: อาจารย์เห็นแค่รายวิชาของตัวเอง admin เห็นทั้งหมด พร้อม applicant_count
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Course'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: ดูรายวิชาของอาจารย์ (instructor/admin)
+      tags:
+      - courses
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: ข้อมูลรายวิชา
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            academic_year:
+              type: integer
+            code:
+              type: string
+            description:
+              type: string
+            labboy_slots:
+              type: integer
+            requirements:
+              type: string
+            semester:
+              type: string
+            status:
+              type: string
+            ta_slots:
+              type: integer
+            title:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.Course'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: สร้างรายวิชาใหม่ (instructor/admin)
+      tags:
+      - courses
+  /instructor/courses/{id}:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Course ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ข้อมูลที่ต้องการแก้ไข
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/models.Course'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Course'
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: แก้ไขรายวิชา (instructor/admin)
+      tags:
+      - courses
+  /instructor/courses/{id}/applicants:
+    get:
+      parameters:
+      - description: Course ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 'กรองตาม role: ta, labboy'
+        in: query
+        name: role_applied
+        type: string
+      - description: 'กรองตาม status: pending, accepted, rejected, withdrawn'
+        in: query
+        name: status
+        type: string
+      - description: ค้นหาจากชื่อหรือรหัสนักศึกษา
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Application'
+            type: array
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: ดูรายชื่อผู้สมัครของรายวิชา (instructor/staff/admin)
+      tags:
+      - courses
+  /instructor/courses/{id}/status:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Course ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 'สถานะใหม่: open, closing_soon, closed, draft'
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            status:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Course'
+        "403":
+          description: Forbidden
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: เปลี่ยนสถานะรายวิชา (instructor/admin)
+      tags:
+      - courses
+  /student/applications:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Application'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: ดูประวัติการสมัครทั้งหมดของนักศึกษา
+      tags:
+      - student
+    post:
+      consumes:
+      - application/json
+      description: สมัครได้ครั้งเดียวต่อรายวิชา status จะเป็น accepted อัตโนมัติถ้า
+        slot ยังว่าง
+      parameters:
+      - description: 'ข้อมูลการสมัคร (role_applied: ta หรือ labboy)'
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            course_id:
+              type: integer
+            motivation:
+              type: string
+            role_applied:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.Application'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "409":
+          description: สมัครซ้ำ
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: สมัครเป็น TA หรือ Lab Boy
+      tags:
+      - student
+  /student/applications/{id}/withdraw:
+    put:
+      parameters:
+      - description: Application ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Application'
+        "400":
+          description: Bad Request
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: ถอนใบสมัคร
+      tags:
+      - student
+  /student/dashboard:
+    get:
+      description: คืน recent_applications, recent_courses (open/closing_soon), และ
+        stats (open_courses, applied)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              recent_applications:
+                items:
+                  $ref: '#/definitions/models.Application'
+                type: array
+              recent_courses:
+                items:
+                  $ref: '#/definitions/models.Course'
+                type: array
+              stats:
+                properties:
+                  applied:
+                    type: integer
+                  open_courses:
+                    type: integer
+                type: object
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Dashboard ของนักศึกษา
+      tags:
+      - student
+  /student/profile:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.User'
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: ดูโปรไฟล์ของนักศึกษา
+      tags:
+      - student
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: ข้อมูลที่ต้องการแก้ไข
+        in: body
+        name: body
+        schema:
+          properties:
+            faculty:
+              type: string
+            full_name:
+              type: string
+            year:
+              type: integer
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.User'
+        "401":
+          description: Unauthorized
+          schema:
+            properties:
+              error:
+                type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: แก้ไขโปรไฟล์นักศึกษา (full_name, year, faculty)
+      tags:
+      - student
+securityDefinitions:
+  BearerAuth:
+    description: พิมพ์ "Bearer " ตามด้วย JWT token เช่น "Bearer eyJhbGci..."
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

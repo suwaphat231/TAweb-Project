@@ -1,6 +1,25 @@
+// @title           LabAssist API
+// @version         1.0
+// @description     ระบบจัดการ TA/Lab Boy ภาควิชาคอมพิวเตอร์ มหาวิทยาลัยศิลปากร
+// @termsOfService  http://swagger.io/terms/
+
+// @contact.name   LabAssist Support
+// @contact.email  watthakicharoen_s@silpakorn.edu
+
+// @license.name  MIT
+
+// @host      localhost:8080
+// @BasePath  /api/v1
+
+// @securityDefinitions.apikey  BearerAuth
+// @in                          header
+// @name                        Authorization
+// @description                 พิมพ์ "Bearer " ตามด้วย JWT token เช่น "Bearer eyJhbGci..."
+
 package main
 
 import (
+	_ "labassist/docs"
 	"labassist/config"
 	"labassist/database"
 	"labassist/middleware"
