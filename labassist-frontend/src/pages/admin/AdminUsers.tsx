@@ -15,7 +15,7 @@ export default function AdminUsers() {
   const [form, setForm] = useState({ username: '', password: '', full_name: '', email: '', role: 'instructor' as UserRole })
   const qc = useQueryClient()
 
-  const { data: users = [], isLoading } = useQuery({ queryKey: ['admin-users'], queryFn: adminApi.users })
+  const { data: users = [], isLoading } = useQuery({ queryKey: ['admin-users'], queryFn: () => adminApi.users() })
 
   const createMut = useMutation({
     mutationFn: adminApi.createUser,

@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"labassist/database"
 	"labassist/models"
+	"labassist/store"
 	"net/http"
 	"strconv"
 
@@ -48,24 +48,16 @@ func NewAdminHandler() *AdminHandler { return &AdminHandler{} }
 // @Success      200  {object}  AdminStatsResponse
 // @Router       /admin/stats [get]
 func (h *AdminHandler) Stats(c *gin.Context) {
-	var stats struct {
-		TotalUsers           int64 `json:"total_users"`
-		TotalStudents        int64 `json:"total_students"`
-		TotalInstructors     int64 `json:"total_instructors"`
-		TotalCourses         int64 `json:"total_courses"`
-		OpenCourses          int64 `json:"open_courses"`
-		TotalApplications    int64 `json:"total_applications"`
-		AcceptedApplications int64 `json:"accepted_applications"`
-		PendingApplications  int64 `json:"pending_applications"`
+	stats := AdminStatsResponse{
+		TotalUsers:           store.CountUsers(),
+		TotalStudents:        store.CountUsersByRole(models.RoleStudent),
+		TotalInstructors:     store.CountUsersByRole(models.RoleInstructor),
+		TotalCourses:         store.CountCourses(),
+		OpenCourses:          store.CountOpenCourses(),
+		TotalApplications:    store.CountApplications(),
+		AcceptedApplications: store.CountApplicationsByStatus(models.AppAccepted),
+		PendingApplications:  store.CountApplicationsByStatus(models.AppPending),
 	}
-	database.DB.Model(&models.User{}).Count(&stats.TotalUsers)
-	database.DB.Model(&models.User{}).Where("role = 'student'").Count(&stats.TotalStudents)
-	database.DB.Model(&models.User{}).Where("role = 'instructor'").Count(&stats.TotalInstructors)
-	database.DB.Model(&models.Course{}).Count(&stats.TotalCourses)
-	database.DB.Model(&models.Course{}).Where("status = 'open' OR status = 'closing_soon'").Count(&stats.OpenCourses)
-	database.DB.Model(&models.Application{}).Count(&stats.TotalApplications)
-	database.DB.Model(&models.Application{}).Where("status = 'accepted'").Count(&stats.AcceptedApplications)
-	database.DB.Model(&models.Application{}).Where("status = 'pending'").Count(&stats.PendingApplications)
 	c.JSON(http.StatusOK, stats)
 }
 
@@ -83,17 +75,12 @@ func (h *AdminHandler) Stats(c *gin.Context) {
 func (h *AdminHandler) Users(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
-	role   := c.Query("role")
-	search := c.Query("search")
 
-	if limit < 1 || limit > 200 { limit = 100 }
+	if limit < 1 || limit > 200 {
+		limit = 100
+	}
 
-	q := database.DB.Order("created_at DESC")
-	if role != "" { q = q.Where("role = ?", role) }
-	if search != "" { q = q.Where("full_name ILIKE ? OR email ILIKE ?", "%"+search+"%", "%"+search+"%") }
-
-	var users []models.User
-	q.Limit(limit).Offset(offset).Find(&users)
+	users := store.ListUsers(c.Query("role"), c.Query("search"), limit, offset)
 	c.JSON(http.StatusOK, users)
 }
 
@@ -109,13 +96,7 @@ func (h *AdminHandler) Users(c *gin.Context) {
 // @Failure      409   {object}  ErrorResponse
 // @Router       /admin/users [post]
 func (h *AdminHandler) CreateUser(c *gin.Context) {
-	var body struct {
-		Username string          `json:"username" binding:"required"`
-		Password string          `json:"password" binding:"required"`
-		FullName string          `json:"full_name" binding:"required"`
-		Email    string          `json:"email" binding:"required"`
-		Role     models.UserRole `json:"role" binding:"required"`
-	}
+	var body CreateUserRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -127,14 +108,14 @@ func (h *AdminHandler) CreateUser(c *gin.Context) {
 		return
 	}
 	ph := string(hash)
-	user := models.User{
+	user, err := store.CreateUser(models.User{
 		Username:     &body.Username,
 		PasswordHash: &ph,
 		FullName:     body.FullName,
 		Email:        body.Email,
 		Role:         body.Role,
-	}
-	if err := database.DB.Create(&user).Error; err != nil {
+	})
+	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "username or email already exists"})
 		return
 	}
@@ -154,15 +135,17 @@ func (h *AdminHandler) CreateUser(c *gin.Context) {
 // @Router       /admin/users/{id}/status [put]
 func (h *AdminHandler) UpdateUserStatus(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	var body struct{ IsActive bool `json:"is_active"` }
+	var body UpdateUserStatusRequest
 	c.ShouldBindJSON(&body)
-	var user models.User
-	if err := database.DB.First(&user, id).Error; err != nil {
+
+	updated, ok := store.UpdateUser(uint(id), func(u *models.User) {
+		u.IsActive = body.IsActive
+	})
+	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		return
 	}
-	database.DB.Model(&user).Update("is_active", body.IsActive)
-	c.JSON(http.StatusOK, user)
+	c.JSON(http.StatusOK, updated)
 }
 
 // Logs godoc
@@ -187,18 +170,7 @@ func (h *AdminHandler) Logs(c *gin.Context) {
 	}
 	offset := (page - 1) * limit
 
-	var total int64
-	q := database.DB.Model(&models.ActivityLog{})
-	if userID := c.Query("user_id"); userID != "" {
-		q = q.Where("user_id = ?", userID)
-	}
-	if method := c.Query("method"); method != "" {
-		q = q.Where("method = ?", method)
-	}
-	q.Count(&total)
-
-	var logs []models.ActivityLog
-	q.Order("created_at DESC").Offset(offset).Limit(limit).Find(&logs)
+	logs, total := store.ListActivityLogs(c.Query("user_id"), c.Query("method"), offset, limit)
 
 	c.JSON(http.StatusOK, gin.H{
 		"data":  logs,

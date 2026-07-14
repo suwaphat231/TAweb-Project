@@ -3,9 +3,9 @@ package handlers
 import (
 	"context"
 	"labassist/config"
-	"labassist/database"
 	"labassist/middleware"
 	"labassist/models"
+	"labassist/store"
 	"net/http"
 	"strings"
 
@@ -68,8 +68,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	var user models.User
-	if err := database.DB.Where("username = ? AND role != 'student'", body.Username).First(&user).Error; err != nil {
+	user, ok := store.UserByUsername(body.Username)
+	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง"})
 		return
 	}
@@ -127,30 +127,30 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 		return
 	}
 
-	var user models.User
 	isNewUser := false
 
 	// ค้นหาจาก google_sub ก่อน แล้วค่อย fallback ไป email
-	err = database.DB.Where("google_sub = ?", googleSub).First(&user).Error
-	if err != nil {
-		err = database.DB.Where("email = ?", email).First(&user).Error
-		if err != nil {
+	user, ok := store.UserByGoogleSub(googleSub)
+	if !ok {
+		user, ok = store.UserByEmail(email)
+		if !ok {
 			// ไม่เจอเลย → สร้าง student ใหม่
-			user = models.User{
+			created, err := store.CreateUser(models.User{
 				FullName:  name,
 				Email:     email,
 				Role:      models.RoleStudent,
 				GoogleSub: &googleSub,
-			}
-			if dbErr := database.DB.Create(&user).Error; dbErr != nil {
+			})
+			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถสร้างบัญชีได้"})
 				return
 			}
+			user = created
 			isNewUser = true
 		} else if user.GoogleSub == nil {
 			// เจอด้วย email แต่ยังไม่มี google_sub → อัพเดต
-			database.DB.Model(&user).Update("google_sub", googleSub)
-			user.GoogleSub = &googleSub
+			updated, _ := store.UpdateUser(user.ID, func(u *models.User) { u.GoogleSub = &googleSub })
+			user = updated
 		}
 	}
 
@@ -177,8 +177,8 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 // @Router       /auth/me [get]
 func (h *AuthHandler) Me(c *gin.Context) {
 	userID, _ := c.Get("user_id")
-	var user models.User
-	if err := database.DB.First(&user, userID).Error; err != nil {
+	user, ok := store.UserByID(userID.(uint))
+	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "ไม่พบผู้ใช้"})
 		return
 	}

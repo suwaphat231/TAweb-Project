@@ -1,8 +1,8 @@
 package middleware
 
 import (
-	"labassist/database"
 	"labassist/models"
+	"labassist/store"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -19,7 +19,7 @@ func ActivityLogger() gin.HandlerFunc {
 		c.Next()
 		durationMs := time.Since(start).Milliseconds()
 
-		entry := &models.ActivityLog{
+		entry := models.ActivityLog{
 			Method:     c.Request.Method,
 			Path:       c.Request.URL.Path,
 			StatusCode: c.Writer.Status(),
@@ -43,6 +43,6 @@ func ActivityLogger() gin.HandlerFunc {
 			}
 		}
 
-		go database.DB.Create(entry)
+		go store.CreateActivityLog(entry)
 	}
 }

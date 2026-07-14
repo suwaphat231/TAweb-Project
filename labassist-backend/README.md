@@ -1,8 +1,9 @@
-# LabAssist Backend — Go + PostgreSQL
+# LabAssist Backend — Go + In-Memory Mock Store
 
 ## Tech Stack
 - **Go** 1.22+ with **Gin** framework
-- **GORM** + PostgreSQL driver (pgx v5)
+- **In-memory mock data store** (`store/`) — stands in for the real database while
+  it's being built separately; all data resets on restart
 - **JWT** authentication (golang-jwt/jwt v5)
 - **Google ID Token** verification (google.golang.org/api/idtoken)
 - **bcrypt** password hashing
@@ -14,36 +15,24 @@
 go mod download
 ```
 
-### 2. ตั้งค่า PostgreSQL
-```sql
-CREATE DATABASE labassist;
-```
-จากนั้น run schema:
-```bash
-psql -U postgres -d labassist -f database/migrations/schema.sql
-psql -U postgres -d labassist -f database/migrations/seed.sql
-```
-
-### 4. ตั้งค่า .env
+### 2. ตั้งค่า .env
 ```bash
 cp .env.example .env
 # แก้ไข .env:
-#   DB_HOST=localhost
-#   DB_PORT=5432
-#   DB_USER=postgres
-#   DB_PASSWORD=รหัส PostgreSQL ของคุณ
-#   DB_NAME=labassist
 #   JWT_SECRET  (ต้องเปลี่ยนใน production)
 #   GOOGLE_CLIENT_ID  (จาก Google Cloud Console)
 #   CLIENT_URL  (URL ของ frontend)
 ```
 
-### 5. Run
+### 3. Run
 ```bash
 go run main.go
 # หรือ dev mode ด้วย air
 air
 ```
+
+Mock data (users, courses, applications) is seeded automatically on startup —
+see `store/seed.go`.
 
 ## API Endpoints
 

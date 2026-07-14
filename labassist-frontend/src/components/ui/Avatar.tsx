@@ -12,9 +12,10 @@ interface Props {
   initials: string
   color: AvatarColor
   size?: number
+  style?: React.CSSProperties
 }
 
-export function Avatar({ initials, color, size = 36 }: Props) {
+export function Avatar({ initials, color, size = 36, style }: Props) {
   return (
     <div style={{
       width: size, height: size, borderRadius: '50%',
@@ -22,6 +23,7 @@ export function Avatar({ initials, color, size = 36 }: Props) {
       color: '#fff',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       fontSize: size * 0.38, fontWeight: 700, flexShrink: 0, userSelect: 'none',
+      ...style,
     }}>
       {initials.slice(0, 2).toUpperCase()}
     </div>

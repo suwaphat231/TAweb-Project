@@ -10,7 +10,6 @@ import { Modal } from '../../components/ui/Modal'
 import { Textarea } from '../../components/ui/Textarea'
 import { Avatar, getInitials } from '../../components/ui/Avatar'
 import { EmptyState } from '../../components/ui/EmptyState'
-import { Table } from '../../components/ui/Table'
 import { useToast } from '../../components/ui/Toast'
 import type { Application } from '../../types'
 
@@ -263,7 +262,7 @@ export default function InstructorSelect() {
                   >
                     {columns.map((col) => (
                       <td key={col.key} style={{ padding: '12px 16px', fontSize: 14, color: 'var(--ink-700)', verticalAlign: 'middle' }}>
-                        {col.render ? (col as { render: (row: Application, i: number) => React.ReactNode }).render(row, i) : ''}
+                        {(col as { render: (row: Application, i: number) => React.ReactNode }).render(row, i)}
                       </td>
                     ))}
                   </tr>

@@ -67,15 +67,6 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			review.PUT("/instructor/applications/bulk-review", appH.BulkReview)
 		}
 
-		// Staff
-		staff := authed.Group("")
-		staff.Use(middleware.RequireRole("staff", "admin"))
-		{
-			staff.GET("/staff/documents", func(c *gin.Context) { c.JSON(200, []interface{}{}) })
-			staff.POST("/staff/documents", func(c *gin.Context) { c.JSON(201, gin.H{"message": "created"}) })
-			staff.PUT("/staff/documents/:id", func(c *gin.Context) { c.JSON(200, gin.H{"message": "updated"}) })
-		}
-
 		// Admin
 		admin := authed.Group("")
 		admin.Use(middleware.RequireRole("admin"))

@@ -1,14 +1,13 @@
 package handlers
 
 import (
-	"labassist/database"
 	"labassist/models"
+	"labassist/store"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 // ApplyRequest is the request body for submitting an application
@@ -51,41 +50,12 @@ func NewApplicationHandler() *ApplicationHandler { return &ApplicationHandler{} 
 // @Router       /student/dashboard [get]
 func (h *ApplicationHandler) StudentDashboard(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
+	sid := studentID.(uint)
 
-	type AppRow struct {
-		models.Application
-		CourseCode  string `gorm:"column:course_code"`
-		CourseTitle string `gorm:"column:course_title"`
-	}
-
-	var rows []AppRow
-	database.DB.Table("applications a").
-		Select("a.*, c.code AS course_code, c.title AS course_title").
-		Joins("JOIN courses c ON c.id = a.course_id").
-		Where("a.student_id = ?", studentID).
-		Order("a.applied_at DESC").
-		Limit(5).Scan(&rows)
-
-	recentApps := make([]models.Application, len(rows))
-	for i, r := range rows {
-		recentApps[i] = r.Application
-		recentApps[i].CourseCode = r.CourseCode
-		recentApps[i].CourseTitle = r.CourseTitle
-	}
-
-	var recentCourses []models.Course
-	database.DB.Table("courses c").
-		Select("c.*, u.full_name AS instructor_name").
-		Joins("JOIN users u ON u.id = c.instructor_id").
-		Where("c.status IN ('open','closing_soon')").
-		Order("c.created_at DESC").
-		Limit(3).Scan(&recentCourses)
-
-	var openCount int64
-	database.DB.Model(&models.Course{}).Where("status IN ('open','closing_soon')").Count(&openCount)
-	var appliedCount int64
-	database.DB.Model(&models.Application{}).
-		Where("student_id = ? AND status != 'withdrawn'", studentID).Count(&appliedCount)
+	recentApps := store.RecentStudentApplications(sid, 5)
+	recentCourses := store.RecentOpenCourses(3)
+	openCount := store.CountOpenCourses()
+	appliedCount := store.CountAppliedByStudent(sid)
 
 	c.JSON(http.StatusOK, gin.H{
 		"recent_applications": recentApps,
@@ -103,29 +73,7 @@ func (h *ApplicationHandler) StudentDashboard(c *gin.Context) {
 // @Router       /student/applications [get]
 func (h *ApplicationHandler) MyApplications(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
-
-	type AppRow struct {
-		models.Application
-		CourseCode   string `gorm:"column:course_code"`
-		CourseTitle  string `gorm:"column:course_title"`
-		ReviewerName string `gorm:"column:reviewer_name"`
-	}
-
-	var rows []AppRow
-	database.DB.Table("applications a").
-		Select("a.*, c.code AS course_code, c.title AS course_title, r.full_name AS reviewer_name").
-		Joins("JOIN courses c ON c.id = a.course_id").
-		Joins("LEFT JOIN users r ON r.id = a.reviewed_by_id").
-		Where("a.student_id = ?", studentID).
-		Order("a.applied_at DESC").Scan(&rows)
-
-	apps := make([]models.Application, len(rows))
-	for i, r := range rows {
-		apps[i] = r.Application
-		apps[i].CourseCode = r.CourseCode
-		apps[i].CourseTitle = r.CourseTitle
-		apps[i].ReviewedByName = r.ReviewerName
-	}
+	apps := store.StudentApplications(studentID.(uint))
 	c.JSON(http.StatusOK, apps)
 }
 
@@ -143,18 +91,14 @@ func (h *ApplicationHandler) MyApplications(c *gin.Context) {
 // @Router       /student/applications [post]
 func (h *ApplicationHandler) Apply(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
-	var body struct {
-		CourseID    uint               `json:"course_id" binding:"required"`
-		RoleApplied models.RoleApplied `json:"role_applied" binding:"required"`
-		Motivation  *string            `json:"motivation"`
-	}
+	var body ApplyRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	var course models.Course
-	if err := database.DB.First(&course, body.CourseID).Error; err != nil {
+	course, ok := store.CourseByID(body.CourseID)
+	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "course not found"})
 		return
 	}
@@ -173,25 +117,19 @@ func (h *ApplicationHandler) Apply(c *gin.Context) {
 		return
 	}
 
-	app := models.Application{
+	app, err := store.CreateApplication(models.Application{
 		StudentID:   studentID.(uint),
 		CourseID:    body.CourseID,
 		RoleApplied: body.RoleApplied,
 		Status:      models.AppAccepted,
 		Motivation:  body.Motivation,
-	}
-	if err := database.DB.Create(&app).Error; err != nil {
+	})
+	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "already applied"})
 		return
 	}
 
-	// Increment accepted count
-	field := "ta_accepted"
-	if body.RoleApplied == models.RoleLabBoy {
-		field = "labboy_accepted"
-	}
-	database.DB.Model(&models.Course{}).Where("id = ?", body.CourseID).
-		UpdateColumn(field, gorm.Expr(field+" + 1"))
+	store.AdjustCourseAccepted(body.CourseID, body.RoleApplied, 1)
 
 	c.JSON(http.StatusCreated, app)
 }
@@ -210,8 +148,8 @@ func (h *ApplicationHandler) Withdraw(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
 	id, _ := strconv.Atoi(c.Param("id"))
 
-	var app models.Application
-	if err := database.DB.Where("id = ? AND student_id = ?", id, studentID).First(&app).Error; err != nil {
+	app, ok := store.ApplicationByIDForStudent(uint(id), studentID.(uint))
+	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
 		return
 	}
@@ -221,19 +159,16 @@ func (h *ApplicationHandler) Withdraw(c *gin.Context) {
 	}
 
 	prevStatus := app.Status
-	database.DB.Model(&app).Update("status", models.AppWithdrawn)
+	updated, _ := store.UpdateApplication(uint(id), func(a *models.Application) {
+		a.Status = models.AppWithdrawn
+	})
 
 	// Decrement slot count if was accepted
 	if prevStatus == models.AppAccepted {
-		field := "ta_accepted"
-		if app.RoleApplied == models.RoleLabBoy {
-			field = "labboy_accepted"
-		}
-		database.DB.Model(&models.Course{}).Where("id = ?", app.CourseID).
-			UpdateColumn(field, gorm.Expr(field+" - 1"))
+		store.AdjustCourseAccepted(app.CourseID, app.RoleApplied, -1)
 	}
 
-	c.JSON(http.StatusOK, app)
+	c.JSON(http.StatusOK, updated)
 }
 
 // GetProfile godoc
@@ -245,8 +180,7 @@ func (h *ApplicationHandler) Withdraw(c *gin.Context) {
 // @Router       /student/profile [get]
 func (h *ApplicationHandler) GetProfile(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
-	var user models.User
-	database.DB.First(&user, studentID)
+	user, _ := store.UserByID(studentID.(uint))
 	c.JSON(http.StatusOK, user)
 }
 
@@ -261,22 +195,22 @@ func (h *ApplicationHandler) GetProfile(c *gin.Context) {
 // @Router       /student/profile [put]
 func (h *ApplicationHandler) UpdateProfile(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
-	var body map[string]interface{}
+	var body UpdateProfileRequest
 	c.ShouldBindJSON(&body)
 
-	allowed := map[string]interface{}{}
-	for _, k := range []string{"full_name", "year", "faculty"} {
-		if v, ok := body[k]; ok {
-			allowed[k] = v
+	updated, _ := store.UpdateUser(studentID.(uint), func(u *models.User) {
+		if body.FullName != nil {
+			u.FullName = *body.FullName
 		}
-	}
-
-	var user models.User
-	database.DB.First(&user, studentID)
-	if len(allowed) > 0 {
-		database.DB.Model(&user).Updates(allowed)
-	}
-	c.JSON(http.StatusOK, user)
+		if body.Year != nil {
+			y := int8(*body.Year)
+			u.Year = &y
+		}
+		if body.Faculty != nil {
+			u.Faculty = body.Faculty
+		}
+	})
+	c.JSON(http.StatusOK, updated)
 }
 
 // Review godoc
@@ -297,24 +231,20 @@ func (h *ApplicationHandler) Review(c *gin.Context) {
 	role, _ := c.Get("role")
 	id, _ := strconv.Atoi(c.Param("id"))
 
-	var body struct {
-		Status models.AppStatus `json:"status" binding:"required"`
-		Note   *string          `json:"note"`
-	}
+	var body ReviewRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	var app models.Application
-	if err := database.DB.Preload("Course").First(&app, id).Error; err != nil {
+	app, ok := store.ApplicationByID(uint(id))
+	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
 		return
 	}
+	rid := reviewerID.(uint)
 	if role.(string) == "instructor" {
-		var course models.Course
-		database.DB.First(&course, app.CourseID)
-		rid := reviewerID.(uint)
+		course, _ := store.CourseByID(app.CourseID)
 		if course.InstructorID != rid {
 			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 			return
@@ -322,39 +252,35 @@ func (h *ApplicationHandler) Review(c *gin.Context) {
 	}
 
 	prevStatus := app.Status
-	now := time.Now()
-	rid := reviewerID.(uint)
-	database.DB.Model(&app).Updates(map[string]interface{}{
-		"status":         body.Status,
-		"reviewed_at":    now,
-		"reviewed_by_id": rid,
-		"note":           body.Note,
-	})
 
-	// Manage accepted count
-	field := "ta_accepted"
-	if app.RoleApplied == models.RoleLabBoy {
-		field = "labboy_accepted"
-	}
 	if body.Status == models.AppAccepted && prevStatus != models.AppAccepted {
-		var course models.Course
-		database.DB.First(&course, app.CourseID)
-		if field == "ta_accepted" && course.TAAccepted >= course.TASlots {
+		course, _ := store.CourseByID(app.CourseID)
+		if app.RoleApplied == models.RoleTA && course.TAAccepted >= course.TASlots {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "TA slots are full"})
 			return
 		}
-		if field == "labboy_accepted" && course.LabBoyAccepted >= course.LabBoySlots {
+		if app.RoleApplied == models.RoleLabBoy && course.LabBoyAccepted >= course.LabBoySlots {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Lab Boy slots are full"})
 			return
 		}
-		database.DB.Model(&models.Course{}).Where("id = ?", app.CourseID).
-			UpdateColumn(field, gorm.Expr(field+" + 1"))
-	} else if prevStatus == models.AppAccepted && body.Status != models.AppAccepted {
-		database.DB.Model(&models.Course{}).Where("id = ?", app.CourseID).
-			UpdateColumn(field, gorm.Expr(field+" - 1"))
 	}
 
-	c.JSON(http.StatusOK, app)
+	now := time.Now()
+	updated, _ := store.UpdateApplication(uint(id), func(a *models.Application) {
+		a.Status = body.Status
+		a.ReviewedAt = &now
+		a.ReviewedByID = &rid
+		a.Note = body.Note
+	})
+
+	// Manage accepted count
+	if body.Status == models.AppAccepted && prevStatus != models.AppAccepted {
+		store.AdjustCourseAccepted(app.CourseID, app.RoleApplied, 1)
+	} else if prevStatus == models.AppAccepted && body.Status != models.AppAccepted {
+		store.AdjustCourseAccepted(app.CourseID, app.RoleApplied, -1)
+	}
+
+	c.JSON(http.StatusOK, updated)
 }
 
 // BulkReview godoc
@@ -369,11 +295,7 @@ func (h *ApplicationHandler) Review(c *gin.Context) {
 // @Router       /instructor/applications/bulk-review [put]
 func (h *ApplicationHandler) BulkReview(c *gin.Context) {
 	reviewerID, _ := c.Get("user_id")
-	var body struct {
-		ApplicationIDs []uint           `json:"application_ids" binding:"required"`
-		Status         models.AppStatus `json:"status" binding:"required"`
-		Note           *string          `json:"note"`
-	}
+	var body BulkReviewRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -381,10 +303,11 @@ func (h *ApplicationHandler) BulkReview(c *gin.Context) {
 
 	now := time.Now()
 	rid := reviewerID.(uint)
-	result := database.DB.Model(&models.Application{}).
-		Where("id IN ?", body.ApplicationIDs).
-		Updates(map[string]interface{}{
-			"status": body.Status, "reviewed_at": now, "reviewed_by_id": rid, "note": body.Note,
-		})
-	c.JSON(http.StatusOK, gin.H{"updated": result.RowsAffected})
+	updated := store.BulkUpdateApplications(body.ApplicationIDs, func(a *models.Application) {
+		a.Status = body.Status
+		a.ReviewedAt = &now
+		a.ReviewedByID = &rid
+		a.Note = body.Note
+	})
+	c.JSON(http.StatusOK, gin.H{"updated": updated})
 }

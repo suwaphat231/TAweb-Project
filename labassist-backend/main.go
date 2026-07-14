@@ -2,7 +2,6 @@ package main
 
 import (
 	"labassist/config"
-	"labassist/database"
 	"labassist/middleware"
 	"labassist/routes"
 	"log"
@@ -25,7 +24,6 @@ func main() {
 	}
 
 	cfg := config.Load()
-	database.Connect(cfg)
 
 	r := gin.Default()
 	r.Use(middleware.CORS(cfg))
