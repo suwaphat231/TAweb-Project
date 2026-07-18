@@ -15,9 +15,17 @@ type Course struct {
 	ID             uint         `gorm:"primaryKey" json:"id"`
 	Code           string       `gorm:"size:20;not null" json:"code"`
 	Title          string       `gorm:"size:300;not null" json:"title"`
+	EnglishTitle   string       `gorm:"size:300" json:"english_title,omitempty"`
+	GroupNote      string       `gorm:"size:200" json:"group_note,omitempty"`
+	Credits        string       `gorm:"size:20" json:"credits,omitempty"`
+	Section        int          `gorm:"default:0" json:"section"`
+	Schedule       string       `gorm:"size:500" json:"schedule,omitempty"`
+	Capacity       int          `gorm:"default:0" json:"capacity"`
+	Enrolled       int          `gorm:"default:0" json:"enrolled"`
 	InstructorID   uint         `gorm:"not null" json:"instructor_id"`
 	Instructor     User         `gorm:"foreignKey:InstructorID" json:"-"`
 	InstructorName string       `gorm:"-" json:"instructor_name"`
+	CoInstructors  string       `gorm:"size:300" json:"co_instructors,omitempty"`
 	ApplicantCount int          `gorm:"-" json:"applicant_count"`
 	Semester       string       `gorm:"size:10;not null" json:"semester"`
 	AcademicYear   int          `gorm:"not null" json:"academic_year"`

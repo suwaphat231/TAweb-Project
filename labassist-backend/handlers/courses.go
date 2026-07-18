@@ -5,9 +5,23 @@ import (
 	"labassist/store"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+const dateOnlyLayout = "2006-01-02"
+
+func parseDeadline(s string) *time.Time {
+	if s == "" {
+		return nil
+	}
+	t, err := time.Parse(dateOnlyLayout, s)
+	if err != nil {
+		return nil
+	}
+	return &t
+}
 
 // CreateCourseRequest is the request body for creating a course
 type CreateCourseRequest struct {
@@ -20,6 +34,7 @@ type CreateCourseRequest struct {
 	Status       models.CourseStatus `json:"status" example:"draft"`
 	Description  *string             `json:"description,omitempty"`
 	Requirements *string             `json:"requirements,omitempty"`
+	Deadline     string              `json:"deadline,omitempty" example:"2026-08-01"`
 }
 
 // UpdateCourseRequest is the request body for updating a course
@@ -33,6 +48,7 @@ type UpdateCourseRequest struct {
 	Status       *models.CourseStatus `json:"status,omitempty" example:"open"`
 	Description  *string              `json:"description,omitempty"`
 	Requirements *string              `json:"requirements,omitempty"`
+	Deadline     *string              `json:"deadline,omitempty" example:"2026-08-01"`
 }
 
 // UpdateCourseStatusRequest is the request body for updating course status only
@@ -126,6 +142,7 @@ func (h *CourseHandler) Create(c *gin.Context) {
 		Status:       status,
 		Description:  body.Description,
 		Requirements: body.Requirements,
+		Deadline:     parseDeadline(body.Deadline),
 	})
 	c.JSON(http.StatusCreated, course)
 }
@@ -187,6 +204,9 @@ func (h *CourseHandler) Update(c *gin.Context) {
 		}
 		if body.Requirements != nil {
 			cs.Requirements = body.Requirements
+		}
+		if body.Deadline != nil {
+			cs.Deadline = parseDeadline(*body.Deadline)
 		}
 	})
 	c.JSON(http.StatusOK, updated)

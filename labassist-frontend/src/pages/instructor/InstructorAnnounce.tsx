@@ -95,8 +95,10 @@ export default function InstructorAnnounce() {
   }
 
   function set(k: keyof CreateCoursePayload) {
-    return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
-      setForm(f => ({ ...f, [k]: e.target.value }))
+    return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+      const value = e.target.type === 'number' ? Number(e.target.value) : e.target.value
+      setForm(f => ({ ...f, [k]: value }))
+    }
   }
 
   function submit(e: React.FormEvent) {
