@@ -7,6 +7,7 @@ import { StatusBadge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Card, CardHeader, CardBody } from '../../components/ui/Card'
 import { Input } from '../../components/ui/Input'
+import { CourseCodeAutocomplete } from '../../components/ui/CourseCodeAutocomplete'
 import { Select } from '../../components/ui/Select'
 import { Textarea } from '../../components/ui/Textarea'
 import { Modal } from '../../components/ui/Modal'
@@ -271,14 +272,11 @@ export default function InstructorHome() {
       >
         <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <Input
-              label="รหัสวิชา *"
+            <CourseCodeAutocomplete
               value={form.code}
-              onChange={set('code')}
-              placeholder="CS101"
-              required
-              readOnly={!!editId}
-              style={editId ? { background: '#F8F9FB', cursor: 'not-allowed' } : undefined}
+              onChange={(v) => setForm(f => ({ ...f, code: v }))}
+              onSelect={(c) => setForm(f => ({ ...f, code: c.code, title: c.title }))}
+              disabled={!!editId}
             />
             <Input label="ปีการศึกษา *" type="number" value={form.academic_year} onChange={set('academic_year')} required />
           </div>
