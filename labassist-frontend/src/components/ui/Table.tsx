@@ -7,6 +7,7 @@ export interface Column<T> {
   header: string
   render?: (row: T) => ReactNode
   align?: 'left' | 'center' | 'right'
+  width?: number | string
 }
 
 interface Props<T> {
@@ -26,7 +27,7 @@ export function Table<T extends Record<string, unknown>>({
         <thead>
           <tr style={{ background: 'var(--bg)', borderBottom: '1.5px solid var(--line)' }}>
             {columns.map((col) => (
-              <th key={col.key} style={{ padding: '11px 16px', textAlign: col.align ?? 'left', fontSize: 12, fontWeight: 700, color: 'var(--ink-500)', whiteSpace: 'nowrap' }}>
+              <th key={col.key} style={{ padding: '11px 16px', textAlign: col.align ?? 'left', fontSize: 12, fontWeight: 700, color: 'var(--ink-500)', whiteSpace: 'nowrap', width: col.width }}>
                 {col.header}
               </th>
             ))}
@@ -62,7 +63,7 @@ export function Table<T extends Record<string, unknown>>({
               onClick={() => onRowClick?.(row)}
             >
               {columns.map((col) => (
-                <td key={col.key} style={{ padding: '12px 16px', fontSize: 14, color: 'var(--ink-700)', verticalAlign: 'middle', textAlign: col.align ?? 'left' }}>
+                <td key={col.key} style={{ padding: '12px 16px', fontSize: 14, color: 'var(--ink-700)', verticalAlign: 'middle', textAlign: col.align ?? 'left', width: col.width }}>
                   {col.render ? col.render(row) : String(row[col.key] ?? '')}
                 </td>
               ))}

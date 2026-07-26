@@ -1,8 +1,9 @@
 package routes
 
 import (
-	_ "labassist/docs"
+	"labassist/admin"
 	"labassist/config"
+	_ "labassist/docs"
 	"labassist/handlers"
 	"labassist/middleware"
 
@@ -20,7 +21,6 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 	courseH := handlers.NewCourseHandler()
 	appH := handlers.NewApplicationHandler()
 	adminH := handlers.NewAdminHandler()
-	notifH := handlers.NewNotificationHandler()
 
 	v1 := r.Group("/api/v1")
 
@@ -60,6 +60,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			instructor.POST("/instructor/courses", courseH.Create)
 			instructor.PUT("/instructor/courses/:id", courseH.Update)
 			instructor.PUT("/instructor/courses/:id/status", courseH.UpdateStatus)
+			instructor.DELETE("/instructor/courses/:id", courseH.Delete)
 		}
 
 		// Instructor + Staff + Admin for applicants and reviews
@@ -73,14 +74,17 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 		}
 
 		// Admin
-		admin := authed.Group("")
-		admin.Use(middleware.RequireRole("admin"))
+		adminGroup := authed.Group("")
+		adminGroup.Use(middleware.RequireRole("admin"))
 		{
-			admin.GET("/admin/stats", adminH.Stats)
-			admin.GET("/admin/users", adminH.Users)
-			admin.POST("/admin/users", adminH.CreateUser)
-			admin.PUT("/admin/users/:id/status", adminH.UpdateUserStatus)
-			admin.GET("/admin/logs", adminH.Logs)
+			adminGroup.GET("/admin/stats", adminH.Stats)
+			adminGroup.GET("/admin/users", adminH.Users)
+			adminGroup.POST("/admin/users", adminH.CreateUser)
+			adminGroup.PUT("/admin/users/:id", adminH.UpdateUser)
+			adminGroup.PUT("/admin/users/:id/status", adminH.UpdateUserStatus)
+			adminGroup.GET("/admin/logs", adminH.Logs)
+			adminGroup.POST("/admin/courses/import", adminH.ImportCourses)
+			adminGroup.DELETE("/admin/courses/term", adminH.DeleteCoursesByTerm)
 		}
 	}
 }

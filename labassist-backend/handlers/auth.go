@@ -3,9 +3,9 @@ package handlers
 import (
 	"context"
 	"labassist/config"
+	"labassist/database"
 	"labassist/middleware"
 	"labassist/models"
-	"labassist/store"
 	"net/http"
 	"strings"
 
@@ -68,7 +68,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	user, ok := store.UserByUsername(body.Username)
+	user, ok := database.UserByUsername(body.Username)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง"})
 		return
@@ -130,12 +130,12 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 	isNewUser := false
 
 	// ค้นหาจาก google_sub ก่อน แล้วค่อย fallback ไป email
-	user, ok := store.UserByGoogleSub(googleSub)
+	user, ok := database.UserByGoogleSub(googleSub)
 	if !ok {
-		user, ok = store.UserByEmail(email)
+		user, ok = database.UserByEmail(email)
 		if !ok {
 			// ไม่เจอเลย → สร้าง student ใหม่
-			created, err := store.CreateUser(models.User{
+			created, err := database.CreateUser(models.User{
 				FullName:  name,
 				Email:     email,
 				Role:      models.RoleStudent,
@@ -149,7 +149,7 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 			isNewUser = true
 		} else if user.GoogleSub == nil {
 			// เจอด้วย email แต่ยังไม่มี google_sub → อัพเดต
-			updated, _ := store.UpdateUser(user.ID, func(u *models.User) { u.GoogleSub = &googleSub })
+			updated, _ := database.UpdateUser(user.ID, func(u *models.User) { u.GoogleSub = &googleSub })
 			user = updated
 		}
 	}
@@ -177,7 +177,7 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 // @Router       /auth/me [get]
 func (h *AuthHandler) Me(c *gin.Context) {
 	userID, _ := c.Get("user_id")
-	user, ok := store.UserByID(userID.(uint))
+	user, ok := database.UserByID(userID.(uint))
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "ไม่พบผู้ใช้"})
 		return

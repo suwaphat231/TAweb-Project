@@ -21,15 +21,9 @@ export interface Course {
   id: number
   code: string
   title: string
-  english_title?: string
-  group_note?: string
-  credits?: string
-  schedule?: string
-  enrolled?: number
-  co_instructors?: string
-  has_lab: boolean
   instructor_id: number
   instructor_name: string
+  instructors_raw?: string
   applicant_count?: number
   semester: string
   academic_year: number
@@ -94,6 +88,16 @@ export interface BulkReviewPayload {
   note?: string
 }
 
+export interface CreateUserPayload {
+  full_name: string
+  role: UserRole
+}
+
+export interface UpdateUserPayload {
+  full_name?: string
+  role?: UserRole
+}
+
 export interface CreateCoursePayload {
   code: string
   title: string
@@ -111,16 +115,6 @@ export interface ApplyPayload {
   course_id: number
   role_applied: 'ta' | 'labboy'
   motivation?: string
-}
-
-export interface Notification {
-  id: number
-  user_id: number
-  course_id?: number
-  title: string
-  body: string
-  is_read: boolean
-  created_at: string
 }
 
 export interface AdminStats {

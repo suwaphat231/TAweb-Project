@@ -1,4 +1,4 @@
-package store
+package database
 
 import (
 	"time"
@@ -11,7 +11,7 @@ const pwHash = "$2a$10$Ws/75uKsYag.vd9tiCiAwuW143PDyh7.3n7dMYXmv6F2.fT5H6PBO"
 
 func strPtr(s string) *string { return &s }
 
-// seed populates the mock store with the same fixtures the old
+// seed populates the in-memory database with the same fixtures the old
 // database/migrations/seed.sql used, so logins and demo data match,
 // plus the real course list imported from the university classlist.
 func seed() {

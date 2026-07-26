@@ -1,8 +1,8 @@
-// Package store is an in-memory mock data layer that stands in for the
-// PostgreSQL database while the database team builds out the real one.
+// Package database is an in-memory mock data layer that stands in for the
+// real PostgreSQL database while the database team builds out the real one.
 // All state lives in package-level slices guarded by a single mutex and is
 // seeded on startup; nothing is persisted across restarts.
-package store
+package database
 
 import (
 	"errors"
@@ -194,9 +194,11 @@ func CreateUser(u models.User) (models.User, error) {
 			}
 		}
 	}
-	for _, existing := range users {
-		if existing.Email == u.Email {
-			return models.User{}, ErrConflict
+	if u.Email != "" {
+		for _, existing := range users {
+			if existing.Email == u.Email {
+				return models.User{}, ErrConflict
+			}
 		}
 	}
 	u.ID = nextUserID
@@ -330,6 +332,51 @@ func AdjustCourseAccepted(courseID uint, role models.RoleApplied, delta int) {
 		c.LabBoyAccepted += delta
 	}
 	c.UpdatedAt = time.Now()
+}
+
+// deleteApplicationsForCourseLocked removes every application tied to
+// courseID so a deleted course doesn't leave orphaned applications behind.
+func deleteApplicationsForCourseLocked(courseID uint) {
+	kept := applications[:0]
+	for _, a := range applications {
+		if a.CourseID != courseID {
+			kept = append(kept, a)
+		}
+	}
+	applications = kept
+}
+
+// DeleteCourse removes a single course and any applications submitted for it.
+func DeleteCourse(id uint) bool {
+	mu.Lock()
+	defer mu.Unlock()
+	for i, c := range courses {
+		if c.ID == id {
+			courses = append(courses[:i], courses[i+1:]...)
+			deleteApplicationsForCourseLocked(id)
+			return true
+		}
+	}
+	return false
+}
+
+// DeleteCoursesByTerm removes every course in the given semester/academic
+// year and any applications submitted for them, returning the count removed.
+func DeleteCoursesByTerm(semester string, academicYear int) int {
+	mu.Lock()
+	defer mu.Unlock()
+	kept := courses[:0]
+	removed := 0
+	for _, c := range courses {
+		if c.Semester == semester && c.AcademicYear == academicYear {
+			deleteApplicationsForCourseLocked(c.ID)
+			removed++
+			continue
+		}
+		kept = append(kept, c)
+	}
+	courses = kept
+	return removed
 }
 
 func CountCourses() int64 {

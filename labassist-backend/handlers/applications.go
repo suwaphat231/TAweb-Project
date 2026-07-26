@@ -1,8 +1,8 @@
 package handlers
 
 import (
+	"labassist/database"
 	"labassist/models"
-	"labassist/store"
 	"net/http"
 	"strconv"
 	"time"
@@ -52,10 +52,10 @@ func (h *ApplicationHandler) StudentDashboard(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
 	sid := studentID.(uint)
 
-	recentApps := store.RecentStudentApplications(sid, 5)
-	recentCourses := store.RecentOpenCourses(3)
-	openCount := store.CountOpenCourses()
-	appliedCount := store.CountAppliedByStudent(sid)
+	recentApps := database.RecentStudentApplications(sid, 5)
+	recentCourses := database.RecentOpenCourses(3)
+	openCount := database.CountOpenCourses()
+	appliedCount := database.CountAppliedByStudent(sid)
 
 	c.JSON(http.StatusOK, gin.H{
 		"recent_applications": recentApps,
@@ -73,7 +73,7 @@ func (h *ApplicationHandler) StudentDashboard(c *gin.Context) {
 // @Router       /student/applications [get]
 func (h *ApplicationHandler) MyApplications(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
-	apps := store.StudentApplications(studentID.(uint))
+	apps := database.StudentApplications(studentID.(uint))
 	c.JSON(http.StatusOK, apps)
 }
 
@@ -97,7 +97,7 @@ func (h *ApplicationHandler) Apply(c *gin.Context) {
 		return
 	}
 
-	course, ok := store.CourseByID(body.CourseID)
+	course, ok := database.CourseByID(body.CourseID)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "course not found"})
 		return
@@ -107,7 +107,7 @@ func (h *ApplicationHandler) Apply(c *gin.Context) {
 		return
 	}
 
-	app, err := store.CreateApplication(models.Application{
+	app, err := database.CreateApplication(models.Application{
 		StudentID:   studentID.(uint),
 		CourseID:    body.CourseID,
 		RoleApplied: body.RoleApplied,
@@ -118,6 +118,8 @@ func (h *ApplicationHandler) Apply(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "already applied"})
 		return
 	}
+
+	store.AdjustCourseAccepted(body.CourseID, body.RoleApplied, 1)
 
 	c.JSON(http.StatusCreated, app)
 }
@@ -136,7 +138,7 @@ func (h *ApplicationHandler) Withdraw(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
 	id, _ := strconv.Atoi(c.Param("id"))
 
-	app, ok := store.ApplicationByIDForStudent(uint(id), studentID.(uint))
+	app, ok := database.ApplicationByIDForStudent(uint(id), studentID.(uint))
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
 		return
@@ -147,13 +149,13 @@ func (h *ApplicationHandler) Withdraw(c *gin.Context) {
 	}
 
 	prevStatus := app.Status
-	updated, _ := store.UpdateApplication(uint(id), func(a *models.Application) {
+	updated, _ := database.UpdateApplication(uint(id), func(a *models.Application) {
 		a.Status = models.AppWithdrawn
 	})
 
 	// Decrement slot count if was accepted
 	if prevStatus == models.AppAccepted {
-		store.AdjustCourseAccepted(app.CourseID, app.RoleApplied, -1)
+		database.AdjustCourseAccepted(app.CourseID, app.RoleApplied, -1)
 	}
 
 	c.JSON(http.StatusOK, updated)
@@ -168,7 +170,7 @@ func (h *ApplicationHandler) Withdraw(c *gin.Context) {
 // @Router       /student/profile [get]
 func (h *ApplicationHandler) GetProfile(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
-	user, _ := store.UserByID(studentID.(uint))
+	user, _ := database.UserByID(studentID.(uint))
 	c.JSON(http.StatusOK, user)
 }
 
@@ -186,7 +188,7 @@ func (h *ApplicationHandler) UpdateProfile(c *gin.Context) {
 	var body UpdateProfileRequest
 	c.ShouldBindJSON(&body)
 
-	updated, _ := store.UpdateUser(studentID.(uint), func(u *models.User) {
+	updated, _ := database.UpdateUser(studentID.(uint), func(u *models.User) {
 		if body.FullName != nil {
 			u.FullName = *body.FullName
 		}
@@ -225,14 +227,14 @@ func (h *ApplicationHandler) Review(c *gin.Context) {
 		return
 	}
 
-	app, ok := store.ApplicationByID(uint(id))
+	app, ok := database.ApplicationByID(uint(id))
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
 		return
 	}
 	rid := reviewerID.(uint)
 	if role.(string) == "instructor" {
-		course, _ := store.CourseByID(app.CourseID)
+		course, _ := database.CourseByID(app.CourseID)
 		if course.InstructorID != rid {
 			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 			return
@@ -242,7 +244,7 @@ func (h *ApplicationHandler) Review(c *gin.Context) {
 	prevStatus := app.Status
 
 	if body.Status == models.AppAccepted && prevStatus != models.AppAccepted {
-		course, _ := store.CourseByID(app.CourseID)
+		course, _ := database.CourseByID(app.CourseID)
 		if app.RoleApplied == models.RoleTA && course.TAAccepted >= course.TASlots {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "TA slots are full"})
 			return
@@ -254,7 +256,7 @@ func (h *ApplicationHandler) Review(c *gin.Context) {
 	}
 
 	now := time.Now()
-	updated, _ := store.UpdateApplication(uint(id), func(a *models.Application) {
+	updated, _ := database.UpdateApplication(uint(id), func(a *models.Application) {
 		a.Status = body.Status
 		a.ReviewedAt = &now
 		a.ReviewedByID = &rid
@@ -263,9 +265,9 @@ func (h *ApplicationHandler) Review(c *gin.Context) {
 
 	// Manage accepted count
 	if body.Status == models.AppAccepted && prevStatus != models.AppAccepted {
-		store.AdjustCourseAccepted(app.CourseID, app.RoleApplied, 1)
+		database.AdjustCourseAccepted(app.CourseID, app.RoleApplied, 1)
 	} else if prevStatus == models.AppAccepted && body.Status != models.AppAccepted {
-		store.AdjustCourseAccepted(app.CourseID, app.RoleApplied, -1)
+		database.AdjustCourseAccepted(app.CourseID, app.RoleApplied, -1)
 	}
 
 	c.JSON(http.StatusOK, updated)
@@ -291,7 +293,7 @@ func (h *ApplicationHandler) BulkReview(c *gin.Context) {
 
 	now := time.Now()
 	rid := reviewerID.(uint)
-	updated := store.BulkUpdateApplications(body.ApplicationIDs, func(a *models.Application) {
+	updated := database.BulkUpdateApplications(body.ApplicationIDs, func(a *models.Application) {
 		a.Status = body.Status
 		a.ReviewedAt = &now
 		a.ReviewedByID = &rid

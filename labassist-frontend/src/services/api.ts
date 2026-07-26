@@ -3,7 +3,7 @@ import { useAuthStore } from '../store/authStore'
 import type {
   User, Course, Application, LoginCredentials, GoogleAuthPayload,
   CreateCoursePayload, ApplyPayload, ReviewPayload, BulkReviewPayload,
-  AdminStats, CourseStatus, Notification,
+  AdminStats, CourseStatus,
 } from '../types'
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1'
@@ -23,7 +23,7 @@ api.interceptors.response.use(
       useAuthStore.getState().logout()
       window.location.href = '/login'
     }
-    if (err.response?.status >= 500) {
+    if (err.response?.status >= 500 && !err.response?.data?.error) {
       return Promise.reject(new Error('เกิดข้อผิดพลาดจากเซิร์ฟเวอร์ กรุณาลองใหม่อีกครั้ง'))
     }
     return Promise.reject(err)
@@ -48,6 +48,7 @@ export const coursesAPI = {
     api.put<Course>(`/instructor/courses/${id}`, data).then((r) => r.data),
   updateStatus: (id: number, status: CourseStatus) =>
     api.put<Course>(`/instructor/courses/${id}/status`, { status }).then((r) => r.data),
+  remove: (id: number) => api.delete(`/instructor/courses/${id}`).then(() => undefined),
 }
 
 export const applicationsAPI = {
@@ -77,10 +78,22 @@ export const adminAPI = {
   stats: () => api.get<AdminStats>('/admin/stats').then((r) => r.data),
   users: (params?: { limit?: number; offset?: number; role?: string; search?: string }) =>
     api.get<User[]>('/admin/users', { params }).then((r) => r.data),
-  createUser: (data: Partial<User> & { password?: string }) =>
+  createUser: (data: CreateUserPayload) =>
     api.post<User>('/admin/users', data).then((r) => r.data),
+  updateUser: (id: number, data: UpdateUserPayload) =>
+    api.put<User>(`/admin/users/${id}`, data).then((r) => r.data),
   updateUserStatus: (id: number, is_active: boolean) =>
     api.put<User>(`/admin/users/${id}/status`, { is_active }).then((r) => r.data),
+  importCourses: (file: File, semester: string, academicYear: number) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('semester', semester)
+    formData.append('academic_year', String(academicYear))
+    // Let the browser set Content-Type itself so it includes the multipart boundary.
+    return api.post<ImportCoursesResponse>('/admin/courses/import', formData).then((r) => r.data)
+  },
+  deleteCoursesByTerm: (semester: string, academicYear: number) =>
+    api.delete<{ deleted: number }>('/admin/courses/term', { params: { semester, academic_year: academicYear } }).then((r) => r.data),
 }
 
 export const notificationApi = {

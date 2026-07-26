@@ -1,8 +1,8 @@
 package handlers
 
 import (
+	"labassist/database"
 	"labassist/models"
-	"labassist/store"
 	"net/http"
 	"strconv"
 	"time"
@@ -70,15 +70,7 @@ func NewCourseHandler() *CourseHandler { return &CourseHandler{} }
 // @Failure      500     {object}  ErrorResponse
 // @Router       /courses [get]
 func (h *CourseHandler) List(c *gin.Context) {
-	var hasLab *bool
-	if v := c.Query("has_lab"); v == "true" {
-		t := true
-		hasLab = &t
-	} else if v == "false" {
-		f := false
-		hasLab = &f
-	}
-	courses := store.ListCourses(c.Query("status"), c.Query("q"), hasLab)
+	courses := store.ListCourses(c.Query("status"), c.Query("q"))
 	c.JSON(http.StatusOK, courses)
 }
 
@@ -92,7 +84,7 @@ func (h *CourseHandler) List(c *gin.Context) {
 // @Router       /courses/{id} [get]
 func (h *CourseHandler) Get(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	course, ok := store.CourseByID(uint(id))
+	course, ok := database.CourseByID(uint(id))
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "course not found"})
 		return
@@ -111,15 +103,7 @@ func (h *CourseHandler) Get(c *gin.Context) {
 func (h *CourseHandler) InstructorList(c *gin.Context) {
 	instructorID, _ := c.Get("user_id")
 	role, _ := c.Get("role")
-	var hasLab *bool
-	if v := c.Query("has_lab"); v == "true" {
-		t := true
-		hasLab = &t
-	} else if v == "false" {
-		f := false
-		hasLab = &f
-	}
-	courses := store.InstructorCourses(instructorID.(uint), role.(string) == "admin", hasLab)
+	courses := store.InstructorCourses(instructorID.(uint), role.(string) == "admin")
 	c.JSON(http.StatusOK, courses)
 }
 
@@ -147,7 +131,7 @@ func (h *CourseHandler) Create(c *gin.Context) {
 		status = models.StatusDraft
 	}
 
-	course := store.CreateCourse(models.Course{
+	course := database.CreateCourse(models.Course{
 		Code:         body.Code,
 		Title:        body.Title,
 		InstructorID: instructorID.(uint),
@@ -180,7 +164,7 @@ func (h *CourseHandler) Update(c *gin.Context) {
 	role, _ := c.Get("role")
 	id, _ := strconv.Atoi(c.Param("id"))
 
-	course, ok := store.CourseByID(uint(id))
+	course, ok := database.CourseByID(uint(id))
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "course not found"})
 		return
@@ -193,7 +177,7 @@ func (h *CourseHandler) Update(c *gin.Context) {
 	var body UpdateCourseRequest
 	c.ShouldBindJSON(&body)
 
-	updated, _ := store.UpdateCourse(uint(id), func(cs *models.Course) {
+	updated, _ := database.UpdateCourse(uint(id), func(cs *models.Course) {
 		if body.Code != nil {
 			cs.Code = *body.Code
 		}
@@ -245,7 +229,7 @@ func (h *CourseHandler) UpdateStatus(c *gin.Context) {
 	role, _ := c.Get("role")
 	id, _ := strconv.Atoi(c.Param("id"))
 
-	course, ok := store.CourseByID(uint(id))
+	course, ok := database.CourseByID(uint(id))
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "course not found"})
 		return
@@ -257,10 +241,39 @@ func (h *CourseHandler) UpdateStatus(c *gin.Context) {
 
 	var body UpdateCourseStatusRequest
 	c.ShouldBindJSON(&body)
-	updated, _ := store.UpdateCourse(uint(id), func(cs *models.Course) {
+	updated, _ := database.UpdateCourse(uint(id), func(cs *models.Course) {
 		cs.Status = body.Status
 	})
 	c.JSON(http.StatusOK, updated)
+}
+
+// Delete godoc
+// @Summary      ลบวิชา
+// @Tags         courses
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path  int  true  "Course ID"
+// @Success      204
+// @Failure      403  {object}  ErrorResponse
+// @Failure      404  {object}  ErrorResponse
+// @Router       /instructor/courses/{id} [delete]
+func (h *CourseHandler) Delete(c *gin.Context) {
+	instructorID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
+	id, _ := strconv.Atoi(c.Param("id"))
+
+	course, ok := database.CourseByID(uint(id))
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "course not found"})
+		return
+	}
+	if role.(string) != "admin" && course.InstructorID != instructorID.(uint) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+
+	database.DeleteCourse(uint(id))
+	c.Status(http.StatusNoContent)
 }
 
 // Applicants godoc
@@ -281,7 +294,7 @@ func (h *CourseHandler) Applicants(c *gin.Context) {
 	role, _ := c.Get("role")
 	courseID, _ := strconv.Atoi(c.Param("id"))
 
-	course, ok := store.CourseByID(uint(courseID))
+	course, ok := database.CourseByID(uint(courseID))
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "course not found"})
 		return
@@ -291,6 +304,6 @@ func (h *CourseHandler) Applicants(c *gin.Context) {
 		return
 	}
 
-	apps := store.ApplicantsForCourse(uint(courseID), c.Query("role_applied"), c.Query("status"), c.Query("search"))
+	apps := database.ApplicantsForCourse(uint(courseID), c.Query("role_applied"), c.Query("status"), c.Query("search"))
 	c.JSON(http.StatusOK, apps)
 }
