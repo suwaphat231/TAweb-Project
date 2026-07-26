@@ -107,29 +107,17 @@ func (h *ApplicationHandler) Apply(c *gin.Context) {
 		return
 	}
 
-	// Check slot availability
-	if body.RoleApplied == models.RoleTA && course.TAAccepted >= course.TASlots {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "TA slots are full"})
-		return
-	}
-	if body.RoleApplied == models.RoleLabBoy && course.LabBoyAccepted >= course.LabBoySlots {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Lab Boy slots are full"})
-		return
-	}
-
 	app, err := store.CreateApplication(models.Application{
 		StudentID:   studentID.(uint),
 		CourseID:    body.CourseID,
 		RoleApplied: body.RoleApplied,
-		Status:      models.AppAccepted,
+		Status:      models.AppPending,
 		Motivation:  body.Motivation,
 	})
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "already applied"})
 		return
 	}
-
-	store.AdjustCourseAccepted(body.CourseID, body.RoleApplied, 1)
 
 	c.JSON(http.StatusCreated, app)
 }

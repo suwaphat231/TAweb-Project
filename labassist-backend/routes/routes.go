@@ -20,6 +20,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 	courseH := handlers.NewCourseHandler()
 	appH := handlers.NewApplicationHandler()
 	adminH := handlers.NewAdminHandler()
+	notifH := handlers.NewNotificationHandler()
 
 	v1 := r.Group("/api/v1")
 
@@ -46,6 +47,9 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			student.PUT("/student/applications/:id/withdraw", appH.Withdraw)
 			student.GET("/student/profile", appH.GetProfile)
 			student.PUT("/student/profile", appH.UpdateProfile)
+			student.GET("/student/notifications", notifH.MyNotifications)
+			student.PUT("/student/notifications/read-all", notifH.MarkAllRead)
+			student.PUT("/student/notifications/:id/read", notifH.MarkRead)
 		}
 
 		// Instructor
@@ -63,6 +67,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 		review.Use(middleware.RequireRole("instructor", "staff", "admin"))
 		{
 			review.GET("/instructor/courses/:id/applicants", courseH.Applicants)
+			review.POST("/instructor/courses/:id/notify", notifH.NotifyCourse)
 			review.PUT("/instructor/applications/:id/review", appH.Review)
 			review.PUT("/instructor/applications/bulk-review", appH.BulkReview)
 		}

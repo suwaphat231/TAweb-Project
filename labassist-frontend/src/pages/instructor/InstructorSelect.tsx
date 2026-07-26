@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { instructorApi } from '../../services/api'
+import { instructorApi, notificationApi } from '../../services/api'
 import { StatusBadge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Select } from '../../components/ui/Select'
@@ -20,6 +20,7 @@ const roleOptions  = [
 ]
 const statusOptions = [
   { value: '', label: 'ทุกสถานะ' },
+  { value: 'pending', label: 'รอพิจารณา' },
   { value: 'accepted', label: 'ผ่าน' },
   { value: 'rejected', label: 'ไม่ผ่าน' },
   { value: 'withdrawn', label: 'ถอน' },
@@ -43,13 +44,26 @@ export default function InstructorSelect() {
 
   const { data: courses = [] } = useQuery({
     queryKey: ['instructor-courses'],
-    queryFn: instructorApi.courses,
+    queryFn: () => instructorApi.courses(),
   })
 
   const { data: applicants = [], isLoading } = useQuery({
     queryKey: ['applicants', courseId],
     queryFn: () => instructorApi.applicants(courseId),
     enabled: !!courseId,
+  })
+
+  const notifyMut = useMutation({
+    mutationFn: () => notificationApi.notifyCourse(courseId),
+    onSuccess: (data) => {
+      showToast(
+        data.sent > 0
+          ? `ส่งแจ้งเตือนแล้ว ${data.sent} คน`
+          : 'ไม่มีนักศึกษาที่ผ่านการคัดเลือก',
+        data.sent > 0 ? 'success' : 'info',
+      )
+    },
+    onError: () => showToast('ไม่สามารถส่งแจ้งเตือนได้ กรุณาลองใหม่', 'error'),
   })
 
   const reviewMut = useMutation({
@@ -131,16 +145,7 @@ export default function InstructorSelect() {
       key: 'actions', header: '',
       render: (row: Application) => (
         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-          {row.status === 'accepted' && (
-            <Button
-              size="sm" variant="ghost"
-              onClick={(e) => { e.stopPropagation(); openReview(row, 'rejected') }}
-              style={{ color: 'var(--red)', border: '1px solid var(--red)' }}
-            >
-              ไม่รับ
-            </Button>
-          )}
-          {row.status === 'rejected' && (
+          {(row.status === 'pending' || row.status === 'rejected') && (
             <Button
               size="sm" variant="ghost"
               onClick={(e) => { e.stopPropagation(); openReview(row, 'accepted') }}
@@ -149,11 +154,25 @@ export default function InstructorSelect() {
               รับ
             </Button>
           )}
+          {(row.status === 'pending' || row.status === 'accepted') && (
+            <Button
+              size="sm" variant="ghost"
+              onClick={(e) => { e.stopPropagation(); openReview(row, 'rejected') }}
+              style={{ color: 'var(--red)', border: '1px solid var(--red)' }}
+            >
+              ไม่รับ
+            </Button>
+          )}
           <Button
             size="sm" variant="outline"
             onClick={(e) => { e.stopPropagation(); setProfileTarget(row) }}
+            style={{ display: 'flex', alignItems: 'center', gap: 4 }}
           >
-            โปรไฟล์
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            ตรวจสอบ
           </Button>
         </div>
       ),
@@ -163,20 +182,36 @@ export default function InstructorSelect() {
   return (
     <div>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink-900)' }}>คัดเลือกผู้สมัคร</h1>
-        <Select
-          options={[
-            { value: '', label: 'เลือกรายวิชา...' },
-            ...courses.map((c) => ({
-              value: String(c.id),
-              label: `[${c.code}] ${c.title} — ${c.applicant_count ?? 0} ผู้สมัคร`,
-            })),
-          ]}
-          value={String(courseId)}
-          onChange={(e) => { setParams({ course: e.target.value }); setRoleFilter(''); setStatusFilter(''); setSearch('') }}
-          style={{ width: 320 }}
-        />
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          {!!courseId && (
+            <Button
+              variant="outline"
+              loading={notifyMut.isPending}
+              onClick={() => notifyMut.mutate()}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+              </svg>
+              ส่งแจ้งเตือนผู้ผ่านเกณฑ์
+            </Button>
+          )}
+          <Select
+            options={[
+              { value: '', label: 'เลือกรายวิชา...' },
+              ...courses.map((c) => ({
+                value: String(c.id),
+                label: `[${c.code}] ${c.title} — ${c.applicant_count ?? 0} ผู้สมัคร`,
+              })),
+            ]}
+            value={String(courseId)}
+            onChange={(e) => { setParams({ course: e.target.value }); setRoleFilter(''); setStatusFilter(''); setSearch('') }}
+            style={{ width: 320 }}
+          />
+        </div>
       </div>
 
       {!courseId ? (
@@ -304,15 +339,42 @@ export default function InstructorSelect() {
         </div>
       </Modal>
 
-      {/* Applicant Profile Modal */}
+      {/* Applicant Detail Modal */}
       <Modal
         isOpen={!!profileTarget}
         onClose={() => setProfileTarget(null)}
-        title="โปรไฟล์ผู้สมัคร"
+        title="ตรวจสอบรายละเอียดผู้สมัคร"
         size="md"
       >
         {profileTarget && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+            {/* Status banner */}
+            {profileTarget.status === 'accepted' && (
+              <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 16 }}>✅</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#15803D' }}>ผ่านการคัดเลือก</span>
+              </div>
+            )}
+            {profileTarget.status === 'rejected' && (
+              <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 16 }}>❌</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#DC2626' }}>ไม่ผ่านการคัดเลือก</span>
+              </div>
+            )}
+            {profileTarget.status === 'pending' && (
+              <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 16 }}>⏳</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#B45309' }}>รอการพิจารณา</span>
+              </div>
+            )}
+            {profileTarget.status === 'withdrawn' && (
+              <div style={{ background: 'var(--bg)', border: '1px solid var(--line)', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 16 }}>↩️</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-500)' }}>ถอนใบสมัครแล้ว</span>
+              </div>
+            )}
+
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
               <Avatar initials={getInitials(profileTarget.student_name)} color="blue" size={56} />
@@ -321,30 +383,34 @@ export default function InstructorSelect() {
                 <div style={{ fontSize: 13, color: 'var(--ink-500)', marginTop: 2 }}>{profileTarget.student_code || '—'}</div>
                 <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                   <StatusBadge value={profileTarget.role_applied} />
-                  <StatusBadge value={profileTarget.status} />
                 </div>
               </div>
+              {profileTarget.student_gpa > 0 && (
+                <div style={{ textAlign: 'center', minWidth: 64 }}>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: profileTarget.student_gpa >= 3.5 ? 'var(--green)' : profileTarget.student_gpa >= 3.0 ? 'var(--primary)' : 'var(--ink-700)' }}>
+                    {profileTarget.student_gpa.toFixed(2)}
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--ink-400)', fontWeight: 600 }}>GPA</div>
+                </div>
+              )}
             </div>
 
             {/* GPA bar */}
             {profileTarget.student_gpa > 0 && (
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-500)' }}>GPA</span>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--primary)' }}>{profileTarget.student_gpa.toFixed(2)}</span>
-                </div>
                 <div style={{ height: 6, borderRadius: 999, background: 'var(--line-soft)', overflow: 'hidden' }}>
                   <div style={{
                     height: '100%', borderRadius: 999,
                     background: profileTarget.student_gpa >= 3.5 ? 'var(--green)' : 'var(--primary)',
                     width: `${Math.min(100, (profileTarget.student_gpa / 4) * 100)}%`,
+                    transition: 'width .4s ease',
                   }} />
                 </div>
-                <div style={{ fontSize: 10, color: 'var(--ink-400)', marginTop: 2, textAlign: 'right' }}>จาก 4.00</div>
+                <div style={{ fontSize: 10, color: 'var(--ink-400)', marginTop: 3, textAlign: 'right' }}>จาก 4.00</div>
               </div>
             )}
 
-            {/* Info */}
+            {/* Info grid */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <ProfileInfo label="อีเมล" value={profileTarget.student_email || '—'} />
               <ProfileInfo label="ชั้นปี" value={profileTarget.student_year ? `ปีที่ ${profileTarget.student_year}` : '—'} />
@@ -355,15 +421,38 @@ export default function InstructorSelect() {
             {/* Motivation */}
             {profileTarget.motivation && (
               <div style={{ background: '#F8F9FB', borderRadius: 10, padding: '12px 16px' }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-400)', marginBottom: 6 }}>แรงจูงใจในการสมัคร</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-400)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>แรงจูงใจในการสมัคร</div>
                 <div style={{ fontSize: 14, color: 'var(--ink-700)', lineHeight: 1.7 }}>{profileTarget.motivation}</div>
+              </div>
+            )}
+
+            {/* Review result */}
+            {(profileTarget.reviewed_at || profileTarget.note) && (
+              <div style={{ background: '#F8F9FB', borderRadius: 10, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-400)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>ผลการพิจารณา</div>
+                {profileTarget.reviewed_by_name && (
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>พิจารณาโดย</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-800)' }}>{profileTarget.reviewed_by_name}</span>
+                    {profileTarget.reviewed_at && (
+                      <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>
+                        · {new Date(profileTarget.reviewed_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {profileTarget.note && (
+                  <div style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.6, borderLeft: '3px solid var(--line)', paddingLeft: 10 }}>
+                    {profileTarget.note}
+                  </div>
+                )}
               </div>
             )}
 
             {/* Actions */}
             {profileTarget.status !== 'withdrawn' && (
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 4, borderTop: '1px solid var(--line-soft)' }}>
-                {profileTarget.status === 'accepted' && (
+                {(profileTarget.status === 'pending' || profileTarget.status === 'accepted') && (
                   <Button
                     variant="ghost"
                     style={{ color: 'var(--red)', border: '1px solid var(--red)' }}
@@ -372,13 +461,12 @@ export default function InstructorSelect() {
                     ไม่รับ
                   </Button>
                 )}
-                {profileTarget.status === 'rejected' && (
+                {(profileTarget.status === 'pending' || profileTarget.status === 'rejected') && (
                   <Button
-                    variant="ghost"
-                    style={{ color: 'var(--green)', border: '1px solid var(--green)' }}
+                    style={{ background: 'var(--green)', borderColor: 'var(--green)' }}
                     onClick={() => openReview(profileTarget, 'accepted')}
                   >
-                    รับ
+                    รับเข้า
                   </Button>
                 )}
               </div>

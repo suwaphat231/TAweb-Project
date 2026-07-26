@@ -1,7 +1,10 @@
-import type { ReactNode } from 'react'
+import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../../hooks/useAuth'
 import { Avatar, getInitials } from '../ui/Avatar'
+import { notificationApi } from '../../services/api'
+import type { Notification } from '../../types'
 
 interface Props {
   title?: string
@@ -23,6 +26,162 @@ const routeMeta: Record<string, { title: string; breadcrumb: string }> = {
   '/admin/overview':      { title: 'ภาพรวมระบบ',         breadcrumb: 'ผู้ดูแลระบบ' },
   '/admin/courses':       { title: 'จัดการรายวิชา',      breadcrumb: 'ผู้ดูแลระบบ' },
   '/admin/users':         { title: 'จัดการผู้ใช้งาน',    breadcrumb: 'ผู้ดูแลระบบ' },
+}
+
+function formatTime(iso: string) {
+  const d = new Date(iso)
+  return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+}
+
+function NotificationBell() {
+  const { user } = useAuth()
+  const [isOpen, setIsOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const qc = useQueryClient()
+
+  const isStudent = user?.role === 'student'
+
+  const { data: notifs = [] } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: notificationApi.list,
+    enabled: isStudent,
+    refetchInterval: 30_000,
+  })
+
+  const unread = notifs.filter((n: Notification) => !n.is_read).length
+
+  const markAllMut = useMutation({
+    mutationFn: notificationApi.markAllRead,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
+  })
+
+  const markOneMut = useMutation({
+    mutationFn: (id: number) => notificationApi.markRead(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
+  })
+
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    if (isOpen) document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [isOpen])
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        onClick={() => setIsOpen((v) => !v)}
+        style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: isOpen ? 'var(--primary)' : 'var(--ink-500)',
+          padding: 6, borderRadius: 8,
+          display: 'flex', alignItems: 'center', position: 'relative',
+        }}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+          <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+        </svg>
+        {isStudent && unread > 0 && (
+          <span style={{
+            position: 'absolute', top: 2, right: 2,
+            minWidth: 16, height: 16, borderRadius: 9999,
+            background: 'var(--red)', border: '1.5px solid #fff',
+            fontSize: 9, fontWeight: 700, color: '#fff',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '0 3px',
+          }}>
+            {unread > 9 ? '9+' : unread}
+          </span>
+        )}
+      </button>
+
+      {isOpen && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+          width: 320, maxHeight: 420, overflowY: 'auto',
+          background: '#fff', borderRadius: 12,
+          border: '1px solid var(--line)',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+          zIndex: 200,
+        }}>
+          {/* Header */}
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '12px 16px', borderBottom: '1px solid var(--line-soft)',
+            position: 'sticky', top: 0, background: '#fff',
+          }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-900)' }}>
+              การแจ้งเตือน
+              {unread > 0 && (
+                <span style={{
+                  marginLeft: 8, fontSize: 11, fontWeight: 700,
+                  background: 'var(--red)', color: '#fff',
+                  padding: '1px 6px', borderRadius: 9999,
+                }}>
+                  {unread}
+                </span>
+              )}
+            </span>
+            {unread > 0 && (
+              <button
+                onClick={() => markAllMut.mutate()}
+                style={{
+                  fontSize: 12, color: 'var(--primary)', background: 'none',
+                  border: 'none', cursor: 'pointer', fontWeight: 600, padding: 0,
+                }}
+              >
+                อ่านทั้งหมด
+              </button>
+            )}
+          </div>
+
+          {/* Body */}
+          {!isStudent ? (
+            <div style={{ padding: '20px 16px', textAlign: 'center', fontSize: 13, color: 'var(--ink-400)' }}>
+              การแจ้งเตือนใช้ได้สำหรับนักศึกษาเท่านั้น
+            </div>
+          ) : notifs.length === 0 ? (
+            <div style={{ padding: '32px 16px', textAlign: 'center' }}>
+              <div style={{ fontSize: 28, marginBottom: 8 }}>🔔</div>
+              <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>ยังไม่มีการแจ้งเตือน</div>
+            </div>
+          ) : (
+            notifs.map((n: Notification) => (
+              <div
+                key={n.id}
+                onClick={() => { if (!n.is_read) markOneMut.mutate(n.id) }}
+                style={{
+                  padding: '12px 16px',
+                  borderBottom: '1px solid var(--line-soft)',
+                  background: n.is_read ? '#fff' : '#EEF2FF',
+                  cursor: n.is_read ? 'default' : 'pointer',
+                  borderLeft: n.is_read ? '3px solid transparent' : '3px solid var(--primary)',
+                  transition: 'background .1s',
+                }}
+              >
+                <div style={{
+                  fontSize: 13, fontWeight: n.is_read ? 500 : 700,
+                  color: 'var(--ink-900)', marginBottom: 3,
+                }}>
+                  {n.title}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--ink-600)', lineHeight: 1.6 }}>
+                  {n.body}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 5 }}>
+                  {formatTime(n.created_at)}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function Topbar({ title, breadcrumb, actions, onHamburgerClick }: Props) {
@@ -79,24 +238,7 @@ export function Topbar({ title, breadcrumb, actions, onHamburgerClick }: Props) 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         {actions}
 
-        {/* Notification bell */}
-        <div style={{ position: 'relative' }}>
-          <button style={{
-            background: 'none', border: 'none', cursor: 'pointer',
-            color: 'var(--ink-500)', padding: 6, borderRadius: 8,
-            display: 'flex', alignItems: 'center',
-          }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-              <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-            </svg>
-          </button>
-          <span style={{
-            position: 'absolute', top: 4, right: 4,
-            width: 7, height: 7, borderRadius: '50%',
-            background: 'var(--red)', border: '1.5px solid #fff',
-          }} />
-        </div>
+        <NotificationBell />
 
         {/* Divider */}
         <div style={{ width: 1, height: 20, background: 'var(--line)' }} />

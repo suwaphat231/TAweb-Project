@@ -7,19 +7,13 @@ import { StatusBadge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Card, CardHeader, CardBody } from '../../components/ui/Card'
 import { Input } from '../../components/ui/Input'
-import { CourseCodeAutocomplete } from '../../components/ui/CourseCodeAutocomplete'
-import { Select } from '../../components/ui/Select'
-import { Textarea } from '../../components/ui/Textarea'
-import { Modal } from '../../components/ui/Modal'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { useToast } from '../../components/ui/Toast'
+import { Modal } from '../../components/ui/Modal'
+import { CourseFormModal } from './CourseFormModal'
+import { COURSE_FORM_EMPTY, splitRequirements, joinRequirements } from './_courseFormShared'
 import type { CreateCoursePayload, Course } from '../../types'
-
-const EMPTY: CreateCoursePayload = {
-  code: '', title: '', semester: '1', academic_year: 2567,
-  ta_slots: 0, labboy_slots: 0, status: 'draft', description: '', requirements: '', deadline: '',
-}
 
 interface Posting {
   course: Course
@@ -50,14 +44,17 @@ function ArchiveIcon() {
 export default function InstructorHome() {
   const [search, setSearch] = useState('')
   const [showCourseModal, setShowCourseModal] = useState(false)
-  const [form, setForm] = useState<CreateCoursePayload>(EMPTY)
+  const [form, setForm] = useState<CreateCoursePayload>(COURSE_FORM_EMPTY)
+  const [minGrade, setMinGrade] = useState('')
   const [editId, setEditId] = useState<number | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
+  const [archiveTarget, setArchiveTarget] = useState<Course | null>(null)
   const qc = useQueryClient()
   const showToast = useToast()
 
   const { data: courses = [], isLoading } = useQuery({
     queryKey: ['instructor-courses'],
-    queryFn: instructorApi.courses,
+    queryFn: () => instructorApi.courses(),
   })
 
   // Per-role applied counts aren't returned by the courses list (only combined
@@ -91,33 +88,48 @@ export default function InstructorHome() {
     onError: () => showToast('ไม่สามารถบันทึกได้ กรุณาลองใหม่', 'error'),
   })
 
-  function closeModal() { setShowCourseModal(false); setForm(EMPTY); setEditId(null) }
+  const archiveMut = useMutation({
+    mutationFn: (id: number) => instructorApi.updateCourseStatus(id, 'archived'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['instructor-courses'] })
+      setArchiveTarget(null)
+      showToast('เก็บประกาศเข้าคลังแล้ว', 'success')
+    },
+    onError: () => showToast('ไม่สามารถเก็บเข้าคลังได้ กรุณาลองใหม่', 'error'),
+  })
+
+  const unarchiveMut = useMutation({
+    mutationFn: (id: number) => instructorApi.updateCourseStatus(id, 'closed'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['instructor-courses'] })
+      showToast('กู้คืนประกาศแล้ว', 'success')
+    },
+    onError: () => showToast('ไม่สามารถกู้คืนได้ กรุณาลองใหม่', 'error'),
+  })
+
+  function closeModal() { setShowCourseModal(false); setForm(COURSE_FORM_EMPTY); setMinGrade(''); setEditId(null) }
 
   function openEdit(course: Course) {
+    const { minGrade: grade, rest } = splitRequirements(course.requirements ?? '')
     setForm({
       code: course.code, title: course.title,
       semester: course.semester, academic_year: course.academic_year,
       ta_slots: course.ta_slots, labboy_slots: course.labboy_slots,
       status: course.status,
       description: course.description ?? '',
-      requirements: course.requirements ?? '',
+      requirements: rest,
       deadline: course.deadline ? course.deadline.slice(0, 10) : '',
     })
+    setMinGrade(grade)
     setEditId(course.id)
     setShowCourseModal(true)
   }
 
-  function set(k: keyof CreateCoursePayload) {
-    return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-      const value = e.target.type === 'number' ? Number(e.target.value) : e.target.value
-      setForm(f => ({ ...f, [k]: value }))
-    }
-  }
-
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (editId) updateMut.mutate({ id: editId, data: form })
-    else createMut.mutate(form)
+    const data = { ...form, requirements: joinRequirements(minGrade, form.requirements ?? '') }
+    if (editId) updateMut.mutate({ id: editId, data })
+    else createMut.mutate(data)
   }
 
   const postings = useMemo<Posting[]>(() => {
@@ -136,15 +148,19 @@ export default function InstructorHome() {
     return out
   }, [courses, applicantQueries])
 
-  const filtered = useMemo(() => {
-    if (!search) return postings
-    const q = search.toLowerCase()
-    return postings.filter((p) => p.course.code.toLowerCase().includes(q) || p.course.title.toLowerCase().includes(q))
-  }, [postings, search])
+  const activePostings = useMemo(() => postings.filter((p) => p.course.status !== 'archived'), [postings])
+  const archivedPostings = useMemo(() => postings.filter((p) => p.course.status === 'archived'), [postings])
 
-  const openCount = postings.filter((p) => p.course.status === 'open' || p.course.status === 'closing_soon').length
-  const totalApplied = postings.reduce((s, p) => s + p.applied, 0)
-  const totalAccepted = postings.reduce((s, p) => s + p.accepted, 0)
+  const filtered = useMemo(() => {
+    const base = showArchived ? archivedPostings : activePostings
+    if (!search) return base
+    const q = search.toLowerCase()
+    return base.filter((p) => p.course.code.toLowerCase().includes(q) || p.course.title.toLowerCase().includes(q))
+  }, [activePostings, archivedPostings, showArchived, search])
+
+  const openCount = activePostings.filter((p) => p.course.status === 'open' || p.course.status === 'closing_soon').length
+  const totalApplied = activePostings.reduce((s, p) => s + p.applied, 0)
+  const totalAccepted = activePostings.reduce((s, p) => s + p.accepted, 0)
 
   return (
     <div>
@@ -153,9 +169,6 @@ export default function InstructorHome() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink-900)' }}>จัดการประกาศรับสมัคร</h1>
         <div style={{ display: 'flex', gap: 10 }}>
-          <Button variant="outline" onClick={() => showToast('ฟีเจอร์นี้จะเปิดให้ใช้งานเร็วๆ นี้', 'info')}>
-            นำเข้าจากภาคที่แล้ว
-          </Button>
           <Button onClick={() => setShowCourseModal(true)}>+ สร้างประกาศใหม่</Button>
         </div>
       </div>
@@ -166,7 +179,7 @@ export default function InstructorHome() {
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 16, marginBottom: 24 }}>
-          <StatCard label="ประกาศของฉัน" value={postings.length} icon="📄" iconColor="var(--primary)" />
+          <StatCard label="ประกาศของฉัน" value={activePostings.length} icon="📄" iconColor="var(--primary)" />
           <StatCard label="เปิดรับอยู่" value={openCount} icon="🕐" iconColor="var(--green)" />
           <StatCard label="รวมผู้สมัคร" value={totalApplied} icon="🧑" iconColor="var(--accent)" />
           <StatCard label="คัดเลือกแล้ว" value={totalAccepted} icon="✅" iconColor="#7C3AED" />
@@ -176,10 +189,20 @@ export default function InstructorHome() {
       <Card padding={0}>
         <CardHeader style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)' }}>ประกาศของฉัน</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)' }}>
+              {showArchived ? 'ประกาศที่เก็บถาวร' : 'ประกาศของฉัน'}
+            </div>
             <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2 }}>เรียงตามวันที่ล่าสุด</div>
           </div>
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ค้นหา..." style={{ width: 220 }} />
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ค้นหา..." style={{ width: 220 }} />
+            <Button
+              size="sm" variant={showArchived ? 'primary' : 'outline'}
+              onClick={() => setShowArchived((v) => !v)}
+            >
+              {showArchived ? 'กลับไปหน้าหลัก' : `คลัง (${archivedPostings.length})`}
+            </Button>
+          </div>
         </CardHeader>
 
         <CardBody tight>
@@ -189,10 +212,10 @@ export default function InstructorHome() {
             </div>
           ) : filtered.length === 0 ? (
             <EmptyState
-              title={postings.length === 0 ? 'ยังไม่มีประกาศ' : 'ไม่พบประกาศที่ค้นหา'}
-              description={postings.length === 0 ? 'สร้างประกาศรับสมัครวิชาแรกของคุณ' : undefined}
+              title={search ? 'ไม่พบประกาศที่ค้นหา' : showArchived ? 'ยังไม่มีประกาศที่เก็บถาวร' : 'ยังไม่มีประกาศ'}
+              description={!search && !showArchived && activePostings.length === 0 ? 'สร้างประกาศรับสมัครวิชาแรกของคุณ' : undefined}
               icon="📄"
-              action={postings.length === 0 ? { label: 'สร้างเลย', onClick: () => setShowCourseModal(true) } : undefined}
+              action={!search && !showArchived && activePostings.length === 0 ? { label: 'สร้างเลย', onClick: () => setShowCourseModal(true) } : undefined}
             />
           ) : (
             <div style={{ overflowX: 'auto' }}>
@@ -210,6 +233,7 @@ export default function InstructorHome() {
                   {filtered.map((p, i) => {
                     const c = p.course
                     const closed = c.status === 'closed'
+                    const archived = c.status === 'archived'
                     return (
                       <tr key={`${c.id}-${p.role}`} style={{ borderBottom: i < filtered.length - 1 ? '1px solid var(--line-soft)' : 'none' }}>
                         <td style={{ padding: '14px 20px' }}>
@@ -236,13 +260,21 @@ export default function InstructorHome() {
                         <td style={{ padding: '14px 20px' }}>
                           <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                             <Link to={`/instructor/select?course=${c.id}`}>
-                              <Button size="sm">{closed ? 'ดูผลคัดเลือก' : 'ดูผู้สมัคร'}</Button>
+                              <Button size="sm">{closed || archived ? 'ดูผลคัดเลือก' : 'ดูผู้สมัคร'}</Button>
                             </Link>
-                            {closed ? (
+                            {archived ? (
+                              <Button
+                                size="sm" variant="outline"
+                                loading={unarchiveMut.isPending && unarchiveMut.variables === c.id}
+                                onClick={() => unarchiveMut.mutate(c.id)}
+                              >
+                                กู้คืน
+                              </Button>
+                            ) : closed ? (
                               <Button
                                 size="sm" variant="outline"
                                 title="เก็บเข้าคลัง"
-                                onClick={() => showToast('ฟีเจอร์นี้จะเปิดให้ใช้งานเร็วๆ นี้', 'info')}
+                                onClick={() => setArchiveTarget(c)}
                               >
                                 <ArchiveIcon />
                               </Button>
@@ -263,44 +295,40 @@ export default function InstructorHome() {
         </CardBody>
       </Card>
 
-      {/* Create / Edit Modal */}
-      <Modal
+      <CourseFormModal
         isOpen={showCourseModal}
         onClose={closeModal}
-        title={editId ? `แก้ไขวิชา — ${form.code}` : 'สร้างประกาศรับสมัคร'}
-        size="lg"
+        editId={editId}
+        form={form}
+        setForm={setForm}
+        minGrade={minGrade}
+        setMinGrade={setMinGrade}
+        onSubmit={submit}
+        loading={createMut.isPending || updateMut.isPending}
+      />
+
+      {/* Archive Confirm Modal */}
+      <Modal
+        isOpen={!!archiveTarget}
+        onClose={() => setArchiveTarget(null)}
+        title="เก็บประกาศเข้าคลัง"
+        size="sm"
       >
-        <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <CourseCodeAutocomplete
-              value={form.code}
-              onChange={(v) => setForm(f => ({ ...f, code: v }))}
-              onSelect={(c) => setForm(f => ({ ...f, code: c.code, title: c.title }))}
-              disabled={!!editId}
-            />
-            <Input label="ปีการศึกษา *" type="number" value={form.academic_year} onChange={set('academic_year')} required />
-          </div>
-          <Input label="ชื่อวิชา *" value={form.title} onChange={set('title')} placeholder="การโปรแกรมคอมพิวเตอร์" required />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
-            <Select label="ภาคเรียน" value={form.semester} onChange={set('semester')}
-              options={[{ value: '1', label: '1' }, { value: '2', label: '2' }, { value: '3', label: '3' }]} />
-            <Input label="TA Slots" type="number" min="0" value={form.ta_slots} onChange={set('ta_slots')} />
-            <Input label="Lab Boy Slots" type="number" min="0" value={form.labboy_slots} onChange={set('labboy_slots')} />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <Select label="สถานะ" value={form.status ?? 'draft'} onChange={set('status')}
-              options={[{ value: 'draft', label: 'ร่าง' }, { value: 'open', label: 'เปิดรับสมัคร' }, { value: 'closing_soon', label: 'ใกล้ปิด' }, { value: 'closed', label: 'ปิดรับ' }]} />
-            <Input label="วันปิดรับสมัคร" type="date" value={form.deadline ?? ''} onChange={set('deadline')} />
-          </div>
-          <Textarea label="คุณสมบัติที่ต้องการ" value={form.requirements ?? ''} onChange={set('requirements')} rows={2} placeholder="เกรดเฉลี่ยขั้นต่ำ, ทักษะที่ต้องการ..." />
-          <Textarea label="รายละเอียดเพิ่มเติม" value={form.description ?? ''} onChange={set('description')} rows={2} placeholder="หน้าที่ความรับผิดชอบ, ตารางสอน..." />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <p style={{ fontSize: 14, color: 'var(--ink-600)', margin: 0 }}>
+            ต้องการเก็บประกาศ <strong>{archiveTarget?.code}</strong> เข้าคลังใช่หรือไม่?
+            ประกาศจะถูกซ่อนจากรายการหลัก และสามารถกู้คืนได้ภายหลัง
+          </p>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <Button type="button" variant="ghost" onClick={closeModal}>ยกเลิก</Button>
-            <Button type="submit" loading={createMut.isPending || updateMut.isPending}>
-              {editId ? 'บันทึก' : 'สร้าง'}
+            <Button variant="ghost" onClick={() => setArchiveTarget(null)}>ยกเลิก</Button>
+            <Button
+              loading={archiveMut.isPending}
+              onClick={() => archiveTarget && archiveMut.mutate(archiveTarget.id)}
+            >
+              เก็บเข้าคลัง
             </Button>
           </div>
-        </form>
+        </div>
       </Modal>
     </div>
   )

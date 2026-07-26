@@ -20,15 +20,17 @@ var ErrConflict = errors.New("conflict")
 var mu sync.RWMutex
 
 var (
-	users        []*models.User
-	courses      []*models.Course
-	applications []*models.Application
-	activityLogs []*models.ActivityLog
+	users         []*models.User
+	courses       []*models.Course
+	applications  []*models.Application
+	activityLogs  []*models.ActivityLog
+	notifications []*models.Notification
 
 	nextUserID   uint = 1
 	nextCourseID uint = 1
 	nextAppID    uint = 1
 	nextLogID    uint = 1
+	nextNotifID  uint = 1
 )
 
 func init() {
@@ -239,13 +241,16 @@ func CountUsersByRole(role models.UserRole) int64 {
 
 // --- Courses ---
 
-func ListCourses(status, q string) []models.Course {
+func ListCourses(status, q string, hasLab *bool) []models.Course {
 	mu.RLock()
 	defer mu.RUnlock()
 	out := make([]models.Course, 0)
 	for i := len(courses) - 1; i >= 0; i-- {
 		c := courses[i]
 		if status != "" && string(c.Status) != status {
+			continue
+		}
+		if hasLab != nil && c.HasLab != *hasLab {
 			continue
 		}
 		if q != "" {
@@ -269,13 +274,16 @@ func CourseByID(id uint) (models.Course, bool) {
 	return courseWithInstructor(*c), true
 }
 
-func InstructorCourses(instructorID uint, isAdmin bool) []models.Course {
+func InstructorCourses(instructorID uint, isAdmin bool, hasLab *bool) []models.Course {
 	mu.RLock()
 	defer mu.RUnlock()
 	out := make([]models.Course, 0)
 	for i := len(courses) - 1; i >= 0; i-- {
 		c := courses[i]
 		if !isAdmin && c.InstructorID != instructorID {
+			continue
+		}
+		if hasLab != nil && c.HasLab != *hasLab {
 			continue
 		}
 		cc := courseWithInstructor(*c)
@@ -497,6 +505,66 @@ func CountApplicationsByStatus(status models.AppStatus) int64 {
 		}
 	}
 	return n
+}
+
+// --- Notifications ---
+
+func CreateNotifications(notifs []models.Notification) int {
+	mu.Lock()
+	defer mu.Unlock()
+	for i := range notifs {
+		notifs[i].ID = nextNotifID
+		nextNotifID++
+		notifs[i].CreatedAt = time.Now()
+		cp := notifs[i]
+		notifications = append(notifications, &cp)
+	}
+	return len(notifs)
+}
+
+func UserNotifications(userID uint) []models.Notification {
+	mu.RLock()
+	defer mu.RUnlock()
+	out := make([]models.Notification, 0)
+	for i := len(notifications) - 1; i >= 0; i-- {
+		if notifications[i].UserID == userID {
+			out = append(out, *notifications[i])
+		}
+	}
+	return out
+}
+
+func MarkNotifRead(id, userID uint) {
+	mu.Lock()
+	defer mu.Unlock()
+	for _, n := range notifications {
+		if n.ID == id && n.UserID == userID {
+			n.IsRead = true
+			return
+		}
+	}
+}
+
+func MarkAllNotifsRead(userID uint) {
+	mu.Lock()
+	defer mu.Unlock()
+	for _, n := range notifications {
+		if n.UserID == userID {
+			n.IsRead = true
+		}
+	}
+}
+
+func AcceptedStudentsForCourse(courseID uint) []models.Application {
+	mu.RLock()
+	defer mu.RUnlock()
+	out := make([]models.Application, 0)
+	for _, a := range applications {
+		if a.CourseID == courseID && a.Status == models.AppAccepted {
+			out = append(out, enrichApplication(*a))
+		}
+	}
+	return out
 }
 
 // --- Activity logs ---

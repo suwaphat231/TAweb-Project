@@ -43,6 +43,7 @@ const statusMap: Record<string, { variant: BadgeVariant; label: string }> = {
   closing_soon: { variant: 'amber',  label: 'ใกล้ปิด' },
   closed:       { variant: 'red',    label: 'ปิดรับ' },
   draft:        { variant: 'gray',   label: 'ร่าง' },
+  archived:     { variant: 'gray',   label: 'เก็บถาวร' },
   student:      { variant: 'blue',   label: 'นักศึกษา' },
   instructor:   { variant: 'blue',   label: 'อาจารย์' },
   staff:        { variant: 'amber',  label: 'เจ้าหน้าที่' },

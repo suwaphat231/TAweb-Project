@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { courseApi } from '../../services/api'
-import { Input } from './Input'
+import { Input } from '../ui/Input'
 
 interface Suggestion {
   code: string
@@ -21,7 +21,7 @@ export function CourseCodeAutocomplete({ value, onChange, onSelect, disabled }: 
 
   const { data: catalog = [] } = useQuery({
     queryKey: ['course-catalog'],
-    queryFn: courseApi.list,
+    queryFn: () => courseApi.list(),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -34,8 +34,8 @@ export function CourseCodeAutocomplete({ value, onChange, onSelect, disabled }: 
       if (!c.code.toLowerCase().includes(q) && !c.title.toLowerCase().includes(q)) continue
       seen.add(c.code)
       suggestions.push({ code: c.code, title: c.title })
-      if (suggestions.length >= 8) break
     }
+    suggestions.sort((a, b) => a.code.localeCompare(b.code))
   }
 
   useEffect(() => {
@@ -53,7 +53,7 @@ export function CourseCodeAutocomplete({ value, onChange, onSelect, disabled }: 
         value={value}
         onChange={(e) => { onChange(e.target.value); setOpen(true) }}
         onFocus={() => setOpen(true)}
-        placeholder="เช่น 520101 หรือ CS101"
+        placeholder="เช่น 520 หรือ 517"
         required
         readOnly={disabled}
         autoComplete="off"

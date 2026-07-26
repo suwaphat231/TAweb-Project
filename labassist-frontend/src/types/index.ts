@@ -1,6 +1,6 @@
 export type UserRole = 'student' | 'instructor' | 'staff' | 'admin'
 export type ApplicationStatus = 'pending' | 'accepted' | 'rejected' | 'withdrawn'
-export type CourseStatus = 'open' | 'closing_soon' | 'closed' | 'draft'
+export type CourseStatus = 'open' | 'closing_soon' | 'closed' | 'draft' | 'archived'
 
 export interface User {
   id: number
@@ -21,6 +21,13 @@ export interface Course {
   id: number
   code: string
   title: string
+  english_title?: string
+  group_note?: string
+  credits?: string
+  schedule?: string
+  enrolled?: number
+  co_instructors?: string
+  has_lab: boolean
   instructor_id: number
   instructor_name: string
   applicant_count?: number
@@ -76,18 +83,6 @@ export interface GoogleAuthPayload {
   credential: string
 }
 
-export interface ApiResponse<T> {
-  data: T
-  message?: string
-}
-
-export interface PaginatedResponse<T> {
-  data: T[]
-  total: number
-  page: number
-  page_size: number
-}
-
 export interface ReviewPayload {
   status: 'accepted' | 'rejected'
   note?: string
@@ -116,6 +111,16 @@ export interface ApplyPayload {
   course_id: number
   role_applied: 'ta' | 'labboy'
   motivation?: string
+}
+
+export interface Notification {
+  id: number
+  user_id: number
+  course_id?: number
+  title: string
+  body: string
+  is_read: boolean
+  created_at: string
 }
 
 export interface AdminStats {

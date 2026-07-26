@@ -3,7 +3,7 @@ import { useAuthStore } from '../store/authStore'
 import type {
   User, Course, Application, LoginCredentials, GoogleAuthPayload,
   CreateCoursePayload, ApplyPayload, ReviewPayload, BulkReviewPayload,
-  AdminStats, CourseStatus,
+  AdminStats, CourseStatus, Notification,
 } from '../types'
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1'
@@ -40,7 +40,7 @@ export const authApi = {
 }
 
 export const coursesAPI = {
-  getAll: (params?: { status?: CourseStatus; q?: string }) =>
+  getAll: (params?: { status?: CourseStatus; q?: string; has_lab?: boolean }) =>
     api.get<Course[]>('/courses', { params }).then((r) => r.data),
   getById: (id: number) => api.get<Course>(`/courses/${id}`).then((r) => r.data),
   create: (data: CreateCoursePayload) => api.post<Course>('/instructor/courses', data).then((r) => r.data),
@@ -83,11 +83,14 @@ export const adminAPI = {
     api.put<User>(`/admin/users/${id}/status`, { is_active }).then((r) => r.data),
 }
 
-export const staffAPI = {
-  documents: () => api.get('/staff/documents').then((r) => r.data),
+export const notificationApi = {
+  list: () => api.get<Notification[]>('/student/notifications').then((r) => r.data),
+  markRead: (id: number) => api.put(`/student/notifications/${id}/read`).then((r) => r.data),
+  markAllRead: () => api.put('/student/notifications/read-all').then((r) => r.data),
+  notifyCourse: (courseId: number) =>
+    api.post<{ sent: number; message?: string }>(`/instructor/courses/${courseId}/notify`).then((r) => r.data),
 }
 
-// Legacy aliases
 export const courseApi = { list: coursesAPI.getAll, get: coursesAPI.getById }
 export const studentApi = {
   dashboard: studentAPI.getDashboard,
@@ -98,13 +101,14 @@ export const studentApi = {
   updateProfile: studentAPI.updateProfile,
 }
 export const instructorApi = {
-  courses: () => api.get<Course[]>('/instructor/courses').then((r) => r.data),
+  courses: (params?: { has_lab?: boolean }) =>
+    api.get<Course[]>('/instructor/courses', { params }).then((r) => r.data),
   createCourse: coursesAPI.create,
   updateCourse: coursesAPI.update,
   updateCourseStatus: coursesAPI.updateStatus,
   applicants: applicationsAPI.getCourseApplicants,
   review: applicationsAPI.review,
   bulkReview: applicationsAPI.bulkReview,
+  notifyCourse: notificationApi.notifyCourse,
 }
 export const adminApi = adminAPI
-export const staffApi = staffAPI

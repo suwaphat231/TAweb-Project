@@ -9,6 +9,7 @@ const (
 	StatusClosingSoon CourseStatus = "closing_soon"
 	StatusClosed      CourseStatus = "closed"
 	StatusDraft       CourseStatus = "draft"
+	StatusArchived    CourseStatus = "archived"
 )
 
 type Course struct {
@@ -29,6 +30,7 @@ type Course struct {
 	ApplicantCount int          `gorm:"-" json:"applicant_count"`
 	Semester       string       `gorm:"size:10;not null" json:"semester"`
 	AcademicYear   int          `gorm:"not null" json:"academic_year"`
+	HasLab         bool         `gorm:"default:false" json:"has_lab"`
 	TASlots        int          `gorm:"default:0" json:"ta_slots"`
 	LabBoySlots    int          `gorm:"default:0" json:"labboy_slots"`
 	TAAccepted     int          `gorm:"default:0" json:"ta_accepted"`

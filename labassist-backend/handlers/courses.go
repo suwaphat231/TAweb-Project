@@ -64,13 +64,21 @@ func NewCourseHandler() *CourseHandler { return &CourseHandler{} }
 // @Summary      รายการวิชาทั้งหมด (สาธารณะ)
 // @Tags         courses
 // @Produce      json
-// @Param        status  query  string  false  "กรองตามสถานะ" Enums(open, closing_soon, closed, draft)
+// @Param        status  query  string  false  "กรองตามสถานะ" Enums(open, closing_soon, closed, draft, archived)
 // @Param        q       query  string  false  "ค้นหาด้วยชื่อหรือรหัสวิชา"
 // @Success      200     {array}   models.Course
 // @Failure      500     {object}  ErrorResponse
 // @Router       /courses [get]
 func (h *CourseHandler) List(c *gin.Context) {
-	courses := store.ListCourses(c.Query("status"), c.Query("q"))
+	var hasLab *bool
+	if v := c.Query("has_lab"); v == "true" {
+		t := true
+		hasLab = &t
+	} else if v == "false" {
+		f := false
+		hasLab = &f
+	}
+	courses := store.ListCourses(c.Query("status"), c.Query("q"), hasLab)
 	c.JSON(http.StatusOK, courses)
 }
 
@@ -103,7 +111,15 @@ func (h *CourseHandler) Get(c *gin.Context) {
 func (h *CourseHandler) InstructorList(c *gin.Context) {
 	instructorID, _ := c.Get("user_id")
 	role, _ := c.Get("role")
-	courses := store.InstructorCourses(instructorID.(uint), role.(string) == "admin")
+	var hasLab *bool
+	if v := c.Query("has_lab"); v == "true" {
+		t := true
+		hasLab = &t
+	} else if v == "false" {
+		f := false
+		hasLab = &f
+	}
+	courses := store.InstructorCourses(instructorID.(uint), role.(string) == "admin", hasLab)
 	c.JSON(http.StatusOK, courses)
 }
 

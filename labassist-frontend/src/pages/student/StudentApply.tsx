@@ -41,7 +41,7 @@ export default function StudentApply() {
       qc.invalidateQueries({ queryKey: ['student-dashboard'] })
       const roleLabel = app.role_applied === 'ta' ? 'TA' : 'Lab Boy'
       const code = applyTargetCourse?.code ?? ''
-      showToast(`สมัครสำเร็จ! คุณได้รับการคัดเลือกเป็น ${roleLabel} วิชา ${code}`, 'success')
+      showToast(`ส่งใบสมัคร ${roleLabel} วิชา ${code} เรียบร้อย รออาจารย์พิจารณา`, 'success')
       setApplyTarget(null)
       setMotivation('')
     },
