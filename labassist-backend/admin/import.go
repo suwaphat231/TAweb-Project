@@ -101,50 +101,13 @@ func findHeaderRow(rows [][]string) (map[string]int, int) {
 	return mapColumns(rows[0]), 0
 }
 
-// instructorTitlePrefixes are stripped before comparing names so that
-// "ผู้ช่วยศาสตราจารย์ ดร.สมชาย ใจดี" in the system matches a plain
-// "สมชาย ใจดี" typed into the CSV.
-var instructorTitlePrefixes = []string{
-	"ผู้ช่วยศาสตราจารย์", "รองศาสตราจารย์", "ศาสตราจารย์",
-	"อาจารย์", "ดร.", "ดร", "นางสาว", "นาง", "นาย",
-}
-
-func normalizeInstructorName(s string) string {
-	s = strings.TrimSpace(s)
-	for changed := true; changed; {
-		changed = false
-		for _, p := range instructorTitlePrefixes {
-			if strings.HasPrefix(s, p) {
-				s = strings.TrimSpace(strings.TrimPrefix(s, p))
-				changed = true
-			}
-		}
-	}
-	return strings.Join(strings.Fields(s), "")
-}
-
-// splitInstructorNames splits a spreadsheet cell listing one or more
-// instructors (co-taught sections separate names with ";") into individual,
-// trimmed names.
-func splitInstructorNames(s string) []string {
-	parts := strings.Split(s, ";")
-	names := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			names = append(names, p)
-		}
-	}
-	return names
-}
-
 func matchInstructor(instructors []models.User, name string) (models.User, bool) {
-	target := normalizeInstructorName(name)
+	target := database.NormalizeInstructorName(name)
 	if target == "" {
 		return models.User{}, false
 	}
 	for _, u := range instructors {
-		if normalizeInstructorName(u.FullName) == target {
+		if database.NormalizeInstructorName(u.FullName) == target {
 			return u, true
 		}
 	}
@@ -282,7 +245,7 @@ func (h *Handler) ImportCourses(c *gin.Context) {
 		// if none match, the course simply has no linked account yet.
 		instructorsRaw := get(row, "instructor")
 		var instructorID uint
-		for _, n := range splitInstructorNames(instructorsRaw) {
+		for _, n := range database.SplitInstructorNames(instructorsRaw) {
 			if instructor, ok := matchInstructor(instructors, n); ok {
 				instructorID = instructor.ID
 				break

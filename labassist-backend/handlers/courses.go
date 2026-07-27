@@ -70,7 +70,7 @@ func NewCourseHandler() *CourseHandler { return &CourseHandler{} }
 // @Failure      500     {object}  ErrorResponse
 // @Router       /courses [get]
 func (h *CourseHandler) List(c *gin.Context) {
-	courses := store.ListCourses(c.Query("status"), c.Query("q"))
+	courses := database.ListCourses(c.Query("status"), c.Query("q"), nil)
 	c.JSON(http.StatusOK, courses)
 }
 
@@ -103,7 +103,29 @@ func (h *CourseHandler) Get(c *gin.Context) {
 func (h *CourseHandler) InstructorList(c *gin.Context) {
 	instructorID, _ := c.Get("user_id")
 	role, _ := c.Get("role")
-	courses := store.InstructorCourses(instructorID.(uint), role.(string) == "admin")
+	courses := database.InstructorCourses(instructorID.(uint), role.(string) == "admin", nil)
+	c.JSON(http.StatusOK, courses)
+}
+
+// CourseCatalog godoc
+// @Summary      รายวิชาที่อาจารย์คนนี้สอน (สำหรับ dropdown ตอนสร้างประกาศ)
+// @Description  จับคู่ด้วยชื่ออาจารย์กับข้อมูลผู้สอนที่นำเข้าจากไฟล์ Excel เพื่อจำกัดตัวเลือกรหัสวิชาให้เหลือแค่วิชาที่ตัวเองสอนจริง
+// @Tags         courses
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {array}   models.Course
+// @Router       /instructor/course-catalog [get]
+func (h *CourseHandler) CourseCatalog(c *gin.Context) {
+	instructorID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
+	isAdmin := role.(string) == "admin"
+
+	fullName := ""
+	if u, ok := database.UserByID(instructorID.(uint)); ok {
+		fullName = u.FullName
+	}
+
+	courses := database.CoursesTaughtBy(instructorID.(uint), fullName, isAdmin)
 	c.JSON(http.StatusOK, courses)
 }
 

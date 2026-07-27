@@ -21,6 +21,7 @@ export interface Course {
   id: number
   code: string
   title: string
+  english_title?: string
   instructor_id: number
   instructor_name: string
   instructors_raw?: string

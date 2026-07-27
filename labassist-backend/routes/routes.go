@@ -20,7 +20,9 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 	authH := handlers.NewAuthHandler(cfg)
 	courseH := handlers.NewCourseHandler()
 	appH := handlers.NewApplicationHandler()
-	adminH := handlers.NewAdminHandler()
+	notifH := handlers.NewNotificationHandler()
+	profileH := handlers.NewProfileHandler()
+	adminH := admin.NewHandler()
 
 	v1 := r.Group("/api/v1")
 
@@ -57,10 +59,13 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 		instructor.Use(middleware.RequireRole("instructor", "admin"))
 		{
 			instructor.GET("/instructor/courses", courseH.InstructorList)
+			instructor.GET("/instructor/course-catalog", courseH.CourseCatalog)
 			instructor.POST("/instructor/courses", courseH.Create)
 			instructor.PUT("/instructor/courses/:id", courseH.Update)
 			instructor.PUT("/instructor/courses/:id/status", courseH.UpdateStatus)
 			instructor.DELETE("/instructor/courses/:id", courseH.Delete)
+			instructor.GET("/instructor/profile", profileH.GetInstructorProfile)
+			instructor.PUT("/instructor/profile", profileH.UpdateInstructorProfile)
 		}
 
 		// Instructor + Staff + Admin for applicants and reviews
@@ -82,6 +87,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			adminGroup.POST("/admin/users", adminH.CreateUser)
 			adminGroup.PUT("/admin/users/:id", adminH.UpdateUser)
 			adminGroup.PUT("/admin/users/:id/status", adminH.UpdateUserStatus)
+			adminGroup.GET("/admin/users/:id/courses", adminH.InstructorCourses)
 			adminGroup.GET("/admin/logs", adminH.Logs)
 			adminGroup.POST("/admin/courses/import", adminH.ImportCourses)
 			adminGroup.DELETE("/admin/courses/term", adminH.DeleteCoursesByTerm)

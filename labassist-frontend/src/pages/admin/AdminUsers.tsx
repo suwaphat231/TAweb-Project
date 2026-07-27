@@ -8,6 +8,7 @@ import { Modal } from '../../components/ui/Modal'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { Skeleton } from '../../components/ui/Skeleton'
+import { EmptyState } from '../../components/ui/EmptyState'
 import type { User, UserRole } from '../../types'
 
 const ROLE_TABS: { label: string; value: UserRole | '' }[] = [
@@ -32,11 +33,19 @@ export default function AdminUsers() {
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [editForm, setEditForm] = useState({ full_name: '', role: 'instructor' as UserRole })
 
+  const [viewingUser, setViewingUser] = useState<User | null>(null)
+
   const qc = useQueryClient()
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['admin-users', { role: roleFilter }],
     queryFn: () => adminApi.users({ role: roleFilter || undefined }),
+  })
+
+  const { data: taughtCourses = [], isLoading: coursesLoading } = useQuery({
+    queryKey: ['admin-user-courses', viewingUser?.id],
+    queryFn: () => adminApi.userCourses(viewingUser!.id),
+    enabled: !!viewingUser,
   })
 
   const createMut = useMutation({
@@ -75,6 +84,7 @@ export default function AdminUsers() {
     { key: 'full_name', header: 'ชื่อ',     render: (u: User) => <span style={{ fontWeight: 600 }}>{u.full_name}</span> },
     { key: 'username',  header: 'Username', render: (u: User) => <code style={{ fontSize: 13 }}>{u.username || '—'}</code> },
     { key: 'email',     header: 'อีเมล',    render: (u: User) => <span style={{ fontSize: 13 }}>{u.email || '—'}</span> },
+    { key: 'faculty',   header: 'คณะ / ภาควิชา', render: (u: User) => <span style={{ fontSize: 13 }}>{u.faculty || '—'}</span> },
     { key: 'role',      header: 'บทบาท',    render: (u: User) => <StatusBadge value={u.role} /> },
     {
       key: 'is_active', header: 'สถานะ',
@@ -88,6 +98,11 @@ export default function AdminUsers() {
       key: 'actions', header: '',
       render: (u: User) => (
         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+          {u.role === 'instructor' && (
+            <Button size="sm" variant="ghost" onClick={() => setViewingUser(u)} style={{ border: '1px solid var(--line)' }}>
+              วิชาที่สอน
+            </Button>
+          )}
           <Button size="sm" variant="ghost" onClick={() => openEdit(u)} style={{ border: '1px solid var(--line)' }}>
             แก้ไข
           </Button>
@@ -171,6 +186,32 @@ export default function AdminUsers() {
             <Button type="submit" loading={updateMut.isPending}>บันทึก</Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal isOpen={!!viewingUser} onClose={() => setViewingUser(null)} title={`วิชาที่สอน — ${viewingUser?.full_name ?? ''}`} size="lg">
+        {coursesLoading ? (
+          <Skeleton lines={4} height={48} />
+        ) : taughtCourses.length === 0 ? (
+          <EmptyState title="ไม่พบวิชาที่สอน" description="ยังไม่มีวิชาในระบบที่จับคู่ชื่ออาจารย์คนนี้ได้" />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {taughtCourses.map((c) => (
+              <div key={c.id} style={{ border: '1px solid var(--line)', borderRadius: 'var(--radius-card)', padding: '12px 14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--primary)' }}>{c.code}</span>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)', marginTop: 2 }}>{c.title}</div>
+                    {c.english_title && <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{c.english_title}</div>}
+                  </div>
+                  <StatusBadge value={c.status} />
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 6 }}>
+                  ภาค {c.semester}/{c.academic_year} · TA {c.ta_accepted}/{c.ta_slots} · Lab Boy {c.labboy_accepted}/{c.labboy_slots}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </Modal>
     </div>
   )

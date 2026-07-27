@@ -84,6 +84,7 @@ export const adminAPI = {
     api.put<User>(`/admin/users/${id}`, data).then((r) => r.data),
   updateUserStatus: (id: number, is_active: boolean) =>
     api.put<User>(`/admin/users/${id}/status`, { is_active }).then((r) => r.data),
+  userCourses: (id: number) => api.get<Course[]>(`/admin/users/${id}/courses`).then((r) => r.data),
   importCourses: (file: File, semester: string, academicYear: number) => {
     const formData = new FormData()
     formData.append('file', file)
@@ -116,12 +117,17 @@ export const studentApi = {
 export const instructorApi = {
   courses: (params?: { has_lab?: boolean }) =>
     api.get<Course[]>('/instructor/courses', { params }).then((r) => r.data),
+  courseCatalog: () => api.get<Course[]>('/instructor/course-catalog').then((r) => r.data),
   createCourse: coursesAPI.create,
   updateCourse: coursesAPI.update,
   updateCourseStatus: coursesAPI.updateStatus,
+  deleteCourse: coursesAPI.remove,
   applicants: applicationsAPI.getCourseApplicants,
   review: applicationsAPI.review,
   bulkReview: applicationsAPI.bulkReview,
   notifyCourse: notificationApi.notifyCourse,
+  profile: () => api.get<User>('/instructor/profile').then((r) => r.data),
+  updateProfile: (data: { full_name?: string; email?: string; faculty?: string }) =>
+    api.put<User>('/instructor/profile', data).then((r) => r.data),
 }
 export const adminApi = adminAPI

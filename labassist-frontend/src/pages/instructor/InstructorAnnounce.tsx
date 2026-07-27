@@ -11,6 +11,7 @@ import { useToast } from '../../components/ui/Toast'
 import { Link } from 'react-router-dom'
 import { CourseFormModal } from './CourseFormModal'
 import { COURSE_FORM_EMPTY, splitRequirements, joinRequirements } from './_courseFormShared'
+import { displayCourseTitle } from '../../utils/courseDisplay'
 import type { CreateCoursePayload, CourseStatus, Course } from '../../types'
 
 const STATUS_OPTIONS = [
@@ -27,6 +28,7 @@ export default function InstructorAnnounce() {
   const [editId, setEditId] = useState<number | null>(null)
   const [statusTarget, setStatusTarget] = useState<Course | null>(null)
   const [pendingStatus, setPendingStatus] = useState<CourseStatus>('open')
+  const [deleteTarget, setDeleteTarget] = useState<Course | null>(null)
   const qc = useQueryClient()
   const showToast = useToast()
 
@@ -68,12 +70,22 @@ export default function InstructorAnnounce() {
     onError: () => showToast('ไม่สามารถเปลี่ยนสถานะได้', 'error'),
   })
 
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => instructorApi.deleteCourse(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['instructor-courses'] })
+      setDeleteTarget(null)
+      showToast('ลบประกาศเรียบร้อยแล้ว', 'success')
+    },
+    onError: () => showToast('ไม่สามารถลบประกาศได้ กรุณาลองใหม่', 'error'),
+  })
+
   function closeModal() { setShowCourseModal(false); setForm(COURSE_FORM_EMPTY); setMinGrade(''); setEditId(null) }
 
   function openEdit(course: Course) {
     const { minGrade: grade, rest } = splitRequirements(course.requirements ?? '')
     setForm({
-      code: course.code, title: course.title,
+      code: course.code, title: displayCourseTitle(course.title, course.english_title),
       semester: course.semester, academic_year: course.academic_year,
       ta_slots: course.ta_slots, labboy_slots: course.labboy_slots,
       status: course.status,
@@ -137,7 +149,7 @@ export default function InstructorAnnounce() {
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 4 }}>{c.title}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 4 }}>{displayCourseTitle(c.title, c.english_title)}</div>
                   <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>
                     ภาค {c.semester}/{c.academic_year}
                     &nbsp;·&nbsp;TA {c.ta_accepted}/{c.ta_slots}
@@ -152,6 +164,13 @@ export default function InstructorAnnounce() {
                 <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   <Button variant="ghost" size="sm" onClick={() => openStatusModal(c)}>เปลี่ยนสถานะ</Button>
                   <Button variant="outline" size="sm" onClick={() => openEdit(c)}>แก้ไข</Button>
+                  <Button
+                    variant="outline" size="sm"
+                    style={{ color: 'var(--red)', borderColor: 'var(--red)' }}
+                    onClick={() => setDeleteTarget(c)}
+                  >
+                    ลบ
+                  </Button>
                   <Link to={`/instructor/select?course=${c.id}`}>
                     <Button size="sm">ดูผู้สมัคร →</Button>
                   </Link>
@@ -213,6 +232,33 @@ export default function InstructorAnnounce() {
               onClick={() => statusTarget && statusMut.mutate({ id: statusTarget.id, status: pendingStatus })}
             >
               บันทึก
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Delete Confirm Modal */}
+      <Modal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="ลบประกาศ"
+        size="sm"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <p style={{ fontSize: 14, color: 'var(--ink-600)', margin: 0 }}>
+            ต้องการลบประกาศ <strong>{deleteTarget?.code}</strong> ใช่หรือไม่? การลบไม่สามารถย้อนกลับได้
+            {(deleteTarget?.applicant_count ?? 0) > 0 && (
+              <> และจะลบใบสมัครของผู้สมัคร <strong>{deleteTarget?.applicant_count}</strong> คนที่ยื่นไว้ทั้งหมดด้วย</>
+            )}
+          </p>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <Button variant="ghost" onClick={() => setDeleteTarget(null)}>ยกเลิก</Button>
+            <Button
+              variant="danger"
+              loading={deleteMut.isPending}
+              onClick={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
+            >
+              ลบประกาศ
             </Button>
           </div>
         </div>

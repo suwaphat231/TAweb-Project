@@ -119,7 +119,7 @@ func (h *ApplicationHandler) Apply(c *gin.Context) {
 		return
 	}
 
-	store.AdjustCourseAccepted(body.CourseID, body.RoleApplied, 1)
+	database.AdjustCourseAccepted(body.CourseID, body.RoleApplied, 1)
 
 	c.JSON(http.StatusCreated, app)
 }

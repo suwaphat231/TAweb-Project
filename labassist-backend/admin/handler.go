@@ -218,6 +218,27 @@ func (h *Handler) Logs(c *gin.Context) {
 	})
 }
 
+// InstructorCourses godoc
+// @Summary      รายวิชาที่อาจารย์คนนี้สอน
+// @Description  จับคู่ด้วย ID บัญชีโดยตรง และด้วยชื่อกับข้อมูลผู้สอนที่นำเข้าจากไฟล์ Excel (ครอบคลุมทั้งผู้สอนหลักและผู้ร่วมสอน)
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path  int  true  "User ID"
+// @Success      200  {array}   models.Course
+// @Failure      404  {object}  handlers.ErrorResponse
+// @Router       /admin/users/{id}/courses [get]
+func (h *Handler) InstructorCourses(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	user, ok := database.UserByID(uint(id))
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+	courses := database.CoursesTaughtBy(user.ID, user.FullName, false)
+	c.JSON(http.StatusOK, courses)
+}
+
 // DeleteCoursesByTerm godoc
 // @Summary      ลบวิชาทั้งหมดของภาคการศึกษาที่ระบุ
 // @Description  ใช้เพื่อล้างข้อมูลที่นำเข้าผิดพลาด เช่น หลังจากอัปโหลดไฟล์ Excel ผิดเทอม

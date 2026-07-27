@@ -1,0 +1,11 @@
+# Dockerfile
+FROM postgres:17-alpine
+
+# No docker-entrypoint-initdb.d script here: the users table doesn't exist
+# until the Go backend connects and runs gorm.AutoMigrate, so a plain
+# `psql -f user.sql` at container-init time would fail (no table yet). The
+# backend seeds users.sql itself, embedded in the binary, once the table
+# exists and is empty — see database/connection.go.
+
+# Set locale (optional)
+ENV LANG en_US.utf8

@@ -2,10 +2,13 @@
 package database
 
 import (
-	"time"
-
 	"labassist/models"
 )
+
+// pwHash is the bcrypt hash of "password123", used for every seeded login.
+const pwHash = "$2a$10$Ws/75uKsYag.vd9tiCiAwuW143PDyh7.3n7dMYXmv6F2.fT5H6PBO"
+
+func strPtr(s string) *string { return &s }
 
 type classlistInstructor struct {
 	Username string
@@ -34,18 +37,40 @@ var classlistInstructors = []classlistInstructor{
 	{"puriwat", "อาจารย์ ดร.ภูริวัจน์  วรวิชัยพัฒน์", ""},
 }
 
-// seedRealClasslist creates one instructor account per unique instructor
-// named in the classlist so an admin's later course import (via
-// AdminHandler.ImportCourses) has real instructors to match against.
-// It intentionally does not create any Course records — courses only
-// appear once an admin imports them from a spreadsheet.
-func seedRealClasslist(now time.Time) {
+// seedClasslistInstructors creates one Postgres user record per unique
+// instructor named in the classlist so an admin's later course import (via
+// AdminHandler.ImportCourses) has real instructors to match against. It
+// intentionally does not create any Course records — courses only appear
+// once an admin imports them from a spreadsheet. Safe to call on every
+// startup: existing usernames are skipped.
+func seedClasslistInstructors() error {
 	for _, ins := range classlistInstructors {
-		users = append(users, &models.User{
-			ID: nextUserID, Username: strPtr(ins.Username), PasswordHash: strPtr(pwHash),
-			FullName: ins.FullName, Email: ins.Email, Role: models.RoleInstructor,
-			IsActive: true, CreatedAt: now, UpdatedAt: now,
-		})
-		nextUserID++
+		var count int64
+		if err := DB.Model(&models.User{}).Where("username = ?", ins.Username).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			continue
+		}
+
+		email := ins.Email
+		if email == "" {
+			// The classlist doesn't carry instructor emails; synthesize one
+			// so the column's NOT NULL + unique constraints are satisfied.
+			email = ins.Username + "@cp.su.ac.th"
+		}
+		username := ins.Username
+		u := models.User{
+			Username:     &username,
+			PasswordHash: strPtr(pwHash),
+			FullName:     ins.FullName,
+			Email:        email,
+			Role:         models.RoleInstructor,
+			IsActive:     true,
+		}
+		if err := DB.Create(&u).Error; err != nil {
+			return err
+		}
 	}
+	return nil
 }

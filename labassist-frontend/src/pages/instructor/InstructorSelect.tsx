@@ -11,6 +11,7 @@ import { Textarea } from '../../components/ui/Textarea'
 import { Avatar, getInitials } from '../../components/ui/Avatar'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { useToast } from '../../components/ui/Toast'
+import { displayCourseTitle } from '../../utils/courseDisplay'
 import type { Application } from '../../types'
 
 const roleOptions  = [
@@ -204,7 +205,7 @@ export default function InstructorSelect() {
               { value: '', label: 'เลือกรายวิชา...' },
               ...courses.map((c) => ({
                 value: String(c.id),
-                label: `[${c.code}] ${c.title} — ${c.applicant_count ?? 0} ผู้สมัคร`,
+                label: `[${c.code}] ${displayCourseTitle(c.title, c.english_title)} — ${c.applicant_count ?? 0} ผู้สมัคร`,
               })),
             ]}
             value={String(courseId)}

@@ -2,8 +2,8 @@ package handlers
 
 import (
 	"fmt"
+	"labassist/database"
 	"labassist/models"
-	"labassist/store"
 	"net/http"
 	"strconv"
 
@@ -29,7 +29,7 @@ func (h *NotificationHandler) NotifyCourse(c *gin.Context) {
 	role, _ := c.Get("role")
 	courseID, _ := strconv.Atoi(c.Param("id"))
 
-	course, ok := store.CourseByID(uint(courseID))
+	course, ok := database.CourseByID(uint(courseID))
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "course not found"})
 		return
@@ -39,7 +39,7 @@ func (h *NotificationHandler) NotifyCourse(c *gin.Context) {
 		return
 	}
 
-	accepted := store.AcceptedStudentsForCourse(uint(courseID))
+	accepted := database.AcceptedStudentsForCourse(uint(courseID))
 	if len(accepted) == 0 {
 		c.JSON(http.StatusOK, gin.H{"sent": 0, "message": "ไม่มีนักศึกษาที่ผ่านการคัดเลือก"})
 		return
@@ -60,7 +60,7 @@ func (h *NotificationHandler) NotifyCourse(c *gin.Context) {
 		})
 	}
 
-	sent := store.CreateNotifications(notifs)
+	sent := database.CreateNotifications(notifs)
 	c.JSON(http.StatusOK, gin.H{"sent": sent})
 }
 
@@ -73,7 +73,7 @@ func (h *NotificationHandler) NotifyCourse(c *gin.Context) {
 // @Router       /student/notifications [get]
 func (h *NotificationHandler) MyNotifications(c *gin.Context) {
 	userID, _ := c.Get("user_id")
-	notifs := store.UserNotifications(userID.(uint))
+	notifs := database.UserNotifications(userID.(uint))
 	c.JSON(http.StatusOK, notifs)
 }
 
@@ -88,7 +88,7 @@ func (h *NotificationHandler) MyNotifications(c *gin.Context) {
 func (h *NotificationHandler) MarkRead(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	id, _ := strconv.Atoi(c.Param("id"))
-	store.MarkNotifRead(uint(id), userID.(uint))
+	database.MarkNotifRead(uint(id), userID.(uint))
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -101,6 +101,6 @@ func (h *NotificationHandler) MarkRead(c *gin.Context) {
 // @Router       /student/notifications/read-all [put]
 func (h *NotificationHandler) MarkAllRead(c *gin.Context) {
 	userID, _ := c.Get("user_id")
-	store.MarkAllNotifsRead(userID.(uint))
+	database.MarkAllNotifsRead(userID.(uint))
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

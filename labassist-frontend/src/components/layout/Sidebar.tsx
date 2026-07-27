@@ -45,6 +45,7 @@ const navMap: Record<UserRole, NavItem[]> = {
     { to: '/instructor/home',     label: 'ภาพรวม',           icon: 'home' },
     { to: '/instructor/announce', label: 'จัดการประกาศ',     icon: 'megaphone' },
     { to: '/instructor/select',   label: 'คัดเลือกผู้สมัคร', icon: 'users' },
+    { to: '/instructor/profile',  label: 'ข้อมูลส่วนตัว',    icon: 'user' },
   ],
   staff: [
     { to: '/staff/home', label: 'ภาพรวม',       icon: 'home' },

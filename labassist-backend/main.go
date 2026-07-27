@@ -2,6 +2,7 @@ package main
 
 import (
 	"labassist/config"
+	"labassist/database"
 	"labassist/middleware"
 	"labassist/routes"
 	"log"
@@ -24,6 +25,10 @@ func main() {
 	}
 
 	cfg := config.Load()
+
+	if err := database.Connect(cfg); err != nil {
+		log.Fatalf("database connection failed: %v", err)
+	}
 
 	r := gin.Default()
 	r.Use(middleware.CORS(cfg))
