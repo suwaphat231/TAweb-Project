@@ -92,6 +92,13 @@ func enrichApplication(a models.Application) models.Application {
 // --- Users (Postgres-backed via DB, see database/connection.go) ---
 
 func UserByID(id uint) (models.User, bool) {
+	// 0 is never a real id (Postgres serial starts at 1) — imported courses
+	// use it as the "no matching instructor" placeholder, so this is hit on
+	// every such course. Skip the query instead of round-tripping to the DB
+	// just to log a "record not found".
+	if id == 0 {
+		return models.User{}, false
+	}
 	var u models.User
 	if err := DB.First(&u, id).Error; err != nil {
 		return models.User{}, false

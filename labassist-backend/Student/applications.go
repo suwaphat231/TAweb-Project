@@ -1,11 +1,10 @@
-package handlers
+package student
 
 import (
 	"labassist/database"
 	"labassist/models"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -17,19 +16,6 @@ type ApplyRequest struct {
 	Motivation  *string            `json:"motivation,omitempty" example:"ต้องการช่วยสอนนักศึกษา"`
 }
 
-// ReviewRequest is the request body for reviewing an application
-type ReviewRequest struct {
-	Status models.AppStatus `json:"status" binding:"required" example:"accepted"`
-	Note   *string          `json:"note,omitempty" example:"ผ่านการคัดเลือก"`
-}
-
-// BulkReviewRequest is the request body for bulk reviewing applications
-type BulkReviewRequest struct {
-	ApplicationIDs []uint           `json:"application_ids" binding:"required"`
-	Status         models.AppStatus `json:"status" binding:"required" example:"accepted"`
-	Note           *string          `json:"note,omitempty"`
-}
-
 // UpdateProfileRequest is the request body for updating student profile
 type UpdateProfileRequest struct {
 	FullName *string `json:"full_name,omitempty" example:"สมชาย ใจดี"`
@@ -37,18 +23,14 @@ type UpdateProfileRequest struct {
 	Faculty  *string `json:"faculty,omitempty" example:"วิทยาการคอมพิวเตอร์"`
 }
 
-type ApplicationHandler struct{}
-
-func NewApplicationHandler() *ApplicationHandler { return &ApplicationHandler{} }
-
 // StudentDashboard godoc
 // @Summary      หน้าหลักนักศึกษา
 // @Tags         student
 // @Produce      json
 // @Security     BearerAuth
-// @Success      200  {object}  StudentDashboardResponse
+// @Success      200  {object}  handlers.StudentDashboardResponse
 // @Router       /student/dashboard [get]
-func (h *ApplicationHandler) StudentDashboard(c *gin.Context) {
+func (h *Handler) StudentDashboard(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
 	sid := studentID.(uint)
 
@@ -71,7 +53,7 @@ func (h *ApplicationHandler) StudentDashboard(c *gin.Context) {
 // @Security     BearerAuth
 // @Success      200  {array}   models.Application
 // @Router       /student/applications [get]
-func (h *ApplicationHandler) MyApplications(c *gin.Context) {
+func (h *Handler) MyApplications(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
 	apps := database.StudentApplications(studentID.(uint))
 	c.JSON(http.StatusOK, apps)
@@ -85,11 +67,11 @@ func (h *ApplicationHandler) MyApplications(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        body  body      ApplyRequest  true  "ข้อมูลการสมัคร"
 // @Success      201   {object}  models.Application
-// @Failure      400   {object}  ErrorResponse
-// @Failure      404   {object}  ErrorResponse
-// @Failure      409   {object}  ErrorResponse
+// @Failure      400   {object}  handlers.ErrorResponse
+// @Failure      404   {object}  handlers.ErrorResponse
+// @Failure      409   {object}  handlers.ErrorResponse
 // @Router       /student/applications [post]
-func (h *ApplicationHandler) Apply(c *gin.Context) {
+func (h *Handler) Apply(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
 	var body ApplyRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -131,10 +113,10 @@ func (h *ApplicationHandler) Apply(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        id  path  int  true  "Application ID"
 // @Success      200  {object}  models.Application
-// @Failure      400  {object}  ErrorResponse
-// @Failure      404  {object}  ErrorResponse
+// @Failure      400  {object}  handlers.ErrorResponse
+// @Failure      404  {object}  handlers.ErrorResponse
 // @Router       /student/applications/{id}/withdraw [put]
-func (h *ApplicationHandler) Withdraw(c *gin.Context) {
+func (h *Handler) Withdraw(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
 	id, _ := strconv.Atoi(c.Param("id"))
 
@@ -168,7 +150,7 @@ func (h *ApplicationHandler) Withdraw(c *gin.Context) {
 // @Security     BearerAuth
 // @Success      200  {object}  models.User
 // @Router       /student/profile [get]
-func (h *ApplicationHandler) GetProfile(c *gin.Context) {
+func (h *Handler) GetProfile(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
 	user, _ := database.UserByID(studentID.(uint))
 	c.JSON(http.StatusOK, user)
@@ -183,7 +165,7 @@ func (h *ApplicationHandler) GetProfile(c *gin.Context) {
 // @Param        body  body      UpdateProfileRequest  true  "ข้อมูลโปรไฟล์ที่ต้องการแก้ไข"
 // @Success      200   {object}  models.User
 // @Router       /student/profile [put]
-func (h *ApplicationHandler) UpdateProfile(c *gin.Context) {
+func (h *Handler) UpdateProfile(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
 	var body UpdateProfileRequest
 	c.ShouldBindJSON(&body)
@@ -201,103 +183,4 @@ func (h *ApplicationHandler) UpdateProfile(c *gin.Context) {
 		}
 	})
 	c.JSON(http.StatusOK, updated)
-}
-
-// Review godoc
-// @Summary      ตรวจสอบใบสมัคร (อาจารย์/สตาฟ/แอดมิน)
-// @Tags         instructor
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        id    path  int            true  "Application ID"
-// @Param        body  body  ReviewRequest  true  "ผลการตรวจสอบ"
-// @Success      200   {object}  models.Application
-// @Failure      400   {object}  ErrorResponse
-// @Failure      403   {object}  ErrorResponse
-// @Failure      404   {object}  ErrorResponse
-// @Router       /instructor/applications/{id}/review [put]
-func (h *ApplicationHandler) Review(c *gin.Context) {
-	reviewerID, _ := c.Get("user_id")
-	role, _ := c.Get("role")
-	id, _ := strconv.Atoi(c.Param("id"))
-
-	var body ReviewRequest
-	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	app, ok := database.ApplicationByID(uint(id))
-	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-		return
-	}
-	rid := reviewerID.(uint)
-	if role.(string) == "instructor" {
-		course, _ := database.CourseByID(app.CourseID)
-		if course.InstructorID != rid {
-			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
-			return
-		}
-	}
-
-	prevStatus := app.Status
-
-	if body.Status == models.AppAccepted && prevStatus != models.AppAccepted {
-		course, _ := database.CourseByID(app.CourseID)
-		if app.RoleApplied == models.RoleTA && course.TAAccepted >= course.TASlots {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "TA slots are full"})
-			return
-		}
-		if app.RoleApplied == models.RoleLabBoy && course.LabBoyAccepted >= course.LabBoySlots {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Lab Boy slots are full"})
-			return
-		}
-	}
-
-	now := time.Now()
-	updated, _ := database.UpdateApplication(uint(id), func(a *models.Application) {
-		a.Status = body.Status
-		a.ReviewedAt = &now
-		a.ReviewedByID = &rid
-		a.Note = body.Note
-	})
-
-	// Manage accepted count
-	if body.Status == models.AppAccepted && prevStatus != models.AppAccepted {
-		database.AdjustCourseAccepted(app.CourseID, app.RoleApplied, 1)
-	} else if prevStatus == models.AppAccepted && body.Status != models.AppAccepted {
-		database.AdjustCourseAccepted(app.CourseID, app.RoleApplied, -1)
-	}
-
-	c.JSON(http.StatusOK, updated)
-}
-
-// BulkReview godoc
-// @Summary      ตรวจสอบใบสมัครแบบกลุ่ม
-// @Tags         instructor
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        body  body      BulkReviewRequest  true  "รายการใบสมัครและผลการตรวจสอบ"
-// @Success      200   {object}  BulkReviewResponse
-// @Failure      400   {object}  ErrorResponse
-// @Router       /instructor/applications/bulk-review [put]
-func (h *ApplicationHandler) BulkReview(c *gin.Context) {
-	reviewerID, _ := c.Get("user_id")
-	var body BulkReviewRequest
-	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	now := time.Now()
-	rid := reviewerID.(uint)
-	updated := database.BulkUpdateApplications(body.ApplicationIDs, func(a *models.Application) {
-		a.Status = body.Status
-		a.ReviewedAt = &now
-		a.ReviewedByID = &rid
-		a.Note = body.Note
-	})
-	c.JSON(http.StatusOK, gin.H{"updated": updated})
 }

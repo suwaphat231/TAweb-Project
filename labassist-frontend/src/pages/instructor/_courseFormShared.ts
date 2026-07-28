@@ -7,14 +7,16 @@ export const COURSE_FORM_EMPTY: CreateCoursePayload = {
 
 export const GRADE_OPTIONS = [
   { value: '', label: '-' },
-  { value: 'F', label: 'F' },
   { value: 'D', label: 'D' },
+  { value: 'D+', label: 'D+' },
   { value: 'C', label: 'C' },
+  { value: 'C+', label: 'C+' },
   { value: 'B', label: 'B' },
+  { value: 'B+', label: 'B+' },
   { value: 'A', label: 'A' },
 ]
 
-const GRADE_PREFIX_RE = /^เกรดเฉลี่ยขั้นต่ำ:\s*(A|B|C|D|F)\s*\n?/
+const GRADE_PREFIX_RE = /^เกรดเฉลี่ยขั้นต่ำ:\s*(A|B|C|D)\s*\n?/
 
 export function splitRequirements(requirements: string) {
   const match = requirements.match(GRADE_PREFIX_RE)

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { courseApi, studentApi } from '../../services/api'
 import { CourseCard } from '../../components/course/CourseCard'
+import { Card } from '../../components/ui/Card'
 import { FilterChips } from '../../components/ui/FilterChips'
 import { Modal } from '../../components/ui/Modal'
 import { Textarea } from '../../components/ui/Textarea'
@@ -28,6 +29,11 @@ export default function StudentApply() {
     queryKey: ['courses', filter],
     queryFn: () => courseApi.list({ status: filter as CourseStatus || undefined }),
   })
+
+  // "ทั้งหมด" only ever means "every course actually accepting applications" —
+  // draft/closed/archived courses are real academic courses not yet opened
+  // for TA/Lab Boy hiring, so students must never see them here.
+  const visibleCourses = filter === '' ? courses.filter((c) => c.status === 'open' || c.status === 'closing_soon') : courses
 
   const { data: myApps = [] } = useQuery({
     queryKey: ['my-applications'],
@@ -65,7 +71,7 @@ export default function StudentApply() {
     applyMutation.mutate({ course_id: applyTarget.courseId, role_applied: selectedRole, motivation })
   }
 
-  const applyTargetCourse = applyTarget ? courses.find((c) => c.id === applyTarget.courseId) : null
+  const applyTargetCourse = applyTarget ? visibleCourses.find((c) => c.id === applyTarget.courseId) : null
 
   return (
     <div>
@@ -81,9 +87,11 @@ export default function StudentApply() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 16 }}>
           {[1,2,3,4,5,6].map(i => <SkeletonCard key={i} />)}
         </div>
+      ) : visibleCourses.length === 0 ? (
+        <Card style={{ padding: 32, textAlign: 'center', color: 'var(--ink-400)' }}>ยังไม่มีวิชาเปิดรับสมัครในขณะนี้</Card>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 16 }}>
-          {courses.map((course) => {
+          {visibleCourses.map((course) => {
             const app = getCourseApp(course.id)
             return (
               <CourseCard

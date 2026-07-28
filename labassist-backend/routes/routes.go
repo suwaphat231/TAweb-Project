@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"labassist/Student"
+	"labassist/Teacher"
 	"labassist/admin"
 	"labassist/config"
 	_ "labassist/docs"
@@ -19,10 +21,9 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 
 	authH := handlers.NewAuthHandler(cfg)
 	courseH := handlers.NewCourseHandler()
-	appH := handlers.NewApplicationHandler()
-	notifH := handlers.NewNotificationHandler()
-	profileH := handlers.NewProfileHandler()
 	adminH := admin.NewHandler()
+	teacherH := teacher.NewHandler()
+	studentH := student.NewHandler()
 
 	v1 := r.Group("/api/v1")
 
@@ -40,42 +41,42 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 		authed.POST("/auth/logout", authH.Logout)
 
 		// Student
-		student := authed.Group("")
-		student.Use(middleware.RequireRole("student"))
+		studentGroup := authed.Group("")
+		studentGroup.Use(middleware.RequireRole("student"))
 		{
-			student.GET("/student/dashboard", appH.StudentDashboard)
-			student.GET("/student/applications", appH.MyApplications)
-			student.POST("/student/applications", appH.Apply)
-			student.PUT("/student/applications/:id/withdraw", appH.Withdraw)
-			student.GET("/student/profile", appH.GetProfile)
-			student.PUT("/student/profile", appH.UpdateProfile)
-			student.GET("/student/notifications", notifH.MyNotifications)
-			student.PUT("/student/notifications/read-all", notifH.MarkAllRead)
-			student.PUT("/student/notifications/:id/read", notifH.MarkRead)
+			studentGroup.GET("/student/dashboard", studentH.StudentDashboard)
+			studentGroup.GET("/student/applications", studentH.MyApplications)
+			studentGroup.POST("/student/applications", studentH.Apply)
+			studentGroup.PUT("/student/applications/:id/withdraw", studentH.Withdraw)
+			studentGroup.GET("/student/profile", studentH.GetProfile)
+			studentGroup.PUT("/student/profile", studentH.UpdateProfile)
+			studentGroup.GET("/student/notifications", studentH.MyNotifications)
+			studentGroup.PUT("/student/notifications/read-all", studentH.MarkAllRead)
+			studentGroup.PUT("/student/notifications/:id/read", studentH.MarkRead)
 		}
 
 		// Instructor
 		instructor := authed.Group("")
 		instructor.Use(middleware.RequireRole("instructor", "admin"))
 		{
-			instructor.GET("/instructor/courses", courseH.InstructorList)
-			instructor.GET("/instructor/course-catalog", courseH.CourseCatalog)
-			instructor.POST("/instructor/courses", courseH.Create)
-			instructor.PUT("/instructor/courses/:id", courseH.Update)
-			instructor.PUT("/instructor/courses/:id/status", courseH.UpdateStatus)
-			instructor.DELETE("/instructor/courses/:id", courseH.Delete)
-			instructor.GET("/instructor/profile", profileH.GetInstructorProfile)
-			instructor.PUT("/instructor/profile", profileH.UpdateInstructorProfile)
+			instructor.GET("/instructor/courses", teacherH.InstructorList)
+			instructor.GET("/instructor/course-catalog", teacherH.CourseCatalog)
+			instructor.POST("/instructor/courses", teacherH.Create)
+			instructor.PUT("/instructor/courses/:id", teacherH.Update)
+			instructor.PUT("/instructor/courses/:id/status", teacherH.UpdateStatus)
+			instructor.DELETE("/instructor/courses/:id", teacherH.Delete)
+			instructor.GET("/instructor/profile", teacherH.GetInstructorProfile)
+			instructor.PUT("/instructor/profile", teacherH.UpdateInstructorProfile)
 		}
 
 		// Instructor + Staff + Admin for applicants and reviews
 		review := authed.Group("")
 		review.Use(middleware.RequireRole("instructor", "staff", "admin"))
 		{
-			review.GET("/instructor/courses/:id/applicants", courseH.Applicants)
-			review.POST("/instructor/courses/:id/notify", notifH.NotifyCourse)
-			review.PUT("/instructor/applications/:id/review", appH.Review)
-			review.PUT("/instructor/applications/bulk-review", appH.BulkReview)
+			review.GET("/instructor/courses/:id/applicants", teacherH.Applicants)
+			review.POST("/instructor/courses/:id/notify", teacherH.NotifyCourse)
+			review.PUT("/instructor/applications/:id/review", teacherH.Review)
+			review.PUT("/instructor/applications/bulk-review", teacherH.BulkReview)
 		}
 
 		// Admin

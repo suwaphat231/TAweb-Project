@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"labassist/config"
@@ -13,6 +14,18 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+)
+
+// gormLogger logs slow/failed queries but treats a plain "record not found"
+// as routine, not an error — callers like UserByID/CourseByID hit this
+// constantly for lookups that are expected to miss (bad login, 404 course,
+// InstructorID=0 placeholder on unmatched imports).
+var gormLogger = logger.New(
+	log.New(os.Stdout, "\r\n", log.LstdFlags),
+	logger.Config{
+		LogLevel:                  logger.Warn,
+		IgnoreRecordNotFoundError: true,
+	},
 )
 
 //go:embed Docker/user.sql
@@ -41,7 +54,7 @@ func Connect(cfg *config.Config) error {
 	var err error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
-			Logger: logger.Default.LogMode(logger.Warn),
+			Logger: gormLogger,
 			// Imported courses may have InstructorID=0 (no matching instructor
 			// account found in the spreadsheet) — a real FK constraint would
 			// reject that placeholder value, so constraints are left to the

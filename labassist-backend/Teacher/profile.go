@@ -1,4 +1,4 @@
-package handlers
+package teacher
 
 import (
 	"labassist/database"
@@ -7,10 +7,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
-
-type ProfileHandler struct{}
-
-func NewProfileHandler() *ProfileHandler { return &ProfileHandler{} }
 
 // UpdateInstructorProfileRequest is the request body for updating an instructor's own profile
 type UpdateInstructorProfileRequest struct {
@@ -26,7 +22,7 @@ type UpdateInstructorProfileRequest struct {
 // @Security     BearerAuth
 // @Success      200  {object}  models.User
 // @Router       /instructor/profile [get]
-func (h *ProfileHandler) GetInstructorProfile(c *gin.Context) {
+func (h *Handler) GetInstructorProfile(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	user, _ := database.UserByID(userID.(uint))
 	c.JSON(http.StatusOK, user)
@@ -42,7 +38,7 @@ func (h *ProfileHandler) GetInstructorProfile(c *gin.Context) {
 // @Param        body  body      UpdateInstructorProfileRequest  true  "ข้อมูลโปรไฟล์ที่ต้องการแก้ไข"
 // @Success      200   {object}  models.User
 // @Router       /instructor/profile [put]
-func (h *ProfileHandler) UpdateInstructorProfile(c *gin.Context) {
+func (h *Handler) UpdateInstructorProfile(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	var body UpdateInstructorProfileRequest
 	if err := c.ShouldBindJSON(&body); err != nil {

@@ -9,7 +9,7 @@ import { Modal } from '../../components/ui/Modal'
 import { Input } from '../../components/ui/Input'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/Toast'
-import type { Course, ImportCoursesResponse } from '../../types'
+import type { Course } from '../../types'
 
 // Thai credit notation is "หน่วยกิต (บรรยาย-ปฏิบัติ-ศึกษาด้วยตนเอง)", e.g. "3 (2-2-5)" —
 // the middle number is lab/practice hours; 2+ means the course has a lab component.
@@ -18,36 +18,68 @@ function labHours(credits?: string): number | null {
   return m ? Number(m[2]) : null
 }
 
+// RESEARCH PROJECT I/II ("โครงงานวิจัย 1/2") are thesis-style courses with no
+// real lab/TA hiring need — always excluded from this list regardless of filter.
+function isResearchProject(c: Course): boolean {
+  return c.title.includes('โครงงานวิจัย') || (c.english_title ?? '').toUpperCase().includes('RESEARCH PROJECT')
+}
+
+const SEMESTER_TABS: { label: string; value: string }[] = [
+  { label: 'ทั้งหมด', value: '' },
+  { label: 'ภาค 1', value: '1' },
+  { label: 'ภาค 2', value: '2' },
+  { label: 'ภาค 3', value: '3' },
+]
+
 export default function AdminCourses() {
   const qc = useQueryClient()
   const showToast = useToast()
   const { data: courses = [], isLoading } = useQuery({ queryKey: ['all-courses'], queryFn: () => coursesAPI.getAll() })
 
-  // This page only manages lab courses — always filtered, no toggle needed.
-  const visibleCourses = courses.filter((c) => (labHours(c.credits) ?? 0) >= 2)
+  const [semesterFilter, setSemesterFilter] = useState('1')
+
+  // This page only manages lab courses, excludes RESEARCH PROJECT I/II, and
+  // never mixes semesters — a semester must be picked explicitly (or "ทั้งหมด").
+  const visibleCourses = courses.filter((c) =>
+    (labHours(c.credits) ?? 0) >= 2 &&
+    !isResearchProject(c) &&
+    (semesterFilter === '' || c.semester === semesterFilter)
+  )
 
   const [showImport, setShowImport] = useState(false)
-  const [file, setFile] = useState<File | null>(null)
+  const [files, setFiles] = useState<File[]>([])
   const [semester, setSemester] = useState('1')
   const [academicYear, setAcademicYear] = useState('2569')
-  const [result, setResult] = useState<ImportCoursesResponse | null>(null)
 
   const [showBulkDelete, setShowBulkDelete] = useState(false)
   const [bulkSemester, setBulkSemester] = useState('1')
   const [bulkAcademicYear, setBulkAcademicYear] = useState('2569')
 
   const importMut = useMutation({
-    mutationFn: () => adminApi.importCourses(file as File, semester, Number(academicYear)),
-    onSuccess: (data) => {
+    // Files are imported one at a time (not in parallel) so a slow/large file
+    // doesn't race the next one against the same course-code-matching logic.
+    // Each file's failure is caught individually so one bad file doesn't stop
+    // the rest of the batch from importing.
+    mutationFn: async () => {
+      const failed: string[] = []
+      for (const f of files) {
+        try {
+          await adminApi.importCourses(f, semester, Number(academicYear))
+        } catch (err) {
+          const detail = isAxiosError(err) ? err.response?.data?.error : undefined
+          failed.push(`${f.name}${detail ? ` (${detail})` : ''}`)
+        }
+      }
+      return failed
+    },
+    onSuccess: (failed) => {
       qc.invalidateQueries({ queryKey: ['all-courses'] })
       setShowImport(false)
-      setFile(null)
-      setResult(data)
-      showToast(`นำเข้าสำเร็จ ${data.created.length} รายวิชา${data.skipped.length ? ` (ข้าม ${data.skipped.length} แถว)` : ''}`, data.skipped.length ? 'warning' : 'success')
-    },
-    onError: (err) => {
-      const detail = isAxiosError(err) ? err.response?.data?.error : undefined
-      showToast(detail ? `นำเข้าไฟล์ไม่สำเร็จ: ${detail}` : 'นำเข้าไฟล์ไม่สำเร็จ กรุณาตรวจสอบไฟล์และลองใหม่', 'error')
+      setFiles([])
+      // Silent on success — only surface a toast when something went wrong.
+      if (failed.length > 0) {
+        showToast(`นำเข้าไม่สำเร็จ ${failed.length} ไฟล์: ${failed.join(', ')}`, 'error')
+      }
     },
   })
 
@@ -127,9 +159,30 @@ export default function AdminCourses() {
         </div>
       </div>
 
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+        {SEMESTER_TABS.map((tab) => (
+          <button
+            key={tab.value}
+            onClick={() => setSemesterFilter(tab.value)}
+            style={{
+              padding: '6px 14px',
+              borderRadius: 999,
+              fontSize: 13,
+              fontWeight: 600,
+              border: '1.5px solid var(--line)',
+              background: semesterFilter === tab.value ? 'var(--primary)' : '#fff',
+              color: semesterFilter === tab.value ? '#fff' : 'var(--ink-700)',
+              cursor: 'pointer',
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {isLoading
         ? <Skeleton lines={6} height={48} />
-        : <Table columns={columns as never} data={visibleCourses as never} emptyText="ไม่มีวิชาที่มี Lab" />
+        : <Table columns={columns as never} data={visibleCourses as never} emptyText="ไม่มีวิชาที่มี Lab ในภาคการศึกษานี้" />
       }
 
       <Modal isOpen={showImport} onClose={() => setShowImport(false)} title="นำเข้ารายวิชาจากไฟล์ Excel" size="md">
@@ -139,87 +192,27 @@ export default function AdminCourses() {
         >
           <p style={{ fontSize: 13, color: 'var(--ink-500)' }}>
             ไฟล์ .xlsx ต้องมีคอลัมน์: รายวิชา, ชื่อรายวิชา, COURSENAME, หน่วยกิต, เวลา, ผู้สอน
-            — ชื่อผู้สอนจะแสดงตามที่พิมพ์ในไฟล์เสมอ ระบบจะพยายามผูกวิชากับบัญชีอาจารย์ที่มีอยู่จริงให้อัตโนมัติ (ถ้าชื่อตรงกัน) เพื่อให้อาจารย์ล็อกอินดูวิชาของตัวเองได้
+            — ชื่อผู้สอนจะแสดงตามที่พิมพ์ในไฟล์เสมอ ระบบจะพยายามผูกวิชากับบัญชีอาจารย์ที่มีอยู่จริงให้อัตโนมัติ (ถ้าชื่อตรงกัน) เพื่อให้อาจารย์ล็อกอินดูวิชาของตัวเองได้ — เลือกได้หลายไฟล์พร้อมกัน
           </p>
           <Input
-            label="ไฟล์ Excel (.xlsx) *" type="file" accept=".xlsx"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            label="ไฟล์ Excel (.xlsx) *" type="file" accept=".xlsx" multiple
+            onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
             required
           />
+          {files.length > 0 && (
+            <p style={{ fontSize: 12, color: 'var(--ink-500)' }}>
+              เลือกไว้ {files.length} ไฟล์: {files.map((f) => f.name).join(', ')}
+            </p>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Input label="ภาคการศึกษา *" value={semester} onChange={(e) => setSemester(e.target.value)} required />
             <Input label="ปีการศึกษา *" type="number" value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} required />
           </div>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
             <Button type="button" variant="ghost" onClick={() => setShowImport(false)}>ยกเลิก</Button>
-            <Button type="submit" loading={importMut.isPending} disabled={!file}>นำเข้า</Button>
+            <Button type="submit" loading={importMut.isPending} disabled={files.length === 0}>นำเข้า</Button>
           </div>
         </form>
-      </Modal>
-
-      <Modal isOpen={!!result} onClose={() => setResult(null)} title="ผลการนำเข้ารายวิชา" size="lg">
-        {result && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div style={{ fontSize: 14, color: 'var(--ink-700)' }}>
-              นำเข้าสำเร็จ <strong style={{ color: 'var(--green)' }}>{result.created.length}</strong> รายวิชา
-              {result.skipped.length > 0 && (
-                <> · ข้ามไป <strong style={{ color: 'var(--red)' }}>{result.skipped.length}</strong> แถว (แถวว่างจริงๆ เท่านั้น)</>
-              )}
-            </div>
-
-            {result.skipped.length > 0 && (
-              <div>
-                <h4 style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 8 }}>แถวที่ข้าม</h4>
-                <div style={{ border: '1px solid var(--line)', borderRadius: 'var(--radius-card)', overflow: 'hidden' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                    <thead>
-                      <tr style={{ background: 'var(--bg)' }}>
-                        <th style={{ padding: '8px 12px', textAlign: 'left' }}>แถวที่</th>
-                        <th style={{ padding: '8px 12px', textAlign: 'left' }}>สาเหตุ</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {result.skipped.map((s, i) => (
-                        <tr key={i} style={{ borderTop: '1px solid var(--line-soft)' }}>
-                          <td style={{ padding: '8px 12px' }}>{s.row}</td>
-                          <td style={{ padding: '8px 12px', color: 'var(--red)' }}>{s.reason}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            <div>
-              <h4 style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 8 }}>วิชาที่นำเข้า</h4>
-              <div style={{ border: '1px solid var(--line)', borderRadius: 'var(--radius-card)', overflow: 'hidden', maxHeight: 300, overflowY: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ background: 'var(--bg)' }}>
-                      <th style={{ padding: '8px 12px', textAlign: 'left' }}>รหัสวิชา</th>
-                      <th style={{ padding: '8px 12px', textAlign: 'left' }}>ชื่อวิชา</th>
-                      <th style={{ padding: '8px 12px', textAlign: 'left' }}>ผู้สอน</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.created.map((r, i) => (
-                      <tr key={i} style={{ borderTop: '1px solid var(--line-soft)' }}>
-                        <td style={{ padding: '8px 12px' }}>{r.code}</td>
-                        <td style={{ padding: '8px 12px' }}>{r.title}</td>
-                        <td style={{ padding: '8px 12px' }}>{r.instructor || '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <Button onClick={() => setResult(null)}>ปิด</Button>
-            </div>
-          </div>
-        )}
       </Modal>
 
       <Modal isOpen={showBulkDelete} onClose={() => setShowBulkDelete(false)} title="ลบวิชาทั้งเทอม" size="md">

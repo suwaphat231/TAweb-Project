@@ -15,6 +15,110 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/admin/courses/import": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "แสดงชื่อผู้สอนตามที่พิมพ์มาในไฟล์เสมอ ระบบพยายามจับคู่ชื่อแรกกับผู้ใช้ role=instructor ที่มีอยู่จริงเพื่อผูกวิชากับบัญชีนั้น (ให้อาจารย์ล็อกอินดูวิชาของตัวเองได้) แต่ถ้าจับคู่ไม่ได้ก็ไม่มีผลต่อการนำเข้า รหัสวิชาซ้ำกันได้ (คนละกลุ่มเรียน) มีเพียงแถวที่ว่างจริงๆ เท่านั้นที่จะถูกข้าม",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "นำเข้ารายวิชาจากไฟล์ Excel (.xlsx)",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "ไฟล์ Excel รายวิชา .xlsx (คอลัมน์: รายวิชา, ชื่อรายวิชา, COURSENAME, หน่วยกิต, กลุ่ม, รับ, ลงทะเบียนแล้ว, เวลา, ผู้สอน)",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ภาคการศึกษา",
+                        "name": "semester",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "ปีการศึกษา",
+                        "name": "academic_year",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/admin.ImportCoursesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/courses/term": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "ใช้เพื่อล้างข้อมูลที่นำเข้าผิดพลาด เช่น หลังจากอัปโหลดไฟล์ Excel ผิดเทอม",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "ลบวิชาทั้งหมดของภาคการศึกษาที่ระบุ",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ภาคการศึกษา",
+                        "name": "semester",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "ปีการศึกษา",
+                        "name": "academic_year",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/admin.DeleteCoursesByTermResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/logs": {
             "get": {
                 "security": [
@@ -89,7 +193,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.AdminStatsResponse"
+                            "$ref": "#/definitions/admin.AdminStatsResponse"
                         }
                     }
                 }
@@ -168,7 +272,7 @@ const docTemplate = `{
                 "tags": [
                     "admin"
                 ],
-                "summary": "สร้างผู้ใช้ใหม่",
+                "summary": "สร้างผู้ใช้ใหม่ (ชื่อ + บทบาทเท่านั้น)",
                 "parameters": [
                     {
                         "description": "ข้อมูลผู้ใช้",
@@ -176,7 +280,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.CreateUserRequest"
+                            "$ref": "#/definitions/admin.CreateUserRequest"
                         }
                     }
                 ],
@@ -192,9 +296,97 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
+                    }
+                }
+            }
+        },
+        "/admin/users/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "แก้ไขชื่อ/บทบาทผู้ใช้",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
                     },
-                    "409": {
-                        "description": "Conflict",
+                    {
+                        "description": "ข้อมูลที่ต้องการแก้ไข",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/admin.UpdateUserRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.User"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/users/{id}/courses": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "จับคู่ด้วย ID บัญชีโดยตรง และด้วยชื่อกับข้อมูลผู้สอนที่นำเข้าจากไฟล์ Excel (ครอบคลุมทั้งผู้สอนหลักและผู้ร่วมสอน)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "รายวิชาที่อาจารย์คนนี้สอน",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.Course"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
@@ -233,7 +425,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.UpdateUserStatusRequest"
+                            "$ref": "#/definitions/admin.UpdateUserStatusRequest"
                         }
                     }
                 ],
@@ -424,7 +616,8 @@ const docTemplate = `{
                             "open",
                             "closing_soon",
                             "closed",
-                            "draft"
+                            "draft",
+                            "archived"
                         ],
                         "type": "string",
                         "description": "กรองตามสถานะ",
@@ -515,7 +708,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.BulkReviewRequest"
+                            "$ref": "#/definitions/teacher.BulkReviewRequest"
                         }
                     }
                 ],
@@ -566,7 +759,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.ReviewRequest"
+                            "$ref": "#/definitions/teacher.ReviewRequest"
                         }
                     }
                 ],
@@ -598,6 +791,34 @@ const docTemplate = `{
                 }
             }
         },
+        "/instructor/course-catalog": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "จับคู่ด้วยชื่ออาจารย์กับข้อมูลผู้สอนที่นำเข้าจากไฟล์ Excel เพื่อจำกัดตัวเลือกรหัสวิชาให้เหลือแค่วิชาที่ตัวเองสอนจริง",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "instructor"
+                ],
+                "summary": "รายวิชาที่อาจารย์คนนี้สอน (สำหรับ dropdown ตอนสร้างประกาศ)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.Course"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/instructor/courses": {
             "get": {
                 "security": [
@@ -609,7 +830,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "courses"
+                    "instructor"
                 ],
                 "summary": "รายการวิชาของอาจารย์",
                 "responses": {
@@ -643,7 +864,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "courses"
+                    "instructor"
                 ],
                 "summary": "สร้างวิชาใหม่",
                 "parameters": [
@@ -653,7 +874,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.CreateCourseRequest"
+                            "$ref": "#/definitions/teacher.CreateCourseRequest"
                         }
                     }
                 ],
@@ -693,7 +914,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "courses"
+                    "instructor"
                 ],
                 "summary": "แก้ไขข้อมูลวิชา",
                 "parameters": [
@@ -710,7 +931,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.UpdateCourseRequest"
+                            "$ref": "#/definitions/teacher.UpdateCourseRequest"
                         }
                     }
                 ],
@@ -720,6 +941,46 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/models.Course"
                         }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "instructor"
+                ],
+                "summary": "ลบวิชา",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Course ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
                     },
                     "403": {
                         "description": "Forbidden",
@@ -747,7 +1008,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "courses"
+                    "instructor"
                 ],
                 "summary": "รายชื่อผู้สมัครของวิชา",
                 "parameters": [
@@ -812,6 +1073,52 @@ const docTemplate = `{
                 }
             }
         },
+        "/instructor/courses/{id}/notify": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "instructor"
+                ],
+                "summary": "ส่งแจ้งเตือนนักศึกษาที่ผ่านการคัดเลือก",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Course ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/instructor/courses/{id}/status": {
             "put": {
                 "security": [
@@ -826,7 +1133,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "courses"
+                    "instructor"
                 ],
                 "summary": "อัพเดตสถานะวิชา",
                 "parameters": [
@@ -843,7 +1150,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.UpdateCourseStatusRequest"
+                            "$ref": "#/definitions/teacher.UpdateCourseStatusRequest"
                         }
                     }
                 ],
@@ -864,6 +1171,67 @@ const docTemplate = `{
                         "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/instructor/profile": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "instructor"
+                ],
+                "summary": "ข้อมูลโปรไฟล์ของอาจารย์ (ตัวเอง)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.User"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "บันทึกลง database ทันที การเปลี่ยนแปลงจะแสดงในหน้าจัดการผู้ใช้ของแอดมินด้วย เพราะดึงจากข้อมูลผู้ใช้ชุดเดียวกัน",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "instructor"
+                ],
+                "summary": "แก้ไขโปรไฟล์ของอาจารย์ (ตัวเอง)",
+                "parameters": [
+                    {
+                        "description": "ข้อมูลโปรไฟล์ที่ต้องการแก้ไข",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/teacher.UpdateInstructorProfileRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.User"
                         }
                     }
                 }
@@ -1019,6 +1387,96 @@ const docTemplate = `{
                 }
             }
         },
+        "/student/notifications": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "student"
+                ],
+                "summary": "รายการแจ้งเตือนของนักศึกษา",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.Notification"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/student/notifications/read-all": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "student"
+                ],
+                "summary": "ทำเครื่องหมายแจ้งเตือนทั้งหมดว่าอ่านแล้ว",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/student/notifications/{id}/read": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "student"
+                ],
+                "summary": "ทำเครื่องหมายแจ้งเตือนว่าอ่านแล้ว",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Notification ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/student/profile": {
             "get": {
                 "security": [
@@ -1081,7 +1539,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "handlers.AdminStatsResponse": {
+        "admin.AdminStatsResponse": {
             "type": "object",
             "properties": {
                 "accepted_applications": {
@@ -1118,6 +1576,113 @@ const docTemplate = `{
                 }
             }
         },
+        "admin.CreateUserRequest": {
+            "type": "object",
+            "required": [
+                "full_name",
+                "role"
+            ],
+            "properties": {
+                "full_name": {
+                    "type": "string",
+                    "example": "John Doe"
+                },
+                "role": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.UserRole"
+                        }
+                    ],
+                    "example": "instructor"
+                }
+            }
+        },
+        "admin.DeleteCoursesByTermResponse": {
+            "type": "object",
+            "properties": {
+                "deleted": {
+                    "type": "integer",
+                    "example": 12
+                }
+            }
+        },
+        "admin.ImportCourseResult": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "CS101"
+                },
+                "instructor": {
+                    "type": "string",
+                    "example": "John Doe; Jane Doe"
+                },
+                "row": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "title": {
+                    "type": "string",
+                    "example": "Introduction to Programming"
+                }
+            }
+        },
+        "admin.ImportCoursesResponse": {
+            "type": "object",
+            "properties": {
+                "created": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/admin.ImportCourseResult"
+                    }
+                },
+                "skipped": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/admin.ImportSkippedRow"
+                    }
+                }
+            }
+        },
+        "admin.ImportSkippedRow": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "example": "empty row"
+                },
+                "row": {
+                    "type": "integer",
+                    "example": 2
+                }
+            }
+        },
+        "admin.UpdateUserRequest": {
+            "type": "object",
+            "properties": {
+                "full_name": {
+                    "type": "string",
+                    "example": "John Doe"
+                },
+                "role": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.UserRole"
+                        }
+                    ],
+                    "example": "instructor"
+                }
+            }
+        },
+        "admin.UpdateUserStatusRequest": {
+            "type": "object",
+            "properties": {
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
         "handlers.ApplyRequest": {
             "type": "object",
             "required": [
@@ -1143,123 +1708,12 @@ const docTemplate = `{
                 }
             }
         },
-        "handlers.BulkReviewRequest": {
-            "type": "object",
-            "required": [
-                "application_ids",
-                "status"
-            ],
-            "properties": {
-                "application_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "note": {
-                    "type": "string"
-                },
-                "status": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.AppStatus"
-                        }
-                    ],
-                    "example": "accepted"
-                }
-            }
-        },
         "handlers.BulkReviewResponse": {
             "type": "object",
             "properties": {
                 "updated": {
                     "type": "integer",
                     "example": 3
-                }
-            }
-        },
-        "handlers.CreateCourseRequest": {
-            "type": "object",
-            "required": [
-                "academic_year",
-                "code",
-                "semester",
-                "title"
-            ],
-            "properties": {
-                "academic_year": {
-                    "type": "integer",
-                    "example": 2567
-                },
-                "code": {
-                    "type": "string",
-                    "example": "CS101"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "labboy_slots": {
-                    "type": "integer",
-                    "example": 2
-                },
-                "requirements": {
-                    "type": "string"
-                },
-                "semester": {
-                    "type": "string",
-                    "example": "1"
-                },
-                "status": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.CourseStatus"
-                        }
-                    ],
-                    "example": "draft"
-                },
-                "ta_slots": {
-                    "type": "integer",
-                    "example": 3
-                },
-                "title": {
-                    "type": "string",
-                    "example": "Introduction to Programming"
-                }
-            }
-        },
-        "handlers.CreateUserRequest": {
-            "type": "object",
-            "required": [
-                "email",
-                "full_name",
-                "password",
-                "role",
-                "username"
-            ],
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "example": "john@silpakorn.edu"
-                },
-                "full_name": {
-                    "type": "string",
-                    "example": "John Doe"
-                },
-                "password": {
-                    "type": "string",
-                    "example": "securepassword"
-                },
-                "role": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.UserRole"
-                        }
-                    ],
-                    "example": "instructor"
-                },
-                "username": {
-                    "type": "string",
-                    "example": "johndoe"
                 }
             }
         },
@@ -1382,26 +1836,6 @@ const docTemplate = `{
                 }
             }
         },
-        "handlers.ReviewRequest": {
-            "type": "object",
-            "required": [
-                "status"
-            ],
-            "properties": {
-                "note": {
-                    "type": "string",
-                    "example": "ผ่านการคัดเลือก"
-                },
-                "status": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.AppStatus"
-                        }
-                    ],
-                    "example": "accepted"
-                }
-            }
-        },
         "handlers.StudentDashboardResponse": {
             "type": "object",
             "properties": {
@@ -1422,62 +1856,6 @@ const docTemplate = `{
                 }
             }
         },
-        "handlers.UpdateCourseRequest": {
-            "type": "object",
-            "properties": {
-                "academic_year": {
-                    "type": "integer",
-                    "example": 2567
-                },
-                "code": {
-                    "type": "string",
-                    "example": "CS101"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "labboy_slots": {
-                    "type": "integer",
-                    "example": 2
-                },
-                "requirements": {
-                    "type": "string"
-                },
-                "semester": {
-                    "type": "string",
-                    "example": "1"
-                },
-                "status": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.CourseStatus"
-                        }
-                    ],
-                    "example": "open"
-                },
-                "ta_slots": {
-                    "type": "integer",
-                    "example": 3
-                },
-                "title": {
-                    "type": "string",
-                    "example": "Introduction to Programming"
-                }
-            }
-        },
-        "handlers.UpdateCourseStatusRequest": {
-            "type": "object",
-            "properties": {
-                "status": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.CourseStatus"
-                        }
-                    ],
-                    "example": "open"
-                }
-            }
-        },
         "handlers.UpdateProfileRequest": {
             "type": "object",
             "properties": {
@@ -1492,15 +1870,6 @@ const docTemplate = `{
                 "year": {
                     "type": "integer",
                     "example": 3
-                }
-            }
-        },
-        "handlers.UpdateUserStatusRequest": {
-            "type": "object",
-            "properties": {
-                "is_active": {
-                    "type": "boolean",
-                    "example": true
                 }
             }
         },
@@ -1626,10 +1995,16 @@ const docTemplate = `{
                 "applicant_count": {
                     "type": "integer"
                 },
+                "capacity": {
+                    "type": "integer"
+                },
                 "code": {
                     "type": "string"
                 },
                 "created_at": {
+                    "type": "string"
+                },
+                "credits": {
                     "type": "string"
                 },
                 "deadline": {
@@ -1637,6 +2012,18 @@ const docTemplate = `{
                 },
                 "description": {
                     "type": "string"
+                },
+                "english_title": {
+                    "type": "string"
+                },
+                "enrolled": {
+                    "type": "integer"
+                },
+                "group_note": {
+                    "type": "string"
+                },
+                "has_lab": {
+                    "type": "boolean"
                 },
                 "id": {
                     "type": "integer"
@@ -1647,6 +2034,10 @@ const docTemplate = `{
                 "instructor_name": {
                     "type": "string"
                 },
+                "instructors_raw": {
+                    "description": "InstructorsRaw is the verbatim text of the spreadsheet's instructor\ncell (kept for display as-is, e.g. co-teaching names the system has\nno matching account for) — separate from InstructorID, which only\never points to a real, matched user account.",
+                    "type": "string"
+                },
                 "labboy_accepted": {
                     "type": "integer"
                 },
@@ -1655,6 +2046,12 @@ const docTemplate = `{
                 },
                 "requirements": {
                     "type": "string"
+                },
+                "schedule": {
+                    "type": "string"
+                },
+                "section": {
+                    "type": "integer"
                 },
                 "semester": {
                     "type": "string"
@@ -1682,14 +2079,42 @@ const docTemplate = `{
                 "open",
                 "closing_soon",
                 "closed",
-                "draft"
+                "draft",
+                "archived"
             ],
             "x-enum-varnames": [
                 "StatusOpen",
                 "StatusClosingSoon",
                 "StatusClosed",
-                "StatusDraft"
+                "StatusDraft",
+                "StatusArchived"
             ]
+        },
+        "models.Notification": {
+            "type": "object",
+            "properties": {
+                "body": {
+                    "type": "string"
+                },
+                "course_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_read": {
+                    "type": "boolean"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
         },
         "models.RoleApplied": {
             "type": "string",
@@ -1709,6 +2134,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "email": {
+                    "description": "Email has no gorm uniqueIndex tag: admin-created accounts start with a\nblank email (filled in later via Google sign-in), so uniqueness is\nenforced instead by a partial index that ignores empty strings — see\ndatabase/connection.go.",
                     "type": "string"
                 },
                 "faculty": {
@@ -1760,6 +2186,182 @@ const docTemplate = `{
                 "RoleStaff",
                 "RoleAdmin"
             ]
+        },
+        "teacher.BulkReviewRequest": {
+            "type": "object",
+            "required": [
+                "application_ids",
+                "status"
+            ],
+            "properties": {
+                "application_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "note": {
+                    "type": "string"
+                },
+                "status": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.AppStatus"
+                        }
+                    ],
+                    "example": "accepted"
+                }
+            }
+        },
+        "teacher.CreateCourseRequest": {
+            "type": "object",
+            "required": [
+                "academic_year",
+                "code",
+                "semester",
+                "title"
+            ],
+            "properties": {
+                "academic_year": {
+                    "type": "integer",
+                    "example": 2567
+                },
+                "code": {
+                    "type": "string",
+                    "example": "CS101"
+                },
+                "deadline": {
+                    "type": "string",
+                    "example": "2026-08-01"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "labboy_slots": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "requirements": {
+                    "type": "string"
+                },
+                "semester": {
+                    "type": "string",
+                    "example": "1"
+                },
+                "status": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.CourseStatus"
+                        }
+                    ],
+                    "example": "draft"
+                },
+                "ta_slots": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "title": {
+                    "type": "string",
+                    "example": "Introduction to Programming"
+                }
+            }
+        },
+        "teacher.ReviewRequest": {
+            "type": "object",
+            "required": [
+                "status"
+            ],
+            "properties": {
+                "note": {
+                    "type": "string",
+                    "example": "ผ่านการคัดเลือก"
+                },
+                "status": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.AppStatus"
+                        }
+                    ],
+                    "example": "accepted"
+                }
+            }
+        },
+        "teacher.UpdateCourseRequest": {
+            "type": "object",
+            "properties": {
+                "academic_year": {
+                    "type": "integer",
+                    "example": 2567
+                },
+                "code": {
+                    "type": "string",
+                    "example": "CS101"
+                },
+                "deadline": {
+                    "type": "string",
+                    "example": "2026-08-01"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "labboy_slots": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "requirements": {
+                    "type": "string"
+                },
+                "semester": {
+                    "type": "string",
+                    "example": "1"
+                },
+                "status": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.CourseStatus"
+                        }
+                    ],
+                    "example": "open"
+                },
+                "ta_slots": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "title": {
+                    "type": "string",
+                    "example": "Introduction to Programming"
+                }
+            }
+        },
+        "teacher.UpdateCourseStatusRequest": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.CourseStatus"
+                        }
+                    ],
+                    "example": "open"
+                }
+            }
+        },
+        "teacher.UpdateInstructorProfileRequest": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "somchai@su.ac.th"
+                },
+                "faculty": {
+                    "type": "string",
+                    "example": "ภาควิชาวิทยาการคอมพิวเตอร์"
+                },
+                "full_name": {
+                    "type": "string",
+                    "example": "ผู้ช่วยศาสตราจารย์ ดร.สมชาย ใจดี"
+                }
+            }
         }
     },
     "securityDefinitions": {
