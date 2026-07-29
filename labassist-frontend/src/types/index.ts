@@ -15,6 +15,11 @@ export interface User {
   year?: number
   is_active: boolean
   created_at: string
+  transcript_grades?: Record<string, string>
+  transcript_status?: 'pass' | 'needs_review' | 'fail'
+  transcript_message?: string
+  transcript_confidence?: number
+  transcript_updated_at?: string
 }
 
 export interface Course {

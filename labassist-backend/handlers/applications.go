@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"fmt"
+	"labassist/config"
 	"labassist/models"
 	"labassist/store"
 	"net/http"
@@ -37,9 +39,11 @@ type UpdateProfileRequest struct {
 	Faculty  *string `json:"faculty,omitempty" example:"วิทยาการคอมพิวเตอร์"`
 }
 
-type ApplicationHandler struct{}
+type ApplicationHandler struct {
+	cfg *config.Config
+}
 
-func NewApplicationHandler() *ApplicationHandler { return &ApplicationHandler{} }
+func NewApplicationHandler(cfg *config.Config) *ApplicationHandler { return &ApplicationHandler{cfg: cfg} }
 
 // StudentDashboard godoc
 // @Summary      หน้าหลักนักศึกษา
@@ -242,6 +246,34 @@ func (h *ApplicationHandler) Review(c *gin.Context) {
 	prevStatus := app.Status
 
 	if body.Status == models.AppAccepted && prevStatus != models.AppAccepted {
+		const minLabBoyGPA = 2.0
+		const minTAGPA = 2.5
+
+		if app.RoleApplied == models.RoleLabBoy && (app.Student.GPA == nil || *app.Student.GPA < minLabBoyGPA) {
+			currentGPA := "-"
+			if app.Student.GPA != nil {
+				currentGPA = fmt.Sprintf("%.2f", *app.Student.GPA)
+			}
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("GPA ของนักศึกษา (%s) ต่ำกว่าเกณฑ์ขั้นต่ำ %.1f สำหรับ Lab Boy", currentGPA, minLabBoyGPA)})
+			return
+		}
+		if app.RoleApplied == models.RoleTA && (app.Student.GPA == nil || *app.Student.GPA < minTAGPA) {
+			currentGPA := "-"
+			if app.Student.GPA != nil {
+				currentGPA = fmt.Sprintf("%.2f", *app.Student.GPA)
+			}
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("GPA ของนักศึกษา (%s) ต่ำกว่าเกณฑ์ขั้นต่ำ %.1f สำหรับ TA", currentGPA, minTAGPA)})
+			return
+		}
+		if app.Student.TranscriptStatus != nil && *app.Student.TranscriptStatus == "fail" {
+			msg := ""
+			if app.Student.TranscriptMessage != nil {
+				msg = ": " + *app.Student.TranscriptMessage
+			}
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("ผลตรวจสอบใบเกรดของนักศึกษาไม่ผ่านเกณฑ์%s", msg)})
+			return
+		}
+
 		course, _ := store.CourseByID(app.CourseID)
 		if app.RoleApplied == models.RoleTA && course.TAAccepted >= course.TASlots {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "TA slots are full"})

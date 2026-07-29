@@ -2,6 +2,7 @@
 package store
 
 import (
+	"log"
 	"time"
 
 	"labassist/models"
@@ -136,38 +137,48 @@ var classlistCourses = []classlistCourseRow{
 func seedRealClasslist(now time.Time) {
 	instructorIDByUsername := make(map[string]uint, len(classlistInstructors))
 	for _, ins := range classlistInstructors {
-		u := &models.User{
-			ID: nextUserID, Username: strPtr(ins.Username), PasswordHash: strPtr(pwHash),
-			FullName: ins.FullName, Email: ins.Email, Role: models.RoleInstructor,
+		email := ins.Email
+		if email == "" {
+			email = ins.Username + "@su.ac.th"
+		}
+		u := models.User{
+			Username: strPtr(ins.Username), PasswordHash: strPtr(pwHash),
+			FullName: ins.FullName, Email: email, Role: models.RoleInstructor,
 			IsActive: true, CreatedAt: now, UpdatedAt: now,
 		}
-		users = append(users, u)
+		if err := db.Create(&u).Error; err != nil {
+			log.Printf("seed: instructor %q: %v", ins.Username, err)
+			continue
+		}
 		instructorIDByUsername[ins.Username] = u.ID
-		nextUserID++
 	}
 
 	for _, row := range classlistCourses {
-		c := &models.Course{
-			ID:           nextCourseID,
-			Code:         row.Code,
-			Title:        row.ThaiTitle,
-			EnglishTitle: row.EnglishTitle,
-			GroupNote:    row.GroupNote,
-			Credits:      row.Credits,
-			Section:      row.Section,
-			Capacity:     row.Capacity,
-			Enrolled:     row.Enrolled,
-			Schedule:     row.Schedule,
-			InstructorID: instructorIDByUsername[row.InstructorUsername],
-			CoInstructors: row.CoInstructors,
-			HasLab:       row.HasLab,
-			Semester:     "1",
-			AcademicYear: 2569,
-			Status:       models.StatusDraft,
-			CreatedAt:    now,
-			UpdatedAt:    now,
+		instID, ok := instructorIDByUsername[row.InstructorUsername]
+		if !ok {
+			continue
 		}
-		courses = append(courses, c)
-		nextCourseID++
+		c := models.Course{
+			Code:          row.Code,
+			Title:         row.ThaiTitle,
+			EnglishTitle:  row.EnglishTitle,
+			GroupNote:     row.GroupNote,
+			Credits:       row.Credits,
+			Section:       row.Section,
+			Capacity:      row.Capacity,
+			Enrolled:      row.Enrolled,
+			Schedule:      row.Schedule,
+			InstructorID:  instID,
+			CoInstructors: row.CoInstructors,
+			HasLab:        row.HasLab,
+			Semester:      "1",
+			AcademicYear:  2569,
+			Status:        models.StatusDraft,
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		}
+		if err := db.Create(&c).Error; err != nil {
+			log.Printf("seed: course %q: %v", row.Code, err)
+		}
 	}
 }

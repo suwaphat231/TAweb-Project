@@ -436,7 +436,7 @@ export default function InstructorSelect() {
                     <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-800)' }}>{profileTarget.reviewed_by_name}</span>
                     {profileTarget.reviewed_at && (
                       <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>
-                        · {new Date(profileTarget.reviewed_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        · {new Date(profileTarget.reviewed_at).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
                       </span>
                     )}
                   </div>

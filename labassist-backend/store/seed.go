@@ -1,6 +1,7 @@
 package store
 
 import (
+	"log"
 	"time"
 
 	"labassist/models"
@@ -11,37 +12,41 @@ const pwHash = "$2a$10$Ws/75uKsYag.vd9tiCiAwuW143PDyh7.3n7dMYXmv6F2.fT5H6PBO"
 
 func strPtr(s string) *string { return &s }
 
-// seed populates the mock store with the same fixtures the old
-// database/migrations/seed.sql used, so logins and demo data match,
-// plus the real course list imported from the university classlist.
-func seed() {
-	now := time.Now()
+// Seed populates the database with demo fixtures on first startup.
+// It is a no-op if any user already exists.
+func Seed() {
+	var count int64
+	db.Model(&models.User{}).Count(&count)
+	if count > 0 {
+		return
+	}
 
-	str := strPtr
+	now := time.Now()
 	f64 := func(f float64) *float64 { return &f }
 	i8 := func(i int8) *int8 { return &i }
 
-	addStaffUser := func(username, fullName, email string, role models.UserRole) *models.User {
-		u := &models.User{
-			ID: nextUserID, Username: str(username), PasswordHash: str(pwHash),
-			FullName: fullName, Email: email, Role: role,
-			IsActive: true, CreatedAt: now, UpdatedAt: now,
+	addUser := func(u models.User) models.User {
+		if err := db.Create(&u).Error; err != nil {
+			log.Printf("seed: create user %q: %v", u.FullName, err)
 		}
-		users = append(users, u)
-		nextUserID++
 		return u
 	}
 
-	addStudent := func(username, fullName, email, studentID string, gpa float64, faculty string, year int8, googleSub string) *models.User {
-		u := &models.User{
-			ID: nextUserID, Username: str(username), PasswordHash: str(pwHash),
+	addStaffUser := func(username, fullName, email string, role models.UserRole) {
+		addUser(models.User{
+			Username: strPtr(username), PasswordHash: strPtr(pwHash),
+			FullName: fullName, Email: email, Role: role,
+			IsActive: true, CreatedAt: now, UpdatedAt: now,
+		})
+	}
+
+	addStudent := func(username, fullName, email, studentID string, gpa float64, faculty string, year int8, googleSub string) {
+		addUser(models.User{
+			Username: strPtr(username), PasswordHash: strPtr(pwHash),
 			FullName: fullName, Email: email, Role: models.RoleStudent,
-			StudentID: str(studentID), GPA: f64(gpa), Faculty: str(faculty), Year: i8(year),
-			GoogleSub: str(googleSub), IsActive: true, CreatedAt: now, UpdatedAt: now,
-		}
-		users = append(users, u)
-		nextUserID++
-		return u
+			StudentID: strPtr(studentID), GPA: f64(gpa), Faculty: strPtr(faculty), Year: i8(year),
+			GoogleSub: strPtr(googleSub), IsActive: true, CreatedAt: now, UpdatedAt: now,
+		})
 	}
 
 	addStaffUser("somchai", "ผศ.ดร. สมชาย ใจดี", "somchai@cp.su.ac.th", models.RoleInstructor)

@@ -17,14 +17,14 @@ const (
 
 type Application struct {
 	ID             uint        `gorm:"primaryKey" json:"id"`
-	StudentID      uint        `gorm:"not null" json:"student_id"`
+	StudentID      uint        `gorm:"not null;uniqueIndex:idx_student_course" json:"student_id"`
 	Student        User        `gorm:"foreignKey:StudentID" json:"-"`
-	CourseID       uint        `gorm:"not null" json:"course_id"`
+	CourseID       uint        `gorm:"not null;uniqueIndex:idx_student_course" json:"course_id"`
 	Course         Course      `gorm:"foreignKey:CourseID" json:"-"`
-	RoleApplied    RoleApplied `gorm:"type:role_applied;not null" json:"role_applied"`
-	Status         AppStatus   `gorm:"type:app_status;default:'pending'" json:"status"`
+	RoleApplied    RoleApplied `gorm:"type:enum('ta','labboy');not null" json:"role_applied"`
+	Status         AppStatus   `gorm:"type:enum('pending','accepted','rejected','withdrawn');default:'pending'" json:"status"`
 	Motivation     *string     `gorm:"type:text" json:"motivation,omitempty"`
-	AppliedAt      time.Time   `gorm:"default:CURRENT_TIMESTAMP" json:"applied_at"`
+	AppliedAt      time.Time   `json:"applied_at"`
 	ReviewedAt     *time.Time  `json:"reviewed_at,omitempty"`
 	ReviewedByID   *uint       `json:"reviewed_by_id,omitempty"`
 	ReviewedBy     *User       `gorm:"foreignKey:ReviewedByID" json:"-"`

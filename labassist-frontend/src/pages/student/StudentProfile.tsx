@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { studentApi } from '../../services/api'
 import { useAuth } from '../../hooks/useAuth'
@@ -18,6 +18,8 @@ export default function StudentProfile() {
   const showToast = useToast()
   const [showEdit, setShowEdit] = useState(false)
   const [form, setForm] = useState({ full_name: '', year: '', faculty: '' })
+  const [gradeFile, setGradeFile] = useState<File | null>(null)
+  const gradeFileInputRef = useRef<HTMLInputElement>(null)
 
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['student-profile'],
@@ -35,10 +37,25 @@ export default function StudentProfile() {
     onSuccess: (updated) => {
       setUser(updated)
       qc.invalidateQueries({ queryKey: ['student-profile'] })
-      setShowEdit(false)
       showToast('บันทึกข้อมูลเรียบร้อยแล้ว', 'success')
     },
     onError: () => showToast('เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'),
+  })
+
+  const uploadMut = useMutation({
+    mutationFn: (file: File) => studentApi.uploadTranscript(file),
+    onSuccess: (updated) => {
+      setUser(updated)
+      qc.invalidateQueries({ queryKey: ['student-profile'] })
+      if (updated.transcript_status === 'pass') {
+        showToast('อ่านใบเกรดสำเร็จ ผ่านการตรวจสอบ', 'success')
+      } else if (updated.transcript_status === 'needs_review') {
+        showToast('อ่านใบเกรดสำเร็จ แต่ต้องการการตรวจสอบเพิ่มเติม', 'warning')
+      } else {
+        showToast(updated.transcript_message ?? 'อ่านใบเกรดไม่ผ่านเกณฑ์', 'error')
+      }
+    },
+    onError: () => showToast('เกิดข้อผิดพลาดในการประมวลผลใบเกรดด้วย OCR', 'error'),
   })
 
   const p = profile ?? user
@@ -49,12 +66,20 @@ export default function StudentProfile() {
       year: String(p?.year ?? ''),
       faculty: p?.faculty ?? '',
     })
+    setGradeFile(null)
     setShowEdit(true)
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    updateMut.mutate({ full_name: form.full_name, year: Number(form.year) || 0, faculty: form.faculty })
+    const tasks: Promise<unknown>[] = [
+      updateMut.mutateAsync({ full_name: form.full_name, year: Number(form.year) || 0, faculty: form.faculty }),
+    ]
+    if (gradeFile) {
+      tasks.push(uploadMut.mutateAsync(gradeFile))
+    }
+    await Promise.allSettled(tasks)
+    setShowEdit(false)
   }
 
   const gpa = p?.gpa ?? 0
@@ -102,6 +127,34 @@ export default function StudentProfile() {
                 <InfoRow label="ชั้นปี" value={p?.year ? `ปีที่ ${p.year}` : '—'} />
                 <InfoRow label="คณะ / ภาควิชา" value={p?.faculty ?? '—'} />
               </div>
+
+              {p?.transcript_status && (
+                <div style={{ textAlign: 'left', marginBottom: 18, padding: 12, borderRadius: 8, background: '#F8F9FB' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-700)' }}>ผลตรวจสอบใบเกรด (OCR)</span>
+                    <StatusBadge value={p.transcript_status} />
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-500)', marginBottom: 8 }}>{p.transcript_message}</div>
+                  {p.transcript_confidence != null && (
+                    <div style={{ fontSize: 11, color: 'var(--ink-400)', marginBottom: 8 }}>
+                      ความมั่นใจในการอ่าน: {Math.round(p.transcript_confidence * 100)}%
+                    </div>
+                  )}
+                  {p.transcript_grades && Object.keys(p.transcript_grades).length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {Object.entries(p.transcript_grades).map(([code, grade]) => (
+                        <span key={code} style={{
+                          fontSize: 11, fontWeight: 600, color: 'var(--ink-700)',
+                          background: '#fff', border: '1px solid var(--line-soft)',
+                          borderRadius: 6, padding: '3px 8px',
+                        }}>
+                          {code}: {grade}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <Button variant="outline" size="sm" onClick={openEdit} style={{ width: '100%' }}>แก้ไขข้อมูล</Button>
             </>
@@ -169,12 +222,51 @@ export default function StudentProfile() {
             value={form.faculty}
             onChange={(e) => setForm(f => ({ ...f, faculty: e.target.value }))}
           />
+          <div>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 6 }}>
+              ใบเกรด (Transcript)
+            </label>
+            <input
+              ref={gradeFileInputRef}
+              type="file"
+              accept=".pdf,.png,.jpg,.jpeg"
+              style={{ display: 'none' }}
+              onChange={(e) => setGradeFile(e.target.files?.[0] ?? null)}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={uploadMut.isPending}
+                onClick={() => gradeFileInputRef.current?.click()}
+              >
+                แนบไฟล์ใบเกรด
+              </Button>
+              <span style={{ fontSize: 12, color: 'var(--ink-400)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {gradeFile ? gradeFile.name : 'ยังไม่ได้แนบไฟล์'}
+              </span>
+            </div>
+            {gradeFile && (
+              <div style={{ marginTop: 6, fontSize: 11, color: 'var(--amber)', background: '#FEF9E7', padding: '6px 10px', borderRadius: 6 }}>
+                การประมวลผล OCR ใช้เวลาประมาณ 1–2 นาที (ไฟล์ PDF หลายหน้าอาจใช้เวลานานกว่านี้) กรุณาอย่าปิดหน้านี้
+              </div>
+            )}
+          </div>
           <div style={{ fontSize: 12, color: 'var(--ink-400)', background: '#F8F9FB', padding: '8px 12px', borderRadius: 8 }}>
             อีเมลและรหัสนักศึกษาไม่สามารถแก้ไขได้
           </div>
+          {uploadMut.isPending && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--primary)', background: 'var(--primary-50)', padding: '8px 12px', borderRadius: 8 }}>
+              <span className="animate-spin" style={{ display: 'inline-block', width: 14, height: 14, border: '2px solid var(--primary)', borderTopColor: 'transparent', borderRadius: '50%' }} />
+              กำลังประมวลผล OCR อยู่ กรุณารอสักครู่...
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <Button type="button" variant="ghost" onClick={() => setShowEdit(false)}>ยกเลิก</Button>
-            <Button type="submit" loading={updateMut.isPending}>บันทึก</Button>
+            <Button type="button" variant="ghost" onClick={() => setShowEdit(false)} disabled={uploadMut.isPending}>ยกเลิก</Button>
+            <Button type="submit" loading={updateMut.isPending || uploadMut.isPending}>
+              {uploadMut.isPending ? 'กำลังประมวลผล OCR...' : 'บันทึก'}
+            </Button>
           </div>
         </form>
       </Modal>

@@ -8,12 +8,14 @@ import { Modal } from '../../components/ui/Modal'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { Skeleton } from '../../components/ui/Skeleton'
+import { useToast } from '../../components/ui/Toast'
 import type { User, UserRole } from '../../types'
 
 export default function AdminUsers() {
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState({ username: '', password: '', full_name: '', email: '', role: 'instructor' as UserRole })
   const qc = useQueryClient()
+  const showToast = useToast()
 
   const { data: users = [], isLoading } = useQuery({ queryKey: ['admin-users'], queryFn: () => adminApi.users() })
 
@@ -23,11 +25,14 @@ export default function AdminUsers() {
       qc.invalidateQueries({ queryKey: ['admin-users'] })
       setShowCreate(false)
       setForm({ username: '', password: '', full_name: '', email: '', role: 'instructor' })
+      showToast('สร้างบัญชีผู้ใช้เรียบร้อยแล้ว', 'success')
     },
+    onError: () => showToast('ไม่สามารถสร้างบัญชีได้ กรุณาตรวจสอบข้อมูล', 'error'),
   })
   const toggleMut = useMutation({
     mutationFn: ({ id, is_active }: { id: number; is_active: boolean }) => adminApi.updateUserStatus(id, is_active),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-users'] }),
+    onError: () => showToast('ไม่สามารถเปลี่ยนสถานะผู้ใช้ได้ กรุณาลองใหม่', 'error'),
   })
 
   function set(k: keyof typeof form) {

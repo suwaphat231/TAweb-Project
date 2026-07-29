@@ -1,7 +1,3 @@
-// Package store is an in-memory mock data layer that stands in for the
-// PostgreSQL database while the database team builds out the real one.
-// All state lives in package-level slices guarded by a single mutex and is
-// seeded on startup; nothing is persisted across restarts.
 package store
 
 import (
@@ -9,401 +5,281 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"labassist/models"
+
+	"gorm.io/gorm"
 )
 
 var ErrConflict = errors.New("conflict")
 
-var mu sync.RWMutex
+var db *gorm.DB
 
-var (
-	users         []*models.User
-	courses       []*models.Course
-	applications  []*models.Application
-	activityLogs  []*models.ActivityLog
-	notifications []*models.Notification
-
-	nextUserID   uint = 1
-	nextCourseID uint = 1
-	nextAppID    uint = 1
-	nextLogID    uint = 1
-	nextNotifID  uint = 1
-)
-
-func init() {
-	seed()
+// Init sets the database connection and runs the initial seed.
+func Init(d *gorm.DB) {
+	db = d
+	Seed()
 }
 
-// --- internal helpers (caller must hold mu) ---
-
-func findUserByIDLocked(id uint) *models.User {
-	for _, u := range users {
-		if u.ID == id {
-			return u
-		}
-	}
-	return nil
+func isDuplicateError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "Duplicate entry")
 }
 
-func findCourseByIDLocked(id uint) *models.Course {
-	for _, c := range courses {
-		if c.ID == id {
-			return c
-		}
+// enrichApp populates computed fields from preloaded associations.
+func enrichApp(a *models.Application) {
+	a.StudentName = a.Student.FullName
+	if a.Student.StudentID != nil {
+		a.StudentCode = *a.Student.StudentID
 	}
-	return nil
-}
-
-func findAppByIDLocked(id uint) *models.Application {
-	for _, a := range applications {
-		if a.ID == id {
-			return a
-		}
+	if a.Student.GPA != nil {
+		a.StudentGPA = *a.Student.GPA
 	}
-	return nil
-}
-
-func courseWithInstructor(c models.Course) models.Course {
-	if u := findUserByIDLocked(c.InstructorID); u != nil {
-		c.InstructorName = u.FullName
+	a.StudentEmail = a.Student.Email
+	if a.Student.Faculty != nil {
+		a.StudentFaculty = *a.Student.Faculty
 	}
-	return c
-}
-
-func countNonWithdrawnApplicationsLocked(courseID uint) int {
-	n := 0
-	for _, a := range applications {
-		if a.CourseID == courseID && a.Status != models.AppWithdrawn {
-			n++
-		}
+	if a.Student.Year != nil {
+		a.StudentYear = int(*a.Student.Year)
 	}
-	return n
-}
-
-func enrichApplication(a models.Application) models.Application {
-	if u := findUserByIDLocked(a.StudentID); u != nil {
-		a.StudentName = u.FullName
-		if u.StudentID != nil {
-			a.StudentCode = *u.StudentID
-		}
-		if u.GPA != nil {
-			a.StudentGPA = *u.GPA
-		}
-		a.StudentEmail = u.Email
-		if u.Faculty != nil {
-			a.StudentFaculty = *u.Faculty
-		}
-		if u.Year != nil {
-			a.StudentYear = int(*u.Year)
-		}
+	a.CourseCode = a.Course.Code
+	a.CourseTitle = a.Course.Title
+	if a.ReviewedBy != nil {
+		a.ReviewedByName = a.ReviewedBy.FullName
 	}
-	if c := findCourseByIDLocked(a.CourseID); c != nil {
-		a.CourseCode = c.Code
-		a.CourseTitle = c.Title
-	}
-	if a.ReviewedByID != nil {
-		if u := findUserByIDLocked(*a.ReviewedByID); u != nil {
-			a.ReviewedByName = u.FullName
-		}
-	}
-	return a
 }
 
 // --- Users ---
 
 func UserByID(id uint) (models.User, bool) {
-	mu.RLock()
-	defer mu.RUnlock()
-	u := findUserByIDLocked(id)
-	if u == nil {
+	var u models.User
+	if err := db.First(&u, id).Error; err != nil {
 		return models.User{}, false
 	}
-	return *u, true
+	return u, true
 }
 
 func UserByUsername(username string) (models.User, bool) {
-	mu.RLock()
-	defer mu.RUnlock()
-	for _, u := range users {
-		if u.Username != nil && *u.Username == username {
-			return *u, true
-		}
+	var u models.User
+	if err := db.Where("username = ?", username).First(&u).Error; err != nil {
+		return models.User{}, false
 	}
-	return models.User{}, false
+	return u, true
 }
 
 func UserByGoogleSub(sub string) (models.User, bool) {
-	mu.RLock()
-	defer mu.RUnlock()
-	for _, u := range users {
-		if u.GoogleSub != nil && *u.GoogleSub == sub {
-			return *u, true
-		}
+	var u models.User
+	if err := db.Where("google_sub = ?", sub).First(&u).Error; err != nil {
+		return models.User{}, false
 	}
-	return models.User{}, false
+	return u, true
 }
 
 func UserByEmail(email string) (models.User, bool) {
-	mu.RLock()
-	defer mu.RUnlock()
-	for _, u := range users {
-		if u.Email == email {
-			return *u, true
-		}
+	var u models.User
+	if err := db.Where("email = ?", email).First(&u).Error; err != nil {
+		return models.User{}, false
 	}
-	return models.User{}, false
+	return u, true
 }
 
 func ListUsers(role, search string, limit, offset int) []models.User {
-	mu.RLock()
-	defer mu.RUnlock()
-	out := make([]models.User, 0)
-	for i := len(users) - 1; i >= 0; i-- {
-		u := users[i]
-		if role != "" && string(u.Role) != role {
-			continue
-		}
-		if search != "" {
-			s := strings.ToLower(search)
-			if !strings.Contains(strings.ToLower(u.FullName), s) && !strings.Contains(strings.ToLower(u.Email), s) {
-				continue
-			}
-		}
-		out = append(out, *u)
+	var users []models.User
+	q := db.Order("id DESC")
+	if role != "" {
+		q = q.Where("role = ?", role)
 	}
-	if offset > len(out) {
-		return []models.User{}
+	if search != "" {
+		like := "%" + strings.ToLower(search) + "%"
+		q = q.Where("LOWER(full_name) LIKE ? OR LOWER(email) LIKE ?", like, like)
 	}
-	out = out[offset:]
-	if limit < len(out) {
-		out = out[:limit]
+	if limit > 0 {
+		q = q.Limit(limit)
 	}
-	return out
+	q.Offset(offset).Find(&users)
+	return users
 }
 
 func CreateUser(u models.User) (models.User, error) {
-	mu.Lock()
-	defer mu.Unlock()
-	if u.Username != nil {
-		for _, existing := range users {
-			if existing.Username != nil && *existing.Username == *u.Username {
-				return models.User{}, ErrConflict
-			}
-		}
-	}
-	for _, existing := range users {
-		if existing.Email == u.Email {
+	u.IsActive = true
+	if err := db.Create(&u).Error; err != nil {
+		if isDuplicateError(err) {
 			return models.User{}, ErrConflict
 		}
+		return models.User{}, err
 	}
-	u.ID = nextUserID
-	nextUserID++
-	u.IsActive = true
-	now := time.Now()
-	u.CreatedAt = now
-	u.UpdatedAt = now
-	users = append(users, &u)
 	return u, nil
 }
 
 func UpdateUser(id uint, fn func(u *models.User)) (models.User, bool) {
-	mu.Lock()
-	defer mu.Unlock()
-	u := findUserByIDLocked(id)
-	if u == nil {
+	var u models.User
+	if err := db.First(&u, id).Error; err != nil {
 		return models.User{}, false
 	}
-	fn(u)
-	u.UpdatedAt = time.Now()
-	return *u, true
+	fn(&u)
+	db.Save(&u)
+	return u, true
 }
 
 func CountUsers() int64 {
-	mu.RLock()
-	defer mu.RUnlock()
-	return int64(len(users))
+	var count int64
+	db.Model(&models.User{}).Count(&count)
+	return count
 }
 
 func CountUsersByRole(role models.UserRole) int64 {
-	mu.RLock()
-	defer mu.RUnlock()
-	var n int64
-	for _, u := range users {
-		if u.Role == role {
-			n++
-		}
-	}
-	return n
+	var count int64
+	db.Model(&models.User{}).Where("role = ?", role).Count(&count)
+	return count
 }
 
 // --- Courses ---
 
 func ListCourses(status, q string, hasLab *bool) []models.Course {
-	mu.RLock()
-	defer mu.RUnlock()
-	out := make([]models.Course, 0)
-	for i := len(courses) - 1; i >= 0; i-- {
-		c := courses[i]
-		if status != "" && string(c.Status) != status {
-			continue
-		}
-		if hasLab != nil && c.HasLab != *hasLab {
-			continue
-		}
-		if q != "" {
-			ql := strings.ToLower(q)
-			if !strings.Contains(strings.ToLower(c.Code), ql) && !strings.Contains(strings.ToLower(c.Title), ql) {
-				continue
-			}
-		}
-		out = append(out, courseWithInstructor(*c))
+	var courses []models.Course
+	query := db.Order("id DESC").Preload("Instructor")
+	if status != "" {
+		query = query.Where("status = ?", status)
 	}
-	return out
+	if hasLab != nil {
+		query = query.Where("has_lab = ?", *hasLab)
+	}
+	if q != "" {
+		like := "%" + strings.ToLower(q) + "%"
+		query = query.Where("LOWER(code) LIKE ? OR LOWER(title) LIKE ?", like, like)
+	}
+	query.Find(&courses)
+	for i := range courses {
+		courses[i].InstructorName = courses[i].Instructor.FullName
+	}
+	return courses
 }
 
 func CourseByID(id uint) (models.Course, bool) {
-	mu.RLock()
-	defer mu.RUnlock()
-	c := findCourseByIDLocked(id)
-	if c == nil {
+	var c models.Course
+	if err := db.Preload("Instructor").First(&c, id).Error; err != nil {
 		return models.Course{}, false
 	}
-	return courseWithInstructor(*c), true
+	c.InstructorName = c.Instructor.FullName
+	return c, true
 }
 
 func InstructorCourses(instructorID uint, isAdmin bool, hasLab *bool) []models.Course {
-	mu.RLock()
-	defer mu.RUnlock()
-	out := make([]models.Course, 0)
-	for i := len(courses) - 1; i >= 0; i-- {
-		c := courses[i]
-		if !isAdmin && c.InstructorID != instructorID {
-			continue
-		}
-		if hasLab != nil && c.HasLab != *hasLab {
-			continue
-		}
-		cc := courseWithInstructor(*c)
-		cc.ApplicantCount = countNonWithdrawnApplicationsLocked(c.ID)
-		out = append(out, cc)
+	var courses []models.Course
+	q := db.Order("id DESC").Preload("Instructor")
+	if !isAdmin {
+		q = q.Where("instructor_id = ?", instructorID)
 	}
-	return out
+	if hasLab != nil {
+		q = q.Where("has_lab = ?", *hasLab)
+	}
+	q.Find(&courses)
+	for i := range courses {
+		courses[i].InstructorName = courses[i].Instructor.FullName
+		var count int64
+		db.Model(&models.Application{}).
+			Where("course_id = ? AND status != ?", courses[i].ID, models.AppWithdrawn).
+			Count(&count)
+		courses[i].ApplicantCount = int(count)
+	}
+	return courses
 }
 
 func CreateCourse(c models.Course) models.Course {
-	mu.Lock()
-	defer mu.Unlock()
-	c.ID = nextCourseID
-	nextCourseID++
-	now := time.Now()
-	c.CreatedAt = now
-	c.UpdatedAt = now
-	courses = append(courses, &c)
-	return courseWithInstructor(c)
+	db.Create(&c)
+	if u, ok := UserByID(c.InstructorID); ok {
+		c.InstructorName = u.FullName
+	}
+	return c
 }
 
 func UpdateCourse(id uint, fn func(c *models.Course)) (models.Course, bool) {
-	mu.Lock()
-	defer mu.Unlock()
-	c := findCourseByIDLocked(id)
-	if c == nil {
+	var c models.Course
+	if err := db.First(&c, id).Error; err != nil {
 		return models.Course{}, false
 	}
-	fn(c)
-	c.UpdatedAt = time.Now()
-	return courseWithInstructor(*c), true
+	fn(&c)
+	db.Save(&c)
+	if u, ok := UserByID(c.InstructorID); ok {
+		c.InstructorName = u.FullName
+	}
+	return c, true
 }
 
 func AdjustCourseAccepted(courseID uint, role models.RoleApplied, delta int) {
-	mu.Lock()
-	defer mu.Unlock()
-	c := findCourseByIDLocked(courseID)
-	if c == nil {
-		return
-	}
 	if role == models.RoleTA {
-		c.TAAccepted += delta
+		db.Model(&models.Course{}).Where("id = ?", courseID).
+			UpdateColumn("ta_accepted", gorm.Expr("ta_accepted + ?", delta))
 	} else {
-		c.LabBoyAccepted += delta
+		db.Model(&models.Course{}).Where("id = ?", courseID).
+			UpdateColumn("labboy_accepted", gorm.Expr("labboy_accepted + ?", delta))
 	}
-	c.UpdatedAt = time.Now()
 }
 
 func CountCourses() int64 {
-	mu.RLock()
-	defer mu.RUnlock()
-	return int64(len(courses))
+	var count int64
+	db.Model(&models.Course{}).Count(&count)
+	return count
 }
 
 func CountOpenCourses() int64 {
-	mu.RLock()
-	defer mu.RUnlock()
-	var n int64
-	for _, c := range courses {
-		if c.Status == models.StatusOpen || c.Status == models.StatusClosingSoon {
-			n++
-		}
-	}
-	return n
+	var count int64
+	db.Model(&models.Course{}).
+		Where("status IN ?", []string{string(models.StatusOpen), string(models.StatusClosingSoon)}).
+		Count(&count)
+	return count
 }
 
 func RecentOpenCourses(limit int) []models.Course {
-	mu.RLock()
-	defer mu.RUnlock()
-	out := make([]models.Course, 0)
-	for i := len(courses) - 1; i >= 0 && len(out) < limit; i-- {
-		c := courses[i]
-		if c.Status == models.StatusOpen || c.Status == models.StatusClosingSoon {
-			out = append(out, courseWithInstructor(*c))
-		}
+	var courses []models.Course
+	db.Where("status IN ?", []string{string(models.StatusOpen), string(models.StatusClosingSoon)}).
+		Order("id DESC").Limit(limit).Preload("Instructor").Find(&courses)
+	for i := range courses {
+		courses[i].InstructorName = courses[i].Instructor.FullName
 	}
-	return out
+	return courses
 }
 
 // --- Applications ---
 
+func appsQuery() *gorm.DB {
+	return db.Preload("Student").Preload("Course").Preload("ReviewedBy")
+}
+
 func ApplicantsForCourse(courseID uint, roleFilter, statusFilter, search string) []models.Application {
-	mu.RLock()
-	defer mu.RUnlock()
-	out := make([]models.Application, 0)
-	for _, a := range applications {
-		if a.CourseID != courseID {
-			continue
-		}
-		if roleFilter != "" && string(a.RoleApplied) != roleFilter {
-			continue
-		}
-		if statusFilter != "" && string(a.Status) != statusFilter {
-			continue
-		}
-		enriched := enrichApplication(*a)
+	var apps []models.Application
+	q := appsQuery().Where("applications.course_id = ?", courseID)
+	if roleFilter != "" {
+		q = q.Where("applications.role_applied = ?", roleFilter)
+	}
+	if statusFilter != "" {
+		q = q.Where("applications.status = ?", statusFilter)
+	}
+	q.Find(&apps)
+
+	out := make([]models.Application, 0, len(apps))
+	for i := range apps {
+		enrichApp(&apps[i])
 		if search != "" {
 			s := strings.ToLower(search)
-			if !strings.Contains(strings.ToLower(enriched.StudentName), s) && !strings.Contains(strings.ToLower(enriched.StudentCode), s) {
+			if !strings.Contains(strings.ToLower(apps[i].StudentName), s) &&
+				!strings.Contains(strings.ToLower(apps[i].StudentCode), s) {
 				continue
 			}
 		}
-		out = append(out, enriched)
+		out = append(out, apps[i])
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].StudentGPA > out[j].StudentGPA })
 	return out
 }
 
 func StudentApplications(studentID uint) []models.Application {
-	mu.RLock()
-	defer mu.RUnlock()
-	out := make([]models.Application, 0)
-	for _, a := range applications {
-		if a.StudentID != studentID {
-			continue
-		}
-		out = append(out, enrichApplication(*a))
+	var apps []models.Application
+	appsQuery().Where("applications.student_id = ?", studentID).Order("applications.applied_at DESC").Find(&apps)
+	for i := range apps {
+		enrichApp(&apps[i])
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].AppliedAt.After(out[j].AppliedAt) })
-	return out
+	return apps
 }
 
 func RecentStudentApplications(studentID uint, limit int) []models.Application {
@@ -415,196 +291,139 @@ func RecentStudentApplications(studentID uint, limit int) []models.Application {
 }
 
 func CountAppliedByStudent(studentID uint) int64 {
-	mu.RLock()
-	defer mu.RUnlock()
-	var n int64
-	for _, a := range applications {
-		if a.StudentID == studentID && a.Status != models.AppWithdrawn {
-			n++
-		}
-	}
-	return n
+	var count int64
+	db.Model(&models.Application{}).
+		Where("student_id = ? AND status != ?", studentID, models.AppWithdrawn).
+		Count(&count)
+	return count
 }
 
 func ApplicationByID(id uint) (models.Application, bool) {
-	mu.RLock()
-	defer mu.RUnlock()
-	a := findAppByIDLocked(id)
-	if a == nil {
+	var a models.Application
+	if err := appsQuery().First(&a, id).Error; err != nil {
 		return models.Application{}, false
 	}
-	return enrichApplication(*a), true
+	enrichApp(&a)
+	return a, true
 }
 
 func ApplicationByIDForStudent(id, studentID uint) (models.Application, bool) {
-	mu.RLock()
-	defer mu.RUnlock()
-	a := findAppByIDLocked(id)
-	if a == nil || a.StudentID != studentID {
+	var a models.Application
+	if err := appsQuery().Where("applications.id = ? AND applications.student_id = ?", id, studentID).First(&a).Error; err != nil {
 		return models.Application{}, false
 	}
-	return enrichApplication(*a), true
+	enrichApp(&a)
+	return a, true
 }
 
 func CreateApplication(a models.Application) (models.Application, error) {
-	mu.Lock()
-	defer mu.Unlock()
-	for _, existing := range applications {
-		if existing.StudentID == a.StudentID && existing.CourseID == a.CourseID {
+	if a.AppliedAt.IsZero() {
+		a.AppliedAt = time.Now()
+	}
+	if err := db.Create(&a).Error; err != nil {
+		if isDuplicateError(err) {
 			return models.Application{}, ErrConflict
 		}
+		return models.Application{}, err
 	}
-	a.ID = nextAppID
-	nextAppID++
-	a.AppliedAt = time.Now()
-	applications = append(applications, &a)
-	return enrichApplication(a), nil
+	result, _ := ApplicationByID(a.ID)
+	return result, nil
 }
 
 func UpdateApplication(id uint, fn func(a *models.Application)) (models.Application, bool) {
-	mu.Lock()
-	defer mu.Unlock()
-	a := findAppByIDLocked(id)
-	if a == nil {
+	var a models.Application
+	if err := db.First(&a, id).Error; err != nil {
 		return models.Application{}, false
 	}
-	fn(a)
-	return enrichApplication(*a), true
+	fn(&a)
+	db.Save(&a)
+	result, _ := ApplicationByID(a.ID)
+	return result, true
 }
 
 func BulkUpdateApplications(ids []uint, fn func(a *models.Application)) int64 {
-	mu.Lock()
-	defer mu.Unlock()
-	idSet := make(map[uint]bool, len(ids))
-	for _, id := range ids {
-		idSet[id] = true
+	if len(ids) == 0 {
+		return 0
 	}
+	var apps []models.Application
+	db.Where("id IN ?", ids).Find(&apps)
 	var n int64
-	for _, a := range applications {
-		if idSet[a.ID] {
-			fn(a)
-			n++
-		}
+	for i := range apps {
+		fn(&apps[i])
+		db.Save(&apps[i])
+		n++
 	}
 	return n
 }
 
 func CountApplications() int64 {
-	mu.RLock()
-	defer mu.RUnlock()
-	return int64(len(applications))
+	var count int64
+	db.Model(&models.Application{}).Count(&count)
+	return count
 }
 
 func CountApplicationsByStatus(status models.AppStatus) int64 {
-	mu.RLock()
-	defer mu.RUnlock()
-	var n int64
-	for _, a := range applications {
-		if a.Status == status {
-			n++
-		}
-	}
-	return n
+	var count int64
+	db.Model(&models.Application{}).Where("status = ?", status).Count(&count)
+	return count
 }
 
 // --- Notifications ---
 
 func CreateNotifications(notifs []models.Notification) int {
-	mu.Lock()
-	defer mu.Unlock()
-	for i := range notifs {
-		notifs[i].ID = nextNotifID
-		nextNotifID++
-		notifs[i].CreatedAt = time.Now()
-		cp := notifs[i]
-		notifications = append(notifications, &cp)
+	if len(notifs) == 0 {
+		return 0
 	}
+	db.Create(&notifs)
 	return len(notifs)
 }
 
 func UserNotifications(userID uint) []models.Notification {
-	mu.RLock()
-	defer mu.RUnlock()
-	out := make([]models.Notification, 0)
-	for i := len(notifications) - 1; i >= 0; i-- {
-		if notifications[i].UserID == userID {
-			out = append(out, *notifications[i])
-		}
-	}
-	return out
+	var notifs []models.Notification
+	db.Where("user_id = ?", userID).Order("id DESC").Find(&notifs)
+	return notifs
 }
 
 func MarkNotifRead(id, userID uint) {
-	mu.Lock()
-	defer mu.Unlock()
-	for _, n := range notifications {
-		if n.ID == id && n.UserID == userID {
-			n.IsRead = true
-			return
-		}
-	}
+	db.Model(&models.Notification{}).
+		Where("id = ? AND user_id = ?", id, userID).
+		Update("is_read", true)
 }
 
 func MarkAllNotifsRead(userID uint) {
-	mu.Lock()
-	defer mu.Unlock()
-	for _, n := range notifications {
-		if n.UserID == userID {
-			n.IsRead = true
-		}
-	}
+	db.Model(&models.Notification{}).
+		Where("user_id = ?", userID).
+		Update("is_read", true)
 }
 
 func AcceptedStudentsForCourse(courseID uint) []models.Application {
-	mu.RLock()
-	defer mu.RUnlock()
-	out := make([]models.Application, 0)
-	for _, a := range applications {
-		if a.CourseID == courseID && a.Status == models.AppAccepted {
-			out = append(out, enrichApplication(*a))
-		}
+	var apps []models.Application
+	appsQuery().Where("applications.course_id = ? AND applications.status = ?", courseID, models.AppAccepted).Find(&apps)
+	for i := range apps {
+		enrichApp(&apps[i])
 	}
-	return out
+	return apps
 }
 
 // --- Activity logs ---
 
 func CreateActivityLog(l models.ActivityLog) {
-	mu.Lock()
-	defer mu.Unlock()
-	l.ID = nextLogID
-	nextLogID++
-	l.CreatedAt = time.Now()
-	activityLogs = append(activityLogs, &l)
+	db.Create(&l)
 }
 
 func ListActivityLogs(userID, method string, offset, limit int) ([]models.ActivityLog, int64) {
-	mu.RLock()
-	defer mu.RUnlock()
-	filtered := make([]*models.ActivityLog, 0)
-	for i := len(activityLogs) - 1; i >= 0; i-- {
-		l := activityLogs[i]
-		if userID != "" {
-			if l.UserID == nil || strconv.FormatUint(uint64(*l.UserID), 10) != userID {
-				continue
-			}
+	base := db.Model(&models.ActivityLog{})
+	if userID != "" {
+		if uid, err := strconv.ParseUint(userID, 10, 64); err == nil {
+			base = base.Where("user_id = ?", uid)
 		}
-		if method != "" && l.Method != method {
-			continue
-		}
-		filtered = append(filtered, l)
 	}
-	total := int64(len(filtered))
-	if offset > len(filtered) {
-		return []models.ActivityLog{}, total
+	if method != "" {
+		base = base.Where("method = ?", method)
 	}
-	filtered = filtered[offset:]
-	if limit < len(filtered) {
-		filtered = filtered[:limit]
-	}
-	out := make([]models.ActivityLog, len(filtered))
-	for i, l := range filtered {
-		out[i] = *l
-	}
-	return out, total
+	var total int64
+	base.Count(&total)
+	var logs []models.ActivityLog
+	base.Order("id DESC").Offset(offset).Limit(limit).Find(&logs)
+	return logs, total
 }

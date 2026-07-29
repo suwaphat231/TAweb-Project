@@ -1,0 +1,4 @@
+{
+  "python.analysis.extraPaths": ["labassist-ocr"],
+  "python.defaultInterpreterPath": "${workspaceFolder}/labassist-ocr/.venv/Scripts/python.exe"
+}

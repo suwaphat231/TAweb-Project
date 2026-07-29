@@ -50,6 +50,9 @@ const statusMap: Record<string, { variant: BadgeVariant; label: string }> = {
   admin:        { variant: 'red',    label: 'Admin' },
   ta:           { variant: 'blue',   label: 'TA' },
   labboy:       { variant: 'purple', label: 'Lab Boy' },
+  pass:         { variant: 'green',  label: 'ผ่านการตรวจสอบ' },
+  needs_review: { variant: 'amber',  label: 'ต้องตรวจสอบ' },
+  fail:         { variant: 'red',    label: 'ไม่ผ่านเกณฑ์' },
 }
 
 export function StatusBadge({ value }: { value: string }) {

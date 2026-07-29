@@ -2,8 +2,10 @@ package main
 
 import (
 	"labassist/config"
+	"labassist/database"
 	"labassist/middleware"
 	"labassist/routes"
+	"labassist/store"
 	"log"
 
 	"github.com/gin-gonic/gin"
@@ -24,6 +26,9 @@ func main() {
 	}
 
 	cfg := config.Load()
+
+	db := database.Connect(cfg)
+	store.Init(db)
 
 	r := gin.Default()
 	r.Use(middleware.CORS(cfg))

@@ -71,6 +71,11 @@ export const studentAPI = {
     }>('/student/dashboard').then((r) => r.data),
   getProfile: () => api.get<User>('/student/profile').then((r) => r.data),
   updateProfile: (data: Partial<User>) => api.put<User>('/student/profile', data).then((r) => r.data),
+  uploadTranscript: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post<User>('/student/profile/transcript', formData).then((r) => r.data)
+  },
 }
 
 export const adminAPI = {
@@ -99,6 +104,7 @@ export const studentApi = {
   withdraw: applicationsAPI.withdraw,
   profile: studentAPI.getProfile,
   updateProfile: studentAPI.updateProfile,
+  uploadTranscript: studentAPI.uploadTranscript,
 }
 export const instructorApi = {
   courses: (params?: { has_lab?: boolean }) =>
