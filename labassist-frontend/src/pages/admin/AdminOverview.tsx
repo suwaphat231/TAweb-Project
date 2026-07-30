@@ -15,7 +15,7 @@ import type { UserRole } from '../../types'
 
 export default function AdminOverview() {
   const [showCreate, setShowCreate] = useState(false)
-  const [form, setForm] = useState({ username: '', password: '', full_name: '', email: '', role: 'instructor' as UserRole })
+  const [form, setForm] = useState({ full_name: '', role: 'instructor' as UserRole })
   const qc = useQueryClient()
   const showToast = useToast()
 
@@ -38,7 +38,7 @@ export default function AdminOverview() {
       qc.invalidateQueries({ queryKey: ['admin-users'] })
       qc.invalidateQueries({ queryKey: ['admin-stats'] })
       setShowCreate(false)
-      setForm({ username: '', password: '', full_name: '', email: '', role: 'instructor' })
+      setForm({ full_name: '', role: 'instructor' })
       showToast('สร้างบัญชีผู้ใช้เรียบร้อยแล้ว', 'success')
     },
     onError: () => showToast('ไม่สามารถสร้างบัญชีได้ กรุณาตรวจสอบข้อมูล', 'error'),
@@ -137,7 +137,7 @@ export default function AdminOverview() {
                     {u.full_name}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--ink-400)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {u.email}
+                    {u.email || '—'}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
@@ -158,12 +158,10 @@ export default function AdminOverview() {
           onSubmit={(e) => { e.preventDefault(); createMut.mutate(form) }}
           style={{ display: 'flex', flexDirection: 'column', gap: 14 }}
         >
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Input label="Username *" value={form.username} onChange={set('username')} required />
-            <Input label="รหัสผ่าน *" type="password" value={form.password} onChange={set('password')} required />
-          </div>
+          <p style={{ fontSize: 13, color: 'var(--ink-500)' }}>
+            กรอกแค่ชื่อ-นามสกุลและบทบาท — อีเมลจะถูกเติมเองภายหลังตอนเจ้าของบัญชีเข้าสู่ระบบ
+          </p>
           <Input label="ชื่อ-นามสกุล *" value={form.full_name} onChange={set('full_name')} required />
-          <Input label="อีเมล *" type="email" value={form.email} onChange={set('email')} required />
           <Select
             label="บทบาท *" value={form.role} onChange={set('role')}
             options={[{ value: 'instructor', label: 'อาจารย์' }, { value: 'staff', label: 'เจ้าหน้าที่' }]}

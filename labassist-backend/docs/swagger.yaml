@@ -1,6 +1,6 @@
 basePath: /api/v1
 definitions:
-  handlers.AdminStatsResponse:
+  admin.AdminStatsResponse:
     properties:
       accepted_applications:
         example: 50
@@ -27,6 +27,76 @@ definitions:
         example: 100
         type: integer
     type: object
+  admin.CreateUserRequest:
+    properties:
+      full_name:
+        example: John Doe
+        type: string
+      role:
+        allOf:
+        - $ref: '#/definitions/models.UserRole'
+        example: instructor
+    required:
+    - full_name
+    - role
+    type: object
+  admin.DeleteCoursesByTermResponse:
+    properties:
+      deleted:
+        example: 12
+        type: integer
+    type: object
+  admin.ImportCourseResult:
+    properties:
+      code:
+        example: CS101
+        type: string
+      instructor:
+        example: John Doe; Jane Doe
+        type: string
+      row:
+        example: 2
+        type: integer
+      title:
+        example: Introduction to Programming
+        type: string
+    type: object
+  admin.ImportCoursesResponse:
+    properties:
+      created:
+        items:
+          $ref: '#/definitions/admin.ImportCourseResult'
+        type: array
+      skipped:
+        items:
+          $ref: '#/definitions/admin.ImportSkippedRow'
+        type: array
+    type: object
+  admin.ImportSkippedRow:
+    properties:
+      reason:
+        example: empty row
+        type: string
+      row:
+        example: 2
+        type: integer
+    type: object
+  admin.UpdateUserRequest:
+    properties:
+      full_name:
+        example: John Doe
+        type: string
+      role:
+        allOf:
+        - $ref: '#/definitions/models.UserRole'
+        example: instructor
+    type: object
+  admin.UpdateUserStatusRequest:
+    properties:
+      is_active:
+        example: true
+        type: boolean
+    type: object
   handlers.ApplyRequest:
     properties:
       course_id:
@@ -43,86 +113,11 @@ definitions:
     - course_id
     - role_applied
     type: object
-  handlers.BulkReviewRequest:
-    properties:
-      application_ids:
-        items:
-          type: integer
-        type: array
-      note:
-        type: string
-      status:
-        allOf:
-        - $ref: '#/definitions/models.AppStatus'
-        example: accepted
-    required:
-    - application_ids
-    - status
-    type: object
   handlers.BulkReviewResponse:
     properties:
       updated:
         example: 3
         type: integer
-    type: object
-  handlers.CreateCourseRequest:
-    properties:
-      academic_year:
-        example: 2567
-        type: integer
-      code:
-        example: CS101
-        type: string
-      description:
-        type: string
-      labboy_slots:
-        example: 2
-        type: integer
-      requirements:
-        type: string
-      semester:
-        example: "1"
-        type: string
-      status:
-        allOf:
-        - $ref: '#/definitions/models.CourseStatus'
-        example: draft
-      ta_slots:
-        example: 3
-        type: integer
-      title:
-        example: Introduction to Programming
-        type: string
-    required:
-    - academic_year
-    - code
-    - semester
-    - title
-    type: object
-  handlers.CreateUserRequest:
-    properties:
-      email:
-        example: john@silpakorn.edu
-        type: string
-      full_name:
-        example: John Doe
-        type: string
-      password:
-        example: securepassword
-        type: string
-      role:
-        allOf:
-        - $ref: '#/definitions/models.UserRole'
-        example: instructor
-      username:
-        example: johndoe
-        type: string
-    required:
-    - email
-    - full_name
-    - password
-    - role
-    - username
     type: object
   handlers.DashboardStats:
     properties:
@@ -205,18 +200,6 @@ definitions:
         example: ออกจากระบบแล้ว
         type: string
     type: object
-  handlers.ReviewRequest:
-    properties:
-      note:
-        example: ผ่านการคัดเลือก
-        type: string
-      status:
-        allOf:
-        - $ref: '#/definitions/models.AppStatus'
-        example: accepted
-    required:
-    - status
-    type: object
   handlers.StudentDashboardResponse:
     properties:
       recent_applications:
@@ -230,42 +213,6 @@ definitions:
       stats:
         $ref: '#/definitions/handlers.DashboardStats'
     type: object
-  handlers.UpdateCourseRequest:
-    properties:
-      academic_year:
-        example: 2567
-        type: integer
-      code:
-        example: CS101
-        type: string
-      description:
-        type: string
-      labboy_slots:
-        example: 2
-        type: integer
-      requirements:
-        type: string
-      semester:
-        example: "1"
-        type: string
-      status:
-        allOf:
-        - $ref: '#/definitions/models.CourseStatus'
-        example: open
-      ta_slots:
-        example: 3
-        type: integer
-      title:
-        example: Introduction to Programming
-        type: string
-    type: object
-  handlers.UpdateCourseStatusRequest:
-    properties:
-      status:
-        allOf:
-        - $ref: '#/definitions/models.CourseStatus'
-        example: open
-    type: object
   handlers.UpdateProfileRequest:
     properties:
       faculty:
@@ -277,12 +224,6 @@ definitions:
       year:
         example: 3
         type: integer
-    type: object
-  handlers.UpdateUserStatusRequest:
-    properties:
-      is_active:
-        example: true
-        type: boolean
     type: object
   models.ActivityLog:
     properties:
@@ -367,19 +308,38 @@ definitions:
         type: integer
       applicant_count:
         type: integer
+      capacity:
+        type: integer
       code:
         type: string
       created_at:
+        type: string
+      credits:
         type: string
       deadline:
         type: string
       description:
         type: string
+      english_title:
+        type: string
+      enrolled:
+        type: integer
+      group_note:
+        type: string
+      has_lab:
+        type: boolean
       id:
         type: integer
       instructor_id:
         type: integer
       instructor_name:
+        type: string
+      instructors_raw:
+        description: |-
+          InstructorsRaw is the verbatim text of the spreadsheet's instructor
+          cell (kept for display as-is, e.g. co-teaching names the system has
+          no matching account for) — separate from InstructorID, which only
+          ever points to a real, matched user account.
         type: string
       labboy_accepted:
         type: integer
@@ -387,6 +347,10 @@ definitions:
         type: integer
       requirements:
         type: string
+      schedule:
+        type: string
+      section:
+        type: integer
       semester:
         type: string
       status:
@@ -406,12 +370,31 @@ definitions:
     - closing_soon
     - closed
     - draft
+    - archived
     type: string
     x-enum-varnames:
     - StatusOpen
     - StatusClosingSoon
     - StatusClosed
     - StatusDraft
+    - StatusArchived
+  models.Notification:
+    properties:
+      body:
+        type: string
+      course_id:
+        type: integer
+      created_at:
+        type: string
+      id:
+        type: integer
+      is_read:
+        type: boolean
+      title:
+        type: string
+      user_id:
+        type: integer
+    type: object
   models.RoleApplied:
     enum:
     - ta
@@ -425,6 +408,11 @@ definitions:
       created_at:
         type: string
       email:
+        description: |-
+          Email has no gorm uniqueIndex tag: admin-created accounts start with a
+          blank email (filled in later via Google sign-in), so uniqueness is
+          enforced instead by a partial index that ignores empty strings — see
+          database/connection.go.
         type: string
       faculty:
         type: string
@@ -461,6 +449,122 @@ definitions:
     - RoleInstructor
     - RoleStaff
     - RoleAdmin
+  teacher.BulkReviewRequest:
+    properties:
+      application_ids:
+        items:
+          type: integer
+        type: array
+      note:
+        type: string
+      status:
+        allOf:
+        - $ref: '#/definitions/models.AppStatus'
+        example: accepted
+    required:
+    - application_ids
+    - status
+    type: object
+  teacher.CreateCourseRequest:
+    properties:
+      academic_year:
+        example: 2567
+        type: integer
+      code:
+        example: CS101
+        type: string
+      deadline:
+        example: "2026-08-01"
+        type: string
+      description:
+        type: string
+      labboy_slots:
+        example: 2
+        type: integer
+      requirements:
+        type: string
+      semester:
+        example: "1"
+        type: string
+      status:
+        allOf:
+        - $ref: '#/definitions/models.CourseStatus'
+        example: draft
+      ta_slots:
+        example: 3
+        type: integer
+      title:
+        example: Introduction to Programming
+        type: string
+    required:
+    - academic_year
+    - code
+    - semester
+    - title
+    type: object
+  teacher.ReviewRequest:
+    properties:
+      note:
+        example: ผ่านการคัดเลือก
+        type: string
+      status:
+        allOf:
+        - $ref: '#/definitions/models.AppStatus'
+        example: accepted
+    required:
+    - status
+    type: object
+  teacher.UpdateCourseRequest:
+    properties:
+      academic_year:
+        example: 2567
+        type: integer
+      code:
+        example: CS101
+        type: string
+      deadline:
+        example: "2026-08-01"
+        type: string
+      description:
+        type: string
+      labboy_slots:
+        example: 2
+        type: integer
+      requirements:
+        type: string
+      semester:
+        example: "1"
+        type: string
+      status:
+        allOf:
+        - $ref: '#/definitions/models.CourseStatus'
+        example: open
+      ta_slots:
+        example: 3
+        type: integer
+      title:
+        example: Introduction to Programming
+        type: string
+    type: object
+  teacher.UpdateCourseStatusRequest:
+    properties:
+      status:
+        allOf:
+        - $ref: '#/definitions/models.CourseStatus'
+        example: open
+    type: object
+  teacher.UpdateInstructorProfileRequest:
+    properties:
+      email:
+        example: somchai@su.ac.th
+        type: string
+      faculty:
+        example: ภาควิชาวิทยาการคอมพิวเตอร์
+        type: string
+      full_name:
+        example: ผู้ช่วยศาสตราจารย์ ดร.สมชาย ใจดี
+        type: string
+    type: object
 host: localhost:8080
 info:
   contact: {}
@@ -468,6 +572,78 @@ info:
   title: LabAssist API
   version: "1.0"
 paths:
+  /admin/courses/import:
+    post:
+      consumes:
+      - multipart/form-data
+      description: แสดงชื่อผู้สอนตามที่พิมพ์มาในไฟล์เสมอ ระบบพยายามจับคู่ชื่อแรกกับผู้ใช้
+        role=instructor ที่มีอยู่จริงเพื่อผูกวิชากับบัญชีนั้น (ให้อาจารย์ล็อกอินดูวิชาของตัวเองได้)
+        แต่ถ้าจับคู่ไม่ได้ก็ไม่มีผลต่อการนำเข้า รหัสวิชาซ้ำกันได้ (คนละกลุ่มเรียน)
+        มีเพียงแถวที่ว่างจริงๆ เท่านั้นที่จะถูกข้าม
+      parameters:
+      - description: 'ไฟล์ Excel รายวิชา .xlsx (คอลัมน์: รายวิชา, ชื่อรายวิชา, COURSENAME,
+          หน่วยกิต, กลุ่ม, รับ, ลงทะเบียนแล้ว, เวลา, ผู้สอน)'
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: ภาคการศึกษา
+        in: formData
+        name: semester
+        required: true
+        type: string
+      - description: ปีการศึกษา
+        in: formData
+        name: academic_year
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/admin.ImportCoursesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: นำเข้ารายวิชาจากไฟล์ Excel (.xlsx)
+      tags:
+      - admin
+  /admin/courses/term:
+    delete:
+      description: ใช้เพื่อล้างข้อมูลที่นำเข้าผิดพลาด เช่น หลังจากอัปโหลดไฟล์ Excel
+        ผิดเทอม
+      parameters:
+      - description: ภาคการศึกษา
+        in: query
+        name: semester
+        required: true
+        type: string
+      - description: ปีการศึกษา
+        in: query
+        name: academic_year
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/admin.DeleteCoursesByTermResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: ลบวิชาทั้งหมดของภาคการศึกษาที่ระบุ
+      tags:
+      - admin
   /admin/logs:
     get:
       parameters:
@@ -512,7 +688,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handlers.AdminStatsResponse'
+            $ref: '#/definitions/admin.AdminStatsResponse'
       security:
       - BearerAuth: []
       summary: สถิติภาพรวมของระบบ
@@ -565,7 +741,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/handlers.CreateUserRequest'
+          $ref: '#/definitions/admin.CreateUserRequest'
       produces:
       - application/json
       responses:
@@ -577,13 +753,69 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
-        "409":
-          description: Conflict
+      security:
+      - BearerAuth: []
+      summary: สร้างผู้ใช้ใหม่ (ชื่อ + บทบาทเท่านั้น)
+      tags:
+      - admin
+  /admin/users/{id}:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ข้อมูลที่ต้องการแก้ไข
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/admin.UpdateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.User'
+        "404":
+          description: Not Found
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: สร้างผู้ใช้ใหม่
+      summary: แก้ไขชื่อ/บทบาทผู้ใช้
+      tags:
+      - admin
+  /admin/users/{id}/courses:
+    get:
+      description: จับคู่ด้วย ID บัญชีโดยตรง และด้วยชื่อกับข้อมูลผู้สอนที่นำเข้าจากไฟล์
+        Excel (ครอบคลุมทั้งผู้สอนหลักและผู้ร่วมสอน)
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Course'
+            type: array
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: รายวิชาที่อาจารย์คนนี้สอน
       tags:
       - admin
   /admin/users/{id}/status:
@@ -601,7 +833,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/handlers.UpdateUserStatusRequest'
+          $ref: '#/definitions/admin.UpdateUserStatusRequest'
       produces:
       - application/json
       responses:
@@ -725,6 +957,7 @@ paths:
         - closing_soon
         - closed
         - draft
+        - archived
         in: query
         name: status
         type: string
@@ -785,7 +1018,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/handlers.ReviewRequest'
+          $ref: '#/definitions/teacher.ReviewRequest'
       produces:
       - application/json
       responses:
@@ -820,7 +1053,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/handlers.BulkReviewRequest'
+          $ref: '#/definitions/teacher.BulkReviewRequest'
       produces:
       - application/json
       responses:
@@ -835,6 +1068,23 @@ paths:
       security:
       - BearerAuth: []
       summary: ตรวจสอบใบสมัครแบบกลุ่ม
+      tags:
+      - instructor
+  /instructor/course-catalog:
+    get:
+      description: จับคู่ด้วยชื่ออาจารย์กับข้อมูลผู้สอนที่นำเข้าจากไฟล์ Excel เพื่อจำกัดตัวเลือกรหัสวิชาให้เหลือแค่วิชาที่ตัวเองสอนจริง
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Course'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: รายวิชาที่อาจารย์คนนี้สอน (สำหรับ dropdown ตอนสร้างประกาศ)
       tags:
       - instructor
   /instructor/courses:
@@ -856,7 +1106,7 @@ paths:
       - BearerAuth: []
       summary: รายการวิชาของอาจารย์
       tags:
-      - courses
+      - instructor
     post:
       consumes:
       - application/json
@@ -866,7 +1116,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/handlers.CreateCourseRequest'
+          $ref: '#/definitions/teacher.CreateCourseRequest'
       produces:
       - application/json
       responses:
@@ -886,8 +1136,33 @@ paths:
       - BearerAuth: []
       summary: สร้างวิชาใหม่
       tags:
-      - courses
+      - instructor
   /instructor/courses/{id}:
+    delete:
+      parameters:
+      - description: Course ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: ลบวิชา
+      tags:
+      - instructor
     put:
       consumes:
       - application/json
@@ -902,7 +1177,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/handlers.UpdateCourseRequest'
+          $ref: '#/definitions/teacher.UpdateCourseRequest'
       produces:
       - application/json
       responses:
@@ -922,7 +1197,7 @@ paths:
       - BearerAuth: []
       summary: แก้ไขข้อมูลวิชา
       tags:
-      - courses
+      - instructor
   /instructor/courses/{id}/applicants:
     get:
       parameters:
@@ -972,7 +1247,36 @@ paths:
       - BearerAuth: []
       summary: รายชื่อผู้สมัครของวิชา
       tags:
-      - courses
+      - instructor
+  /instructor/courses/{id}/notify:
+    post:
+      parameters:
+      - description: Course ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: ส่งแจ้งเตือนนักศึกษาที่ผ่านการคัดเลือก
+      tags:
+      - instructor
   /instructor/courses/{id}/status:
     put:
       consumes:
@@ -988,7 +1292,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/handlers.UpdateCourseStatusRequest'
+          $ref: '#/definitions/teacher.UpdateCourseStatusRequest'
       produces:
       - application/json
       responses:
@@ -1008,7 +1312,45 @@ paths:
       - BearerAuth: []
       summary: อัพเดตสถานะวิชา
       tags:
-      - courses
+      - instructor
+  /instructor/profile:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.User'
+      security:
+      - BearerAuth: []
+      summary: ข้อมูลโปรไฟล์ของอาจารย์ (ตัวเอง)
+      tags:
+      - instructor
+    put:
+      consumes:
+      - application/json
+      description: บันทึกลง database ทันที การเปลี่ยนแปลงจะแสดงในหน้าจัดการผู้ใช้ของแอดมินด้วย
+        เพราะดึงจากข้อมูลผู้ใช้ชุดเดียวกัน
+      parameters:
+      - description: ข้อมูลโปรไฟล์ที่ต้องการแก้ไข
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/teacher.UpdateInstructorProfileRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.User'
+      security:
+      - BearerAuth: []
+      summary: แก้ไขโปรไฟล์ของอาจารย์ (ตัวเอง)
+      tags:
+      - instructor
   /student/applications:
     get:
       produces:
@@ -1099,6 +1441,60 @@ paths:
       security:
       - BearerAuth: []
       summary: หน้าหลักนักศึกษา
+      tags:
+      - student
+  /student/notifications:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Notification'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: รายการแจ้งเตือนของนักศึกษา
+      tags:
+      - student
+  /student/notifications/{id}/read:
+    put:
+      parameters:
+      - description: Notification ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+      security:
+      - BearerAuth: []
+      summary: ทำเครื่องหมายแจ้งเตือนว่าอ่านแล้ว
+      tags:
+      - student
+  /student/notifications/read-all:
+    put:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+      security:
+      - BearerAuth: []
+      summary: ทำเครื่องหมายแจ้งเตือนทั้งหมดว่าอ่านแล้ว
       tags:
       - student
   /student/profile:

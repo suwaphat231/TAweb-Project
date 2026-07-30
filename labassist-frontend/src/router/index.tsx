@@ -12,6 +12,7 @@ import StudentProfile from '../pages/student/StudentProfile'
 import InstructorHome from '../pages/instructor/InstructorHome'
 import InstructorAnnounce from '../pages/instructor/InstructorAnnounce'
 import InstructorSelect from '../pages/instructor/InstructorSelect'
+import InstructorProfile from '../pages/instructor/InstructorProfile'
 
 import StaffHome from '../pages/staff/StaffHome'
 import StaffDocs from '../pages/staff/StaffDocs'
@@ -61,6 +62,7 @@ export function AppRouter() {
       <Route path="/instructor/home"     element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorHome /></ProtectedRoute>} />
       <Route path="/instructor/announce" element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorAnnounce /></ProtectedRoute>} />
       <Route path="/instructor/select"   element={<ProtectedRoute roles={['instructor', 'staff', 'admin']}><InstructorSelect /></ProtectedRoute>} />
+      <Route path="/instructor/profile"  element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorProfile /></ProtectedRoute>} />
 
       {/* Staff */}
       <Route path="/staff/home" element={<ProtectedRoute roles={['staff', 'admin']}><StaffHome /></ProtectedRoute>} />

@@ -1,8 +1,8 @@
 package middleware
 
 import (
+	"labassist/database"
 	"labassist/models"
-	"labassist/store"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -43,6 +43,6 @@ func ActivityLogger() gin.HandlerFunc {
 			}
 		}
 
-		go store.CreateActivityLog(entry)
+		go database.CreateActivityLog(entry)
 	}
 }

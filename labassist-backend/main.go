@@ -5,7 +5,6 @@ import (
 	"labassist/database"
 	"labassist/middleware"
 	"labassist/routes"
-	"labassist/store"
 	"log"
 
 	"github.com/gin-gonic/gin"
@@ -27,8 +26,9 @@ func main() {
 
 	cfg := config.Load()
 
-	db := database.Connect(cfg)
-	store.Init(db)
+	if err := database.Connect(cfg); err != nil {
+		log.Fatalf("database connection failed: %v", err)
+	}
 
 	r := gin.Default()
 	r.Use(middleware.CORS(cfg))

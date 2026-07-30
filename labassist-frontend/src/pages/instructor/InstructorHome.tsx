@@ -13,6 +13,7 @@ import { useToast } from '../../components/ui/Toast'
 import { Modal } from '../../components/ui/Modal'
 import { CourseFormModal } from './CourseFormModal'
 import { COURSE_FORM_EMPTY, splitRequirements, joinRequirements } from './_courseFormShared'
+import { displayCourseTitle } from '../../utils/courseDisplay'
 import type { CreateCoursePayload, Course } from '../../types'
 
 interface Posting {
@@ -41,6 +42,18 @@ function ArchiveIcon() {
   )
 }
 
+function DeleteIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h18" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <line x1="10" y1="11" x2="10" y2="17" />
+      <line x1="14" y1="11" x2="14" y2="17" />
+    </svg>
+  )
+}
+
 export default function InstructorHome() {
   const [search, setSearch] = useState('')
   const [showCourseModal, setShowCourseModal] = useState(false)
@@ -49,6 +62,7 @@ export default function InstructorHome() {
   const [editId, setEditId] = useState<number | null>(null)
   const [showArchived, setShowArchived] = useState(false)
   const [archiveTarget, setArchiveTarget] = useState<Course | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Course | null>(null)
   const qc = useQueryClient()
   const showToast = useToast()
 
@@ -107,12 +121,22 @@ export default function InstructorHome() {
     onError: () => showToast('ไม่สามารถกู้คืนได้ กรุณาลองใหม่', 'error'),
   })
 
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => instructorApi.deleteCourse(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['instructor-courses'] })
+      setDeleteTarget(null)
+      showToast('ลบประกาศเรียบร้อยแล้ว', 'success')
+    },
+    onError: () => showToast('ไม่สามารถลบประกาศได้ กรุณาลองใหม่', 'error'),
+  })
+
   function closeModal() { setShowCourseModal(false); setForm(COURSE_FORM_EMPTY); setMinGrade(''); setEditId(null) }
 
   function openEdit(course: Course) {
     const { minGrade: grade, rest } = splitRequirements(course.requirements ?? '')
     setForm({
-      code: course.code, title: course.title,
+      code: course.code, title: displayCourseTitle(course.title, course.english_title),
       semester: course.semester, academic_year: course.academic_year,
       ta_slots: course.ta_slots, labboy_slots: course.labboy_slots,
       status: course.status,
@@ -242,7 +266,7 @@ export default function InstructorHome() {
                               {c.code}
                             </span>
                           </div>
-                          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)' }}>{c.title}</div>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)' }}>{displayCourseTitle(c.title, c.english_title)}</div>
                           <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 2 }}>
                             ภาค {c.semester}/{c.academic_year}
                             {c.deadline && (
@@ -283,6 +307,13 @@ export default function InstructorHome() {
                                 <EditIcon />
                               </Button>
                             )}
+                            <Button
+                              size="sm" variant="outline" title="ลบประกาศ"
+                              style={{ color: 'var(--red)', borderColor: 'var(--red)' }}
+                              onClick={() => setDeleteTarget(c)}
+                            >
+                              <DeleteIcon />
+                            </Button>
                           </div>
                         </td>
                       </tr>
@@ -326,6 +357,33 @@ export default function InstructorHome() {
               onClick={() => archiveTarget && archiveMut.mutate(archiveTarget.id)}
             >
               เก็บเข้าคลัง
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Delete Confirm Modal */}
+      <Modal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="ลบประกาศ"
+        size="sm"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <p style={{ fontSize: 14, color: 'var(--ink-600)', margin: 0 }}>
+            ต้องการลบประกาศ <strong>{deleteTarget?.code}</strong> ใช่หรือไม่? การลบไม่สามารถย้อนกลับได้
+            {(deleteTarget?.applicant_count ?? 0) > 0 && (
+              <> และจะลบใบสมัครของผู้สมัคร <strong>{deleteTarget?.applicant_count}</strong> คนที่ยื่นไว้ทั้งหมดด้วย</>
+            )}
+          </p>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <Button variant="ghost" onClick={() => setDeleteTarget(null)}>ยกเลิก</Button>
+            <Button
+              variant="danger"
+              loading={deleteMut.isPending}
+              onClick={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
+            >
+              ลบประกาศ
             </Button>
           </div>
         </div>

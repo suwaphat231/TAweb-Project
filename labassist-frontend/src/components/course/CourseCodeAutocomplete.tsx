@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { courseApi } from '../../services/api'
-import { Input } from '../ui/Input'
+import { instructorApi } from '../../services/api'
+import { Select } from '../ui/Select'
+import { displayCourseTitle } from '../../utils/courseDisplay'
 
 interface Suggestion {
   code: string
@@ -16,69 +16,50 @@ interface Props {
 }
 
 export function CourseCodeAutocomplete({ value, onChange, onSelect, disabled }: Props) {
-  const [open, setOpen] = useState(false)
-  const wrapRef = useRef<HTMLDivElement>(null)
-
-  const { data: catalog = [] } = useQuery({
-    queryKey: ['course-catalog'],
-    queryFn: () => courseApi.list(),
+  // Restricted to codes the classlist says this instructor teaches (matched
+  // by name against the imported course data) — not the whole system catalog.
+  const { data: catalog = [], isLoading } = useQuery({
+    queryKey: ['instructor-course-catalog'],
+    queryFn: () => instructorApi.courseCatalog(),
     staleTime: 5 * 60 * 1000,
   })
 
-  const q = value.trim().toLowerCase()
-  const suggestions: Suggestion[] = []
-  if (q) {
-    const seen = new Set<string>()
-    for (const c of catalog) {
-      if (seen.has(c.code)) continue
-      if (!c.code.toLowerCase().includes(q) && !c.title.toLowerCase().includes(q)) continue
-      seen.add(c.code)
-      suggestions.push({ code: c.code, title: c.title })
-    }
-    suggestions.sort((a, b) => a.code.localeCompare(b.code))
+  const options = catalog.map((c) => ({ value: c.code, label: c.code }))
+  // When editing, the code being edited must render even if it's since
+  // dropped out of the catalog, so the select doesn't silently blank it out.
+  if (value && !options.some((o) => o.value === value)) {
+    options.unshift({ value, label: value })
   }
 
-  useEffect(() => {
-    function onDocClick(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onDocClick)
-    return () => document.removeEventListener('mousedown', onDocClick)
-  }, [])
+  function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const code = e.target.value
+    onChange(code)
+    const course = catalog.find((c) => c.code === code)
+    if (course) onSelect({ code: course.code, title: displayCourseTitle(course.title, course.english_title) })
+  }
+
+  if (!disabled && !isLoading && catalog.length === 0) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>รหัสวิชา *</label>
+        <div style={{
+          fontSize: 13, color: 'var(--ink-500)', padding: '9px 12px',
+          border: '1.5px dashed var(--line)', borderRadius: 'var(--radius-input)',
+        }}>
+          ไม่พบวิชาที่คุณสอนในระบบ — ให้แอดมินนำเข้ารายชื่อวิชาก่อน
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div ref={wrapRef} style={{ position: 'relative' }}>
-      <Input
-        label="รหัสวิชา *"
-        value={value}
-        onChange={(e) => { onChange(e.target.value); setOpen(true) }}
-        onFocus={() => setOpen(true)}
-        placeholder="เช่น 520 หรือ 517"
-        required
-        readOnly={disabled}
-        autoComplete="off"
-        style={disabled ? { background: '#F8F9FB', cursor: 'not-allowed' } : undefined}
-      />
-      {open && !disabled && suggestions.length > 0 && (
-        <div style={{
-          position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
-          background: '#fff', border: '1.5px solid var(--line)', borderRadius: 10,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.1)', zIndex: 20,
-          maxHeight: 240, overflowY: 'auto',
-        }}>
-          {suggestions.map((c) => (
-            <div
-              key={c.code}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => { onSelect(c); setOpen(false) }}
-              style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--line-soft)' }}
-            >
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--primary)' }}>{c.code}</div>
-              <div style={{ fontSize: 13, color: 'var(--ink-900)' }}>{c.title}</div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <Select
+      label="รหัสวิชา *"
+      value={value}
+      onChange={handleChange}
+      disabled={disabled}
+      required
+      options={[{ value: '', label: isLoading ? 'กำลังโหลด...' : 'เลือกรหัสวิชา' }, ...options]}
+    />
   )
 }

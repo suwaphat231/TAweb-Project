@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"labassist/database"
 	"labassist/models"
-	"labassist/store"
 
 	"github.com/gin-gonic/gin"
 )
@@ -40,7 +40,7 @@ type ocrResponse struct {
 // @Failure      400   {object}  ErrorResponse
 // @Failure      502   {object}  ErrorResponse
 // @Router       /student/profile/transcript [post]
-func (h *ApplicationHandler) UploadTranscript(c *gin.Context) {
+func (h *AuthHandler) UploadTranscript(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
 
 	fileHeader, err := c.FormFile("file")
@@ -102,7 +102,7 @@ func (h *ApplicationHandler) UploadTranscript(c *gin.Context) {
 	}
 
 	now := time.Now()
-	updated, _ := store.UpdateUser(studentID.(uint), func(u *models.User) {
+	updated, _ := database.UpdateUser(studentID.(uint), func(u *models.User) {
 		u.TranscriptGrades = ocrResult.ExtractedData
 		status := ocrResult.Status
 		u.TranscriptStatus = &status

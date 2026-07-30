@@ -13,20 +13,24 @@ const (
 )
 
 type Course struct {
-	ID             uint         `gorm:"primaryKey" json:"id"`
-	Code           string       `gorm:"size:20;not null" json:"code"`
-	Title          string       `gorm:"size:300;not null" json:"title"`
-	EnglishTitle   string       `gorm:"size:300" json:"english_title,omitempty"`
-	GroupNote      string       `gorm:"size:200" json:"group_note,omitempty"`
-	Credits        string       `gorm:"size:20" json:"credits,omitempty"`
-	Section        int          `gorm:"default:0" json:"section"`
-	Schedule       string       `gorm:"size:500" json:"schedule,omitempty"`
-	Capacity       int          `gorm:"default:0" json:"capacity"`
-	Enrolled       int          `gorm:"default:0" json:"enrolled"`
-	InstructorID   uint         `gorm:"not null" json:"instructor_id"`
-	Instructor     User         `gorm:"foreignKey:InstructorID" json:"-"`
-	InstructorName string       `gorm:"-" json:"instructor_name"`
-	CoInstructors  string       `gorm:"size:300" json:"co_instructors,omitempty"`
+	ID             uint   `gorm:"primaryKey" json:"id"`
+	Code           string `gorm:"size:20;not null" json:"code"`
+	Title          string `gorm:"size:300;not null" json:"title"`
+	EnglishTitle   string `gorm:"size:300" json:"english_title,omitempty"`
+	GroupNote      string `gorm:"size:200" json:"group_note,omitempty"`
+	Credits        string `gorm:"size:20" json:"credits,omitempty"`
+	Section        int    `gorm:"default:0" json:"section"`
+	Schedule       string `gorm:"size:500" json:"schedule,omitempty"`
+	Capacity       int    `gorm:"default:0" json:"capacity"`
+	Enrolled       int    `gorm:"default:0" json:"enrolled"`
+	InstructorID   uint   `gorm:"not null" json:"instructor_id"`
+	Instructor     User   `gorm:"foreignKey:InstructorID" json:"-"`
+	InstructorName string `gorm:"-" json:"instructor_name"`
+	// InstructorsRaw is the verbatim text of the spreadsheet's instructor
+	// cell (kept for display as-is, e.g. co-teaching names the system has
+	// no matching account for) — separate from InstructorID, which only
+	// ever points to a real, matched user account.
+	InstructorsRaw string       `gorm:"size:500" json:"instructors_raw,omitempty"`
 	ApplicantCount int          `gorm:"-" json:"applicant_count"`
 	Semester       string       `gorm:"size:10;not null" json:"semester"`
 	AcademicYear   int          `gorm:"not null" json:"academic_year"`
