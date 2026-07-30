@@ -11,6 +11,7 @@ import { Avatar, getInitials } from '../../components/ui/Avatar'
 import { CourseCard } from '../../components/course/CourseCard'
 import { useApplyLabboy } from '../../hooks/useApplyLabboy'
 import { groupCourseSections, getAppliedSection } from '../../utils/courseGrouping'
+import { cleanCourseTitle } from '../../utils/courseTitle'
 
 export default function StudentHome() {
   const { user } = useAuth()
@@ -116,7 +117,7 @@ export default function StudentHome() {
                     <StatusBadge value={app.role_applied} />
                     <StatusBadge value={app.status} />
                   </div>
-                  <div style={{ fontSize: 13, color: 'var(--ink-700)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{app.course_title}</div>
+                  <div style={{ fontSize: 13, color: 'var(--ink-700)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cleanCourseTitle(app.course_title)}</div>
                   <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 2 }}>
                     {new Date(app.applied_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
                   </div>

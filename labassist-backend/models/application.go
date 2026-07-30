@@ -44,18 +44,19 @@ type Application struct {
 	GradeProofData     []byte `json:"-"`
 
 	// Computed fields (not in DB)
-	HasGradeProof  bool    `gorm:"-" json:"has_grade_proof"`
-	StudentName    string  `gorm:"-" json:"student_name"`
-	StudentCode    string  `gorm:"-" json:"student_code"`
-	StudentGPA     float64 `gorm:"-" json:"student_gpa"`
-	StudentEmail   string  `gorm:"-" json:"student_email,omitempty"`
-	StudentFaculty string  `gorm:"-" json:"student_faculty,omitempty"`
-	StudentYear    int     `gorm:"-" json:"student_year,omitempty"`
-	CourseCode     string  `gorm:"-" json:"course_code"`
-	CourseTitle    string  `gorm:"-" json:"course_title"`
-	CourseSection  int     `gorm:"-" json:"course_section,omitempty"`
-	CourseSchedule string  `gorm:"-" json:"course_schedule,omitempty"`
-	ReviewedByName string  `gorm:"-" json:"reviewed_by_name,omitempty"`
+	HasGradeProof      bool    `gorm:"-" json:"has_grade_proof"`
+	StudentName        string  `gorm:"-" json:"student_name"`
+	StudentCode        string  `gorm:"-" json:"student_code"`
+	StudentGPA         float64 `gorm:"-" json:"student_gpa"`
+	StudentEmail       string  `gorm:"-" json:"student_email,omitempty"`
+	StudentFaculty     string  `gorm:"-" json:"student_faculty,omitempty"`
+	StudentYear        int     `gorm:"-" json:"student_year,omitempty"`
+	CourseCode         string  `gorm:"-" json:"course_code"`
+	CourseTitle        string  `gorm:"-" json:"course_title"`
+	CourseEnglishTitle string  `gorm:"-" json:"course_english_title,omitempty"`
+	CourseSection      int     `gorm:"-" json:"course_section,omitempty"`
+	CourseSchedule     string  `gorm:"-" json:"course_schedule,omitempty"`
+	ReviewedByName     string  `gorm:"-" json:"reviewed_by_name,omitempty"`
 }
 
 func (Application) TableName() string { return "applications" }

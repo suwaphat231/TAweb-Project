@@ -7,6 +7,7 @@ import { FilterChips } from '../../components/ui/FilterChips'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { Card } from '../../components/ui/Card'
+import { cleanCourseTitle } from '../../utils/courseTitle'
 import type { ApplicationStatus } from '../../types'
 
 const filterOptions = [
@@ -59,7 +60,12 @@ export default function StudentStatus() {
                   <StatusBadge value={app.role_applied} />
                   <StatusBadge value={app.status} />
                 </div>
-                <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink-900)' }}>{app.course_title}</div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink-900)' }}>{cleanCourseTitle(app.course_title)}</div>
+                {app.course_english_title && (
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-500)', textTransform: 'uppercase', marginTop: 2 }}>
+                    {app.course_english_title}
+                  </div>
+                )}
                 <div style={{ fontSize: 13, color: 'var(--ink-500)', marginTop: 2 }}>
                   สมัคร {new Date(app.applied_at).toLocaleDateString('th-TH')}
                   {app.reviewed_at && ` · พิจารณา ${new Date(app.reviewed_at).toLocaleDateString('th-TH')}`}

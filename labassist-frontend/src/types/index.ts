@@ -70,6 +70,7 @@ export interface Application {
   course_id: number
   course_code: string
   course_title: string
+  course_english_title?: string
   course_section?: number
   course_schedule?: string
   role_applied: 'labboy'

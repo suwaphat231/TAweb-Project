@@ -80,6 +80,7 @@ func enrichApplication(a models.Application) models.Application {
 	if c, ok := CourseByID(a.CourseID); ok {
 		a.CourseCode = c.Code
 		a.CourseTitle = c.Title
+		a.CourseEnglishTitle = c.EnglishTitle
 		a.CourseSection = c.Section
 		a.CourseSchedule = c.Schedule
 	}
