@@ -35,14 +35,17 @@ type Course struct {
 	Semester       string       `gorm:"size:10;not null" json:"semester"`
 	AcademicYear   int          `gorm:"not null" json:"academic_year"`
 	HasLab         bool         `gorm:"default:false" json:"has_lab"`
-	TASlots        int          `gorm:"default:0" json:"ta_slots"`
 	LabBoySlots    int          `gorm:"default:0" json:"labboy_slots"`
-	TAAccepted     int          `gorm:"default:0" json:"ta_accepted"`
 	LabBoyAccepted int          `gorm:"default:0" json:"labboy_accepted"`
-	Status         CourseStatus `gorm:"type:enum('open','closing_soon','closed','draft','archived');default:'draft'" json:"status"`
+	Status         CourseStatus `gorm:"type:course_status;default:'draft'" json:"status"`
 	Deadline       *time.Time   `json:"deadline,omitempty"`
 	Description    *string      `gorm:"type:text" json:"description,omitempty"`
 	Requirements   *string      `gorm:"type:text" json:"requirements,omitempty"`
+	// RequireGradeProof: when true, a student applying must attach an image
+	// of their grade (e.g. a MyReg screenshot) instead of just self-reporting
+	// a letter grade — set per posting so the instructor decides which
+	// courses need proof against students typing in a fake grade.
+	RequireGradeProof bool `gorm:"default:false" json:"require_grade_proof"`
 	CreatedAt      time.Time    `json:"created_at"`
 	UpdatedAt      time.Time    `json:"updated_at"`
 }

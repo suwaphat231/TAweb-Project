@@ -10,6 +10,7 @@ import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/Toast'
 import { Link } from 'react-router-dom'
 import { CourseFormModal } from './CourseFormModal'
+import { SectionCatalogPicker } from '../../components/course/SectionCatalogPicker'
 import { COURSE_FORM_EMPTY, splitRequirements, joinRequirements } from './_courseFormShared'
 import { displayCourseTitle } from '../../utils/courseDisplay'
 import type { CreateCoursePayload, CourseStatus, Course } from '../../types'
@@ -25,10 +26,13 @@ export default function InstructorAnnounce() {
   const [showCourseModal, setShowCourseModal] = useState(false)
   const [form, setForm] = useState<CreateCoursePayload>(COURSE_FORM_EMPTY)
   const [minGrade, setMinGrade] = useState('')
+  const [sectionIds, setSectionIds] = useState<number[]>([])
   const [editId, setEditId] = useState<number | null>(null)
   const [statusTarget, setStatusTarget] = useState<Course | null>(null)
   const [pendingStatus, setPendingStatus] = useState<CourseStatus>('open')
   const [deleteTarget, setDeleteTarget] = useState<Course | null>(null)
+  const [addSectionTarget, setAddSectionTarget] = useState<Course | null>(null)
+  const [addSectionIds, setAddSectionIds] = useState<number[]>([])
   const qc = useQueryClient()
   const showToast = useToast()
 
@@ -37,14 +41,20 @@ export default function InstructorAnnounce() {
     queryFn: () => instructorApi.courses(),
   })
 
-  const createMut = useMutation({
-    mutationFn: instructorApi.createCourse,
+  // "Creating" a posting means opening one or more of the instructor's
+  // already-imported sections (picked via SectionCatalogPicker) — each is
+  // an existing Course row from the Excel import, so this is a batch of
+  // ordinary updates, not a brand-new row.
+  const openSectionsMut = useMutation({
+    mutationFn: async (vars: { ids: number[]; data: Partial<CreateCoursePayload> }) => {
+      await Promise.all(vars.ids.map((id) => instructorApi.updateCourse(id, vars.data)))
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['instructor-courses'] })
       closeModal()
-      showToast('สร้างประกาศรับสมัครเรียบร้อยแล้ว', 'success')
+      showToast('เปิดรับสมัครเรียบร้อยแล้ว', 'success')
     },
-    onError: () => showToast('ไม่สามารถสร้างวิชาได้ กรุณาลองใหม่', 'error'),
+    onError: () => showToast('ไม่สามารถเปิดรับสมัครได้ กรุณาลองใหม่', 'error'),
   })
 
   const updateMut = useMutation({
@@ -80,18 +90,50 @@ export default function InstructorAnnounce() {
     onError: () => showToast('ไม่สามารถลบประกาศได้ กรุณาลองใหม่', 'error'),
   })
 
-  function closeModal() { setShowCourseModal(false); setForm(COURSE_FORM_EMPTY); setMinGrade(''); setEditId(null) }
+  // Opening another section on an existing posting is the same idea as
+  // creating one — pick more of this instructor's imported rows for the
+  // same code/term and copy the posting's shared fields onto them.
+  const addSectionMut = useMutation({
+    mutationFn: async (vars: { ids: number[]; data: Partial<CreateCoursePayload> }) => {
+      await Promise.all(vars.ids.map((id) => instructorApi.updateCourse(id, vars.data)))
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['instructor-courses'] })
+      setAddSectionTarget(null)
+      setAddSectionIds([])
+      showToast('เปิดรับสมัคร section เพิ่มเรียบร้อยแล้ว', 'success')
+    },
+    onError: () => showToast('ไม่สามารถเปิดรับสมัคร section เพิ่มได้ กรุณาลองใหม่', 'error'),
+  })
+
+  function openAddSection(course: Course) {
+    setAddSectionIds([])
+    setAddSectionTarget(course)
+  }
+
+  function openCreate() {
+    setForm(COURSE_FORM_EMPTY)
+    setMinGrade('')
+    setSectionIds([])
+    setEditId(null)
+    setShowCourseModal(true)
+  }
+
+  function closeModal() { setShowCourseModal(false); setForm(COURSE_FORM_EMPTY); setMinGrade(''); setSectionIds([]); setEditId(null) }
 
   function openEdit(course: Course) {
     const { minGrade: grade, rest } = splitRequirements(course.requirements ?? '')
     setForm({
       code: course.code, title: displayCourseTitle(course.title, course.english_title),
       semester: course.semester, academic_year: course.academic_year,
-      ta_slots: course.ta_slots, labboy_slots: course.labboy_slots,
+      labboy_slots: course.labboy_slots,
       status: course.status,
       description: course.description ?? '',
       requirements: rest,
       deadline: course.deadline ? course.deadline.slice(0, 10) : '',
+      section: course.section ?? 0,
+      schedule: course.schedule ?? '',
+      require_grade_proof: course.require_grade_proof,
     })
     setMinGrade(grade)
     setEditId(course.id)
@@ -106,8 +148,13 @@ export default function InstructorAnnounce() {
   function submit(e: React.FormEvent) {
     e.preventDefault()
     const data = { ...form, requirements: joinRequirements(minGrade, form.requirements ?? '') }
-    if (editId) updateMut.mutate({ id: editId, data })
-    else createMut.mutate(data)
+    if (editId) {
+      updateMut.mutate({ id: editId, data })
+    } else {
+      if (sectionIds.length === 0) return
+      const { labboy_slots, status, deadline, description, requirements, require_grade_proof } = data
+      openSectionsMut.mutate({ ids: sectionIds, data: { labboy_slots, status, deadline, description, requirements, require_grade_proof } })
+    }
   }
 
   return (
@@ -117,7 +164,7 @@ export default function InstructorAnnounce() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink-900)' }}>จัดการประกาศรับสมัคร</h1>
           <p style={{ color: 'var(--ink-500)', fontSize: 14, marginTop: 4 }}>{courses.length} วิชา</p>
         </div>
-        <Button onClick={() => setShowCourseModal(true)}>+ สร้างประกาศ</Button>
+        <Button onClick={openCreate}>+ สร้างประกาศ</Button>
       </div>
 
       {isLoading ? (
@@ -129,7 +176,7 @@ export default function InstructorAnnounce() {
           title="ยังไม่มีวิชา"
           description="สร้างประกาศรับสมัครวิชาแรกของคุณ"
           icon="📚"
-          action={{ label: 'สร้างเลย', onClick: () => setShowCourseModal(true) }}
+          action={{ label: 'สร้างเลย', onClick: openCreate }}
         />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -142,6 +189,11 @@ export default function InstructorAnnounce() {
                       fontSize: 13, fontWeight: 700, color: 'var(--primary)',
                       background: 'var(--primary-50)', padding: '2px 8px', borderRadius: 'var(--radius-pill)',
                     }}>{c.code}</span>
+                    {!!c.section && (
+                      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-500)', background: 'var(--bg)', padding: '2px 8px', borderRadius: 'var(--radius-pill)' }}>
+                        Sec {c.section}
+                      </span>
+                    )}
                     <StatusBadge value={c.status} />
                     {(c.applicant_count ?? 0) > 0 && (
                       <span style={{ fontSize: 12, color: 'var(--ink-500)', fontWeight: 500 }}>
@@ -150,9 +202,11 @@ export default function InstructorAnnounce() {
                     )}
                   </div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 4 }}>{displayCourseTitle(c.title, c.english_title)}</div>
+                  {c.schedule && (
+                    <div style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 2 }}>🕐 {c.schedule}</div>
+                  )}
                   <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>
                     ภาค {c.semester}/{c.academic_year}
-                    &nbsp;·&nbsp;TA {c.ta_accepted}/{c.ta_slots}
                     &nbsp;·&nbsp;Lab Boy {c.labboy_accepted}/{c.labboy_slots}
                     {c.deadline && (
                       <span style={{ marginLeft: 8, color: 'var(--amber)' }}>
@@ -164,6 +218,7 @@ export default function InstructorAnnounce() {
                 <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   <Button variant="ghost" size="sm" onClick={() => openStatusModal(c)}>เปลี่ยนสถานะ</Button>
                   <Button variant="outline" size="sm" onClick={() => openEdit(c)}>แก้ไข</Button>
+                  <Button variant="outline" size="sm" onClick={() => openAddSection(c)}>+ Section</Button>
                   <Button
                     variant="outline" size="sm"
                     style={{ color: 'var(--red)', borderColor: 'var(--red)' }}
@@ -189,8 +244,10 @@ export default function InstructorAnnounce() {
         setForm={setForm}
         minGrade={minGrade}
         setMinGrade={setMinGrade}
+        sectionIds={sectionIds}
+        setSectionIds={setSectionIds}
         onSubmit={submit}
-        loading={createMut.isPending || updateMut.isPending}
+        loading={openSectionsMut.isPending || updateMut.isPending}
       />
 
       {/* Change Status Modal */}
@@ -262,6 +319,49 @@ export default function InstructorAnnounce() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* Add Section Modal */}
+      <Modal
+        isOpen={!!addSectionTarget}
+        onClose={() => setAddSectionTarget(null)}
+        title={`เพิ่ม Section — ${addSectionTarget?.code}`}
+        size="sm"
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!addSectionTarget || addSectionIds.length === 0) return
+            const { labboy_slots, status, description, requirements, require_grade_proof } = addSectionTarget
+            addSectionMut.mutate({
+              ids: addSectionIds,
+              data: {
+                labboy_slots, status, require_grade_proof,
+                deadline: addSectionTarget.deadline ? addSectionTarget.deadline.slice(0, 10) : '',
+                description: description ?? '', requirements: requirements ?? '',
+              },
+            })
+          }}
+          style={{ display: 'flex', flexDirection: 'column', gap: 14 }}
+        >
+          <p style={{ fontSize: 13, color: 'var(--ink-500)', margin: 0 }}>
+            เลือก section เพิ่มให้ประกาศนี้ (จำนวนรับ/สถานะ/เงื่อนไขเดียวกับ Sec {addSectionTarget?.section}) —
+            นักศึกษาจะเห็นเป็นอีกช่องทางสมัครแยกจาก sec เดิม
+          </p>
+          {addSectionTarget && (
+            <SectionCatalogPicker
+              code={addSectionTarget.code}
+              semester={addSectionTarget.semester}
+              academicYear={addSectionTarget.academic_year}
+              selectedIds={addSectionIds}
+              onChange={setAddSectionIds}
+            />
+          )}
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <Button type="button" variant="ghost" onClick={() => setAddSectionTarget(null)}>ยกเลิก</Button>
+            <Button type="submit" loading={addSectionMut.isPending} disabled={addSectionIds.length === 0}>เพิ่ม Section</Button>
+          </div>
+        </form>
       </Modal>
     </div>
   )

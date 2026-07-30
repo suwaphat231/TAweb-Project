@@ -9,13 +9,25 @@ import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Avatar, getInitials } from '../../components/ui/Avatar'
 import { CourseCard } from '../../components/course/CourseCard'
+import { useApplyLabboy } from '../../hooks/useApplyLabboy'
+import { groupCourseSections, getAppliedSection } from '../../utils/courseGrouping'
 
 export default function StudentHome() {
   const { user } = useAuth()
+  const { openApply, modal } = useApplyLabboy()
   const { data, isLoading } = useQuery({
     queryKey: ['student-dashboard'],
     queryFn: studentApi.dashboard,
   })
+  const { data: myApps = [] } = useQuery({
+    queryKey: ['my-applications'],
+    queryFn: studentApi.applications,
+  })
+
+  const bannerInfo = [
+    user?.student_id,
+    user?.gpa !== undefined && `GPA ${user.gpa.toFixed(2)}`,
+  ].filter(Boolean).join(' · ')
 
   return (
     <div>
@@ -35,20 +47,9 @@ export default function StudentHome() {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 22, fontWeight: 700 }}>สวัสดี, {user?.full_name}</div>
           <div style={{ fontSize: 14, opacity: 0.8, marginTop: 4 }}>
-            {user?.student_id && <span>{user.student_id} · </span>}
-            ภาคเรียน 1 / 2567
-            {user?.gpa !== undefined && <span> · GPA {user.gpa.toFixed(2)}</span>}
+            {bannerInfo}
           </div>
         </div>
-        <Link to="/student/apply">
-          <button style={{
-            background: 'rgba(255,255,255,0.15)', border: '1.5px solid rgba(255,255,255,0.4)',
-            color: '#fff', borderRadius: 8, padding: '8px 16px',
-            fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
-          }}>
-            + สมัครวิชา
-          </button>
-        </Link>
       </div>
 
       {/* Stat cards */}
@@ -60,7 +61,6 @@ export default function StudentHome() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 16, marginBottom: 28 }}>
           <StatCard label="วิชาที่เปิดรับ" value={data?.stats.open_courses ?? 0} iconColor="var(--primary)" icon="📚" />
           <StatCard label="สมัครแล้ว" value={data?.stats.applied ?? 0} iconColor="var(--green)" icon="✅" />
-          <StatCard label="GPA" value={user?.gpa?.toFixed(2) ?? '—'} iconColor="var(--blue)" icon="🎓" />
         </div>
       )}
 
@@ -79,8 +79,13 @@ export default function StudentHome() {
             <Card style={{ padding: 32, textAlign: 'center', color: 'var(--ink-400)' }}>ยังไม่มีวิชาเปิดรับสมัคร</Card>
           ) : (
             <div style={{ display: 'grid', gap: 14 }}>
-              {data!.recent_courses.map((course) => (
-                <CourseCard key={course.id} course={course} />
+              {groupCourseSections(data!.recent_courses).map((group) => (
+                <CourseCard
+                  key={group.key}
+                  group={group}
+                  appliedSection={getAppliedSection(group, myApps)}
+                  onApply={openApply}
+                />
               ))}
             </div>
           )}
@@ -121,6 +126,8 @@ export default function StudentHome() {
           </Card>
         </div>
       </div>
+
+      {modal}
     </div>
   )
 }

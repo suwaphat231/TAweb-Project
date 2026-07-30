@@ -27,20 +27,34 @@ export interface Course {
   code: string
   title: string
   english_title?: string
+  credits?: string
+  section?: number
+  schedule?: string
   instructor_id: number
   instructor_name: string
   instructors_raw?: string
   applicant_count?: number
   semester: string
   academic_year: number
-  ta_slots: number
   labboy_slots: number
-  ta_accepted: number
   labboy_accepted: number
   status: CourseStatus
   deadline?: string
   description?: string
   requirements?: string
+  // When true, applicants must attach an image of their grade instead of
+  // just self-reporting it — set per posting by the instructor.
+  require_grade_proof: boolean
+  created_at: string
+}
+
+export interface Notification {
+  id: number
+  user_id: number
+  course_id?: number
+  title: string
+  body: string
+  is_read: boolean
   created_at: string
 }
 
@@ -56,9 +70,12 @@ export interface Application {
   course_id: number
   course_code: string
   course_title: string
-  role_applied: 'ta' | 'labboy'
+  course_section?: number
+  course_schedule?: string
+  role_applied: 'labboy'
   status: ApplicationStatus
-  motivation?: string
+  grade?: string
+  has_grade_proof?: boolean
   applied_at: string
   reviewed_at?: string
   reviewed_by_name?: string
@@ -109,18 +126,83 @@ export interface CreateCoursePayload {
   title: string
   semester: string
   academic_year: number
-  ta_slots: number
   labboy_slots: number
   status?: CourseStatus
   deadline?: string
   description?: string
   requirements?: string
+  require_grade_proof?: boolean
+  // Read-only, display-only — always sourced from the admin's Excel import,
+  // never typed by the instructor. Only meaningful when editing one existing
+  // section; opening new sections happens by picking imported rows instead.
+  section?: number
+  schedule?: string
+  // Admin-only: which instructor this manually-added course belongs to
+  // (e.g. one an instructor asked for that never made it into the Excel
+  // import). Ignored by the backend for non-admin callers.
+  instructor_id?: number
 }
 
 export interface ApplyPayload {
   course_id: number
-  role_applied: 'ta' | 'labboy'
-  motivation?: string
+  role_applied: 'labboy'
+  grade?: string
+}
+
+export interface Transcript {
+  file_name: string
+  file_size: number
+  uploaded_at: string
+}
+
+export interface ImportCourseResult {
+  row: number
+  code: string
+  title: string
+  instructor: string
+}
+
+export interface ImportSkippedRow {
+  row: number
+  reason: string
+}
+
+export interface ImportCoursesResponse {
+  created: ImportCourseResult[]
+  skipped: ImportSkippedRow[]
+}
+
+export type ReviewStatus = 'pending' | 'verified' | 'returned'
+export type DocType = 'approval_memo' | 'payment_evidence' | 'payment_request'
+export type DocStatus = 'draft' | 'pending' | 'approved'
+
+export interface FormReview {
+  id: number
+  course_id: number
+  reviewer_id: number
+  status: ReviewStatus
+  note?: string
+  updated_at: string
+  course_code: string
+  course_title: string
+  section: number
+  semester: string
+  academic_year: number
+  instructor_name: string
+  labboy_slots: number
+  labboy_accepted: number
+  submitted_at: string
+}
+
+export interface StaffDocument {
+  id: number
+  name: string
+  type: DocType
+  course_ref: string
+  staff_id: number
+  status: DocStatus
+  note?: string
+  created_at: string
 }
 
 export interface AdminStats {

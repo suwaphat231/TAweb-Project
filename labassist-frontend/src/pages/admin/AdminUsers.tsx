@@ -206,7 +206,7 @@ export default function AdminUsers() {
                   <StatusBadge value={c.status} />
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 6 }}>
-                  ภาค {c.semester}/{c.academic_year} · TA {c.ta_accepted}/{c.ta_slots} · Lab Boy {c.labboy_accepted}/{c.labboy_slots}
+                  ภาค {c.semester}/{c.academic_year} · Lab Boy {c.labboy_accepted}/{c.labboy_slots}
                 </div>
               </div>
             ))}

@@ -10,12 +10,15 @@ import StudentStatus from '../pages/student/StudentStatus'
 import StudentProfile from '../pages/student/StudentProfile'
 
 import InstructorHome from '../pages/instructor/InstructorHome'
+import InstructorMyCourses from '../pages/instructor/InstructorMyCourses'
 import InstructorAnnounce from '../pages/instructor/InstructorAnnounce'
 import InstructorSelect from '../pages/instructor/InstructorSelect'
 import InstructorProfile from '../pages/instructor/InstructorProfile'
 
 import StaffHome from '../pages/staff/StaffHome'
+import StaffReview from '../pages/staff/StaffReview'
 import StaffDocs from '../pages/staff/StaffDocs'
+import StaffProfile from '../pages/staff/StaffProfile'
 
 import AdminOverview from '../pages/admin/AdminOverview'
 import AdminUsers from '../pages/admin/AdminUsers'
@@ -60,13 +63,16 @@ export function AppRouter() {
 
       {/* Instructor */}
       <Route path="/instructor/home"     element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorHome /></ProtectedRoute>} />
+      <Route path="/instructor/courses"  element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorMyCourses /></ProtectedRoute>} />
       <Route path="/instructor/announce" element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorAnnounce /></ProtectedRoute>} />
       <Route path="/instructor/select"   element={<ProtectedRoute roles={['instructor', 'staff', 'admin']}><InstructorSelect /></ProtectedRoute>} />
       <Route path="/instructor/profile"  element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorProfile /></ProtectedRoute>} />
 
       {/* Staff */}
-      <Route path="/staff/home" element={<ProtectedRoute roles={['staff', 'admin']}><StaffHome /></ProtectedRoute>} />
-      <Route path="/staff/docs" element={<ProtectedRoute roles={['staff', 'admin']}><StaffDocs /></ProtectedRoute>} />
+      <Route path="/staff/home"    element={<ProtectedRoute roles={['staff', 'admin']}><StaffHome /></ProtectedRoute>} />
+      <Route path="/staff/review"  element={<ProtectedRoute roles={['staff', 'admin']}><StaffReview /></ProtectedRoute>} />
+      <Route path="/staff/docs"    element={<ProtectedRoute roles={['staff', 'admin']}><StaffDocs /></ProtectedRoute>} />
+      <Route path="/staff/profile" element={<ProtectedRoute roles={['staff']}><StaffProfile /></ProtectedRoute>} />
 
       {/* Admin */}
       <Route path="/admin" element={<Navigate to="/admin/overview" replace />} />

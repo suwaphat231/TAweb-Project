@@ -21,8 +21,6 @@ import (
 // @Failure      404  {object}  handlers.ErrorResponse
 // @Router       /instructor/courses/{id}/notify [post]
 func (h *Handler) NotifyCourse(c *gin.Context) {
-	instructorID, _ := c.Get("user_id")
-	role, _ := c.Get("role")
 	courseID, _ := strconv.Atoi(c.Param("id"))
 
 	course, ok := database.CourseByID(uint(courseID))
@@ -30,7 +28,7 @@ func (h *Handler) NotifyCourse(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "course not found"})
 		return
 	}
-	if role.(string) != "admin" && course.InstructorID != instructorID.(uint) {
+	if !ownsCourse(c, course) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 		return
 	}

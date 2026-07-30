@@ -19,10 +19,13 @@ const routeMeta: Record<string, { title: string; breadcrumb: string }> = {
   '/student/status':      { title: 'สถานะการสมัคร',      breadcrumb: 'นักศึกษา' },
   '/student/profile':     { title: 'โปรไฟล์ของฉัน',      breadcrumb: 'นักศึกษา' },
   '/instructor/home':     { title: 'ภาพรวม',             breadcrumb: 'อาจารย์' },
+  '/instructor/courses':  { title: 'วิชาของฉัน',         breadcrumb: 'อาจารย์' },
   '/instructor/announce': { title: 'จัดการประกาศ',       breadcrumb: 'อาจารย์' },
   '/instructor/select':   { title: 'คัดเลือกผู้สมัคร',   breadcrumb: 'อาจารย์' },
+  '/instructor/profile':  { title: 'ข้อมูลส่วนตัว',      breadcrumb: 'อาจารย์' },
   '/staff/home':          { title: 'ภาพรวม',             breadcrumb: 'เจ้าหน้าที่' },
   '/staff/docs':          { title: 'จัดการเอกสาร',       breadcrumb: 'เจ้าหน้าที่' },
+  '/staff/profile':       { title: 'ข้อมูลส่วนตัว',      breadcrumb: 'เจ้าหน้าที่' },
   '/admin/overview':      { title: 'ภาพรวมระบบ',         breadcrumb: 'ผู้ดูแลระบบ' },
   '/admin/courses':       { title: 'จัดการรายวิชา',      breadcrumb: 'ผู้ดูแลระบบ' },
   '/admin/users':         { title: 'จัดการผู้ใช้งาน',    breadcrumb: 'ผู้ดูแลระบบ' },
@@ -190,7 +193,7 @@ export function Topbar({ title, breadcrumb, actions, onHamburgerClick }: Props) 
 
   const meta = routeMeta[pathname] ?? { title: '', breadcrumb: '' }
   const resolvedTitle = title ?? meta.title
-  const resolvedBreadcrumb = breadcrumb ?? meta.breadcrumb
+  const resolvedBreadcrumb = breadcrumb ?? (pathname === '/instructor/profile' && user?.role === 'admin' ? 'ผู้ดูแลระบบ' : meta.breadcrumb)
 
   return (
     <header style={{

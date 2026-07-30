@@ -1,21 +1,20 @@
 version: '3.9'
 
 services:
-  mysql:
-    image: mysql:8.0
+  postgres:
+    image: postgres:17-alpine
     container_name: labassist-db
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-labassist123}
-      MYSQL_DATABASE: ${DB_NAME:-labassist}
-      MYSQL_USER: ${DB_USER:-labassist}
-      MYSQL_PASSWORD: ${DB_PASSWORD:-labassist123}
+      POSTGRES_DB: ${DB_NAME:-labassist}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-labassist123}
     ports:
-      - "3306:3306"
+      - "5432:5432"
     volumes:
-      - mysqldata:/var/lib/mysql
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${DB_USER:-labassist}", "-p${DB_PASSWORD:-labassist123}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-labassist}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -27,14 +26,14 @@ services:
     container_name: labassist-backend
     restart: unless-stopped
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
       ocr-service:
         condition: service_started
     environment:
-      DB_HOST: mysql
-      DB_PORT: 3306
-      DB_USER: ${DB_USER:-labassist}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-labassist123}
       DB_NAME: ${DB_NAME:-labassist}
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
@@ -73,5 +72,5 @@ services:
     restart: unless-stopped
 
 volumes:
-  mysqldata:
+  pgdata:
   easyocr_models:

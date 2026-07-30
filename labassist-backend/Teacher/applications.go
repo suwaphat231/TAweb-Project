@@ -55,7 +55,7 @@ func (h *Handler) Review(c *gin.Context) {
 	rid := reviewerID.(uint)
 	if role.(string) == "instructor" {
 		course, _ := database.CourseByID(app.CourseID)
-		if course.InstructorID != rid {
+		if !ownsCourse(c, course) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 			return
 		}
@@ -65,10 +65,6 @@ func (h *Handler) Review(c *gin.Context) {
 
 	if body.Status == models.AppAccepted && prevStatus != models.AppAccepted {
 		course, _ := database.CourseByID(app.CourseID)
-		if app.RoleApplied == models.RoleTA && course.TAAccepted >= course.TASlots {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "TA slots are full"})
-			return
-		}
 		if app.RoleApplied == models.RoleLabBoy && course.LabBoyAccepted >= course.LabBoySlots {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Lab Boy slots are full"})
 			return
@@ -91,6 +87,42 @@ func (h *Handler) Review(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, updated)
+}
+
+// GradeProof godoc
+// @Summary      ดูรูปภาพเกรดที่ผู้สมัครแนบมา (อาจารย์/สตาฟ/แอดมิน)
+// @Tags         instructor
+// @Produce      image/*
+// @Security     BearerAuth
+// @Param        id  path  int  true  "Application ID"
+// @Success      200  {file}    file
+// @Failure      403  {object}  handlers.ErrorResponse
+// @Failure      404  {object}  handlers.ErrorResponse
+// @Router       /instructor/applications/{id}/grade-proof [get]
+func (h *Handler) GradeProof(c *gin.Context) {
+	role, _ := c.Get("role")
+	id, _ := strconv.Atoi(c.Param("id"))
+
+	app, ok := database.ApplicationByID(uint(id))
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+		return
+	}
+	if role.(string) == "instructor" {
+		course, _ := database.CourseByID(app.CourseID)
+		if !ownsCourse(c, course) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+	}
+
+	fileName, data, ok := database.ApplicationGradeProofData(uint(id))
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no grade proof uploaded yet"})
+		return
+	}
+	c.Header("Content-Disposition", `inline; filename="`+fileName+`"`)
+	c.Data(http.StatusOK, http.DetectContentType(data), data)
 }
 
 // BulkReview godoc

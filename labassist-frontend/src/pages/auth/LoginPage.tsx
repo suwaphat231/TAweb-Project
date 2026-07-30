@@ -12,7 +12,7 @@ const roleRedirect: Record<UserRole, string> = {
 }
 
 const demoAccounts = [
-  { role: 'อาจารย์', username: 'somchai', password: 'password123' },
+  { role: 'อาจารย์ (มีผู้สมัคร 10 คนให้ทดสอบ)', username: 'somchai', password: 'password123' },
   { role: 'เจ้าหน้าที่', username: 'parinya', password: 'password123' },
   { role: 'Admin', username: 'admin', password: 'password123' },
 ]

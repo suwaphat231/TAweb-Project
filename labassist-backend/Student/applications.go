@@ -5,6 +5,7 @@ import (
 	"labassist/models"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -12,15 +13,19 @@ import (
 // ApplyRequest is the request body for submitting an application
 type ApplyRequest struct {
 	CourseID    uint               `json:"course_id" binding:"required" example:"1"`
-	RoleApplied models.RoleApplied `json:"role_applied" binding:"required" example:"ta"`
-	Motivation  *string            `json:"motivation,omitempty" example:"ต้องการช่วยสอนนักศึกษา"`
+	RoleApplied models.RoleApplied `json:"role_applied" binding:"required,oneof=labboy" example:"labboy"`
+	// Grade is the letter grade the student got when they previously took
+	// this course, so the instructor can check it against the posting's
+	// minimum-grade requirement.
+	Grade *string `json:"grade,omitempty" example:"A"`
 }
 
 // UpdateProfileRequest is the request body for updating student profile
 type UpdateProfileRequest struct {
-	FullName *string `json:"full_name,omitempty" example:"สมชาย ใจดี"`
-	Year     *int    `json:"year,omitempty" example:"3"`
-	Faculty  *string `json:"faculty,omitempty" example:"วิทยาการคอมพิวเตอร์"`
+	FullName  *string `json:"full_name,omitempty" example:"สมชาย ใจดี"`
+	StudentID *string `json:"student_id,omitempty" example:"640710112"`
+	Year      *int    `json:"year,omitempty" example:"3"`
+	Faculty   *string `json:"faculty,omitempty" example:"วิทยาการคอมพิวเตอร์"`
 }
 
 // StudentDashboard godoc
@@ -60,7 +65,7 @@ func (h *Handler) MyApplications(c *gin.Context) {
 }
 
 // Apply godoc
-// @Summary      สมัครเป็น TA หรือ Lab Boy
+// @Summary      สมัครเป็น Lab Boy
 // @Tags         student
 // @Accept       json
 // @Produce      json
@@ -94,14 +99,12 @@ func (h *Handler) Apply(c *gin.Context) {
 		CourseID:    body.CourseID,
 		RoleApplied: body.RoleApplied,
 		Status:      models.AppPending,
-		Motivation:  body.Motivation,
+		Grade:       body.Grade,
 	})
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "already applied"})
 		return
 	}
-
-	database.AdjustCourseAccepted(body.CourseID, body.RoleApplied, 1)
 
 	c.JSON(http.StatusCreated, app)
 }
@@ -170,9 +173,27 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 	var body UpdateProfileRequest
 	c.ShouldBindJSON(&body)
 
-	updated, _ := database.UpdateUser(studentID.(uint), func(u *models.User) {
+	if body.StudentID != nil {
+		trimmed := strings.TrimSpace(*body.StudentID)
+		body.StudentID = &trimmed
+		if trimmed != "" {
+			if owner, ok := database.UserByStudentID(trimmed); ok && owner.ID != studentID.(uint) {
+				c.JSON(http.StatusConflict, gin.H{"error": "รหัสนักศึกษานี้ถูกใช้งานแล้ว"})
+				return
+			}
+		}
+	}
+
+	updated, ok := database.UpdateUser(studentID.(uint), func(u *models.User) {
 		if body.FullName != nil {
 			u.FullName = *body.FullName
+		}
+		if body.StudentID != nil {
+			if *body.StudentID == "" {
+				u.StudentID = nil
+			} else {
+				u.StudentID = body.StudentID
+			}
 		}
 		if body.Year != nil {
 			y := int8(*body.Year)
@@ -182,5 +203,9 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 			u.Faculty = body.Faculty
 		}
 	})
+	if !ok {
+		c.JSON(http.StatusConflict, gin.H{"error": "ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่"})
+		return
+	}
 	c.JSON(http.StatusOK, updated)
 }

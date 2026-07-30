@@ -99,6 +99,12 @@ func Connect(cfg *config.Config) error {
 	if err := db.AutoMigrate(&models.Course{}); err != nil {
 		return fmt.Errorf("migrate courses table: %w", err)
 	}
+	if err := db.AutoMigrate(&models.Transcript{}); err != nil {
+		return fmt.Errorf("migrate transcripts table: %w", err)
+	}
+	if err := db.AutoMigrate(&models.CoreCourse{}); err != nil {
+		return fmt.Errorf("migrate core_courses table: %w", err)
+	}
 
 	// Admin-created accounts start with a blank email (filled in later via
 	// Google sign-in), so multiple blank emails must be allowed — a plain
@@ -123,6 +129,14 @@ func Connect(cfg *config.Config) error {
 
 	if err := seedClasslistInstructors(); err != nil {
 		return fmt.Errorf("seed classlist instructors: %w", err)
+	}
+
+	if err := seedCoreCourses(); err != nil {
+		return fmt.Errorf("seed core courses: %w", err)
+	}
+
+	if err := seedMockApplicants(); err != nil {
+		return fmt.Errorf("seed mock applicants: %w", err)
 	}
 
 	return nil
