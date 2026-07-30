@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { instructorApi, notificationApi } from '../../services/api'
 import { StatusBadge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
@@ -14,11 +14,6 @@ import { useToast } from '../../components/ui/Toast'
 import { displayCourseTitle } from '../../utils/courseDisplay'
 import type { Application } from '../../types'
 
-const roleOptions  = [
-  { value: '', label: 'ทุกตำแหน่ง' },
-  { value: 'ta', label: 'TA' },
-  { value: 'labboy', label: 'Lab Boy' },
-]
 const statusOptions = [
   { value: '', label: 'ทุกสถานะ' },
   { value: 'pending', label: 'รอพิจารณา' },
@@ -28,10 +23,10 @@ const statusOptions = [
 ]
 
 export default function InstructorSelect() {
+  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const courseId = Number(params.get('course')) || 0
 
-  const [roleFilter, setRoleFilter]     = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [search, setSearch]             = useState('')
 
@@ -53,6 +48,17 @@ export default function InstructorSelect() {
     queryFn: () => instructorApi.applicants(courseId),
     enabled: !!courseId,
   })
+
+  async function viewGradeProof(applicationId: number) {
+    try {
+      const blob = await instructorApi.gradeProof(applicationId)
+      const url = window.URL.createObjectURL(blob)
+      window.open(url, '_blank')
+      setTimeout(() => window.URL.revokeObjectURL(url), 30_000)
+    } catch {
+      showToast('ไม่สามารถโหลดรูปภาพเกรดได้', 'error')
+    }
+  }
 
   const notifyMut = useMutation({
     mutationFn: () => notificationApi.notifyCourse(courseId),
@@ -77,15 +83,19 @@ export default function InstructorSelect() {
       setProfileTarget(null)
       setNoteText('')
       showToast(vars.status === 'accepted' ? 'รับผู้สมัครเรียบร้อยแล้ว' : 'ปฏิเสธผู้สมัครเรียบร้อยแล้ว', 'success')
+      // Accepting a Lab Boy is the end of that applicant's flow — send the
+      // instructor to "วิชาของฉัน" so they immediately see the updated
+      // accepted list for the course, instead of staying on the review table.
+      if (vars.status === 'accepted') navigate('/instructor/courses')
     },
     onError: (err: { response?: { data?: { error?: string } } }) =>
       showToast(err?.response?.data?.error ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'),
   })
 
-  // Client-side filter + sort by GPA DESC
+  // Client-side filter + rank by GPA DESC (not shown in the UI, but used to
+  // surface stronger applicants first)
   const filtered = useMemo(() => {
     let list = [...applicants].sort((a, b) => (b.student_gpa ?? 0) - (a.student_gpa ?? 0))
-    if (roleFilter)   list = list.filter((a) => a.role_applied === roleFilter)
     if (statusFilter) list = list.filter((a) => a.status === statusFilter)
     if (search) {
       const q = search.toLowerCase()
@@ -95,7 +105,7 @@ export default function InstructorSelect() {
       )
     }
     return list
-  }, [applicants, roleFilter, statusFilter, search])
+  }, [applicants, statusFilter, search])
 
   const selectedCourse = courses.find((c) => c.id === courseId)
 
@@ -125,14 +135,11 @@ export default function InstructorSelect() {
       ),
     },
     {
-      key: 'gpa', header: 'GPA',
+      key: 'grade', header: 'เกรดวิชานี้',
       render: (row: Application) => (
-        <span style={{ fontWeight: 700, fontSize: 14, color: row.student_gpa >= 3.5 ? 'var(--green)' : row.student_gpa >= 3.0 ? 'var(--primary)' : 'var(--ink-700)' }}>
-          {row.student_gpa ? row.student_gpa.toFixed(2) : '—'}
-        </span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>{row.grade || '—'}</span>
       ),
     },
-    { key: 'role', header: 'ตำแหน่ง', render: (row: Application) => <StatusBadge value={row.role_applied} /> },
     {
       key: 'applied_at', header: 'วันที่สมัคร',
       render: (row: Application) => (
@@ -149,7 +156,7 @@ export default function InstructorSelect() {
           {(row.status === 'pending' || row.status === 'rejected') && (
             <Button
               size="sm" variant="ghost"
-              onClick={(e) => { e.stopPropagation(); openReview(row, 'accepted') }}
+              onClick={(e) => { e.stopPropagation(); setProfileTarget(row) }}
               style={{ color: 'var(--green)', border: '1px solid var(--green)' }}
             >
               รับ
@@ -205,11 +212,11 @@ export default function InstructorSelect() {
               { value: '', label: 'เลือกรายวิชา...' },
               ...courses.map((c) => ({
                 value: String(c.id),
-                label: `[${c.code}] ${displayCourseTitle(c.title, c.english_title)} — ${c.applicant_count ?? 0} ผู้สมัคร`,
+                label: `[${c.code}${c.section ? ` sec ${c.section}` : ''}] ${displayCourseTitle(c.title, c.english_title)} — ${c.applicant_count ?? 0} ผู้สมัคร`,
               })),
             ]}
             value={String(courseId)}
-            onChange={(e) => { setParams({ course: e.target.value }); setRoleFilter(''); setStatusFilter(''); setSearch('') }}
+            onChange={(e) => { setParams({ course: e.target.value }); setStatusFilter(''); setSearch('') }}
             style={{ width: 320 }}
           />
         </div>
@@ -228,15 +235,22 @@ export default function InstructorSelect() {
             }}>
               <SumItem label="ผู้สมัครทั้งหมด" value={`${applicants.length} คน`} color="var(--ink-900)" />
               <div style={{ width: 1, background: 'var(--line)', alignSelf: 'stretch' }} />
-              <SumItem label="TA" value={`${selectedCourse.ta_accepted} / ${selectedCourse.ta_slots} คน`} color="var(--primary)" />
               <SumItem label="Lab Boy" value={`${selectedCourse.labboy_accepted} / ${selectedCourse.labboy_slots} คน`} color="#7C3AED" />
+              {!!selectedCourse.section && (
+                <>
+                  <div style={{ width: 1, background: 'var(--line)', alignSelf: 'stretch' }} />
+                  <SumItem
+                    label="กำลังดู"
+                    value={`Sec ${selectedCourse.section}${selectedCourse.schedule ? ` · ${selectedCourse.schedule}` : ''}`}
+                    color="var(--ink-700)"
+                  />
+                </>
+              )}
             </div>
           )}
 
           {/* Filters */}
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
-            <FilterChips options={roleOptions} value={roleFilter} onChange={setRoleFilter} />
-            <div style={{ width: 1, height: 28, background: 'var(--line)' }} />
             <FilterChips options={statusOptions} value={statusFilter} onChange={setStatusFilter} />
             <div style={{ flex: 1, minWidth: 180 }}>
               <input
@@ -318,7 +332,7 @@ export default function InstructorSelect() {
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <p style={{ fontSize: 14, color: 'var(--ink-700)' }}>
-            {reviewAction?.targetStatus === 'accepted' ? 'รับ' : 'ปฏิเสธ'} <strong>{reviewAction?.app.student_name}</strong> เข้าเป็น <strong>{reviewAction?.app.role_applied === 'ta' ? 'TA' : 'Lab Boy'}</strong>?
+            {reviewAction?.targetStatus === 'accepted' ? 'รับ' : 'ปฏิเสธ'} <strong>{reviewAction?.app.student_name}</strong> เข้าเป็น <strong>Lab Boy</strong>?
           </p>
           <Textarea
             label="หมายเหตุ (ไม่บังคับ)"
@@ -382,48 +396,36 @@ export default function InstructorSelect() {
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink-900)' }}>{profileTarget.student_name}</div>
                 <div style={{ fontSize: 13, color: 'var(--ink-500)', marginTop: 2 }}>{profileTarget.student_code || '—'}</div>
-                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                  <StatusBadge value={profileTarget.role_applied} />
-                </div>
               </div>
-              {profileTarget.student_gpa > 0 && (
-                <div style={{ textAlign: 'center', minWidth: 64 }}>
-                  <div style={{ fontSize: 24, fontWeight: 800, color: profileTarget.student_gpa >= 3.5 ? 'var(--green)' : profileTarget.student_gpa >= 3.0 ? 'var(--primary)' : 'var(--ink-700)' }}>
-                    {profileTarget.student_gpa.toFixed(2)}
-                  </div>
-                  <div style={{ fontSize: 10, color: 'var(--ink-400)', fontWeight: 600 }}>GPA</div>
-                </div>
-              )}
             </div>
-
-            {/* GPA bar */}
-            {profileTarget.student_gpa > 0 && (
-              <div>
-                <div style={{ height: 6, borderRadius: 999, background: 'var(--line-soft)', overflow: 'hidden' }}>
-                  <div style={{
-                    height: '100%', borderRadius: 999,
-                    background: profileTarget.student_gpa >= 3.5 ? 'var(--green)' : 'var(--primary)',
-                    width: `${Math.min(100, (profileTarget.student_gpa / 4) * 100)}%`,
-                    transition: 'width .4s ease',
-                  }} />
-                </div>
-                <div style={{ fontSize: 10, color: 'var(--ink-400)', marginTop: 3, textAlign: 'right' }}>จาก 4.00</div>
-              </div>
-            )}
 
             {/* Info grid */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <ProfileInfo label="อีเมล" value={profileTarget.student_email || '—'} />
               <ProfileInfo label="ชั้นปี" value={profileTarget.student_year ? `ปีที่ ${profileTarget.student_year}` : '—'} />
               <ProfileInfo label="คณะ / ภาควิชา" value={profileTarget.student_faculty || '—'} />
+              <ProfileInfo label="เกรดที่เคยได้ในวิชานี้" value={profileTarget.grade || '—'} />
+              <ProfileInfo
+                label="Sec / เวลาเรียนที่สมัคร"
+                value={profileTarget.course_section ? `Sec ${profileTarget.course_section}${profileTarget.course_schedule ? ` · ${profileTarget.course_schedule}` : ''}` : '—'}
+              />
               <ProfileInfo label="วันที่สมัคร" value={new Date(profileTarget.applied_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })} />
             </div>
 
-            {/* Motivation */}
-            {profileTarget.motivation && (
-              <div style={{ background: '#F8F9FB', borderRadius: 10, padding: '12px 16px' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-400)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>แรงจูงใจในการสมัคร</div>
-                <div style={{ fontSize: 14, color: 'var(--ink-700)', lineHeight: 1.7 }}>{profileTarget.motivation}</div>
+            {/* Grade proof — only relevant for postings that require it */}
+            {selectedCourse?.require_grade_proof && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-400)', marginBottom: 2 }}>รูปภาพเกรดยืนยัน</div>
+                  {!profileTarget.has_grade_proof && (
+                    <div style={{ fontSize: 13, color: 'var(--red)', fontWeight: 500 }}>ยังไม่ได้แนบรูปภาพ</div>
+                  )}
+                </div>
+                {profileTarget.has_grade_proof && (
+                  <Button size="sm" variant="outline" onClick={() => viewGradeProof(profileTarget.id)}>
+                    ดูรูปภาพ
+                  </Button>
+                )}
               </div>
             )}
 

@@ -728,6 +728,51 @@ const docTemplate = `{
                 }
             }
         },
+        "/instructor/applications/{id}/grade-proof": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "image/*"
+                ],
+                "tags": [
+                    "instructor"
+                ],
+                "summary": "ดูรูปภาพเกรดที่ผู้สมัครแนบมา (อาจารย์/สตาฟ/แอดมิน)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Application ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/instructor/applications/{id}/review": {
             "put": {
                 "security": [
@@ -819,6 +864,57 @@ const docTemplate = `{
                 }
             }
         },
+        "/instructor/course-catalog/sections": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "ดึงจากข้อมูลที่แอดมินนำเข้าจากไฟล์ Excel เท่านั้น — section และเวลาเรียนมาจากไฟล์เสมอ ไม่ให้อาจารย์พิมพ์เอง เพื่อลดความผิดพลาด",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "instructor"
+                ],
+                "summary": "รายชื่อ section จริงของวิชา (สำหรับเลือกตอนเปิดรับสมัคร)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "รหัสวิชา",
+                        "name": "code",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "ภาคเรียน",
+                        "name": "semester",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "ปีการศึกษา",
+                        "name": "academic_year",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.Course"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/instructor/courses": {
             "get": {
                 "security": [
@@ -866,7 +962,7 @@ const docTemplate = `{
                 "tags": [
                     "instructor"
                 ],
-                "summary": "สร้างวิชาใหม่",
+                "summary": "สร้างวิชาใหม่ (รองรับหลาย section/เวลาเรียนในประกาศเดียว)",
                 "parameters": [
                     {
                         "description": "ข้อมูลวิชา",
@@ -882,7 +978,10 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/models.Course"
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.Course"
+                            }
                         }
                     },
                     "400": {
@@ -1021,7 +1120,6 @@ const docTemplate = `{
                     },
                     {
                         "enum": [
-                            "ta",
                             "labboy"
                         ],
                         "type": "string",
@@ -1102,6 +1200,70 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/instructor/courses/{id}/sections": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "คัดลอกข้อมูลที่ใช้ร่วมกัน (รหัสวิชา ชื่อวิชา ภาค ปีการศึกษา จำนวนรับ ฯลฯ) จากวิชาต้นแบบ แล้วสร้างแถวใหม่ด้วย section/เวลาที่ระบุ",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "instructor"
+                ],
+                "summary": "เพิ่ม section/เวลาเรียนใหม่ให้ประกาศที่มีอยู่",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Course ID ของ section ใดๆ ในประกาศเดียวกัน (ใช้เป็นต้นแบบ)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "section/เวลาใหม่ที่ต้องการเพิ่ม",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/teacher.AddSectionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/models.Course"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
                         }
                     },
                     "403": {
@@ -1278,7 +1440,7 @@ const docTemplate = `{
                 "tags": [
                     "student"
                 ],
-                "summary": "สมัครเป็น TA หรือ Lab Boy",
+                "summary": "สมัครเป็น Lab Boy",
                 "parameters": [
                     {
                         "description": "ข้อมูลการสมัคร",
@@ -1286,7 +1448,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.ApplyRequest"
+                            "$ref": "#/definitions/student.ApplyRequest"
                         }
                     }
                 ],
@@ -1311,6 +1473,99 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/student/applications/{id}/grade-proof": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "image/*"
+                ],
+                "tags": [
+                    "student"
+                ],
+                "summary": "ดูรูปภาพเกรดที่แนบไว้ (ของตัวเอง)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Application ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "ใช้เมื่อวิชานั้นเปิดให้ต้องแนบรูปเกรด (require_grade_proof) — อัปโหลดซ้ำจะแทนที่รูปเดิม",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "student"
+                ],
+                "summary": "แนบรูปภาพเกรดยืนยันสำหรับใบสมัคร",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Application ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "รูปภาพเกรด (.jpg, .jpeg, .png, ไม่เกิน 5MB)",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.Application"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
@@ -1523,7 +1778,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.UpdateProfileRequest"
+                            "$ref": "#/definitions/student.UpdateProfileRequest"
                         }
                     }
                 ],
@@ -1532,6 +1787,107 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/models.User"
+                        }
+                    }
+                }
+            }
+        },
+        "/student/transcript": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "student"
+                ],
+                "summary": "ดูข้อมูล Transcript ของตัวเอง",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/student.TranscriptResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "แต่ละนักศึกษาเก็บ Transcript ได้ไฟล์เดียว อัปโหลดซ้ำจะแทนที่ไฟล์เดิม",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "student"
+                ],
+                "summary": "อัปโหลด Transcript (PDF) ของตัวเอง",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "ไฟล์ Transcript (.pdf, ไม่เกิน 10MB)",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/student.TranscriptResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/student/transcript/file": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/pdf"
+                ],
+                "tags": [
+                    "student"
+                ],
+                "summary": "ดาวน์โหลดไฟล์ Transcript (PDF) ของตัวเอง",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
                         }
                     }
                 }
@@ -1683,31 +2039,6 @@ const docTemplate = `{
                 }
             }
         },
-        "handlers.ApplyRequest": {
-            "type": "object",
-            "required": [
-                "course_id",
-                "role_applied"
-            ],
-            "properties": {
-                "course_id": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "motivation": {
-                    "type": "string",
-                    "example": "ต้องการช่วยสอนนักศึกษา"
-                },
-                "role_applied": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.RoleApplied"
-                        }
-                    ],
-                    "example": "ta"
-                }
-            }
-        },
         "handlers.BulkReviewResponse": {
             "type": "object",
             "properties": {
@@ -1856,23 +2187,6 @@ const docTemplate = `{
                 }
             }
         },
-        "handlers.UpdateProfileRequest": {
-            "type": "object",
-            "properties": {
-                "faculty": {
-                    "type": "string",
-                    "example": "วิทยาการคอมพิวเตอร์"
-                },
-                "full_name": {
-                    "type": "string",
-                    "example": "สมชาย ใจดี"
-                },
-                "year": {
-                    "type": "integer",
-                    "example": 3
-                }
-            }
-        },
         "models.ActivityLog": {
             "type": "object",
             "properties": {
@@ -1935,14 +2249,25 @@ const docTemplate = `{
                 "course_id": {
                     "type": "integer"
                 },
+                "course_schedule": {
+                    "type": "string"
+                },
+                "course_section": {
+                    "type": "integer"
+                },
                 "course_title": {
                     "type": "string"
                 },
+                "grade": {
+                    "description": "Grade is the letter grade the student earned when they previously took\nthis course, self-reported at application time so the instructor can\ncheck it against the course's minimum-grade requirement.",
+                    "type": "string"
+                },
+                "has_grade_proof": {
+                    "description": "Computed fields (not in DB)",
+                    "type": "boolean"
+                },
                 "id": {
                     "type": "integer"
-                },
-                "motivation": {
-                    "type": "string"
                 },
                 "note": {
                     "type": "string"
@@ -1978,7 +2303,6 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "student_name": {
-                    "description": "Computed fields (not in DB)",
                     "type": "string"
                 },
                 "student_year": {
@@ -2044,6 +2368,10 @@ const docTemplate = `{
                 "labboy_slots": {
                     "type": "integer"
                 },
+                "require_grade_proof": {
+                    "description": "RequireGradeProof: when true, a student applying must attach an image\nof their grade (e.g. a MyReg screenshot) instead of just self-reporting\na letter grade — set per posting so the instructor decides which\ncourses need proof against students typing in a fake grade.",
+                    "type": "boolean"
+                },
                 "requirements": {
                     "type": "string"
                 },
@@ -2058,12 +2386,6 @@ const docTemplate = `{
                 },
                 "status": {
                     "$ref": "#/definitions/models.CourseStatus"
-                },
-                "ta_accepted": {
-                    "type": "integer"
-                },
-                "ta_slots": {
-                    "type": "integer"
                 },
                 "title": {
                     "type": "string"
@@ -2119,11 +2441,9 @@ const docTemplate = `{
         "models.RoleApplied": {
             "type": "string",
             "enum": [
-                "ta",
                 "labboy"
             ],
             "x-enum-varnames": [
-                "RoleTA",
                 "RoleLabBoy"
             ]
         },
@@ -2187,6 +2507,79 @@ const docTemplate = `{
                 "RoleAdmin"
             ]
         },
+        "student.ApplyRequest": {
+            "type": "object",
+            "required": [
+                "course_id",
+                "role_applied"
+            ],
+            "properties": {
+                "course_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "grade": {
+                    "description": "Grade is the letter grade the student got when they previously took\nthis course, so the instructor can check it against the posting's\nminimum-grade requirement.",
+                    "type": "string",
+                    "example": "A"
+                },
+                "role_applied": {
+                    "enum": [
+                        "labboy"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.RoleApplied"
+                        }
+                    ],
+                    "example": "labboy"
+                }
+            }
+        },
+        "student.TranscriptResponse": {
+            "type": "object",
+            "properties": {
+                "file_name": {
+                    "type": "string"
+                },
+                "file_size": {
+                    "type": "integer"
+                },
+                "uploaded_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "student.UpdateProfileRequest": {
+            "type": "object",
+            "properties": {
+                "faculty": {
+                    "type": "string",
+                    "example": "วิทยาการคอมพิวเตอร์"
+                },
+                "full_name": {
+                    "type": "string",
+                    "example": "สมชาย ใจดี"
+                },
+                "year": {
+                    "type": "integer",
+                    "example": 3
+                }
+            }
+        },
+        "teacher.AddSectionRequest": {
+            "type": "object",
+            "properties": {
+                "schedule": {
+                    "type": "string",
+                    "example": "อ,พฤ 13:00-16:00"
+                },
+                "section": {
+                    "type": "integer",
+                    "example": 2
+                }
+            }
+        },
         "teacher.BulkReviewRequest": {
             "type": "object",
             "required": [
@@ -2241,8 +2634,20 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 2
                 },
+                "require_grade_proof": {
+                    "description": "RequireGradeProof: when true, applicants must attach an image of their\ngrade instead of just self-reporting it — guards against a typed-in\nfake grade.",
+                    "type": "boolean",
+                    "example": false
+                },
                 "requirements": {
                     "type": "string"
+                },
+                "sections": {
+                    "description": "Sections lists the teaching sections/time slots for this posting. One\nCourse row is created per entry; when omitted, a single section with\nno section number/schedule is created (unchanged single-section behavior).",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/teacher.SectionInput"
+                    }
                 },
                 "semester": {
                     "type": "string",
@@ -2255,10 +2660,6 @@ const docTemplate = `{
                         }
                     ],
                     "example": "draft"
-                },
-                "ta_slots": {
-                    "type": "integer",
-                    "example": 3
                 },
                 "title": {
                     "type": "string",
@@ -2286,6 +2687,19 @@ const docTemplate = `{
                 }
             }
         },
+        "teacher.SectionInput": {
+            "type": "object",
+            "properties": {
+                "schedule": {
+                    "type": "string",
+                    "example": "จ,พ,ศ 09:00-12:00"
+                },
+                "section": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
         "teacher.UpdateCourseRequest": {
             "type": "object",
             "properties": {
@@ -2308,8 +2722,20 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 2
                 },
+                "require_grade_proof": {
+                    "type": "boolean",
+                    "example": false
+                },
                 "requirements": {
                     "type": "string"
+                },
+                "schedule": {
+                    "type": "string",
+                    "example": "จ,พ,ศ 09:00-12:00"
+                },
+                "section": {
+                    "type": "integer",
+                    "example": 1
                 },
                 "semester": {
                     "type": "string",
@@ -2322,10 +2748,6 @@ const docTemplate = `{
                         }
                     ],
                     "example": "open"
-                },
-                "ta_slots": {
-                    "type": "integer",
-                    "example": 3
                 },
                 "title": {
                     "type": "string",

@@ -1,31 +1,25 @@
-import { useState } from 'react'
 import type { Course } from '../../types'
+import type { CourseGroup } from '../../utils/courseGrouping'
+import { cleanCourseTitle } from '../../utils/courseTitle'
 import { Card } from '../ui/Card'
 import { StatusBadge, Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
 
 interface Props {
-  course: Course
-  onApply?: (courseId: number, roleApplied: 'ta' | 'labboy') => void
-  isApplied?: boolean
-  appliedRole?: 'ta' | 'labboy'
+  group: CourseGroup
+  onApply?: (group: CourseGroup) => void
+  appliedSection?: Course
 }
 
-export function CourseCard({ course, onApply, isApplied = false, appliedRole }: Props) {
-  const [showMenu, setShowMenu] = useState(false)
+export function CourseCard({ group, onApply, appliedSection }: Props) {
+  const allFull = group.totalSlots > 0 && group.totalAccepted >= group.totalSlots
 
-  const taSlotsAvailable  = course.ta_slots > 0 && course.ta_accepted < course.ta_slots
-  const labBoySlotsAvailable = course.labboy_slots > 0 && course.labboy_accepted < course.labboy_slots
-  const hasAnySlot = course.ta_slots > 0 || course.labboy_slots > 0
-  const allFull = hasAnySlot && !taSlotsAvailable && !labBoySlotsAvailable
-
-  const deadline = course.deadline
-    ? new Date(course.deadline).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
+  const deadline = group.deadline
+    ? new Date(group.deadline).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
     : null
 
-  function handleApply(role: 'ta' | 'labboy') {
-    onApply?.(course.id, role)
-    setShowMenu(false)
+  function handleApply() {
+    onApply?.(group)
   }
 
   return (
@@ -33,29 +27,73 @@ export function CourseCard({ course, onApply, isApplied = false, appliedRole }: 
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-        <span style={{
-          fontSize: 12, fontWeight: 700,
-          color: 'var(--primary)', background: 'var(--primary-50)',
-          padding: '2px 10px', borderRadius: 'var(--radius-pill)',
-        }}>
-          {course.code}
-        </span>
-        <StatusBadge value={course.status} />
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{
+            fontSize: 12, fontWeight: 700,
+            color: 'var(--primary)', background: 'var(--primary-50)',
+            padding: '2px 10px', borderRadius: 'var(--radius-pill)',
+          }}>
+            {group.code}
+          </span>
+          {group.sections.length > 1 ? (
+            <span style={{
+              fontSize: 11, fontWeight: 600,
+              color: 'var(--ink-500)', background: 'var(--bg)',
+              padding: '2px 9px', borderRadius: 'var(--radius-pill)',
+            }}>
+              {group.sections.length} Sec ให้เลือก
+            </span>
+          ) : !!group.sections[0]?.section && (
+            <span style={{
+              fontSize: 11, fontWeight: 600,
+              color: 'var(--ink-500)', background: 'var(--bg)',
+              padding: '2px 9px', borderRadius: 'var(--radius-pill)',
+            }}>
+              Sec {group.sections[0].section}
+            </span>
+          )}
+        </div>
+        <StatusBadge value={group.status} />
       </div>
 
       {/* Title */}
       <div>
-        <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)', lineHeight: 1.4, marginBottom: 8 }}>
-          {course.title}
+        <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)', lineHeight: 1.4, marginBottom: group.english_title ? 2 : 8 }}>
+          {cleanCourseTitle(group.title)}
         </h3>
+        {group.english_title && (
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-500)', textTransform: 'uppercase', marginBottom: 8 }}>
+            {group.english_title}
+          </div>
+        )}
 
         {/* Instructor */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, color: 'var(--ink-500)', marginBottom: 4 }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
           </svg>
-          {course.instructor_name}
+          {group.instructor_name}
         </div>
+
+        {/* Schedule(s) */}
+        {group.sections.length === 1 && group.sections[0].schedule && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, color: 'var(--ink-500)', marginBottom: 4 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>
+            {group.sections[0].schedule}
+          </div>
+        )}
+        {group.sections.length > 1 && (
+          <div style={{ fontSize: 12, color: 'var(--ink-500)', marginBottom: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {group.sections.map((s) => (
+              <div key={s.id} style={{ display: 'flex', gap: 5 }}>
+                <span style={{ fontWeight: 600 }}>Sec {s.section}</span>
+                {s.schedule && <span>· {s.schedule}</span>}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Deadline */}
         {deadline && (
@@ -70,36 +108,21 @@ export function CourseCard({ course, onApply, isApplied = false, appliedRole }: 
 
       {/* Slot info */}
       <div style={{ fontSize: 12, color: 'var(--ink-500)', display: 'flex', gap: 10 }}>
-        {course.ta_slots > 0 && (
-          <SlotBar label="TA" filled={course.ta_accepted} total={course.ta_slots} />
-        )}
-        {course.labboy_slots > 0 && (
-          <SlotBar label="Lab Boy" filled={course.labboy_accepted} total={course.labboy_slots} />
+        {group.totalSlots > 0 && (
+          <SlotBar label="Lab Boy" filled={group.totalAccepted} total={group.totalSlots} />
         )}
       </div>
 
       {/* Footer actions */}
       <div style={{ paddingTop: 4, borderTop: '1px solid var(--line-soft)' }}>
-        {course.status === 'closed' || course.status === 'draft' ? (
+        {group.status === 'closed' || group.status === 'draft' ? (
           <Badge variant="gray">ปิดรับ</Badge>
-        ) : isApplied ? (
-          <Badge variant="green">
-            สมัครแล้ว ({appliedRole === 'ta' ? 'TA' : 'Lab Boy'})
-          </Badge>
+        ) : appliedSection ? (
+          <Badge variant="green">สมัครแล้ว{appliedSection.section ? ` (Sec ${appliedSection.section})` : ''}</Badge>
         ) : allFull ? (
           <Button size="sm" variant="outline" disabled style={{ cursor: 'not-allowed' }}>เต็มแล้ว</Button>
-        ) : !showMenu ? (
-          <Button size="sm" onClick={() => setShowMenu(true)}>สมัคร</Button>
         ) : (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-            {taSlotsAvailable && (
-              <Button size="sm" onClick={() => handleApply('ta')}>สมัคร TA</Button>
-            )}
-            {labBoySlotsAvailable && (
-              <Button size="sm" variant="outline" onClick={() => handleApply('labboy')}>สมัคร Lab Boy</Button>
-            )}
-            <Button size="sm" variant="ghost" onClick={() => setShowMenu(false)}>ยกเลิก</Button>
-          </div>
+          <Button size="sm" onClick={handleApply}>สมัคร Lab Boy</Button>
         )}
       </div>
     </Card>

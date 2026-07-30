@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { instructorApi } from '../../services/api'
+import { staffApi } from '../../services/api'
 import { useAuth } from '../../hooks/useAuth'
 import { Card } from '../../components/ui/Card'
 import { Input } from '../../components/ui/Input'
@@ -10,15 +10,15 @@ import { StatusBadge } from '../../components/ui/Badge'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/Toast'
 
-export default function InstructorProfile() {
+export default function StaffProfile() {
   const { user, setUser } = useAuth()
   const qc = useQueryClient()
   const showToast = useToast()
   const [form, setForm] = useState({ full_name: '', email: '', faculty: '' })
 
   const { data: profile, isLoading } = useQuery({
-    queryKey: ['instructor-profile'],
-    queryFn: instructorApi.profile,
+    queryKey: ['staff-profile'],
+    queryFn: staffApi.profile,
   })
 
   const p = profile ?? user
@@ -34,10 +34,10 @@ export default function InstructorProfile() {
 
   const updateMut = useMutation({
     mutationFn: (data: { full_name: string; email: string; faculty: string }) =>
-      instructorApi.updateProfile(data),
+      staffApi.updateProfile(data),
     onSuccess: (updated) => {
       setUser(updated)
-      qc.invalidateQueries({ queryKey: ['instructor-profile'] })
+      qc.invalidateQueries({ queryKey: ['staff-profile'] })
       showToast('บันทึกข้อมูลเรียบร้อยแล้ว', 'success')
     },
     onError: () => showToast('เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'),
@@ -69,7 +69,7 @@ export default function InstructorProfile() {
               </div>
               <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 2 }}>{p?.full_name}</div>
               <div style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 10, wordBreak: 'break-all' }}>{p?.email || '—'}</div>
-              <StatusBadge value={p?.role ?? 'instructor'} />
+              <StatusBadge value="staff" />
             </>
           )}
         </Card>
@@ -98,7 +98,6 @@ export default function InstructorProfile() {
                 value={form.faculty}
                 onChange={(e) => setForm(f => ({ ...f, faculty: e.target.value }))}
               />
-              
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <Button type="submit" loading={updateMut.isPending}>บันทึกการเปลี่ยนแปลง</Button>
               </div>

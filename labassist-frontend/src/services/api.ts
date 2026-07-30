@@ -3,7 +3,8 @@ import { useAuthStore } from '../store/authStore'
 import type {
   User, Course, Application, LoginCredentials, GoogleAuthPayload,
   CreateCoursePayload, ApplyPayload, ReviewPayload, BulkReviewPayload,
-  AdminStats, CourseStatus,
+  AdminStats, CourseStatus, Transcript, Notification,
+  CreateUserPayload, UpdateUserPayload, ImportCoursesResponse,
 } from '../types'
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1'
@@ -43,7 +44,6 @@ export const coursesAPI = {
   getAll: (params?: { status?: CourseStatus; q?: string; has_lab?: boolean }) =>
     api.get<Course[]>('/courses', { params }).then((r) => r.data),
   getById: (id: number) => api.get<Course>(`/courses/${id}`).then((r) => r.data),
-  create: (data: CreateCoursePayload) => api.post<Course>('/instructor/courses', data).then((r) => r.data),
   update: (id: number, data: Partial<CreateCoursePayload>) =>
     api.put<Course>(`/instructor/courses/${id}`, data).then((r) => r.data),
   updateStatus: (id: number, status: CourseStatus) =>
@@ -61,6 +61,18 @@ export const applicationsAPI = {
     api.put<Application>(`/instructor/applications/${id}/review`, data).then((r) => r.data),
   bulkReview: (data: BulkReviewPayload) =>
     api.put<{ updated: number }>('/instructor/applications/bulk-review', data).then((r) => r.data),
+  uploadGradeProof: (applicationId: number, file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post<Application>(`/student/applications/${applicationId}/grade-proof`, formData).then((r) => r.data)
+  },
+  // Grade-proof images need the Bearer token like any other request, so a
+  // plain <img src> can't hit these directly — fetch as a blob through the
+  // authenticated axios instance and let the caller build an object URL.
+  gradeProof: (applicationId: number) =>
+    api.get(`/student/applications/${applicationId}/grade-proof`, { responseType: 'blob' }).then((r) => r.data as Blob),
+  instructorGradeProof: (applicationId: number) =>
+    api.get(`/instructor/applications/${applicationId}/grade-proof`, { responseType: 'blob' }).then((r) => r.data as Blob),
 }
 
 export const studentAPI = {
@@ -74,6 +86,20 @@ export const studentAPI = {
   updateProfile: (data: Partial<User>) => api.put<User>('/student/profile', data).then((r) => r.data),
 }
 
+export const transcriptAPI = {
+  get: () => api.get<Transcript>('/student/transcript').then((r) => r.data),
+  upload: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    // Let the browser set Content-Type itself so it includes the multipart boundary.
+    return api.post<Transcript>('/student/transcript', formData).then((r) => r.data)
+  },
+  // The download route needs the Bearer token like any other request, so a
+  // plain <a href> can't hit it directly — fetch the PDF as a blob through
+  // the authenticated axios instance and let the caller open/save it.
+  download: () => api.get('/student/transcript/file', { responseType: 'blob' }).then((r) => r.data as Blob),
+}
+
 export const adminAPI = {
   stats: () => api.get<AdminStats>('/admin/stats').then((r) => r.data),
   users: (params?: { limit?: number; offset?: number; role?: string; search?: string }) =>
@@ -85,6 +111,10 @@ export const adminAPI = {
   updateUserStatus: (id: number, is_active: boolean) =>
     api.put<User>(`/admin/users/${id}/status`, { is_active }).then((r) => r.data),
   userCourses: (id: number) => api.get<Course[]>(`/admin/users/${id}/courses`).then((r) => r.data),
+  // For courses an instructor asked for, or that just aren't in the Excel
+  // import — admin can add one directly and assign it to any instructor.
+  createCourse: (data: CreateCoursePayload) =>
+    api.post<Course[]>('/instructor/courses', data).then((r) => r.data),
   importCourses: (file: File, semester: string, academicYear: number) => {
     const formData = new FormData()
     formData.append('file', file)
@@ -113,21 +143,36 @@ export const studentApi = {
   withdraw: applicationsAPI.withdraw,
   profile: studentAPI.getProfile,
   updateProfile: studentAPI.updateProfile,
+  transcript: transcriptAPI.get,
+  uploadTranscript: transcriptAPI.upload,
+  downloadTranscript: transcriptAPI.download,
+  uploadGradeProof: applicationsAPI.uploadGradeProof,
+  gradeProof: applicationsAPI.gradeProof,
 }
 export const instructorApi = {
   courses: (params?: { has_lab?: boolean }) =>
     api.get<Course[]>('/instructor/courses', { params }).then((r) => r.data),
   courseCatalog: () => api.get<Course[]>('/instructor/course-catalog').then((r) => r.data),
-  createCourse: coursesAPI.create,
+  // Real sections (with their real Sec number + schedule, straight from the
+  // admin's Excel import) available for a given code/semester/year — the
+  // only source instructors pick sections from, so they never type one in.
+  courseCatalogSections: (params: { code: string; semester: string; academic_year: number }) =>
+    api.get<Course[]>('/instructor/course-catalog/sections', { params }).then((r) => r.data),
   updateCourse: coursesAPI.update,
   updateCourseStatus: coursesAPI.updateStatus,
   deleteCourse: coursesAPI.remove,
   applicants: applicationsAPI.getCourseApplicants,
   review: applicationsAPI.review,
   bulkReview: applicationsAPI.bulkReview,
+  gradeProof: applicationsAPI.instructorGradeProof,
   notifyCourse: notificationApi.notifyCourse,
   profile: () => api.get<User>('/instructor/profile').then((r) => r.data),
   updateProfile: (data: { full_name?: string; email?: string; faculty?: string }) =>
     api.put<User>('/instructor/profile', data).then((r) => r.data),
+}
+export const staffApi = {
+  profile: () => api.get<User>('/staff/profile').then((r) => r.data),
+  updateProfile: (data: { full_name?: string; email?: string; faculty?: string }) =>
+    api.put<User>('/staff/profile', data).then((r) => r.data),
 }
 export const adminApi = adminAPI

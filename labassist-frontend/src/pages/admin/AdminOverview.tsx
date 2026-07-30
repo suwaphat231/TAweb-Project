@@ -103,7 +103,7 @@ export default function AdminOverview() {
                     </td>
                     <td style={{ padding: '11px 14px', fontSize: 12, color: 'var(--ink-500)' }}>{c.instructor_name}</td>
                     <td style={{ padding: '11px 14px', fontSize: 12, color: 'var(--ink-700)' }}>
-                      {(c.ta_accepted + c.labboy_accepted)} / {(c.ta_slots + c.labboy_slots)}
+                      {c.labboy_accepted} / {c.labboy_slots}
                     </td>
                     <td style={{ padding: '11px 14px' }}><StatusBadge value={c.status} /></td>
                   </tr>

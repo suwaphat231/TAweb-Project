@@ -12,13 +12,13 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { useToast } from '../../components/ui/Toast'
 import { Modal } from '../../components/ui/Modal'
 import { CourseFormModal } from './CourseFormModal'
+import { SectionCatalogPicker } from '../../components/course/SectionCatalogPicker'
 import { COURSE_FORM_EMPTY, splitRequirements, joinRequirements } from './_courseFormShared'
 import { displayCourseTitle } from '../../utils/courseDisplay'
 import type { CreateCoursePayload, Course } from '../../types'
 
 interface Posting {
   course: Course
-  role: 'ta' | 'labboy'
   slots: number
   accepted: number
   applied: number
@@ -42,6 +42,15 @@ function ArchiveIcon() {
   )
 }
 
+function AddIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  )
+}
+
 function DeleteIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -59,10 +68,13 @@ export default function InstructorHome() {
   const [showCourseModal, setShowCourseModal] = useState(false)
   const [form, setForm] = useState<CreateCoursePayload>(COURSE_FORM_EMPTY)
   const [minGrade, setMinGrade] = useState('')
+  const [sectionIds, setSectionIds] = useState<number[]>([])
   const [editId, setEditId] = useState<number | null>(null)
   const [showArchived, setShowArchived] = useState(false)
   const [archiveTarget, setArchiveTarget] = useState<Course | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Course | null>(null)
+  const [addSectionTarget, setAddSectionTarget] = useState<Course | null>(null)
+  const [addSectionIds, setAddSectionIds] = useState<number[]>([])
   const qc = useQueryClient()
   const showToast = useToast()
 
@@ -71,9 +83,8 @@ export default function InstructorHome() {
     queryFn: () => instructorApi.courses(),
   })
 
-  // Per-role applied counts aren't returned by the courses list (only combined
-  // applicant_count + per-role accepted counts are), so pull the real applicant
-  // lists to split "สมัคร" accurately between TA and Lab Boy rows.
+  // applicant_count on the course list only counts non-withdrawn applicants
+  // in total; pull the real applicant lists so "สมัคร" excludes withdrawn ones.
   const applicantQueries = useQueries({
     queries: courses.map((c) => ({
       queryKey: ['course-applicants', c.id],
@@ -81,14 +92,20 @@ export default function InstructorHome() {
     })),
   })
 
-  const createMut = useMutation({
-    mutationFn: instructorApi.createCourse,
+  // "Creating" a posting means opening one or more of the instructor's
+  // already-imported sections (picked via SectionCatalogPicker) — each is
+  // an existing Course row from the Excel import, so this is a batch of
+  // ordinary updates, not a brand-new row.
+  const openSectionsMut = useMutation({
+    mutationFn: async (vars: { ids: number[]; data: Partial<CreateCoursePayload> }) => {
+      await Promise.all(vars.ids.map((id) => instructorApi.updateCourse(id, vars.data)))
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['instructor-courses'] })
       closeModal()
-      showToast('สร้างประกาศรับสมัครเรียบร้อยแล้ว', 'success')
+      showToast('เปิดรับสมัครเรียบร้อยแล้ว', 'success')
     },
-    onError: () => showToast('ไม่สามารถสร้างวิชาได้ กรุณาลองใหม่', 'error'),
+    onError: () => showToast('ไม่สามารถเปิดรับสมัครได้ กรุณาลองใหม่', 'error'),
   })
 
   const updateMut = useMutation({
@@ -131,18 +148,50 @@ export default function InstructorHome() {
     onError: () => showToast('ไม่สามารถลบประกาศได้ กรุณาลองใหม่', 'error'),
   })
 
-  function closeModal() { setShowCourseModal(false); setForm(COURSE_FORM_EMPTY); setMinGrade(''); setEditId(null) }
+  // Opening another section on an existing posting is the same idea as
+  // creating one — pick more of this instructor's imported rows for the
+  // same code/term and copy the posting's shared fields onto them.
+  const addSectionMut = useMutation({
+    mutationFn: async (vars: { ids: number[]; data: Partial<CreateCoursePayload> }) => {
+      await Promise.all(vars.ids.map((id) => instructorApi.updateCourse(id, vars.data)))
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['instructor-courses'] })
+      setAddSectionTarget(null)
+      setAddSectionIds([])
+      showToast('เปิดรับสมัคร section เพิ่มเรียบร้อยแล้ว', 'success')
+    },
+    onError: () => showToast('ไม่สามารถเปิดรับสมัคร section เพิ่มได้ กรุณาลองใหม่', 'error'),
+  })
+
+  function openAddSection(course: Course) {
+    setAddSectionIds([])
+    setAddSectionTarget(course)
+  }
+
+  function openCreate() {
+    setForm(COURSE_FORM_EMPTY)
+    setMinGrade('')
+    setSectionIds([])
+    setEditId(null)
+    setShowCourseModal(true)
+  }
+
+  function closeModal() { setShowCourseModal(false); setForm(COURSE_FORM_EMPTY); setMinGrade(''); setSectionIds([]); setEditId(null) }
 
   function openEdit(course: Course) {
     const { minGrade: grade, rest } = splitRequirements(course.requirements ?? '')
     setForm({
       code: course.code, title: displayCourseTitle(course.title, course.english_title),
       semester: course.semester, academic_year: course.academic_year,
-      ta_slots: course.ta_slots, labboy_slots: course.labboy_slots,
+      labboy_slots: course.labboy_slots,
       status: course.status,
       description: course.description ?? '',
       requirements: rest,
       deadline: course.deadline ? course.deadline.slice(0, 10) : '',
+      section: course.section ?? 0,
+      schedule: course.schedule ?? '',
+      require_grade_proof: course.require_grade_proof,
     })
     setMinGrade(grade)
     setEditId(course.id)
@@ -152,24 +201,21 @@ export default function InstructorHome() {
   function submit(e: React.FormEvent) {
     e.preventDefault()
     const data = { ...form, requirements: joinRequirements(minGrade, form.requirements ?? '') }
-    if (editId) updateMut.mutate({ id: editId, data })
-    else createMut.mutate(data)
+    if (editId) {
+      updateMut.mutate({ id: editId, data })
+    } else {
+      if (sectionIds.length === 0) return
+      const { labboy_slots, status, deadline, description, requirements, require_grade_proof } = data
+      openSectionsMut.mutate({ ids: sectionIds, data: { labboy_slots, status, deadline, description, requirements, require_grade_proof } })
+    }
   }
 
   const postings = useMemo<Posting[]>(() => {
-    const out: Posting[] = []
-    courses.forEach((c, i) => {
+    return courses.map((c, i) => {
       const applicants = applicantQueries[i]?.data ?? []
-      const appliedFor = (role: 'ta' | 'labboy') =>
-        applicants.filter((a) => a.role_applied === role && a.status !== 'withdrawn').length
-      if (c.ta_slots > 0) {
-        out.push({ course: c, role: 'ta', slots: c.ta_slots, accepted: c.ta_accepted, applied: appliedFor('ta') })
-      }
-      if (c.labboy_slots > 0) {
-        out.push({ course: c, role: 'labboy', slots: c.labboy_slots, accepted: c.labboy_accepted, applied: appliedFor('labboy') })
-      }
+      const applied = applicants.filter((a) => a.status !== 'withdrawn').length
+      return { course: c, slots: c.labboy_slots, accepted: c.labboy_accepted, applied }
     })
-    return out
   }, [courses, applicantQueries])
 
   const activePostings = useMemo(() => postings.filter((p) => p.course.status !== 'archived'), [postings])
@@ -193,7 +239,7 @@ export default function InstructorHome() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink-900)' }}>จัดการประกาศรับสมัคร</h1>
         <div style={{ display: 'flex', gap: 10 }}>
-          <Button onClick={() => setShowCourseModal(true)}>+ สร้างประกาศใหม่</Button>
+          <Button onClick={openCreate}>+ สร้างประกาศใหม่</Button>
         </div>
       </div>
 
@@ -239,14 +285,14 @@ export default function InstructorHome() {
               title={search ? 'ไม่พบประกาศที่ค้นหา' : showArchived ? 'ยังไม่มีประกาศที่เก็บถาวร' : 'ยังไม่มีประกาศ'}
               description={!search && !showArchived && activePostings.length === 0 ? 'สร้างประกาศรับสมัครวิชาแรกของคุณ' : undefined}
               icon="📄"
-              action={!search && !showArchived && activePostings.length === 0 ? { label: 'สร้างเลย', onClick: () => setShowCourseModal(true) } : undefined}
+              action={!search && !showArchived && activePostings.length === 0 ? { label: 'สร้างเลย', onClick: openCreate } : undefined}
             />
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg)', borderBottom: '1.5px solid var(--line)' }}>
-                    {['รายวิชา', 'ประเภท', 'รับ', 'สมัคร', 'สถานะ', ''].map((h) => (
+                    {['รายวิชา', 'รับ', 'สมัคร', 'สถานะ', ''].map((h) => (
                       <th key={h} style={{ padding: '11px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--ink-500)', whiteSpace: 'nowrap' }}>
                         {h}
                       </th>
@@ -259,14 +305,22 @@ export default function InstructorHome() {
                     const closed = c.status === 'closed'
                     const archived = c.status === 'archived'
                     return (
-                      <tr key={`${c.id}-${p.role}`} style={{ borderBottom: i < filtered.length - 1 ? '1px solid var(--line-soft)' : 'none' }}>
+                      <tr key={c.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid var(--line-soft)' : 'none' }}>
                         <td style={{ padding: '14px 20px' }}>
                           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 3 }}>
                             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--primary)', background: 'var(--primary-50)', padding: '1px 7px', borderRadius: 'var(--radius-pill)' }}>
                               {c.code}
                             </span>
+                            {!!c.section && (
+                              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-500)', background: 'var(--bg)', padding: '1px 7px', borderRadius: 'var(--radius-pill)' }}>
+                                Sec {c.section}
+                              </span>
+                            )}
                           </div>
                           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)' }}>{displayCourseTitle(c.title, c.english_title)}</div>
+                          {c.schedule && (
+                            <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2 }}>🕐 {c.schedule}</div>
+                          )}
                           <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 2 }}>
                             ภาค {c.semester}/{c.academic_year}
                             {c.deadline && (
@@ -277,7 +331,6 @@ export default function InstructorHome() {
                             )}
                           </div>
                         </td>
-                        <td style={{ padding: '14px 20px' }}><StatusBadge value={p.role} /></td>
                         <td style={{ padding: '14px 20px', fontSize: 14, fontWeight: 700, color: 'var(--ink-900)' }}>{p.slots}</td>
                         <td style={{ padding: '14px 20px', fontSize: 14, fontWeight: 700, color: 'var(--ink-900)' }}>{p.applied} คน</td>
                         <td style={{ padding: '14px 20px' }}><StatusBadge value={c.status} /></td>
@@ -307,6 +360,11 @@ export default function InstructorHome() {
                                 <EditIcon />
                               </Button>
                             )}
+                            {!archived && (
+                              <Button size="sm" variant="outline" title="เพิ่ม section" onClick={() => openAddSection(c)}>
+                                <AddIcon />
+                              </Button>
+                            )}
                             <Button
                               size="sm" variant="outline" title="ลบประกาศ"
                               style={{ color: 'var(--red)', borderColor: 'var(--red)' }}
@@ -334,8 +392,10 @@ export default function InstructorHome() {
         setForm={setForm}
         minGrade={minGrade}
         setMinGrade={setMinGrade}
+        sectionIds={sectionIds}
+        setSectionIds={setSectionIds}
         onSubmit={submit}
-        loading={createMut.isPending || updateMut.isPending}
+        loading={openSectionsMut.isPending || updateMut.isPending}
       />
 
       {/* Archive Confirm Modal */}
@@ -387,6 +447,49 @@ export default function InstructorHome() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* Add Section Modal */}
+      <Modal
+        isOpen={!!addSectionTarget}
+        onClose={() => setAddSectionTarget(null)}
+        title={`เพิ่ม Section — ${addSectionTarget?.code}`}
+        size="sm"
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!addSectionTarget || addSectionIds.length === 0) return
+            const { labboy_slots, status, description, requirements, require_grade_proof } = addSectionTarget
+            addSectionMut.mutate({
+              ids: addSectionIds,
+              data: {
+                labboy_slots, status, require_grade_proof,
+                deadline: addSectionTarget.deadline ? addSectionTarget.deadline.slice(0, 10) : '',
+                description: description ?? '', requirements: requirements ?? '',
+              },
+            })
+          }}
+          style={{ display: 'flex', flexDirection: 'column', gap: 14 }}
+        >
+          <p style={{ fontSize: 13, color: 'var(--ink-500)', margin: 0 }}>
+            เลือก section เพิ่มให้ประกาศนี้ (จำนวนรับ/สถานะ/เงื่อนไขเดียวกับ Sec {addSectionTarget?.section}) —
+            นักศึกษาจะเห็นเป็นอีกช่องทางสมัครแยกจาก sec เดิม
+          </p>
+          {addSectionTarget && (
+            <SectionCatalogPicker
+              code={addSectionTarget.code}
+              semester={addSectionTarget.semester}
+              academicYear={addSectionTarget.academic_year}
+              selectedIds={addSectionIds}
+              onChange={setAddSectionIds}
+            />
+          )}
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <Button type="button" variant="ghost" onClick={() => setAddSectionTarget(null)}>ยกเลิก</Button>
+            <Button type="submit" loading={addSectionMut.isPending} disabled={addSectionIds.length === 0}>เพิ่ม Section</Button>
+          </div>
+        </form>
       </Modal>
     </div>
   )

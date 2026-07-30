@@ -1,20 +1,19 @@
 import type { CreateCoursePayload } from '../../types'
 
-export const COURSE_FORM_EMPTY: CreateCoursePayload = {
-  code: '', title: '', semester: '1', academic_year: 2567,
-  ta_slots: 0, labboy_slots: 0, status: 'draft', description: '', requirements: '', deadline: '',
-}
+export { GRADE_OPTIONS } from '../../utils/grades'
 
-export const GRADE_OPTIONS = [
-  { value: '', label: '-' },
-  { value: 'D', label: 'D' },
-  { value: 'D+', label: 'D+' },
-  { value: 'C', label: 'C' },
-  { value: 'C+', label: 'C+' },
-  { value: 'B', label: 'B' },
-  { value: 'B+', label: 'B+' },
-  { value: 'A', label: 'A' },
-]
+// Must track the admin import page's default academic year (AdminCourses.tsx)
+// — a mismatch here means the section picker queries the wrong year and
+// finds nothing, even though the instructor's real imported sections exist.
+//
+// status defaults to 'open' (not 'draft') because the create-posting form no
+// longer shows a status picker — the button is literally "เปิดรับสมัคร", so
+// submitting it must actually open the section, not silently leave it draft.
+export const COURSE_FORM_EMPTY: CreateCoursePayload = {
+  code: '', title: '', semester: '1', academic_year: 2569,
+  labboy_slots: 0, status: 'open', description: '', requirements: '', deadline: '',
+  require_grade_proof: false,
+}
 
 const GRADE_PREFIX_RE = /^เกรดเฉลี่ยขั้นต่ำ:\s*(A|B|C|D)\s*\n?/
 

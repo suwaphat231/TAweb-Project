@@ -3,10 +3,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
 import { adminApi, coursesAPI } from '../../services/api'
 import { Table } from '../../components/ui/Table'
-import { StatusBadge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
 import { Input } from '../../components/ui/Input'
+import { Select } from '../../components/ui/Select'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/Toast'
 import type { Course } from '../../types'
@@ -54,6 +54,20 @@ export default function AdminCourses() {
   const [showBulkDelete, setShowBulkDelete] = useState(false)
   const [bulkSemester, setBulkSemester] = useState('1')
   const [bulkAcademicYear, setBulkAcademicYear] = useState('2569')
+
+  const [showAddCourse, setShowAddCourse] = useState(false)
+  const emptyAddCourseForm = {
+    instructor_id: '', code: '', title: '', semester: '1', academic_year: '2569', labboy_slots: '0',
+  }
+  const [addCourseForm, setAddCourseForm] = useState(emptyAddCourseForm)
+
+  // Instructor picker for manually-added courses — same "อาจารย์" role list
+  // AdminUsers.tsx manages.
+  const { data: instructors = [] } = useQuery({
+    queryKey: ['admin-users', { role: 'instructor' }],
+    queryFn: () => adminApi.users({ role: 'instructor', limit: 200 }),
+    enabled: showAddCourse,
+  })
 
   const importMut = useMutation({
     // Files are imported one at a time (not in parallel) so a slow/large file
@@ -108,6 +122,27 @@ export default function AdminCourses() {
     },
   })
 
+  const addCourseMut = useMutation({
+    mutationFn: () => adminApi.createCourse({
+      instructor_id: Number(addCourseForm.instructor_id),
+      code: addCourseForm.code,
+      title: addCourseForm.title,
+      semester: addCourseForm.semester,
+      academic_year: Number(addCourseForm.academic_year),
+      labboy_slots: Number(addCourseForm.labboy_slots),
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['all-courses'] })
+      setShowAddCourse(false)
+      setAddCourseForm(emptyAddCourseForm)
+      showToast('เพิ่มวิชาเรียบร้อยแล้ว', 'success')
+    },
+    onError: (err) => {
+      const detail = isAxiosError(err) ? err.response?.data?.error : undefined
+      showToast(detail ? `เพิ่มวิชาไม่สำเร็จ: ${detail}` : 'เพิ่มวิชาไม่สำเร็จ กรุณาลองใหม่', 'error')
+    },
+  })
+
   const columns = [
     { key: 'code',  header: 'รหัสวิชา', render: (c: Course) => <span style={{ fontWeight: 700, color: 'var(--primary)' }}>{c.code}</span> },
     {
@@ -146,7 +181,7 @@ export default function AdminCourses() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink-900)' }}>จัดการรายวิชา (มี Lab)</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink-900)' }}>จัดการรายวิชา</h1>
           <p style={{ fontSize: 14, color: 'var(--ink-500)', marginTop: 4 }}>
             {visibleCourses.length} วิชา{courses.length !== visibleCourses.length ? ` (จากทั้งหมด ${courses.length} วิชา — ซ่อนวิชาที่ไม่มี Lab)` : ''}
           </p>
@@ -155,6 +190,7 @@ export default function AdminCourses() {
           <Button variant="ghost" style={{ color: 'var(--red)', border: '1px solid var(--line)' }} onClick={() => setShowBulkDelete(true)}>
             ลบทั้งเทอม
           </Button>
+          <Button variant="outline" onClick={() => setShowAddCourse(true)}>+ เพิ่มวิชา</Button>
           <Button onClick={() => setShowImport(true)}>นำเข้าจาก Excel</Button>
         </div>
       </div>
@@ -211,6 +247,57 @@ export default function AdminCourses() {
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
             <Button type="button" variant="ghost" onClick={() => setShowImport(false)}>ยกเลิก</Button>
             <Button type="submit" loading={importMut.isPending} disabled={files.length === 0}>นำเข้า</Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal isOpen={showAddCourse} onClose={() => setShowAddCourse(false)} title="เพิ่มวิชา" size="md">
+        <form
+          onSubmit={(e) => { e.preventDefault(); addCourseMut.mutate() }}
+          style={{ display: 'flex', flexDirection: 'column', gap: 14 }}
+        >
+          <p style={{ fontSize: 13, color: 'var(--ink-500)' }}>
+            สำหรับวิชาที่อาจารย์ขอเพิ่ม หรือวิชาที่ไม่มีอยู่ในไฟล์ Excel ที่นำเข้า
+          </p>
+          <Select
+            label="อาจารย์ผู้สอน *"
+            value={addCourseForm.instructor_id}
+            onChange={(e) => setAddCourseForm((f) => ({ ...f, instructor_id: e.target.value }))}
+            required
+            options={[
+              { value: '', label: 'เลือกอาจารย์' },
+              ...instructors.map((u) => ({ value: String(u.id), label: u.full_name })),
+            ]}
+          />
+          <Input
+            label="รหัสวิชา *" value={addCourseForm.code}
+            onChange={(e) => setAddCourseForm((f) => ({ ...f, code: e.target.value }))}
+            required
+          />
+          <Input
+            label="ชื่อวิชา *" value={addCourseForm.title}
+            onChange={(e) => setAddCourseForm((f) => ({ ...f, title: e.target.value }))}
+            required
+          />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <Select
+              label="ภาคการศึกษา *" value={addCourseForm.semester}
+              onChange={(e) => setAddCourseForm((f) => ({ ...f, semester: e.target.value }))}
+              options={[{ value: '1', label: '1' }, { value: '2', label: '2' }, { value: '3', label: '3' }]}
+            />
+            <Input
+              label="ปีการศึกษา *" type="number" value={addCourseForm.academic_year}
+              onChange={(e) => setAddCourseForm((f) => ({ ...f, academic_year: e.target.value }))}
+              required
+            />
+            <Input
+              label="Lab Boy Slots" type="number" min="0" value={addCourseForm.labboy_slots}
+              onChange={(e) => setAddCourseForm((f) => ({ ...f, labboy_slots: e.target.value }))}
+            />
+          </div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <Button type="button" variant="ghost" onClick={() => setShowAddCourse(false)}>ยกเลิก</Button>
+            <Button type="submit" loading={addCourseMut.isPending}>เพิ่มวิชา</Button>
           </div>
         </form>
       </Modal>

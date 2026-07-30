@@ -97,22 +97,6 @@ definitions:
         example: true
         type: boolean
     type: object
-  handlers.ApplyRequest:
-    properties:
-      course_id:
-        example: 1
-        type: integer
-      motivation:
-        example: ต้องการช่วยสอนนักศึกษา
-        type: string
-      role_applied:
-        allOf:
-        - $ref: '#/definitions/models.RoleApplied'
-        example: ta
-    required:
-    - course_id
-    - role_applied
-    type: object
   handlers.BulkReviewResponse:
     properties:
       updated:
@@ -213,18 +197,6 @@ definitions:
       stats:
         $ref: '#/definitions/handlers.DashboardStats'
     type: object
-  handlers.UpdateProfileRequest:
-    properties:
-      faculty:
-        example: วิทยาการคอมพิวเตอร์
-        type: string
-      full_name:
-        example: สมชาย ใจดี
-        type: string
-      year:
-        example: 3
-        type: integer
-    type: object
   models.ActivityLog:
     properties:
       created_at:
@@ -268,12 +240,23 @@ definitions:
         type: string
       course_id:
         type: integer
+      course_schedule:
+        type: string
+      course_section:
+        type: integer
       course_title:
         type: string
+      grade:
+        description: |-
+          Grade is the letter grade the student earned when they previously took
+          this course, self-reported at application time so the instructor can
+          check it against the course's minimum-grade requirement.
+        type: string
+      has_grade_proof:
+        description: Computed fields (not in DB)
+        type: boolean
       id:
         type: integer
-      motivation:
-        type: string
       note:
         type: string
       reviewed_at:
@@ -297,7 +280,6 @@ definitions:
       student_id:
         type: integer
       student_name:
-        description: Computed fields (not in DB)
         type: string
       student_year:
         type: integer
@@ -345,6 +327,13 @@ definitions:
         type: integer
       labboy_slots:
         type: integer
+      require_grade_proof:
+        description: |-
+          RequireGradeProof: when true, a student applying must attach an image
+          of their grade (e.g. a MyReg screenshot) instead of just self-reporting
+          a letter grade — set per posting so the instructor decides which
+          courses need proof against students typing in a fake grade.
+        type: boolean
       requirements:
         type: string
       schedule:
@@ -355,10 +344,6 @@ definitions:
         type: string
       status:
         $ref: '#/definitions/models.CourseStatus'
-      ta_accepted:
-        type: integer
-      ta_slots:
-        type: integer
       title:
         type: string
       updated_at:
@@ -397,11 +382,9 @@ definitions:
     type: object
   models.RoleApplied:
     enum:
-    - ta
     - labboy
     type: string
     x-enum-varnames:
-    - RoleTA
     - RoleLabBoy
   models.User:
     properties:
@@ -449,6 +432,58 @@ definitions:
     - RoleInstructor
     - RoleStaff
     - RoleAdmin
+  student.ApplyRequest:
+    properties:
+      course_id:
+        example: 1
+        type: integer
+      grade:
+        description: |-
+          Grade is the letter grade the student got when they previously took
+          this course, so the instructor can check it against the posting's
+          minimum-grade requirement.
+        example: A
+        type: string
+      role_applied:
+        allOf:
+        - $ref: '#/definitions/models.RoleApplied'
+        enum:
+        - labboy
+        example: labboy
+    required:
+    - course_id
+    - role_applied
+    type: object
+  student.TranscriptResponse:
+    properties:
+      file_name:
+        type: string
+      file_size:
+        type: integer
+      uploaded_at:
+        type: string
+    type: object
+  student.UpdateProfileRequest:
+    properties:
+      faculty:
+        example: วิทยาการคอมพิวเตอร์
+        type: string
+      full_name:
+        example: สมชาย ใจดี
+        type: string
+      year:
+        example: 3
+        type: integer
+    type: object
+  teacher.AddSectionRequest:
+    properties:
+      schedule:
+        example: อ,พฤ 13:00-16:00
+        type: string
+      section:
+        example: 2
+        type: integer
+    type: object
   teacher.BulkReviewRequest:
     properties:
       application_ids:
@@ -481,8 +516,23 @@ definitions:
       labboy_slots:
         example: 2
         type: integer
+      require_grade_proof:
+        description: |-
+          RequireGradeProof: when true, applicants must attach an image of their
+          grade instead of just self-reporting it — guards against a typed-in
+          fake grade.
+        example: false
+        type: boolean
       requirements:
         type: string
+      sections:
+        description: |-
+          Sections lists the teaching sections/time slots for this posting. One
+          Course row is created per entry; when omitted, a single section with
+          no section number/schedule is created (unchanged single-section behavior).
+        items:
+          $ref: '#/definitions/teacher.SectionInput'
+        type: array
       semester:
         example: "1"
         type: string
@@ -490,9 +540,6 @@ definitions:
         allOf:
         - $ref: '#/definitions/models.CourseStatus'
         example: draft
-      ta_slots:
-        example: 3
-        type: integer
       title:
         example: Introduction to Programming
         type: string
@@ -514,6 +561,15 @@ definitions:
     required:
     - status
     type: object
+  teacher.SectionInput:
+    properties:
+      schedule:
+        example: จ,พ,ศ 09:00-12:00
+        type: string
+      section:
+        example: 1
+        type: integer
+    type: object
   teacher.UpdateCourseRequest:
     properties:
       academic_year:
@@ -530,8 +586,17 @@ definitions:
       labboy_slots:
         example: 2
         type: integer
+      require_grade_proof:
+        example: false
+        type: boolean
       requirements:
         type: string
+      schedule:
+        example: จ,พ,ศ 09:00-12:00
+        type: string
+      section:
+        example: 1
+        type: integer
       semester:
         example: "1"
         type: string
@@ -539,9 +604,6 @@ definitions:
         allOf:
         - $ref: '#/definitions/models.CourseStatus'
         example: open
-      ta_slots:
-        example: 3
-        type: integer
       title:
         example: Introduction to Programming
         type: string
@@ -1003,6 +1065,34 @@ paths:
       summary: ดูรายละเอียดวิชา (สาธารณะ)
       tags:
       - courses
+  /instructor/applications/{id}/grade-proof:
+    get:
+      parameters:
+      - description: Application ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - image/*
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: ดูรูปภาพเกรดที่ผู้สมัครแนบมา (อาจารย์/สตาฟ/แอดมิน)
+      tags:
+      - instructor
   /instructor/applications/{id}/review:
     put:
       consumes:
@@ -1087,6 +1177,40 @@ paths:
       summary: รายวิชาที่อาจารย์คนนี้สอน (สำหรับ dropdown ตอนสร้างประกาศ)
       tags:
       - instructor
+  /instructor/course-catalog/sections:
+    get:
+      description: ดึงจากข้อมูลที่แอดมินนำเข้าจากไฟล์ Excel เท่านั้น — section และเวลาเรียนมาจากไฟล์เสมอ
+        ไม่ให้อาจารย์พิมพ์เอง เพื่อลดความผิดพลาด
+      parameters:
+      - description: รหัสวิชา
+        in: query
+        name: code
+        required: true
+        type: string
+      - description: ภาคเรียน
+        in: query
+        name: semester
+        required: true
+        type: string
+      - description: ปีการศึกษา
+        in: query
+        name: academic_year
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Course'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: รายชื่อ section จริงของวิชา (สำหรับเลือกตอนเปิดรับสมัคร)
+      tags:
+      - instructor
   /instructor/courses:
     get:
       produces:
@@ -1123,7 +1247,9 @@ paths:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/models.Course'
+            items:
+              $ref: '#/definitions/models.Course'
+            type: array
         "400":
           description: Bad Request
           schema:
@@ -1134,7 +1260,7 @@ paths:
             $ref: '#/definitions/handlers.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: สร้างวิชาใหม่
+      summary: สร้างวิชาใหม่ (รองรับหลาย section/เวลาเรียนในประกาศเดียว)
       tags:
       - instructor
   /instructor/courses/{id}:
@@ -1208,7 +1334,6 @@ paths:
         type: integer
       - description: กรองตามประเภทที่สมัคร
         enum:
-        - ta
         - labboy
         in: query
         name: role_applied
@@ -1275,6 +1400,48 @@ paths:
       security:
       - BearerAuth: []
       summary: ส่งแจ้งเตือนนักศึกษาที่ผ่านการคัดเลือก
+      tags:
+      - instructor
+  /instructor/courses/{id}/sections:
+    post:
+      consumes:
+      - application/json
+      description: คัดลอกข้อมูลที่ใช้ร่วมกัน (รหัสวิชา ชื่อวิชา ภาค ปีการศึกษา จำนวนรับ
+        ฯลฯ) จากวิชาต้นแบบ แล้วสร้างแถวใหม่ด้วย section/เวลาที่ระบุ
+      parameters:
+      - description: Course ID ของ section ใดๆ ในประกาศเดียวกัน (ใช้เป็นต้นแบบ)
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: section/เวลาใหม่ที่ต้องการเพิ่ม
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/teacher.AddSectionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.Course'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: เพิ่ม section/เวลาเรียนใหม่ให้ประกาศที่มีอยู่
       tags:
       - instructor
   /instructor/courses/{id}/status:
@@ -1376,7 +1543,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/handlers.ApplyRequest'
+          $ref: '#/definitions/student.ApplyRequest'
       produces:
       - application/json
       responses:
@@ -1398,7 +1565,66 @@ paths:
             $ref: '#/definitions/handlers.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: สมัครเป็น TA หรือ Lab Boy
+      summary: สมัครเป็น Lab Boy
+      tags:
+      - student
+  /student/applications/{id}/grade-proof:
+    get:
+      parameters:
+      - description: Application ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - image/*
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: ดูรูปภาพเกรดที่แนบไว้ (ของตัวเอง)
+      tags:
+      - student
+    post:
+      consumes:
+      - multipart/form-data
+      description: ใช้เมื่อวิชานั้นเปิดให้ต้องแนบรูปเกรด (require_grade_proof) — อัปโหลดซ้ำจะแทนที่รูปเดิม
+      parameters:
+      - description: Application ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: รูปภาพเกรด (.jpg, .jpeg, .png, ไม่เกิน 5MB)
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Application'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: แนบรูปภาพเกรดยืนยันสำหรับใบสมัคร
       tags:
       - student
   /student/applications/{id}/withdraw:
@@ -1520,7 +1746,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/handlers.UpdateProfileRequest'
+          $ref: '#/definitions/student.UpdateProfileRequest'
       produces:
       - application/json
       responses:
@@ -1531,6 +1757,68 @@ paths:
       security:
       - BearerAuth: []
       summary: แก้ไขโปรไฟล์นักศึกษา
+      tags:
+      - student
+  /student/transcript:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/student.TranscriptResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: ดูข้อมูล Transcript ของตัวเอง
+      tags:
+      - student
+    post:
+      consumes:
+      - multipart/form-data
+      description: แต่ละนักศึกษาเก็บ Transcript ได้ไฟล์เดียว อัปโหลดซ้ำจะแทนที่ไฟล์เดิม
+      parameters:
+      - description: ไฟล์ Transcript (.pdf, ไม่เกิน 10MB)
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/student.TranscriptResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: อัปโหลด Transcript (PDF) ของตัวเอง
+      tags:
+      - student
+  /student/transcript/file:
+    get:
+      produces:
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: ดาวน์โหลดไฟล์ Transcript (PDF) ของตัวเอง
       tags:
       - student
 securityDefinitions:

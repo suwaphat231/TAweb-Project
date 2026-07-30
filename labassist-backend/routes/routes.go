@@ -53,6 +53,11 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			studentGroup.GET("/student/notifications", studentH.MyNotifications)
 			studentGroup.PUT("/student/notifications/read-all", studentH.MarkAllRead)
 			studentGroup.PUT("/student/notifications/:id/read", studentH.MarkRead)
+			studentGroup.POST("/student/transcript", studentH.UploadTranscript)
+			studentGroup.GET("/student/transcript", studentH.GetTranscript)
+			studentGroup.GET("/student/transcript/file", studentH.DownloadTranscript)
+			studentGroup.POST("/student/applications/:id/grade-proof", studentH.UploadGradeProof)
+			studentGroup.GET("/student/applications/:id/grade-proof", studentH.GetGradeProof)
 		}
 
 		// Instructor
@@ -61,10 +66,12 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 		{
 			instructor.GET("/instructor/courses", teacherH.InstructorList)
 			instructor.GET("/instructor/course-catalog", teacherH.CourseCatalog)
+			instructor.GET("/instructor/course-catalog/sections", teacherH.CourseCatalogSections)
 			instructor.POST("/instructor/courses", teacherH.Create)
 			instructor.PUT("/instructor/courses/:id", teacherH.Update)
 			instructor.PUT("/instructor/courses/:id/status", teacherH.UpdateStatus)
 			instructor.DELETE("/instructor/courses/:id", teacherH.Delete)
+			instructor.POST("/instructor/courses/:id/sections", teacherH.AddSection)
 			instructor.GET("/instructor/profile", teacherH.GetInstructorProfile)
 			instructor.PUT("/instructor/profile", teacherH.UpdateInstructorProfile)
 		}
@@ -77,6 +84,15 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			review.POST("/instructor/courses/:id/notify", teacherH.NotifyCourse)
 			review.PUT("/instructor/applications/:id/review", teacherH.Review)
 			review.PUT("/instructor/applications/bulk-review", teacherH.BulkReview)
+			review.GET("/instructor/applications/:id/grade-proof", teacherH.GradeProof)
+		}
+
+		// Staff (own profile only — reuses the same generic user-record handlers as instructor)
+		staffGroup := authed.Group("")
+		staffGroup.Use(middleware.RequireRole("staff"))
+		{
+			staffGroup.GET("/staff/profile", teacherH.GetInstructorProfile)
+			staffGroup.PUT("/staff/profile", teacherH.UpdateInstructorProfile)
 		}
 
 		// Admin

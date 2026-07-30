@@ -80,12 +80,15 @@ func enrichApplication(a models.Application) models.Application {
 	if c, ok := CourseByID(a.CourseID); ok {
 		a.CourseCode = c.Code
 		a.CourseTitle = c.Title
+		a.CourseSection = c.Section
+		a.CourseSchedule = c.Schedule
 	}
 	if a.ReviewedByID != nil {
 		if u, ok := UserByID(*a.ReviewedByID); ok {
 			a.ReviewedByName = u.FullName
 		}
 	}
+	a.HasGradeProof = len(a.GradeProofData) > 0
 	return a
 }
 
@@ -125,6 +128,14 @@ func UserByGoogleSub(sub string) (models.User, bool) {
 func UserByEmail(email string) (models.User, bool) {
 	var u models.User
 	if err := DB.Where("email = ?", email).First(&u).Error; err != nil {
+		return models.User{}, false
+	}
+	return u, true
+}
+
+func UserByStudentID(studentID string) (models.User, bool) {
+	var u models.User
+	if err := DB.Where("student_id = ?", studentID).First(&u).Error; err != nil {
 		return models.User{}, false
 	}
 	return u, true
@@ -263,11 +274,7 @@ func AdjustCourseAccepted(courseID uint, role models.RoleApplied, delta int) {
 	if err := DB.First(&c, courseID).Error; err != nil {
 		return
 	}
-	if role == models.RoleTA {
-		c.TAAccepted += delta
-	} else {
-		c.LabBoyAccepted += delta
-	}
+	c.LabBoyAccepted += delta
 	DB.Save(&c)
 }
 
@@ -386,6 +393,35 @@ func SplitInstructorNames(s string) []string {
 	return names
 }
 
+// InstructorOwnsCourse is the single source of truth for "does this
+// instructor teach this course" — matches instructorID directly (e.g.
+// courses the instructor created/was linked to themselves) or, failing
+// that, the spreadsheet-imported InstructorsRaw text against fullName
+// (covering co-taught sections, and cases where the classlist import
+// created a separate account for the same real person rather than linking
+// to their existing login). isAdmin bypasses the match entirely.
+//
+// Every read path (course-catalog listings) and every write path
+// (update/delete/status/applicants/review handlers in the Teacher package)
+// must use this same check — a course visible to an instructor as "theirs"
+// via name-matching but rejected on write by a stricter ID-only check is
+// exactly the "why can't I open this course" bug this exists to prevent.
+func InstructorOwnsCourse(c models.Course, instructorID uint, fullName string, isAdmin bool) bool {
+	if isAdmin || c.InstructorID == instructorID {
+		return true
+	}
+	target := NormalizeInstructorName(fullName)
+	if target == "" {
+		return false
+	}
+	for _, n := range SplitInstructorNames(c.InstructorsRaw) {
+		if NormalizeInstructorName(n) == target {
+			return true
+		}
+	}
+	return false
+}
+
 // CoursesTaughtBy returns, most-recent first, every course whose instructor
 // matches instructorID directly (e.g. courses the instructor created
 // themselves) or whose spreadsheet-imported InstructorsRaw text names
@@ -397,26 +433,79 @@ func CoursesTaughtBy(instructorID uint, fullName string, isAdmin bool) []models.
 	var rows []models.Course
 	DB.Order("id DESC").Find(&rows)
 
-	target := NormalizeInstructorName(fullName)
 	seenCode := make(map[string]bool, len(rows))
 	out := make([]models.Course, 0)
 	for _, c := range rows {
-		matches := isAdmin || c.InstructorID == instructorID
-		if !matches && target != "" {
-			for _, n := range SplitInstructorNames(c.InstructorsRaw) {
-				if NormalizeInstructorName(n) == target {
-					matches = true
-					break
-				}
-			}
-		}
-		if !matches || seenCode[c.Code] {
+		if !InstructorOwnsCourse(c, instructorID, fullName, isAdmin) || seenCode[c.Code] {
 			continue
 		}
 		seenCode[c.Code] = true
 		out = append(out, courseWithInstructor(c))
 	}
 	return out
+}
+
+// TaughtCourseSections returns every imported class-section row (unlike
+// CoursesTaughtBy, not deduplicated by code) matching code+semester+year that
+// this instructor teaches, section number ascending. Backs the section
+// picker shown when opening a posting — section/schedule always come from
+// the spreadsheet import, never typed in by the instructor, so this is the
+// only source of truth for "which real sections exist for this code."
+func TaughtCourseSections(instructorID uint, fullName string, isAdmin bool, code, semester string, academicYear int) []models.Course {
+	var rows []models.Course
+	DB.Where("code = ? AND semester = ? AND academic_year = ?", code, semester, academicYear).
+		Order("section ASC").Find(&rows)
+
+	out := make([]models.Course, 0)
+	for _, c := range rows {
+		if !InstructorOwnsCourse(c, instructorID, fullName, isAdmin) {
+			continue
+		}
+		cc := courseWithInstructor(c)
+		cc.ApplicantCount = countNonWithdrawnApplications(c.ID)
+		out = append(out, cc)
+	}
+	return out
+}
+
+// --- Transcripts (Postgres-backed via DB) ---
+//
+// Each student keeps at most one transcript (UserID is uniquely indexed on
+// the model); uploading again replaces the stored file rather than adding a
+// second row.
+
+func UpsertTranscript(userID uint, fileName string, data []byte) (models.Transcript, error) {
+	var t models.Transcript
+	if err := DB.Where("user_id = ?", userID).First(&t).Error; err == nil {
+		t.FileName = fileName
+		t.FileData = data
+		t.FileSize = int64(len(data))
+		t.UploadedAt = time.Now()
+		if err := DB.Save(&t).Error; err != nil {
+			return models.Transcript{}, err
+		}
+		return t, nil
+	}
+
+	t = models.Transcript{
+		UserID:     userID,
+		FileName:   fileName,
+		FileData:   data,
+		FileSize:   int64(len(data)),
+		UploadedAt: time.Now(),
+	}
+	if err := DB.Create(&t).Error; err != nil {
+		return models.Transcript{}, err
+	}
+	return t, nil
+}
+
+func TranscriptByUserID(userID uint) (models.Transcript, bool) {
+	var t models.Transcript
+	if err := DB.Where("user_id = ?", userID).First(&t).Error; err != nil {
+		return models.Transcript{}, false
+	}
+	return t, true
 }
 
 // --- Applications ---
@@ -526,6 +615,34 @@ func UpdateApplication(id uint, fn func(a *models.Application)) (models.Applicat
 	}
 	fn(a)
 	return enrichApplication(*a), true
+}
+
+// SetApplicationGradeProof stores the uploaded grade-proof image on an
+// application, replacing any previous upload. Ownership must be checked by
+// the caller before calling this (e.g. via ApplicationByIDForStudent).
+func SetApplicationGradeProof(id uint, fileName string, data []byte) (models.Application, bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	a := findAppByIDLocked(id)
+	if a == nil {
+		return models.Application{}, false
+	}
+	a.GradeProofFileName = fileName
+	a.GradeProofData = data
+	return enrichApplication(*a), true
+}
+
+// ApplicationGradeProofData returns the raw image bytes for an application's
+// grade proof, for the download endpoints. Ownership/authorization must be
+// checked by the caller first.
+func ApplicationGradeProofData(id uint) (fileName string, data []byte, ok bool) {
+	mu.RLock()
+	defer mu.RUnlock()
+	a := findAppByIDLocked(id)
+	if a == nil || len(a.GradeProofData) == 0 {
+		return "", nil, false
+	}
+	return a.GradeProofFileName, a.GradeProofData, true
 }
 
 func BulkUpdateApplications(ids []uint, fn func(a *models.Application)) int64 {

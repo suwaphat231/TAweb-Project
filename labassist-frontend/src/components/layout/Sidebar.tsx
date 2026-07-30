@@ -42,19 +42,21 @@ const navMap: Record<UserRole, NavItem[]> = {
     { to: '/student/profile', label: 'โปรไฟล์ของฉัน',   icon: 'user' },
   ],
   instructor: [
-    { to: '/instructor/home',     label: 'ภาพรวม',           icon: 'home' },
+    { to: '/instructor/home',     label: 'หน้าหลัก',           icon: 'home' },
+    { to: '/instructor/courses',  label: 'วิชาของฉัน',       icon: 'book' },
     { to: '/instructor/announce', label: 'จัดการประกาศ',     icon: 'megaphone' },
-    { to: '/instructor/select',   label: 'คัดเลือกผู้สมัคร', icon: 'users' },
     { to: '/instructor/profile',  label: 'ข้อมูลส่วนตัว',    icon: 'user' },
   ],
   staff: [
-    { to: '/staff/home', label: 'ภาพรวม',       icon: 'home' },
-    { to: '/staff/docs', label: 'จัดการเอกสาร', icon: 'file-text' },
+    { to: '/staff/home',    label: 'ภาพรวม',         icon: 'home' },
+    { to: '/staff/docs',    label: 'จัดการเอกสาร',   icon: 'file-text' },
+    { to: '/staff/profile', label: 'ข้อมูลส่วนตัว',   icon: 'user' },
   ],
   admin: [
-    { to: '/admin/overview', label: 'ภาพรวม',         icon: 'layout' },
-    { to: '/admin/courses',  label: 'จัดการรายวิชา',  icon: 'book' },
-    { to: '/admin/users',    label: 'จัดการผู้ใช้งาน', icon: 'users' },
+    { to: '/admin/overview',     label: 'ภาพรวม',         icon: 'layout' },
+    { to: '/admin/courses',      label: 'จัดการรายวิชา',  icon: 'book' },
+    { to: '/admin/users',        label: 'จัดการผู้ใช้งาน', icon: 'users' },
+    { to: '/instructor/profile', label: 'ข้อมูลส่วนตัว',   icon: 'user' },
   ],
 }
 
