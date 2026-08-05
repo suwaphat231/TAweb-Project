@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../../hooks/useAuth'
 import { Avatar, getInitials } from '../ui/Avatar'
-import { notificationApi } from '../../services/api'
+import { notificationApi, instructorApi } from '../../services/api'
 import type { Notification } from '../../types'
 
 interface Props {
@@ -43,23 +43,30 @@ function NotificationBell() {
   const qc = useQueryClient()
 
   const isStudent = user?.role === 'student'
+  const isInstructor = user?.role === 'instructor' || user?.role === 'admin'
+  // Notifications work for students (application results) and instructors
+  // (new applicants) — same bell, different inbox depending on who's logged in.
+  const enabled = isStudent || isInstructor
+  const listFn = isStudent ? notificationApi.list : instructorApi.notifications
+  const markAllFn = isStudent ? notificationApi.markAllRead : instructorApi.markAllNotificationsRead
+  const markOneFn = isStudent ? notificationApi.markRead : instructorApi.markNotificationRead
 
   const { data: notifs = [] } = useQuery({
-    queryKey: ['notifications'],
-    queryFn: notificationApi.list,
-    enabled: isStudent,
+    queryKey: ['notifications', user?.role],
+    queryFn: listFn,
+    enabled,
     refetchInterval: 30_000,
   })
 
   const unread = notifs.filter((n: Notification) => !n.is_read).length
 
   const markAllMut = useMutation({
-    mutationFn: notificationApi.markAllRead,
+    mutationFn: markAllFn,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
   })
 
   const markOneMut = useMutation({
-    mutationFn: (id: number) => notificationApi.markRead(id),
+    mutationFn: (id: number) => markOneFn(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
   })
 
@@ -88,7 +95,7 @@ function NotificationBell() {
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
           <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
         </svg>
-        {isStudent && unread > 0 && (
+        {enabled && unread > 0 && (
           <span style={{
             position: 'absolute', top: 2, right: 2,
             minWidth: 16, height: 16, borderRadius: 9999,
@@ -143,9 +150,9 @@ function NotificationBell() {
           </div>
 
           {/* Body */}
-          {!isStudent ? (
+          {!enabled ? (
             <div style={{ padding: '20px 16px', textAlign: 'center', fontSize: 13, color: 'var(--ink-400)' }}>
-              การแจ้งเตือนใช้ได้สำหรับนักศึกษาเท่านั้น
+              การแจ้งเตือนใช้ได้สำหรับนักศึกษาและอาจารย์เท่านั้น
             </div>
           ) : notifs.length === 0 ? (
             <div style={{ padding: '32px 16px', textAlign: 'center' }}>

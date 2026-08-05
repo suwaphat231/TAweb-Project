@@ -1,13 +1,12 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useSearchParams, useNavigate } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { instructorApi, notificationApi } from '../../services/api'
 import { StatusBadge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Select } from '../../components/ui/Select'
 import { FilterChips } from '../../components/ui/FilterChips'
 import { Modal } from '../../components/ui/Modal'
-import { Textarea } from '../../components/ui/Textarea'
 import { Avatar, getInitials } from '../../components/ui/Avatar'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { useToast } from '../../components/ui/Toast'
@@ -23,17 +22,15 @@ const statusOptions = [
 ]
 
 export default function InstructorSelect() {
-  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const courseId = Number(params.get('course')) || 0
 
   const [statusFilter, setStatusFilter] = useState('')
   const [search, setSearch]             = useState('')
 
-  // review action state (shared between table row and profile modal)
-  const [reviewAction, setReviewAction] = useState<{ app: Application; targetStatus: 'accepted' | 'rejected' } | null>(null)
   const [noteText, setNoteText]         = useState('')
   const [profileTarget, setProfileTarget] = useState<Application | null>(null)
+  const [showAcceptAll, setShowAcceptAll] = useState(false)
 
   const qc = useQueryClient()
   const showToast = useToast()
@@ -49,16 +46,33 @@ export default function InstructorSelect() {
     enabled: !!courseId,
   })
 
-  async function viewGradeProof(applicationId: number) {
-    try {
-      const blob = await instructorApi.gradeProof(applicationId)
-      const url = window.URL.createObjectURL(blob)
-      window.open(url, '_blank')
-      setTimeout(() => window.URL.revokeObjectURL(url), 30_000)
-    } catch {
-      showToast('ไม่สามารถโหลดรูปภาพเกรดได้', 'error')
+  // Loaded once per opened applicant (not on every render) and shown as a
+  // small clickable thumbnail — clicking it opens the same already-fetched
+  // image full-size in a new tab instead of re-downloading it.
+  const [gradeProofUrl, setGradeProofUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    // Nothing to fetch — leave any previous URL in state, harmless since the
+    // render below always checks has_grade_proof before using it.
+    if (!profileTarget?.has_grade_proof) return
+
+    let cancelled = false
+    let objectUrl: string | null = null
+    instructorApi.gradeProof(profileTarget.id)
+      .then((blob) => {
+        if (cancelled) return
+        objectUrl = window.URL.createObjectURL(blob)
+        setGradeProofUrl(objectUrl)
+      })
+      .catch(() => {
+        if (!cancelled) showToast('ไม่สามารถโหลดรูปภาพเกรดได้', 'error')
+      })
+    return () => {
+      cancelled = true
+      if (objectUrl) window.URL.revokeObjectURL(objectUrl)
     }
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileTarget?.id, profileTarget?.has_grade_proof])
 
   const notifyMut = useMutation({
     mutationFn: () => notificationApi.notifyCourse(courseId),
@@ -73,20 +87,36 @@ export default function InstructorSelect() {
     onError: () => showToast('ไม่สามารถส่งแจ้งเตือนได้ กรุณาลองใหม่', 'error'),
   })
 
+  const acceptAllMut = useMutation({
+    mutationFn: () =>
+      instructorApi.bulkReview({
+        application_ids: applicants.filter((a) => a.status === 'pending').map((a) => a.id),
+        status: 'accepted',
+      }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['applicants', courseId] })
+      qc.invalidateQueries({ queryKey: ['instructor-courses'] })
+      setShowAcceptAll(false)
+      if (data.updated === 0) {
+        showToast('ไม่มีที่ว่างเหลือ ไม่สามารถรับเพิ่มได้', 'info')
+      } else if (data.skipped_full > 0) {
+        showToast(`รับเข้าและแจ้งเตือนแล้ว ${data.updated} คน — เหลืออีก ${data.skipped_full} คนที่รอเพราะที่นั่งเต็ม`, 'success')
+      } else {
+        showToast(`รับเข้าและแจ้งเตือนแล้ว ${data.updated} คน`, 'success')
+      }
+    },
+    onError: () => showToast('ไม่สามารถรับผู้สมัครทั้งหมดได้ กรุณาลองใหม่', 'error'),
+  })
+
   const reviewMut = useMutation({
     mutationFn: ({ id, status }: { id: number; status: 'accepted' | 'rejected' }) =>
       instructorApi.review(id, { status, note: noteText }),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['applicants', courseId] })
       qc.invalidateQueries({ queryKey: ['instructor-courses'] })
-      setReviewAction(null)
       setProfileTarget(null)
       setNoteText('')
-      showToast(vars.status === 'accepted' ? 'รับผู้สมัครเรียบร้อยแล้ว' : 'ปฏิเสธผู้สมัครเรียบร้อยแล้ว', 'success')
-      // Accepting a Lab Boy is the end of that applicant's flow — send the
-      // instructor to "วิชาของฉัน" so they immediately see the updated
-      // accepted list for the course, instead of staying on the review table.
-      if (vars.status === 'accepted') navigate('/instructor/courses')
+      showToast(vars.status === 'accepted' ? 'รับผู้สมัครและแจ้งเตือนนักศึกษาเรียบร้อยแล้ว' : 'ปฏิเสธผู้สมัครเรียบร้อยแล้ว', 'success')
     },
     onError: (err: { response?: { data?: { error?: string } } }) =>
       showToast(err?.response?.data?.error ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'),
@@ -108,11 +138,12 @@ export default function InstructorSelect() {
   }, [applicants, statusFilter, search])
 
   const selectedCourse = courses.find((c) => c.id === courseId)
+  const pendingCount = applicants.filter((a) => a.status === 'pending').length
+  const remainingSlots = selectedCourse ? Math.max(0, selectedCourse.labboy_slots - selectedCourse.labboy_accepted) : 0
 
-  function openReview(app: Application, targetStatus: 'accepted' | 'rejected') {
+  function openProfile(app: Application) {
     setNoteText('')
-    setReviewAction({ app, targetStatus })
-    setProfileTarget(null)
+    setProfileTarget(app)
   }
 
   const columns = [
@@ -156,7 +187,7 @@ export default function InstructorSelect() {
           {(row.status === 'pending' || row.status === 'rejected') && (
             <Button
               size="sm" variant="ghost"
-              onClick={(e) => { e.stopPropagation(); setProfileTarget(row) }}
+              onClick={(e) => { e.stopPropagation(); openProfile(row) }}
               style={{ color: 'var(--green)', border: '1px solid var(--green)' }}
             >
               รับ
@@ -165,7 +196,7 @@ export default function InstructorSelect() {
           {(row.status === 'pending' || row.status === 'accepted') && (
             <Button
               size="sm" variant="ghost"
-              onClick={(e) => { e.stopPropagation(); openReview(row, 'rejected') }}
+              onClick={(e) => { e.stopPropagation(); openProfile(row) }}
               style={{ color: 'var(--red)', border: '1px solid var(--red)' }}
             >
               ไม่รับ
@@ -173,7 +204,7 @@ export default function InstructorSelect() {
           )}
           <Button
             size="sm" variant="outline"
-            onClick={(e) => { e.stopPropagation(); setProfileTarget(row) }}
+            onClick={(e) => { e.stopPropagation(); openProfile(row) }}
             style={{ display: 'flex', alignItems: 'center', gap: 4 }}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -193,6 +224,17 @@ export default function InstructorSelect() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink-900)' }}>คัดเลือกผู้สมัคร</h1>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          {!!courseId && pendingCount > 0 && (
+            <Button
+              style={{ background: 'var(--green)', borderColor: 'var(--green)', display: 'flex', alignItems: 'center', gap: 6 }}
+              onClick={() => setShowAcceptAll(true)}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20 6 9 17l-5-5"/>
+              </svg>
+              รับ Lab Boy ทั้งหมด ({pendingCount})
+            </Button>
+          )}
           {!!courseId && (
             <Button
               variant="outline"
@@ -306,7 +348,7 @@ export default function InstructorSelect() {
                       cursor: 'pointer',
                       transition: 'background .12s',
                     }}
-                    onClick={() => setProfileTarget(row)}
+                    onClick={() => openProfile(row)}
                     onMouseEnter={(e) => { if (row.status !== 'accepted') e.currentTarget.style.background = 'var(--bg)' }}
                     onMouseLeave={(e) => { e.currentTarget.style.background = row.status === 'accepted' ? '#F2F6FE' : '#fff' }}
                   >
@@ -323,32 +365,29 @@ export default function InstructorSelect() {
         </>
       )}
 
-      {/* Note / Confirm Modal */}
+      {/* Accept All Confirm Modal */}
       <Modal
-        isOpen={!!reviewAction}
-        onClose={() => setReviewAction(null)}
-        title={reviewAction?.targetStatus === 'accepted' ? 'ยืนยันรับผู้สมัคร' : 'ยืนยันไม่รับผู้สมัคร'}
+        isOpen={showAcceptAll}
+        onClose={() => setShowAcceptAll(false)}
+        title="รับ Lab Boy ทั้งหมด"
         size="sm"
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <p style={{ fontSize: 14, color: 'var(--ink-700)' }}>
-            {reviewAction?.targetStatus === 'accepted' ? 'รับ' : 'ปฏิเสธ'} <strong>{reviewAction?.app.student_name}</strong> เข้าเป็น <strong>Lab Boy</strong>?
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <p style={{ fontSize: 14, color: 'var(--ink-600)', margin: 0 }}>
+            ต้องการรับผู้สมัครที่รอพิจารณาทั้งหมด <strong>{pendingCount}</strong> คน เข้าเป็น Lab Boy วิชา{' '}
+            <strong>{selectedCourse?.code}</strong> ใช่หรือไม่? ระบบจะส่งแจ้งเตือนให้นักศึกษาที่ผ่านการคัดเลือกทันที
+            {pendingCount > remainingSlots && (
+              <> — ที่นั่งเหลือเพียง <strong>{remainingSlots}</strong> ที่ ผู้สมัครที่เกินจะยังคงสถานะรอพิจารณาไว้</>
+            )}
           </p>
-          <Textarea
-            label="หมายเหตุ (ไม่บังคับ)"
-            value={noteText}
-            onChange={(e) => setNoteText(e.target.value)}
-            rows={3}
-            placeholder="เหตุผลหรือหมายเหตุเพิ่มเติม..."
-          />
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <Button variant="ghost" onClick={() => setReviewAction(null)}>ยกเลิก</Button>
+            <Button variant="ghost" onClick={() => setShowAcceptAll(false)}>ยกเลิก</Button>
             <Button
-              variant={reviewAction?.targetStatus === 'accepted' ? 'primary' : 'danger'}
-              loading={reviewMut.isPending}
-              onClick={() => reviewAction && reviewMut.mutate({ id: reviewAction.app.id, status: reviewAction.targetStatus })}
+              style={{ background: 'var(--green)', borderColor: 'var(--green)' }}
+              loading={acceptAllMut.isPending}
+              onClick={() => acceptAllMut.mutate()}
             >
-              {reviewAction?.targetStatus === 'accepted' ? 'ยืนยันรับ' : 'ยืนยันไม่รับ'}
+              รับเข้าทั้งหมด
             </Button>
           </div>
         </div>
@@ -403,7 +442,7 @@ export default function InstructorSelect() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <ProfileInfo label="อีเมล" value={profileTarget.student_email || '—'} />
               <ProfileInfo label="ชั้นปี" value={profileTarget.student_year ? `ปีที่ ${profileTarget.student_year}` : '—'} />
-              <ProfileInfo label="คณะ / ภาควิชา" value={profileTarget.student_faculty || '—'} />
+              <ProfileInfo label="ภาควิชา" value={profileTarget.student_faculty || '—'} />
               <ProfileInfo label="เกรดที่เคยได้ในวิชานี้" value={profileTarget.grade || '—'} />
               <ProfileInfo
                 label="Sec / เวลาเรียนที่สมัคร"
@@ -414,17 +453,23 @@ export default function InstructorSelect() {
 
             {/* Grade proof — only relevant for postings that require it */}
             {selectedCourse?.require_grade_proof && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-400)', marginBottom: 2 }}>รูปภาพเกรดยืนยัน</div>
-                  {!profileTarget.has_grade_proof && (
-                    <div style={{ fontSize: 13, color: 'var(--red)', fontWeight: 500 }}>ยังไม่ได้แนบรูปภาพ</div>
-                  )}
-                </div>
-                {profileTarget.has_grade_proof && (
-                  <Button size="sm" variant="outline" onClick={() => viewGradeProof(profileTarget.id)}>
-                    ดูรูปภาพ
-                  </Button>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-400)', marginBottom: 6 }}>รูปภาพเกรดยืนยัน</div>
+                {!profileTarget.has_grade_proof ? (
+                  <div style={{ fontSize: 13, color: 'var(--red)', fontWeight: 500 }}>ยังไม่ได้แนบรูปภาพ</div>
+                ) : gradeProofUrl ? (
+                  <img
+                    src={gradeProofUrl}
+                    alt="รูปภาพเกรดยืนยัน — กดเพื่อดูภาพเต็ม"
+                    title="กดเพื่อดูภาพเต็ม"
+                    onClick={() => window.open(gradeProofUrl, '_blank')}
+                    style={{
+                      width: 72, height: 72, objectFit: 'cover', borderRadius: 8,
+                      border: '1px solid var(--line)', cursor: 'pointer',
+                    }}
+                  />
+                ) : (
+                  <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>กำลังโหลด...</div>
                 )}
               </div>
             )}
@@ -452,14 +497,15 @@ export default function InstructorSelect() {
               </div>
             )}
 
-            {/* Actions */}
+            {/* Actions — decide and submit right here, no separate confirm page */}
             {profileTarget.status !== 'withdrawn' && (
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 4, borderTop: '1px solid var(--line-soft)' }}>
                 {(profileTarget.status === 'pending' || profileTarget.status === 'accepted') && (
                   <Button
                     variant="ghost"
                     style={{ color: 'var(--red)', border: '1px solid var(--red)' }}
-                    onClick={() => openReview(profileTarget, 'rejected')}
+                    loading={reviewMut.isPending && reviewMut.variables?.status === 'rejected'}
+                    onClick={() => reviewMut.mutate({ id: profileTarget.id, status: 'rejected' })}
                   >
                     ไม่รับ
                   </Button>
@@ -467,7 +513,8 @@ export default function InstructorSelect() {
                 {(profileTarget.status === 'pending' || profileTarget.status === 'rejected') && (
                   <Button
                     style={{ background: 'var(--green)', borderColor: 'var(--green)' }}
-                    onClick={() => openReview(profileTarget, 'accepted')}
+                    loading={reviewMut.isPending && reviewMut.variables?.status === 'accepted'}
+                    onClick={() => reviewMut.mutate({ id: profileTarget.id, status: 'accepted' })}
                   >
                     รับเข้า
                   </Button>

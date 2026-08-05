@@ -10,7 +10,6 @@ import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/Toast'
 import { Link } from 'react-router-dom'
 import { CourseFormModal } from './CourseFormModal'
-import { SectionCatalogPicker } from '../../components/course/SectionCatalogPicker'
 import { COURSE_FORM_EMPTY, splitRequirements, joinRequirements } from './_courseFormShared'
 import { displayCourseTitle } from '../../utils/courseDisplay'
 import type { CreateCoursePayload, CourseStatus, Course } from '../../types'
@@ -31,8 +30,7 @@ export default function InstructorAnnounce() {
   const [statusTarget, setStatusTarget] = useState<Course | null>(null)
   const [pendingStatus, setPendingStatus] = useState<CourseStatus>('open')
   const [deleteTarget, setDeleteTarget] = useState<Course | null>(null)
-  const [addSectionTarget, setAddSectionTarget] = useState<Course | null>(null)
-  const [addSectionIds, setAddSectionIds] = useState<number[]>([])
+  const [closeTarget, setCloseTarget] = useState<Course | null>(null)
   const qc = useQueryClient()
   const showToast = useToast()
 
@@ -90,26 +88,18 @@ export default function InstructorAnnounce() {
     onError: () => showToast('ไม่สามารถลบประกาศได้ กรุณาลองใหม่', 'error'),
   })
 
-  // Opening another section on an existing posting is the same idea as
-  // creating one — pick more of this instructor's imported rows for the
-  // same code/term and copy the posting's shared fields onto them.
-  const addSectionMut = useMutation({
-    mutationFn: async (vars: { ids: number[]; data: Partial<CreateCoursePayload> }) => {
-      await Promise.all(vars.ids.map((id) => instructorApi.updateCourse(id, vars.data)))
-    },
+  // Closing applications takes the section straight to "closed" — students
+  // immediately see it as no longer accepting applications (CourseCard
+  // shows the "ปิดรับ" badge instead of an apply button for closed/draft).
+  const closeMut = useMutation({
+    mutationFn: (id: number) => instructorApi.updateCourseStatus(id, 'closed'),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['instructor-courses'] })
-      setAddSectionTarget(null)
-      setAddSectionIds([])
-      showToast('เปิดรับสมัคร section เพิ่มเรียบร้อยแล้ว', 'success')
+      setCloseTarget(null)
+      showToast('ปิดรับสมัครเรียบร้อยแล้ว', 'success')
     },
-    onError: () => showToast('ไม่สามารถเปิดรับสมัคร section เพิ่มได้ กรุณาลองใหม่', 'error'),
+    onError: () => showToast('ไม่สามารถปิดรับสมัครได้ กรุณาลองใหม่', 'error'),
   })
-
-  function openAddSection(course: Course) {
-    setAddSectionIds([])
-    setAddSectionTarget(course)
-  }
 
   function openCreate() {
     setForm(COURSE_FORM_EMPTY)
@@ -157,12 +147,17 @@ export default function InstructorAnnounce() {
     }
   }
 
+  // Draft rows are just unopened sections from the Excel import — the
+  // instructor picks among them via SectionCatalogPicker when creating a
+  // posting, so they don't need to also clutter this list until opened.
+  const visibleCourses = courses.filter((c) => c.status !== 'draft')
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink-900)' }}>จัดการประกาศรับสมัคร</h1>
-          <p style={{ color: 'var(--ink-500)', fontSize: 14, marginTop: 4 }}>{courses.length} วิชา</p>
+          <p style={{ color: 'var(--ink-500)', fontSize: 14, marginTop: 4 }}>{visibleCourses.length} วิชา</p>
         </div>
         <Button onClick={openCreate}>+ สร้างประกาศ</Button>
       </div>
@@ -171,7 +166,7 @@ export default function InstructorAnnounce() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {[1,2,3].map(i => <Skeleton key={i} height={96} borderRadius={12} />)}
         </div>
-      ) : courses.length === 0 ? (
+      ) : visibleCourses.length === 0 ? (
         <EmptyState
           title="ยังไม่มีวิชา"
           description="สร้างประกาศรับสมัครวิชาแรกของคุณ"
@@ -180,7 +175,7 @@ export default function InstructorAnnounce() {
         />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {courses.map((c) => (
+          {visibleCourses.map((c) => (
             <Card key={c.id} style={{ padding: '18px 24px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -218,7 +213,15 @@ export default function InstructorAnnounce() {
                 <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   <Button variant="ghost" size="sm" onClick={() => openStatusModal(c)}>เปลี่ยนสถานะ</Button>
                   <Button variant="outline" size="sm" onClick={() => openEdit(c)}>แก้ไข</Button>
-                  <Button variant="outline" size="sm" onClick={() => openAddSection(c)}>+ Section</Button>
+                  {(c.status === 'open' || c.status === 'closing_soon') && (
+                    <Button
+                      variant="outline" size="sm"
+                      style={{ color: 'var(--amber)', borderColor: 'var(--amber)' }}
+                      onClick={() => setCloseTarget(c)}
+                    >
+                      ปิดรับสมัคร
+                    </Button>
+                  )}
                   <Button
                     variant="outline" size="sm"
                     style={{ color: 'var(--red)', borderColor: 'var(--red)' }}
@@ -321,47 +324,28 @@ export default function InstructorAnnounce() {
         </div>
       </Modal>
 
-      {/* Add Section Modal */}
+      {/* Close Applications Confirm Modal */}
       <Modal
-        isOpen={!!addSectionTarget}
-        onClose={() => setAddSectionTarget(null)}
-        title={`เพิ่ม Section — ${addSectionTarget?.code}`}
+        isOpen={!!closeTarget}
+        onClose={() => setCloseTarget(null)}
+        title="ปิดรับสมัคร"
         size="sm"
       >
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (!addSectionTarget || addSectionIds.length === 0) return
-            const { labboy_slots, status, description, requirements, require_grade_proof } = addSectionTarget
-            addSectionMut.mutate({
-              ids: addSectionIds,
-              data: {
-                labboy_slots, status, require_grade_proof,
-                deadline: addSectionTarget.deadline ? addSectionTarget.deadline.slice(0, 10) : '',
-                description: description ?? '', requirements: requirements ?? '',
-              },
-            })
-          }}
-          style={{ display: 'flex', flexDirection: 'column', gap: 14 }}
-        >
-          <p style={{ fontSize: 13, color: 'var(--ink-500)', margin: 0 }}>
-            เลือก section เพิ่มให้ประกาศนี้ (จำนวนรับ/สถานะ/เงื่อนไขเดียวกับ Sec {addSectionTarget?.section}) —
-            นักศึกษาจะเห็นเป็นอีกช่องทางสมัครแยกจาก sec เดิม
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <p style={{ fontSize: 14, color: 'var(--ink-600)', margin: 0 }}>
+            ต้องการปิดรับสมัครประกาศ <strong>{closeTarget?.code}</strong> ใช่หรือไม่?
+            นักศึกษาจะเห็นว่าวิชานี้ปิดรับสมัครแล้วและจะสมัครไม่ได้อีก
           </p>
-          {addSectionTarget && (
-            <SectionCatalogPicker
-              code={addSectionTarget.code}
-              semester={addSectionTarget.semester}
-              academicYear={addSectionTarget.academic_year}
-              selectedIds={addSectionIds}
-              onChange={setAddSectionIds}
-            />
-          )}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <Button type="button" variant="ghost" onClick={() => setAddSectionTarget(null)}>ยกเลิก</Button>
-            <Button type="submit" loading={addSectionMut.isPending} disabled={addSectionIds.length === 0}>เพิ่ม Section</Button>
+            <Button variant="ghost" onClick={() => setCloseTarget(null)}>ยกเลิก</Button>
+            <Button
+              loading={closeMut.isPending}
+              onClick={() => closeTarget && closeMut.mutate(closeTarget.id)}
+            >
+              ปิดรับสมัคร
+            </Button>
           </div>
-        </form>
+        </div>
       </Modal>
     </div>
   )

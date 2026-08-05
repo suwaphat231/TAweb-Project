@@ -691,6 +691,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "รับ/ปฏิเสธหลายใบสมัครพร้อมกัน — ตรวจสิทธิ์และจำนวนที่ว่างเหมือนการรับทีละคน ใบสมัครที่ทำให้เกินโควตาจะถูกข้ามแทนที่จะทำให้ทั้งชุดล้มเหลว และจะแจ้งเตือนนักศึกษาที่ผ่านการคัดเลือกทันที",
                 "consumes": [
                     "application/json"
                 ],
@@ -700,7 +701,7 @@ const docTemplate = `{
                 "tags": [
                     "instructor"
                 ],
-                "summary": "ตรวจสอบใบสมัครแบบกลุ่ม",
+                "summary": "ตรวจสอบใบสมัครแบบกลุ่ม (เช่น ปุ่ม \"รับ Lab Boy ทั้งหมด\")",
                 "parameters": [
                     {
                         "description": "รายการใบสมัครและผลการตรวจสอบ",
@@ -716,7 +717,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.BulkReviewResponse"
+                            "$ref": "#/definitions/teacher.BulkReviewResult"
                         }
                     },
                     "400": {
@@ -1061,13 +1062,14 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "แอดมินลบ row ทิ้งจริง ใช้ล้างข้อมูลนำเข้าที่ผิดพลาด — อาจารย์ลบประกาศของตัวเองแค่รีเซ็ตกลับเป็นฉบับร่างและลบใบสมัครที่ยื่นไว้ ตัว section (รหัสวิชา/กลุ่ม/เวลาเรียน) ยังอยู่ เลือกเปิดรับสมัครใหม่ได้อีกภายหลังโดยไม่ต้อง import ซ้ำ",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "instructor"
                 ],
-                "summary": "ลบวิชา",
+                "summary": "ลบวิชา (แอดมิน) หรือปิดประกาศ (อาจารย์)",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1338,6 +1340,96 @@ const docTemplate = `{
                 }
             }
         },
+        "/instructor/notifications": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "instructor"
+                ],
+                "summary": "รายการแจ้งเตือนของอาจารย์",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.Notification"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/instructor/notifications/read-all": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "instructor"
+                ],
+                "summary": "ทำเครื่องหมายแจ้งเตือนทั้งหมดว่าอ่านแล้ว",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/instructor/notifications/{id}/read": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "instructor"
+                ],
+                "summary": "ทำเครื่องหมายแจ้งเตือนว่าอ่านแล้ว",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Notification ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/instructor/profile": {
             "get": {
                 "security": [
@@ -1394,6 +1486,349 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/models.User"
+                        }
+                    }
+                }
+            }
+        },
+        "/staff/documents": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "staff"
+                ],
+                "summary": "รายการเอกสารของเจ้าหน้าที่",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "approval_memo | payment_evidence | payment_request",
+                        "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "draft | pending | approved",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "ค้นหา",
+                        "name": "q",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.StaffDocument"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "staff"
+                ],
+                "summary": "สร้างเอกสารใหม่ (บันทึกขออนุมัติ / หลักฐานจ่ายเงิน / บันทึกขอเบิก)",
+                "parameters": [
+                    {
+                        "description": "ข้อมูลเอกสาร",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/staff.createDocumentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/models.StaffDocument"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/staff/documents/{id}/status": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "staff"
+                ],
+                "summary": "อัปเดตสถานะเอกสาร (draft → pending → approved)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Document ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "สถานะใหม่",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/staff.updateDocStatusRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.StaffDocument"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/staff/profile": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "staff"
+                ],
+                "summary": "ข้อมูลโปรไฟล์ของเจ้าหน้าที่ (ตัวเอง)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.User"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "staff"
+                ],
+                "summary": "แก้ไขโปรไฟล์ของเจ้าหน้าที่ (ตัวเอง)",
+                "parameters": [
+                    {
+                        "description": "ข้อมูลโปรไฟล์",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/staff.updateProfileRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.User"
+                        }
+                    }
+                }
+            }
+        },
+        "/staff/reviews": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "staff"
+                ],
+                "summary": "รายการแบบฟอร์มที่รอตรวจสอบ (ทุก course ที่เปิดรับ Lab Boy)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "pending | verified | returned",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "ค้นหารหัสวิชา / อาจารย์",
+                        "name": "q",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.FormReview"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/staff/reviews/{courseId}/return": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "staff"
+                ],
+                "summary": "ส่งแบบฟอร์มกลับให้อาจารย์แก้ไข",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Course ID",
+                        "name": "courseId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "หมายเหตุ",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/staff.reviewActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.FormReview"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/staff/reviews/{courseId}/verify": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "staff"
+                ],
+                "summary": "ยืนยันว่าแบบฟอร์มของ course นี้ผ่านการตรวจสอบ",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Course ID",
+                        "name": "courseId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.FormReview"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
                         }
                     }
                 }
@@ -1792,6 +2227,54 @@ const docTemplate = `{
                 }
             }
         },
+        "/student/profile/transcript": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "student"
+                ],
+                "summary": "แนบไฟล์ใบเกรดเพื่อให้ระบบ OCR อ่านและบันทึกผล",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "ไฟล์ใบเกรด (PNG/JPG/PDF)",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.User"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/student/transcript": {
             "get": {
                 "security": [
@@ -2039,15 +2522,6 @@ const docTemplate = `{
                 }
             }
         },
-        "handlers.BulkReviewResponse": {
-            "type": "object",
-            "properties": {
-                "updated": {
-                    "type": "integer",
-                    "example": 3
-                }
-            }
-        },
         "handlers.DashboardStats": {
             "type": "object",
             "properties": {
@@ -2246,6 +2720,9 @@ const docTemplate = `{
                 "course_code": {
                     "type": "string"
                 },
+                "course_english_title": {
+                    "type": "string"
+                },
                 "course_id": {
                     "type": "integer"
                 },
@@ -2412,6 +2889,83 @@ const docTemplate = `{
                 "StatusArchived"
             ]
         },
+        "models.DocStatus": {
+            "type": "string",
+            "enum": [
+                "draft",
+                "pending",
+                "approved"
+            ],
+            "x-enum-varnames": [
+                "DocDraft",
+                "DocPending",
+                "DocApproved"
+            ]
+        },
+        "models.DocType": {
+            "type": "string",
+            "enum": [
+                "approval_memo",
+                "payment_evidence",
+                "payment_request"
+            ],
+            "x-enum-varnames": [
+                "DocApprovalMemo",
+                "DocPaymentEvidence",
+                "DocPaymentRequest"
+            ]
+        },
+        "models.FormReview": {
+            "type": "object",
+            "properties": {
+                "academic_year": {
+                    "type": "integer"
+                },
+                "course_code": {
+                    "description": "Enriched from the courses table — never stored",
+                    "type": "string"
+                },
+                "course_id": {
+                    "type": "integer"
+                },
+                "course_title": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "instructor_name": {
+                    "type": "string"
+                },
+                "labboy_accepted": {
+                    "type": "integer"
+                },
+                "labboy_slots": {
+                    "type": "integer"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "reviewer_id": {
+                    "type": "integer"
+                },
+                "section": {
+                    "type": "integer"
+                },
+                "semester": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/models.ReviewStatus"
+                },
+                "submitted_at": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "models.Notification": {
             "type": "object",
             "properties": {
@@ -2438,6 +2992,19 @@ const docTemplate = `{
                 }
             }
         },
+        "models.ReviewStatus": {
+            "type": "string",
+            "enum": [
+                "pending",
+                "verified",
+                "returned"
+            ],
+            "x-enum-varnames": [
+                "ReviewPending",
+                "ReviewVerified",
+                "ReviewReturned"
+            ]
+        },
         "models.RoleApplied": {
             "type": "string",
             "enum": [
@@ -2446,6 +3013,41 @@ const docTemplate = `{
             "x-enum-varnames": [
                 "RoleLabBoy"
             ]
+        },
+        "models.StaffDocument": {
+            "type": "object",
+            "properties": {
+                "course_ref": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "staff_id": {
+                    "type": "integer"
+                },
+                "status": {
+                    "$ref": "#/definitions/models.DocStatus"
+                },
+                "type": {
+                    "$ref": "#/definitions/models.DocType"
+                }
+            }
+        },
+        "models.StringMap": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
+            }
         },
         "models.User": {
             "type": "object",
@@ -2481,6 +3083,21 @@ const docTemplate = `{
                 "student_id": {
                     "type": "string"
                 },
+                "transcript_confidence": {
+                    "type": "number"
+                },
+                "transcript_grades": {
+                    "$ref": "#/definitions/models.StringMap"
+                },
+                "transcript_message": {
+                    "type": "string"
+                },
+                "transcript_status": {
+                    "type": "string"
+                },
+                "transcript_updated_at": {
+                    "type": "string"
+                },
                 "updated_at": {
                     "type": "string"
                 },
@@ -2506,6 +3123,57 @@ const docTemplate = `{
                 "RoleStaff",
                 "RoleAdmin"
             ]
+        },
+        "staff.createDocumentRequest": {
+            "type": "object",
+            "required": [
+                "course_ref",
+                "type"
+            ],
+            "properties": {
+                "course_ref": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/definitions/models.DocType"
+                }
+            }
+        },
+        "staff.reviewActionRequest": {
+            "type": "object",
+            "properties": {
+                "note": {
+                    "type": "string"
+                }
+            }
+        },
+        "staff.updateDocStatusRequest": {
+            "type": "object",
+            "required": [
+                "status"
+            ],
+            "properties": {
+                "status": {
+                    "$ref": "#/definitions/models.DocStatus"
+                }
+            }
+        },
+        "staff.updateProfileRequest": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "faculty": {
+                    "type": "string"
+                },
+                "full_name": {
+                    "type": "string"
+                }
+            }
         },
         "student.ApplyRequest": {
             "type": "object",
@@ -2561,6 +3229,10 @@ const docTemplate = `{
                     "type": "string",
                     "example": "สมชาย ใจดี"
                 },
+                "student_id": {
+                    "type": "string",
+                    "example": "640710112"
+                },
                 "year": {
                     "type": "integer",
                     "example": 3
@@ -2606,6 +3278,20 @@ const docTemplate = `{
                 }
             }
         },
+        "teacher.BulkReviewResult": {
+            "type": "object",
+            "properties": {
+                "notified": {
+                    "type": "integer"
+                },
+                "skipped_full": {
+                    "type": "integer"
+                },
+                "updated": {
+                    "type": "integer"
+                }
+            }
+        },
         "teacher.CreateCourseRequest": {
             "type": "object",
             "required": [
@@ -2629,6 +3315,11 @@ const docTemplate = `{
                 },
                 "description": {
                     "type": "string"
+                },
+                "instructor_id": {
+                    "description": "InstructorID: admin-only. An instructor posting for themselves always\nowns the course they create, but an admin adding a course on an\ninstructor's behalf (e.g. one they asked for that never made it into\nthe Excel import) needs to name who it actually belongs to. Ignored\nfor non-admin callers.",
+                    "type": "integer",
+                    "example": 5
                 },
                 "labboy_slots": {
                     "type": "integer",

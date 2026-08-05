@@ -76,6 +76,9 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			instructor.POST("/instructor/courses/:id/sections", teacherH.AddSection)
 			instructor.GET("/instructor/profile", teacherH.GetInstructorProfile)
 			instructor.PUT("/instructor/profile", teacherH.UpdateInstructorProfile)
+			instructor.GET("/instructor/notifications", teacherH.MyNotifications)
+			instructor.PUT("/instructor/notifications/read-all", teacherH.MarkAllRead)
+			instructor.PUT("/instructor/notifications/:id/read", teacherH.MarkRead)
 		}
 
 		// Instructor + Staff + Admin for applicants and reviews

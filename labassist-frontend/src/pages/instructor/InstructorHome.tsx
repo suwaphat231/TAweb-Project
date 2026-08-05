@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
+import { isAxiosError } from 'axios'
 import { instructorApi } from '../../services/api'
 import { StatCard } from '../../components/ui/StatCard'
 import { StatusBadge } from '../../components/ui/Badge'
@@ -12,7 +13,6 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { useToast } from '../../components/ui/Toast'
 import { Modal } from '../../components/ui/Modal'
 import { CourseFormModal } from './CourseFormModal'
-import { SectionCatalogPicker } from '../../components/course/SectionCatalogPicker'
 import { COURSE_FORM_EMPTY, splitRequirements, joinRequirements } from './_courseFormShared'
 import { displayCourseTitle } from '../../utils/courseDisplay'
 import type { CreateCoursePayload, Course } from '../../types'
@@ -42,11 +42,12 @@ function ArchiveIcon() {
   )
 }
 
-function AddIcon() {
+function CloseIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="12" y1="5" x2="12" y2="19" />
-      <line x1="5" y1="12" x2="19" y2="12" />
+      <circle cx="12" cy="12" r="10" />
+      <line x1="8" y1="8" x2="16" y2="16" />
+      <line x1="16" y1="8" x2="8" y2="16" />
     </svg>
   )
 }
@@ -63,6 +64,20 @@ function DeleteIcon() {
   )
 }
 
+// A course is still openable through the end of its deadline day — only
+// strictly-past days are blocked, matching the backend's cutoff.
+function isPastDeadline(deadline?: string): boolean {
+  if (!deadline) return false
+  const end = new Date(deadline)
+  end.setHours(23, 59, 59, 999)
+  return end < new Date()
+}
+
+function errorDetail(err: unknown, fallback: string): string {
+  const detail = isAxiosError(err) ? (err.response?.data as { error?: string } | undefined)?.error : undefined
+  return detail ?? fallback
+}
+
 export default function InstructorHome() {
   const [search, setSearch] = useState('')
   const [showCourseModal, setShowCourseModal] = useState(false)
@@ -73,8 +88,7 @@ export default function InstructorHome() {
   const [showArchived, setShowArchived] = useState(false)
   const [archiveTarget, setArchiveTarget] = useState<Course | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Course | null>(null)
-  const [addSectionTarget, setAddSectionTarget] = useState<Course | null>(null)
-  const [addSectionIds, setAddSectionIds] = useState<number[]>([])
+  const [closeTarget, setCloseTarget] = useState<Course | null>(null)
   const qc = useQueryClient()
   const showToast = useToast()
 
@@ -105,7 +119,7 @@ export default function InstructorHome() {
       closeModal()
       showToast('เปิดรับสมัครเรียบร้อยแล้ว', 'success')
     },
-    onError: () => showToast('ไม่สามารถเปิดรับสมัครได้ กรุณาลองใหม่', 'error'),
+    onError: (err) => showToast(errorDetail(err, 'ไม่สามารถเปิดรับสมัครได้ กรุณาลองใหม่'), 'error'),
   })
 
   const updateMut = useMutation({
@@ -116,7 +130,7 @@ export default function InstructorHome() {
       closeModal()
       showToast('บันทึกการแก้ไขเรียบร้อยแล้ว', 'success')
     },
-    onError: () => showToast('ไม่สามารถบันทึกได้ กรุณาลองใหม่', 'error'),
+    onError: (err) => showToast(errorDetail(err, 'ไม่สามารถบันทึกได้ กรุณาลองใหม่'), 'error'),
   })
 
   const archiveMut = useMutation({
@@ -143,31 +157,34 @@ export default function InstructorHome() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['instructor-courses'] })
       setDeleteTarget(null)
-      showToast('ลบประกาศเรียบร้อยแล้ว', 'success')
+      showToast('ลบประกาศเรียบร้อยแล้ว — วิชานี้ยังเลือกเปิดรับสมัครใหม่ได้อีกภายหลัง', 'success')
     },
     onError: () => showToast('ไม่สามารถลบประกาศได้ กรุณาลองใหม่', 'error'),
   })
 
-  // Opening another section on an existing posting is the same idea as
-  // creating one — pick more of this instructor's imported rows for the
-  // same code/term and copy the posting's shared fields onto them.
-  const addSectionMut = useMutation({
-    mutationFn: async (vars: { ids: number[]; data: Partial<CreateCoursePayload> }) => {
-      await Promise.all(vars.ids.map((id) => instructorApi.updateCourse(id, vars.data)))
-    },
+  // Closing applications takes the section straight to "closed" — students
+  // immediately see it as no longer accepting applications (CourseCard
+  // shows the "ปิดรับ" badge instead of an apply button for closed/draft).
+  const closeMut = useMutation({
+    mutationFn: (id: number) => instructorApi.updateCourseStatus(id, 'closed'),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['instructor-courses'] })
-      setAddSectionTarget(null)
-      setAddSectionIds([])
-      showToast('เปิดรับสมัคร section เพิ่มเรียบร้อยแล้ว', 'success')
+      setCloseTarget(null)
+      showToast('ปิดรับสมัครเรียบร้อยแล้ว', 'success')
     },
-    onError: () => showToast('ไม่สามารถเปิดรับสมัคร section เพิ่มได้ กรุณาลองใหม่', 'error'),
+    onError: () => showToast('ไม่สามารถปิดรับสมัครได้ กรุณาลองใหม่', 'error'),
   })
 
-  function openAddSection(course: Course) {
-    setAddSectionIds([])
-    setAddSectionTarget(course)
-  }
+  // The reverse of closeMut — a closed posting needs a direct way back to
+  // "open" without going through the edit form, or it's stuck closed forever.
+  const reopenMut = useMutation({
+    mutationFn: (id: number) => instructorApi.updateCourseStatus(id, 'open'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['instructor-courses'] })
+      showToast('เปิดรับสมัครใหม่เรียบร้อยแล้ว', 'success')
+    },
+    onError: (err) => showToast(errorDetail(err, 'ไม่สามารถเปิดรับสมัครใหม่ได้ กรุณาลองใหม่'), 'error'),
+  })
 
   function openCreate() {
     setForm(COURSE_FORM_EMPTY)
@@ -218,7 +235,10 @@ export default function InstructorHome() {
     })
   }, [courses, applicantQueries])
 
-  const activePostings = useMemo(() => postings.filter((p) => p.course.status !== 'archived'), [postings])
+  // Draft rows are just unopened sections from the Excel import — the
+  // instructor picks among them via SectionCatalogPicker when creating a
+  // posting, so they don't need to also clutter this list until opened.
+  const activePostings = useMemo(() => postings.filter((p) => p.course.status !== 'archived' && p.course.status !== 'draft'), [postings])
   const archivedPostings = useMemo(() => postings.filter((p) => p.course.status === 'archived'), [postings])
 
   const filtered = useMemo(() => {
@@ -347,23 +367,41 @@ export default function InstructorHome() {
                               >
                                 กู้คืน
                               </Button>
-                            ) : closed ? (
-                              <Button
-                                size="sm" variant="outline"
-                                title="เก็บเข้าคลัง"
-                                onClick={() => setArchiveTarget(c)}
-                              >
-                                <ArchiveIcon />
-                              </Button>
                             ) : (
-                              <Button size="sm" variant="outline" title="แก้ไข" onClick={() => openEdit(c)}>
-                                <EditIcon />
-                              </Button>
-                            )}
-                            {!archived && (
-                              <Button size="sm" variant="outline" title="เพิ่ม section" onClick={() => openAddSection(c)}>
-                                <AddIcon />
-                              </Button>
+                              <>
+                                <Button size="sm" variant="outline" title="แก้ไข" onClick={() => openEdit(c)}>
+                                  <EditIcon />
+                                </Button>
+                                {closed ? (
+                                  <>
+                                    <Button
+                                      size="sm" variant="outline"
+                                      style={{ color: 'var(--green)', borderColor: 'var(--green)' }}
+                                      loading={reopenMut.isPending && reopenMut.variables === c.id}
+                                      disabled={isPastDeadline(c.deadline)}
+                                      title={isPastDeadline(c.deadline) ? 'เลยวันปิดรับสมัครแล้ว แก้ไขวันที่ก่อนจึงเปิดรับใหม่ได้' : undefined}
+                                      onClick={() => reopenMut.mutate(c.id)}
+                                    >
+                                      เปิดรับสมัคร
+                                    </Button>
+                                    <Button
+                                      size="sm" variant="outline"
+                                      title="เก็บเข้าคลัง"
+                                      onClick={() => setArchiveTarget(c)}
+                                    >
+                                      <ArchiveIcon />
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <Button
+                                    size="sm" variant="outline" title="ปิดรับสมัคร"
+                                    style={{ color: 'var(--amber)', borderColor: 'var(--amber)' }}
+                                    onClick={() => setCloseTarget(c)}
+                                  >
+                                    <CloseIcon />
+                                  </Button>
+                                )}
+                              </>
                             )}
                             <Button
                               size="sm" variant="outline" title="ลบประกาศ"
@@ -431,10 +469,11 @@ export default function InstructorHome() {
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <p style={{ fontSize: 14, color: 'var(--ink-600)', margin: 0 }}>
-            ต้องการลบประกาศ <strong>{deleteTarget?.code}</strong> ใช่หรือไม่? การลบไม่สามารถย้อนกลับได้
+            ต้องการลบประกาศ <strong>{deleteTarget?.code}</strong> ใช่หรือไม่?
             {(deleteTarget?.applicant_count ?? 0) > 0 && (
-              <> และจะลบใบสมัครของผู้สมัคร <strong>{deleteTarget?.applicant_count}</strong> คนที่ยื่นไว้ทั้งหมดด้วย</>
+              <> ใบสมัครของผู้สมัคร <strong>{deleteTarget?.applicant_count}</strong> คนที่ยื่นไว้จะถูกลบทั้งหมด (ย้อนกลับไม่ได้)</>
             )}
+            {' '}ตัววิชา/กลุ่มเรียนนี้จะยังคงอยู่ในระบบ (กลับไปเป็นฉบับร่าง) สามารถเลือกเปิดรับสมัครใหม่ได้อีกภายหลัง
           </p>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
             <Button variant="ghost" onClick={() => setDeleteTarget(null)}>ยกเลิก</Button>
@@ -449,47 +488,28 @@ export default function InstructorHome() {
         </div>
       </Modal>
 
-      {/* Add Section Modal */}
+      {/* Close Applications Confirm Modal */}
       <Modal
-        isOpen={!!addSectionTarget}
-        onClose={() => setAddSectionTarget(null)}
-        title={`เพิ่ม Section — ${addSectionTarget?.code}`}
+        isOpen={!!closeTarget}
+        onClose={() => setCloseTarget(null)}
+        title="ปิดรับสมัคร"
         size="sm"
       >
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (!addSectionTarget || addSectionIds.length === 0) return
-            const { labboy_slots, status, description, requirements, require_grade_proof } = addSectionTarget
-            addSectionMut.mutate({
-              ids: addSectionIds,
-              data: {
-                labboy_slots, status, require_grade_proof,
-                deadline: addSectionTarget.deadline ? addSectionTarget.deadline.slice(0, 10) : '',
-                description: description ?? '', requirements: requirements ?? '',
-              },
-            })
-          }}
-          style={{ display: 'flex', flexDirection: 'column', gap: 14 }}
-        >
-          <p style={{ fontSize: 13, color: 'var(--ink-500)', margin: 0 }}>
-            เลือก section เพิ่มให้ประกาศนี้ (จำนวนรับ/สถานะ/เงื่อนไขเดียวกับ Sec {addSectionTarget?.section}) —
-            นักศึกษาจะเห็นเป็นอีกช่องทางสมัครแยกจาก sec เดิม
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <p style={{ fontSize: 14, color: 'var(--ink-600)', margin: 0 }}>
+            ต้องการปิดรับสมัครประกาศ <strong>{closeTarget?.code}</strong> ใช่หรือไม่?
+            นักศึกษาจะเห็นว่าวิชานี้ปิดรับสมัครแล้วและจะสมัครไม่ได้อีก
           </p>
-          {addSectionTarget && (
-            <SectionCatalogPicker
-              code={addSectionTarget.code}
-              semester={addSectionTarget.semester}
-              academicYear={addSectionTarget.academic_year}
-              selectedIds={addSectionIds}
-              onChange={setAddSectionIds}
-            />
-          )}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <Button type="button" variant="ghost" onClick={() => setAddSectionTarget(null)}>ยกเลิก</Button>
-            <Button type="submit" loading={addSectionMut.isPending} disabled={addSectionIds.length === 0}>เพิ่ม Section</Button>
+            <Button variant="ghost" onClick={() => setCloseTarget(null)}>ยกเลิก</Button>
+            <Button
+              loading={closeMut.isPending}
+              onClick={() => closeTarget && closeMut.mutate(closeTarget.id)}
+            >
+              ปิดรับสมัคร
+            </Button>
           </div>
-        </form>
+        </div>
       </Modal>
     </div>
   )

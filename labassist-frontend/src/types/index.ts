@@ -112,6 +112,12 @@ export interface BulkReviewPayload {
   note?: string
 }
 
+export interface BulkReviewResult {
+  updated: number
+  notified: number
+  skipped_full: number
+}
+
 export interface CreateUserPayload {
   full_name: string
   role: UserRole

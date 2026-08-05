@@ -1,6 +1,7 @@
 package student
 
 import (
+	"fmt"
 	"labassist/database"
 	"labassist/models"
 	"net/http"
@@ -104,6 +105,23 @@ func (h *Handler) Apply(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "already applied"})
 		return
+	}
+
+	// Notify every instructor account that actually owns this course by name
+	// match — not just course.InstructorID, which can point at an unused
+	// duplicate account left over from the classlist import (see
+	// InstructorOwnsCourse) while the instructor logs in under a different one.
+	if applicant, ok := database.UserByID(studentID.(uint)); ok {
+		notifs := make([]models.Notification, 0, 1)
+		for _, ins := range database.InstructorsForCourse(course) {
+			notifs = append(notifs, models.Notification{
+				UserID:   ins.ID,
+				CourseID: &body.CourseID,
+				Title:    "มีผู้สมัครใหม่",
+				Body:     fmt.Sprintf("นักศึกษา %s สมัครวิชา %s (%s)", applicant.FullName, course.Title, course.Code),
+			})
+		}
+		database.CreateNotifications(notifs)
 	}
 
 	c.JSON(http.StatusCreated, app)

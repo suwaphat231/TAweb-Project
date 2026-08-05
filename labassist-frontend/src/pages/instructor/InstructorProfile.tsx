@@ -38,6 +38,13 @@ export default function InstructorProfile() {
     onSuccess: (updated) => {
       setUser(updated)
       qc.invalidateQueries({ queryKey: ['instructor-profile'] })
+      // Which courses match this instructor is name-based (matched against
+      // the admin's imported spreadsheet), not just account ID — changing
+      // the name here changes that match, so every list driven by it must
+      // refetch immediately instead of waiting out its cache.
+      qc.invalidateQueries({ queryKey: ['instructor-course-catalog'] })
+      qc.invalidateQueries({ queryKey: ['course-catalog-sections'] })
+      qc.invalidateQueries({ queryKey: ['instructor-courses'] })
       showToast('บันทึกข้อมูลเรียบร้อยแล้ว', 'success')
     },
     onError: () => showToast('เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'),
@@ -92,11 +99,6 @@ export default function InstructorProfile() {
                 type="email"
                 value={form.email}
                 onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))}
-              />
-              <Input
-                label="คณะ / ภาควิชา"
-                value={form.faculty}
-                onChange={(e) => setForm(f => ({ ...f, faculty: e.target.value }))}
               />
               
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>

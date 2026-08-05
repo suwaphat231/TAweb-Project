@@ -41,7 +41,26 @@ func findAppByIDLocked(id uint) *models.Application {
 	return nil
 }
 
+// closeIfPastDeadline flips an open/closing_soon posting to closed once its
+// deadline has passed, persisting the change so every caller — the public
+// catalog, the instructor's own list, admin — sees it closed without needing
+// a background job. Runs lazily on read via courseWithInstructor, the one
+// chokepoint every course-returning query already passes through.
+func closeIfPastDeadline(c models.Course) models.Course {
+	if c.Deadline == nil || (c.Status != models.StatusOpen && c.Status != models.StatusClosingSoon) {
+		return c
+	}
+	d := c.Deadline
+	endOfDeadline := time.Date(d.Year(), d.Month(), d.Day(), 23, 59, 59, 0, d.Location())
+	if time.Now().After(endOfDeadline) {
+		c.Status = models.StatusClosed
+		DB.Model(&models.Course{}).Where("id = ?", c.ID).Update("status", models.StatusClosed)
+	}
+	return c
+}
+
 func courseWithInstructor(c models.Course) models.Course {
+	c = closeIfPastDeadline(c)
 	if u, ok := UserByID(c.InstructorID); ok {
 		c.InstructorName = u.FullName
 	}
@@ -234,21 +253,25 @@ func CourseByID(id uint) (models.Course, bool) {
 	return courseWithInstructor(c), true
 }
 
-func InstructorCourses(instructorID uint, isAdmin bool, hasLab *bool) []models.Course {
+// InstructorCourses returns every course this instructor owns — exact
+// account match, or (like CoursesTaughtBy/TaughtCourseSections) a classlist
+// name match, so a course they can open/edit also shows up in their own
+// "ประกาศของฉัน" list instead of disappearing after being opened.
+func InstructorCourses(instructorID uint, fullName string, isAdmin bool, hasLab *bool) []models.Course {
 	query := DB.Order("id DESC")
-	if !isAdmin {
-		query = query.Where("instructor_id = ?", instructorID)
-	}
 	if hasLab != nil {
 		query = query.Where("has_lab = ?", *hasLab)
 	}
 	var rows []models.Course
 	query.Find(&rows)
-	out := make([]models.Course, len(rows))
-	for i, c := range rows {
+	out := make([]models.Course, 0, len(rows))
+	for _, c := range rows {
+		if !InstructorOwnsCourse(c, instructorID, fullName, isAdmin) {
+			continue
+		}
 		cc := courseWithInstructor(c)
 		cc.ApplicantCount = countNonWithdrawnApplications(c.ID)
-		out[i] = cc
+		out = append(out, cc)
 	}
 	return out
 }
@@ -293,6 +316,10 @@ func deleteApplicationsForCourseLocked(courseID uint) {
 }
 
 // DeleteCourse removes a single course and any applications submitted for it.
+// Only for admin cleanup of bad/duplicate catalog data (AdminCourses'
+// per-row delete and "ลบทั้งเทอม") — an instructor taking down their own
+// posting goes through ResetCourseToDraft instead, which keeps the
+// underlying section so it can be opened again later.
 func DeleteCourse(id uint) bool {
 	result := DB.Delete(&models.Course{}, id)
 	if result.Error != nil || result.RowsAffected == 0 {
@@ -302,6 +329,34 @@ func DeleteCourse(id uint) bool {
 	deleteApplicationsForCourseLocked(id)
 	mu.Unlock()
 	return true
+}
+
+// ResetCourseToDraft is what an instructor's "ลบประกาศ" actually does: wipe
+// every recruiting-specific field and drop all applications submitted
+// against it, but keep the row itself — code/title/section/schedule/
+// instructor/semester/year survive, so the same section can be picked from
+// the catalog and opened again later instead of needing a fresh Excel
+// re-import. (Admin's own delete, for genuinely bad import data, still
+// hard-deletes via DeleteCourse.)
+func ResetCourseToDraft(id uint) (models.Course, bool) {
+	var c models.Course
+	if err := DB.First(&c, id).Error; err != nil {
+		return models.Course{}, false
+	}
+	c.Status = models.StatusDraft
+	c.LabBoySlots = 0
+	c.LabBoyAccepted = 0
+	c.Deadline = nil
+	c.Description = nil
+	c.Requirements = nil
+	c.RequireGradeProof = false
+	if err := DB.Save(&c).Error; err != nil {
+		return models.Course{}, false
+	}
+	mu.Lock()
+	deleteApplicationsForCourseLocked(id)
+	mu.Unlock()
+	return courseWithInstructor(c), true
 }
 
 // DeleteCoursesByTerm removes every course in the given semester/academic
@@ -421,6 +476,25 @@ func InstructorOwnsCourse(c models.Course, instructorID uint, fullName string, i
 		}
 	}
 	return false
+}
+
+// InstructorsForCourse returns every instructor account that owns this
+// course by the same rule InstructorOwnsCourse checks on read/write — not
+// just the row's InstructorID, since a classlist import can leave the real
+// account matched only by name (see InstructorOwnsCourse's doc comment).
+// Used to notify the right person(s) when a student applies, so the
+// notification doesn't silently land on an unused duplicate account.
+func InstructorsForCourse(c models.Course) []models.User {
+	var instructors []models.User
+	DB.Where("role = ?", models.RoleInstructor).Find(&instructors)
+
+	out := make([]models.User, 0, 1)
+	for _, u := range instructors {
+		if InstructorOwnsCourse(c, u.ID, u.FullName, false) {
+			out = append(out, u)
+		}
+	}
+	return out
 }
 
 // CoursesTaughtBy returns, most-recent first, every course whose instructor

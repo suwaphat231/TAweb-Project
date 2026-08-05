@@ -40,8 +40,11 @@ export default function AdminCourses() {
 
   // This page only manages lab courses, excludes RESEARCH PROJECT I/II, and
   // never mixes semesters — a semester must be picked explicitly (or "ทั้งหมด").
+  // A manually-added course (by admin or instructor) has no Excel-derived
+  // `credits` string to parse hours from — labboy_slots > 0 is the same "has
+  // a lab" signal for those, so it isn't silently hidden from this list.
   const visibleCourses = courses.filter((c) =>
-    (labHours(c.credits) ?? 0) >= 2 &&
+    ((labHours(c.credits) ?? 0) >= 2 || c.labboy_slots > 0) &&
     !isResearchProject(c) &&
     (semesterFilter === '' || c.semester === semesterFilter)
   )
@@ -279,7 +282,7 @@ export default function AdminCourses() {
             onChange={(e) => setAddCourseForm((f) => ({ ...f, title: e.target.value }))}
             required
           />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Select
               label="ภาคการศึกษา *" value={addCourseForm.semester}
               onChange={(e) => setAddCourseForm((f) => ({ ...f, semester: e.target.value }))}
@@ -289,10 +292,6 @@ export default function AdminCourses() {
               label="ปีการศึกษา *" type="number" value={addCourseForm.academic_year}
               onChange={(e) => setAddCourseForm((f) => ({ ...f, academic_year: e.target.value }))}
               required
-            />
-            <Input
-              label="Lab Boy Slots" type="number" min="0" value={addCourseForm.labboy_slots}
-              onChange={(e) => setAddCourseForm((f) => ({ ...f, labboy_slots: e.target.value }))}
             />
           </div>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>

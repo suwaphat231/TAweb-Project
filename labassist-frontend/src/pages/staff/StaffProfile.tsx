@@ -93,11 +93,7 @@ export default function StaffProfile() {
                 value={form.email}
                 onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))}
               />
-              <Input
-                label="คณะ / ภาควิชา"
-                value={form.faculty}
-                onChange={(e) => setForm(f => ({ ...f, faculty: e.target.value }))}
-              />
+
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <Button type="submit" loading={updateMut.isPending}>บันทึกการเปลี่ยนแปลง</Button>
               </div>

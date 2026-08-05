@@ -41,6 +41,22 @@ func parseDeadline(s string) *time.Time {
 	return &t
 }
 
+// recruiting reports whether a status counts as still accepting applicants —
+// the states deadlinePassed is allowed to block.
+func recruiting(status models.CourseStatus) bool {
+	return status == models.StatusOpen || status == models.StatusClosingSoon
+}
+
+// deadlinePassed reports whether d's calendar date has fully elapsed — a
+// course stays open through the end of its deadline day.
+func deadlinePassed(d *time.Time) bool {
+	if d == nil {
+		return false
+	}
+	endOfDeadline := time.Date(d.Year(), d.Month(), d.Day(), 23, 59, 59, 0, d.Location())
+	return time.Now().After(endOfDeadline)
+}
+
 // SectionInput is one teaching section (group) + time slot within a posting.
 // A course commonly runs several sections at different times (e.g. sec 1 MWF
 // 9-12, sec 2 MWF 13-16) — each becomes its own Course row sharing the same
@@ -116,7 +132,13 @@ type UpdateCourseStatusRequest struct {
 func (h *Handler) InstructorList(c *gin.Context) {
 	instructorID, _ := c.Get("user_id")
 	role, _ := c.Get("role")
-	courses := database.InstructorCourses(instructorID.(uint), role.(string) == "admin", nil)
+
+	fullName := ""
+	if u, ok := database.UserByID(instructorID.(uint)); ok {
+		fullName = u.FullName
+	}
+
+	courses := database.InstructorCourses(instructorID.(uint), fullName, role.(string) == "admin", nil)
 	c.JSON(http.StatusOK, courses)
 }
 
@@ -201,6 +223,12 @@ func (h *Handler) Create(c *gin.Context) {
 		status = models.StatusDraft
 	}
 
+	deadline := parseDeadline(body.Deadline)
+	if recruiting(status) && deadlinePassed(deadline) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot open a course whose deadline has already passed"})
+		return
+	}
+
 	sections := body.Sections
 	if len(sections) == 0 {
 		// Single-section posting — unchanged behavior for callers that don't
@@ -222,7 +250,7 @@ func (h *Handler) Create(c *gin.Context) {
 			Status:            status,
 			Description:       body.Description,
 			Requirements:      body.Requirements,
-			Deadline:          parseDeadline(body.Deadline),
+			Deadline:          deadline,
 			RequireGradeProof: body.RequireGradeProof,
 		}))
 	}
@@ -309,6 +337,19 @@ func (h *Handler) Update(c *gin.Context) {
 	var body UpdateCourseRequest
 	c.ShouldBindJSON(&body)
 
+	effectiveStatus := course.Status
+	if body.Status != nil {
+		effectiveStatus = *body.Status
+	}
+	effectiveDeadline := course.Deadline
+	if body.Deadline != nil {
+		effectiveDeadline = parseDeadline(*body.Deadline)
+	}
+	if recruiting(effectiveStatus) && deadlinePassed(effectiveDeadline) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot open a course whose deadline has already passed"})
+		return
+	}
+
 	updated, _ := database.UpdateCourse(uint(id), func(cs *models.Course) {
 		if body.Code != nil {
 			cs.Code = *body.Code
@@ -377,6 +418,10 @@ func (h *Handler) UpdateStatus(c *gin.Context) {
 
 	var body UpdateCourseStatusRequest
 	c.ShouldBindJSON(&body)
+	if recruiting(body.Status) && deadlinePassed(course.Deadline) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot open a course whose deadline has already passed"})
+		return
+	}
 	updated, _ := database.UpdateCourse(uint(id), func(cs *models.Course) {
 		cs.Status = body.Status
 	})
@@ -384,7 +429,8 @@ func (h *Handler) UpdateStatus(c *gin.Context) {
 }
 
 // Delete godoc
-// @Summary      ลบวิชา
+// @Summary      ลบวิชา (แอดมิน) หรือปิดประกาศ (อาจารย์)
+// @Description  แอดมินลบ row ทิ้งจริง ใช้ล้างข้อมูลนำเข้าที่ผิดพลาด — อาจารย์ลบประกาศของตัวเองแค่รีเซ็ตกลับเป็นฉบับร่างและลบใบสมัครที่ยื่นไว้ ตัว section (รหัสวิชา/กลุ่ม/เวลาเรียน) ยังอยู่ เลือกเปิดรับสมัครใหม่ได้อีกภายหลังโดยไม่ต้อง import ซ้ำ
 // @Tags         instructor
 // @Produce      json
 // @Security     BearerAuth
@@ -406,7 +452,12 @@ func (h *Handler) Delete(c *gin.Context) {
 		return
 	}
 
-	database.DeleteCourse(uint(id))
+	role, _ := c.Get("role")
+	if role.(string) == "admin" {
+		database.DeleteCourse(uint(id))
+	} else {
+		database.ResetCourseToDraft(uint(id))
+	}
 	c.Status(http.StatusNoContent)
 }
 

@@ -97,12 +97,6 @@ definitions:
         example: true
         type: boolean
     type: object
-  handlers.BulkReviewResponse:
-    properties:
-      updated:
-        example: 3
-        type: integer
-    type: object
   handlers.DashboardStats:
     properties:
       applied:
@@ -238,6 +232,8 @@ definitions:
         type: string
       course_code:
         type: string
+      course_english_title:
+        type: string
       course_id:
         type: integer
       course_schedule:
@@ -363,6 +359,60 @@ definitions:
     - StatusClosed
     - StatusDraft
     - StatusArchived
+  models.DocStatus:
+    enum:
+    - draft
+    - pending
+    - approved
+    type: string
+    x-enum-varnames:
+    - DocDraft
+    - DocPending
+    - DocApproved
+  models.DocType:
+    enum:
+    - approval_memo
+    - payment_evidence
+    - payment_request
+    type: string
+    x-enum-varnames:
+    - DocApprovalMemo
+    - DocPaymentEvidence
+    - DocPaymentRequest
+  models.FormReview:
+    properties:
+      academic_year:
+        type: integer
+      course_code:
+        description: Enriched from the courses table — never stored
+        type: string
+      course_id:
+        type: integer
+      course_title:
+        type: string
+      id:
+        type: integer
+      instructor_name:
+        type: string
+      labboy_accepted:
+        type: integer
+      labboy_slots:
+        type: integer
+      note:
+        type: string
+      reviewer_id:
+        type: integer
+      section:
+        type: integer
+      semester:
+        type: string
+      status:
+        $ref: '#/definitions/models.ReviewStatus'
+      submitted_at:
+        type: string
+      updated_at:
+        type: string
+    type: object
   models.Notification:
     properties:
       body:
@@ -380,12 +430,45 @@ definitions:
       user_id:
         type: integer
     type: object
+  models.ReviewStatus:
+    enum:
+    - pending
+    - verified
+    - returned
+    type: string
+    x-enum-varnames:
+    - ReviewPending
+    - ReviewVerified
+    - ReviewReturned
   models.RoleApplied:
     enum:
     - labboy
     type: string
     x-enum-varnames:
     - RoleLabBoy
+  models.StaffDocument:
+    properties:
+      course_ref:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      note:
+        type: string
+      staff_id:
+        type: integer
+      status:
+        $ref: '#/definitions/models.DocStatus'
+      type:
+        $ref: '#/definitions/models.DocType'
+    type: object
+  models.StringMap:
+    additionalProperties:
+      type: string
+    type: object
   models.User:
     properties:
       created_at:
@@ -413,6 +496,16 @@ definitions:
         $ref: '#/definitions/models.UserRole'
       student_id:
         type: string
+      transcript_confidence:
+        type: number
+      transcript_grades:
+        $ref: '#/definitions/models.StringMap'
+      transcript_message:
+        type: string
+      transcript_status:
+        type: string
+      transcript_updated_at:
+        type: string
       updated_at:
         type: string
       username:
@@ -432,6 +525,39 @@ definitions:
     - RoleInstructor
     - RoleStaff
     - RoleAdmin
+  staff.createDocumentRequest:
+    properties:
+      course_ref:
+        type: string
+      note:
+        type: string
+      type:
+        $ref: '#/definitions/models.DocType'
+    required:
+    - course_ref
+    - type
+    type: object
+  staff.reviewActionRequest:
+    properties:
+      note:
+        type: string
+    type: object
+  staff.updateDocStatusRequest:
+    properties:
+      status:
+        $ref: '#/definitions/models.DocStatus'
+    required:
+    - status
+    type: object
+  staff.updateProfileRequest:
+    properties:
+      email:
+        type: string
+      faculty:
+        type: string
+      full_name:
+        type: string
+    type: object
   student.ApplyRequest:
     properties:
       course_id:
@@ -471,6 +597,9 @@ definitions:
       full_name:
         example: สมชาย ใจดี
         type: string
+      student_id:
+        example: "640710112"
+        type: string
       year:
         example: 3
         type: integer
@@ -500,6 +629,15 @@ definitions:
     - application_ids
     - status
     type: object
+  teacher.BulkReviewResult:
+    properties:
+      notified:
+        type: integer
+      skipped_full:
+        type: integer
+      updated:
+        type: integer
+    type: object
   teacher.CreateCourseRequest:
     properties:
       academic_year:
@@ -513,6 +651,15 @@ definitions:
         type: string
       description:
         type: string
+      instructor_id:
+        description: |-
+          InstructorID: admin-only. An instructor posting for themselves always
+          owns the course they create, but an admin adding a course on an
+          instructor's behalf (e.g. one they asked for that never made it into
+          the Excel import) needs to name who it actually belongs to. Ignored
+          for non-admin callers.
+        example: 5
+        type: integer
       labboy_slots:
         example: 2
         type: integer
@@ -1137,6 +1284,8 @@ paths:
     put:
       consumes:
       - application/json
+      description: รับ/ปฏิเสธหลายใบสมัครพร้อมกัน — ตรวจสิทธิ์และจำนวนที่ว่างเหมือนการรับทีละคน
+        ใบสมัครที่ทำให้เกินโควตาจะถูกข้ามแทนที่จะทำให้ทั้งชุดล้มเหลว และจะแจ้งเตือนนักศึกษาที่ผ่านการคัดเลือกทันที
       parameters:
       - description: รายการใบสมัครและผลการตรวจสอบ
         in: body
@@ -1150,14 +1299,14 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handlers.BulkReviewResponse'
+            $ref: '#/definitions/teacher.BulkReviewResult'
         "400":
           description: Bad Request
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: ตรวจสอบใบสมัครแบบกลุ่ม
+      summary: ตรวจสอบใบสมัครแบบกลุ่ม (เช่น ปุ่ม "รับ Lab Boy ทั้งหมด")
       tags:
       - instructor
   /instructor/course-catalog:
@@ -1265,6 +1414,9 @@ paths:
       - instructor
   /instructor/courses/{id}:
     delete:
+      description: แอดมินลบ row ทิ้งจริง ใช้ล้างข้อมูลนำเข้าที่ผิดพลาด — อาจารย์ลบประกาศของตัวเองแค่รีเซ็ตกลับเป็นฉบับร่างและลบใบสมัครที่ยื่นไว้
+        ตัว section (รหัสวิชา/กลุ่ม/เวลาเรียน) ยังอยู่ เลือกเปิดรับสมัครใหม่ได้อีกภายหลังโดยไม่ต้อง
+        import ซ้ำ
       parameters:
       - description: Course ID
         in: path
@@ -1286,7 +1438,7 @@ paths:
             $ref: '#/definitions/handlers.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: ลบวิชา
+      summary: ลบวิชา (แอดมิน) หรือปิดประกาศ (อาจารย์)
       tags:
       - instructor
     put:
@@ -1480,6 +1632,60 @@ paths:
       summary: อัพเดตสถานะวิชา
       tags:
       - instructor
+  /instructor/notifications:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Notification'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: รายการแจ้งเตือนของอาจารย์
+      tags:
+      - instructor
+  /instructor/notifications/{id}/read:
+    put:
+      parameters:
+      - description: Notification ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+      security:
+      - BearerAuth: []
+      summary: ทำเครื่องหมายแจ้งเตือนว่าอ่านแล้ว
+      tags:
+      - instructor
+  /instructor/notifications/read-all:
+    put:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+      security:
+      - BearerAuth: []
+      summary: ทำเครื่องหมายแจ้งเตือนทั้งหมดว่าอ่านแล้ว
+      tags:
+      - instructor
   /instructor/profile:
     get:
       produces:
@@ -1518,6 +1724,218 @@ paths:
       summary: แก้ไขโปรไฟล์ของอาจารย์ (ตัวเอง)
       tags:
       - instructor
+  /staff/documents:
+    get:
+      parameters:
+      - description: approval_memo | payment_evidence | payment_request
+        in: query
+        name: type
+        type: string
+      - description: draft | pending | approved
+        in: query
+        name: status
+        type: string
+      - description: ค้นหา
+        in: query
+        name: q
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.StaffDocument'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: รายการเอกสารของเจ้าหน้าที่
+      tags:
+      - staff
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: ข้อมูลเอกสาร
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/staff.createDocumentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.StaffDocument'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: สร้างเอกสารใหม่ (บันทึกขออนุมัติ / หลักฐานจ่ายเงิน / บันทึกขอเบิก)
+      tags:
+      - staff
+  /staff/documents/{id}/status:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Document ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: สถานะใหม่
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/staff.updateDocStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.StaffDocument'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: อัปเดตสถานะเอกสาร (draft → pending → approved)
+      tags:
+      - staff
+  /staff/profile:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.User'
+      security:
+      - BearerAuth: []
+      summary: ข้อมูลโปรไฟล์ของเจ้าหน้าที่ (ตัวเอง)
+      tags:
+      - staff
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: ข้อมูลโปรไฟล์
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/staff.updateProfileRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.User'
+      security:
+      - BearerAuth: []
+      summary: แก้ไขโปรไฟล์ของเจ้าหน้าที่ (ตัวเอง)
+      tags:
+      - staff
+  /staff/reviews:
+    get:
+      parameters:
+      - description: pending | verified | returned
+        in: query
+        name: status
+        type: string
+      - description: ค้นหารหัสวิชา / อาจารย์
+        in: query
+        name: q
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.FormReview'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: รายการแบบฟอร์มที่รอตรวจสอบ (ทุก course ที่เปิดรับ Lab Boy)
+      tags:
+      - staff
+  /staff/reviews/{courseId}/return:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Course ID
+        in: path
+        name: courseId
+        required: true
+        type: integer
+      - description: หมายเหตุ
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/staff.reviewActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.FormReview'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: ส่งแบบฟอร์มกลับให้อาจารย์แก้ไข
+      tags:
+      - staff
+  /staff/reviews/{courseId}/verify:
+    put:
+      parameters:
+      - description: Course ID
+        in: path
+        name: courseId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.FormReview'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: ยืนยันว่าแบบฟอร์มของ course นี้ผ่านการตรวจสอบ
+      tags:
+      - staff
   /student/applications:
     get:
       produces:
@@ -1757,6 +2175,36 @@ paths:
       security:
       - BearerAuth: []
       summary: แก้ไขโปรไฟล์นักศึกษา
+      tags:
+      - student
+  /student/profile/transcript:
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: ไฟล์ใบเกรด (PNG/JPG/PDF)
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.User'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: แนบไฟล์ใบเกรดเพื่อให้ระบบ OCR อ่านและบันทึกผล
       tags:
       - student
   /student/transcript:

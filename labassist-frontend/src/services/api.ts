@@ -2,7 +2,7 @@ import axios from 'axios'
 import { useAuthStore } from '../store/authStore'
 import type {
   User, Course, Application, LoginCredentials, GoogleAuthPayload,
-  CreateCoursePayload, ApplyPayload, ReviewPayload, BulkReviewPayload,
+  CreateCoursePayload, ApplyPayload, ReviewPayload, BulkReviewPayload, BulkReviewResult,
   AdminStats, CourseStatus, Transcript, Notification,
   CreateUserPayload, UpdateUserPayload, ImportCoursesResponse,
   FormReview, StaffDocument,
@@ -61,7 +61,7 @@ export const applicationsAPI = {
   review: (id: number, data: ReviewPayload) =>
     api.put<Application>(`/instructor/applications/${id}/review`, data).then((r) => r.data),
   bulkReview: (data: BulkReviewPayload) =>
-    api.put<{ updated: number }>('/instructor/applications/bulk-review', data).then((r) => r.data),
+    api.put<BulkReviewResult>('/instructor/applications/bulk-review', data).then((r) => r.data),
   uploadGradeProof: (applicationId: number, file: File) => {
     const formData = new FormData()
     formData.append('file', file)
@@ -164,6 +164,11 @@ export const instructorApi = {
   // only source instructors pick sections from, so they never type one in.
   courseCatalogSections: (params: { code: string; semester: string; academic_year: number }) =>
     api.get<Course[]>('/instructor/course-catalog/sections', { params }).then((r) => r.data),
+  // For a course of their own that never made it into the admin's Excel
+  // import (or doesn't exist in the catalog at all) — the instructor posts
+  // it directly instead of picking from SectionCatalogPicker.
+  createCourse: (data: CreateCoursePayload) =>
+    api.post<Course[]>('/instructor/courses', data).then((r) => r.data),
   updateCourse: coursesAPI.update,
   updateCourseStatus: coursesAPI.updateStatus,
   deleteCourse: coursesAPI.remove,
@@ -172,6 +177,12 @@ export const instructorApi = {
   bulkReview: applicationsAPI.bulkReview,
   gradeProof: applicationsAPI.instructorGradeProof,
   notifyCourse: notificationApi.notifyCourse,
+  // The instructor's own inbox (e.g. "a student just applied") — separate
+  // from notifyCourse above, which is the instructor sending notifications
+  // out to accepted students.
+  notifications: () => api.get<Notification[]>('/instructor/notifications').then((r) => r.data),
+  markNotificationRead: (id: number) => api.put(`/instructor/notifications/${id}/read`).then((r) => r.data),
+  markAllNotificationsRead: () => api.put('/instructor/notifications/read-all').then((r) => r.data),
   profile: () => api.get<User>('/instructor/profile').then((r) => r.data),
   updateProfile: (data: { full_name?: string; email?: string; faculty?: string }) =>
     api.put<User>('/instructor/profile', data).then((r) => r.data),

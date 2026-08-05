@@ -136,10 +136,15 @@ export default function StudentProfile() {
                   { value: '4', label: 'ปีที่ 4' },
                 ]}
               />
-              <Input
-                label="คณะ / ภาควิชา"
+              <Select
+                label="ภาควิชา"
                 value={form.faculty}
                 onChange={(e) => setForm(f => ({ ...f, faculty: e.target.value }))}
+                options={[
+                  { value: '', label: '— เลือกภาควิชา —' },
+                  { value: 'IT', label: 'เทคโนโลยีสารสนเทศ (IT)' },
+                  { value: 'CS', label: 'วิทยาการคอมพิวเตอร์ (CS)' },
+                ]}
               />
               <Input
                 label="อีเมล (ใช้สำหรับเข้าสู่ระบบ)"

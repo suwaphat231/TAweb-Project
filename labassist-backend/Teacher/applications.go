@@ -10,6 +10,16 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// BulkReviewResult is the response body for a bulk review — beyond a plain
+// updated count, callers (the "accept all Lab Boy" button in particular)
+// need to know how many students actually got notified and how many pending
+// applicants were left untouched because the course ran out of slots.
+type BulkReviewResult struct {
+	Updated     int `json:"updated"`
+	Notified    int `json:"notified"`
+	SkippedFull int `json:"skipped_full"`
+}
+
 // ReviewRequest is the request body for reviewing an application
 type ReviewRequest struct {
 	Status models.AppStatus `json:"status" binding:"required" example:"accepted"`
@@ -52,19 +62,16 @@ func (h *Handler) Review(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
 		return
 	}
+	course, _ := database.CourseByID(app.CourseID)
 	rid := reviewerID.(uint)
-	if role.(string) == "instructor" {
-		course, _ := database.CourseByID(app.CourseID)
-		if !ownsCourse(c, course) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
-			return
-		}
+	if role.(string) == "instructor" && !ownsCourse(c, course) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
 	}
 
 	prevStatus := app.Status
 
 	if body.Status == models.AppAccepted && prevStatus != models.AppAccepted {
-		course, _ := database.CourseByID(app.CourseID)
 		if app.RoleApplied == models.RoleLabBoy && course.LabBoyAccepted >= course.LabBoySlots {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Lab Boy slots are full"})
 			return
@@ -79,9 +86,12 @@ func (h *Handler) Review(c *gin.Context) {
 		a.Note = body.Note
 	})
 
-	// Manage accepted count
+	// Manage accepted count, and notify the student the moment they're
+	// accepted — they shouldn't have to wait for the instructor to
+	// separately click "ส่งแจ้งเตือนผู้ผ่านเกณฑ์" to find out.
 	if body.Status == models.AppAccepted && prevStatus != models.AppAccepted {
 		database.AdjustCourseAccepted(app.CourseID, app.RoleApplied, 1)
+		database.CreateNotifications([]models.Notification{acceptanceNotification(updated, course)})
 	} else if prevStatus == models.AppAccepted && body.Status != models.AppAccepted {
 		database.AdjustCourseAccepted(app.CourseID, app.RoleApplied, -1)
 	}
@@ -126,30 +136,64 @@ func (h *Handler) GradeProof(c *gin.Context) {
 }
 
 // BulkReview godoc
-// @Summary      ตรวจสอบใบสมัครแบบกลุ่ม
+// @Summary      ตรวจสอบใบสมัครแบบกลุ่ม (เช่น ปุ่ม "รับ Lab Boy ทั้งหมด")
+// @Description  รับ/ปฏิเสธหลายใบสมัครพร้อมกัน — ตรวจสิทธิ์และจำนวนที่ว่างเหมือนการรับทีละคน ใบสมัครที่ทำให้เกินโควตาจะถูกข้ามแทนที่จะทำให้ทั้งชุดล้มเหลว และจะแจ้งเตือนนักศึกษาที่ผ่านการคัดเลือกทันที
 // @Tags         instructor
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
 // @Param        body  body      BulkReviewRequest  true  "รายการใบสมัครและผลการตรวจสอบ"
-// @Success      200   {object}  handlers.BulkReviewResponse
+// @Success      200   {object}  BulkReviewResult
 // @Failure      400   {object}  handlers.ErrorResponse
 // @Router       /instructor/applications/bulk-review [put]
 func (h *Handler) BulkReview(c *gin.Context) {
 	reviewerID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
 	var body BulkReviewRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	now := time.Now()
 	rid := reviewerID.(uint)
-	updated := database.BulkUpdateApplications(body.ApplicationIDs, func(a *models.Application) {
-		a.Status = body.Status
-		a.ReviewedAt = &now
-		a.ReviewedByID = &rid
-		a.Note = body.Note
-	})
-	c.JSON(http.StatusOK, gin.H{"updated": updated})
+	now := time.Now()
+	isInstructor := role.(string) == "instructor"
+
+	result := BulkReviewResult{}
+	notifs := make([]models.Notification, 0, len(body.ApplicationIDs))
+
+	for _, id := range body.ApplicationIDs {
+		app, ok := database.ApplicationByID(id)
+		if !ok || app.Status == body.Status {
+			continue
+		}
+		course, ok := database.CourseByID(app.CourseID)
+		if !ok || (isInstructor && !ownsCourse(c, course)) {
+			continue
+		}
+
+		prevStatus := app.Status
+		if body.Status == models.AppAccepted && app.RoleApplied == models.RoleLabBoy && course.LabBoyAccepted >= course.LabBoySlots {
+			result.SkippedFull++
+			continue
+		}
+
+		updated, _ := database.UpdateApplication(id, func(a *models.Application) {
+			a.Status = body.Status
+			a.ReviewedAt = &now
+			a.ReviewedByID = &rid
+			a.Note = body.Note
+		})
+		result.Updated++
+
+		if body.Status == models.AppAccepted && prevStatus != models.AppAccepted {
+			database.AdjustCourseAccepted(app.CourseID, app.RoleApplied, 1)
+			notifs = append(notifs, acceptanceNotification(updated, course))
+		} else if prevStatus == models.AppAccepted && body.Status != models.AppAccepted {
+			database.AdjustCourseAccepted(app.CourseID, app.RoleApplied, -1)
+		}
+	}
+
+	result.Notified = database.CreateNotifications(notifs)
+	c.JSON(http.StatusOK, result)
 }

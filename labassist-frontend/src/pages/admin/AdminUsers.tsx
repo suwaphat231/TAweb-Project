@@ -84,7 +84,7 @@ export default function AdminUsers() {
     { key: 'full_name', header: 'ชื่อ',     render: (u: User) => <span style={{ fontWeight: 600 }}>{u.full_name}</span> },
     { key: 'username',  header: 'Username', render: (u: User) => <code style={{ fontSize: 13 }}>{u.username || '—'}</code> },
     { key: 'email',     header: 'อีเมล',    render: (u: User) => <span style={{ fontSize: 13 }}>{u.email || '—'}</span> },
-    { key: 'faculty',   header: 'คณะ / ภาควิชา', render: (u: User) => <span style={{ fontSize: 13 }}>{u.faculty || '—'}</span> },
+  
     { key: 'role',      header: 'บทบาท',    render: (u: User) => <StatusBadge value={u.role} /> },
     {
       key: 'is_active', header: 'สถานะ',
@@ -203,7 +203,7 @@ export default function AdminUsers() {
                     <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)', marginTop: 2 }}>{c.title}</div>
                     {c.english_title && <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{c.english_title}</div>}
                   </div>
-                  <StatusBadge value={c.status} />
+                  {c.status !== 'draft' && <StatusBadge value={c.status} />}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 6 }}>
                   ภาค {c.semester}/{c.academic_year} · Lab Boy {c.labboy_accepted}/{c.labboy_slots}
