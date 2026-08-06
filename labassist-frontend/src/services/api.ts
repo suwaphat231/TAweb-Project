@@ -5,7 +5,7 @@ import type {
   CreateCoursePayload, ApplyPayload, ReviewPayload, BulkReviewPayload, BulkReviewResult,
   AdminStats, CourseStatus, Transcript, Notification,
   CreateUserPayload, UpdateUserPayload, ImportCoursesResponse,
-  FormReview, StaffDocument,
+  FormReview, StaffDocument, TranscriptOCRResult,
 } from '../types'
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1'
@@ -85,10 +85,12 @@ export const studentAPI = {
     }>('/student/dashboard').then((r) => r.data),
   getProfile: () => api.get<User>('/student/profile').then((r) => r.data),
   updateProfile: (data: Partial<User>) => api.put<User>('/student/profile', data).then((r) => r.data),
+  // Runs the file through OCR and matches the grades against the student's
+  // core_courses catalog. The refreshed profile comes back on `.user`.
   uploadTranscript: (file: File) => {
     const formData = new FormData()
     formData.append('file', file)
-    return api.post<User>('/student/profile/transcript', formData).then((r) => r.data)
+    return api.post<TranscriptOCRResult>('/student/profile/transcript', formData).then((r) => r.data)
   },
 }
 
@@ -151,6 +153,8 @@ export const studentApi = {
   updateProfile: studentAPI.updateProfile,
   transcript: transcriptAPI.get,
   uploadTranscript: transcriptAPI.upload,
+  // Stores the PDF (above) vs. runs OCR and matches core_courses (below).
+  ocrTranscript: studentAPI.uploadTranscript,
   downloadTranscript: transcriptAPI.download,
   uploadGradeProof: applicationsAPI.uploadGradeProof,
   gradeProof: applicationsAPI.gradeProof,

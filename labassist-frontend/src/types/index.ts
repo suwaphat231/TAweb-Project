@@ -22,6 +22,27 @@ export interface User {
   transcript_updated_at?: string
 }
 
+/** One course from the core_courses catalog paired with the grade OCR read. */
+export interface CourseGrade {
+  code: string
+  title: string
+  /** Absent when found is false. */
+  grade?: string
+  found: boolean
+}
+
+/** Result of POST /student/profile/transcript (OCR). */
+export interface TranscriptOCRResult {
+  status: 'pass' | 'needs_review' | 'fail'
+  message: string
+  confidence_score: number
+  /** '' when the student's faculty matched neither curriculum. */
+  program: 'IT' | 'CS' | ''
+  courses: CourseGrade[]
+  updated_at: string
+  user: User
+}
+
 export interface Course {
   id: number
   code: string

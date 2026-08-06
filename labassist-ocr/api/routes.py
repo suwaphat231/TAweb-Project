@@ -28,7 +28,10 @@ async def debug_ocr(file: UploadFile = File(...)):
 @router.post("/process-transcript", response_model=OCRResponse)
 async def process_transcript(
     file: UploadFile = File(...),
-    criteria_json: str = Form(...) # รับเกณฑ์มาเป็น JSON string
+    criteria_json: str = Form(...), # รับเกณฑ์มาเป็น JSON string
+    # รายชื่อรหัสวิชาที่สนใจ (JSON array) มาจากตาราง core_courses ฝั่ง backend
+    # ถ้าไม่ส่งมาหรือส่ง "[]" จะดึงทุกวิชาที่หน้าตาเหมือนรหัสวิชาเหมือนเดิม
+    course_codes_json: str = Form("[]")
 ):
     extension = Path(file.filename or "").suffix.lower()
     if extension not in ALLOWED_EXTENSIONS:
@@ -42,6 +45,12 @@ async def process_transcript(
         criteria_dicts = json.loads(criteria_json)
         criteria = [SubjectCriteria(**c) for c in criteria_dicts]
 
+        # รหัสวิชาที่ backend สนใจ — ใช้กรอง anchor ให้เหลือแต่วิชาจริงในหลักสูตร
+        # กันตัวเลข 6-8 หลักอื่นบนทรานสคริปต์ถูกอ่านเป็นรหัสวิชา
+        known_codes = set(str(code) for code in json.loads(course_codes_json))
+        if not known_codes:
+            known_codes = None
+
         # 1. อ่านไฟล์และ Preprocess (รองรับทั้งรูปภาพและ PDF ทุกหน้า เพราะทรานสคริปต์จริงมักมีหลายหน้า)
         file_bytes = await file.read()
         page_images = preprocess_pages(file_bytes)
@@ -53,7 +62,7 @@ async def process_transcript(
         confidence_count = 0
         for page_image in page_images:
             ocr_results = extract_text(page_image)
-            page_grades, page_avg_confidence = parse_transcript(ocr_results)
+            page_grades, page_avg_confidence = parse_transcript(ocr_results, known_codes)
             extracted_grades.update(page_grades)
             confidence_weighted_sum += page_avg_confidence * len(page_grades)
             confidence_count += len(page_grades)

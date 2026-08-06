@@ -102,6 +102,13 @@ func Connect(cfg *config.Config) error {
 	if err := db.AutoMigrate(&models.Transcript{}); err != nil {
 		return fmt.Errorf("migrate transcripts table: %w", err)
 	}
+	// core_courses used to be unique on code alone. The same course can be in
+	// both the IT and CS curricula (e.g. 517121), so the key is now
+	// (program, code) — drop the old index first or AutoMigrate keeps it and
+	// the second program's copy fails to insert.
+	if err := db.Exec(`DROP INDEX IF EXISTS idx_core_courses_code;`).Error; err != nil {
+		return fmt.Errorf("drop legacy core_courses code index: %w", err)
+	}
 	if err := db.AutoMigrate(&models.CoreCourse{}); err != nil {
 		return fmt.Errorf("migrate core_courses table: %w", err)
 	}

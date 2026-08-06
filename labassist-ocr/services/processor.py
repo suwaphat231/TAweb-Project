@@ -15,13 +15,43 @@ def normalize_grade(grade_text: str) -> str:
     }
     return mapping.get(grade_text, grade_text)
 
-def parse_transcript(ocr_results):
-    """Step 3 & 4: จัดกลุ่มบรรทัดตามแกน Y, หารหัสวิชา (Anchor) แล้วดึงเกรดที่อยู่ในบรรทัดเดียวกัน"""
+# ทรานสคริปต์/ใบเกรดบางแบบพิมพ์รหัสหลักสูตรต่อท้ายรหัสวิชามาด้วย เช่น
+# '517121-165' แต่ core_courses ฝั่ง backend เก็บเป็นรหัส 6 หลักล้วน
+CURRICULUM_SUFFIX_PATTERN = re.compile(r'^(\d{6})\s*[-–—]\s*\d{2,4}$')
+
+def clean_code_text(text: str) -> str:
+    """เตรียมข้อความหนึ่ง box ให้พร้อมเช็คว่าเป็นรหัสวิชาไหม
+
+    ตัดรหัสหลักสูตรท้ายรหัสวิชาทิ้ง ('517121-165' -> '517121') ส่วนกรณีอื่น
+    แค่ลบ noise จาก OCR (เว้นวรรค ขีด จุด) ออกตามเดิม
+    """
+    stripped = text.strip()
+    suffix_match = CURRICULUM_SUFFIX_PATTERN.match(stripped)
+    if suffix_match:
+        return suffix_match.group(1)
+    return re.sub(r'[\s\-\.\,\/]', '', stripped)
+
+
+def parse_transcript(ocr_results, known_codes=None):
+    """Step 3 & 4: จัดกลุ่มบรรทัดตามแกน Y, หารหัสวิชา (Anchor) แล้วดึงเกรดที่อยู่ในบรรทัดเดียวกัน
+
+    known_codes (optional): set ของรหัสวิชาที่ backend สนใจ (มาจากตาราง core_courses)
+    ถ้าส่งมา จะรับเฉพาะรหัสที่อยู่ในชุดนี้เป็น anchor — กันตัวเลข 6-8 หลักอื่นบน
+    ทรานสคริปต์ (รหัสนักศึกษา, เลขที่เอกสาร) ถูกเข้าใจผิดว่าเป็นรหัสวิชา
+    """
     extracted_grades = {}
     total_confidence = 0
     count = 0
 
     lines = group_into_lines(ocr_results)
+
+    def accept(candidate: str):
+        """คืนรหัสวิชาถ้าใช้เป็น anchor ได้ ไม่งั้นคืน None"""
+        if not is_subject_code(candidate):
+            return None
+        if known_codes is not None and candidate not in known_codes:
+            return None
+        return candidate
 
     for line in lines:
         # หา index ของข้อความที่หน้าตาเหมือนรหัสวิชาในบรรทัดนี้
@@ -29,17 +59,17 @@ def parse_transcript(ocr_results):
         subject_code = None
         subject_index = None
         for idx, (_box, text, _confidence) in enumerate(line):
-            cleaned = re.sub(r'[\s\-\.\,\/]', '', text)
-            if is_subject_code(cleaned):
-                subject_code = cleaned
+            cleaned = clean_code_text(text)
+            matched = accept(cleaned)
+            if matched:
+                subject_code = matched
                 subject_index = idx
                 break
             # ลองรวมกับ box ถัดไป (กรณี EasyOCR แบ่งตัวเลขเป็น 2 ส่วน)
             if idx + 1 < len(line) and cleaned.isdigit():
-                next_cleaned = re.sub(r'[\s\-\.\,\/]', '', line[idx + 1][1])
-                merged = cleaned + next_cleaned
-                if is_subject_code(merged):
-                    subject_code = merged
+                matched = accept(cleaned + clean_code_text(line[idx + 1][1]))
+                if matched:
+                    subject_code = matched
                     subject_index = idx + 1
                     break
 

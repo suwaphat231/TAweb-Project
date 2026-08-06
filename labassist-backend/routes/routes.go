@@ -58,6 +58,9 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			studentGroup.POST("/student/transcript", studentH.UploadTranscript)
 			studentGroup.GET("/student/transcript", studentH.GetTranscript)
 			studentGroup.GET("/student/transcript/file", studentH.DownloadTranscript)
+			// OCR: อ่านเกรดจากใบเกรด/ทรานสคริปต์ แล้วจับคู่กับรายวิชาใน core_courses
+			// (คนละอันกับ /student/transcript ด้านบน ซึ่งแค่เก็บไฟล์ PDF ไว้เฉยๆ)
+			studentGroup.POST("/student/profile/transcript", authH.UploadTranscript)
 			studentGroup.POST("/student/applications/:id/grade-proof", studentH.UploadGradeProof)
 			studentGroup.GET("/student/applications/:id/grade-proof", studentH.GetGradeProof)
 		}

@@ -1,30 +1,76 @@
 package database
 
-import "labassist/models"
+import (
+	_ "embed"
+	"strings"
 
-// coreCourses lists the department's compulsory ("core") courses, used to
-// check which of them a student's uploaded transcript covers. Intentionally
-// left empty for now — the real list gets added here later, one entry per
-// course, e.g.:
-//
-//	{"830101", "Introduction to Computer Science", "3(3-0-6)"},
-var coreCourses = []models.CoreCourse{}
+	"labassist/models"
+)
 
-// seedCoreCourses inserts every entry in coreCourses that isn't already in
-// the core_courses table (matched by Code). Safe to call on every startup;
-// a no-op while coreCourses is empty.
+//go:embed migrations/allcourse.sql
+var coreCourseSeedSQL string
+
+// seedCoreCourses loads the course catalog the OCR feature matches against.
+// The SQL is idempotent (ON CONFLICT DO NOTHING), so it runs on every startup
+// and picks up any course rows added to allcourse.sql since the last run.
 func seedCoreCourses() error {
-	for _, cc := range coreCourses {
-		var count int64
-		if err := DB.Model(&models.CoreCourse{}).Where("code = ?", cc.Code).Count(&count).Error; err != nil {
-			return err
-		}
-		if count > 0 {
-			continue
-		}
-		if err := DB.Create(&cc).Error; err != nil {
-			return err
+	return DB.Exec(coreCourseSeedSQL).Error
+}
+
+// facultyProgram maps the free-text faculty a student fills in on their
+// profile to a curriculum. Matching is substring-based because the value is
+// typed by hand and shows up in several forms ("เทคโนโลยีสารสนเทศ",
+// "สาขาเทคโนโลยีสารสนเทศ", …).
+var facultyProgram = []struct {
+	keyword string
+	program string
+}{
+	{"สารสนเทศ", models.ProgramIT},
+	{"information", models.ProgramIT},
+	{"วิทยาการคอมพิวเตอร์", models.ProgramCS},
+	{"computer science", models.ProgramCS},
+}
+
+// ProgramForFaculty resolves a student's faculty text to "IT" or "CS", or ""
+// when it matches neither — callers treat "" as "check every program's
+// courses" rather than failing, since faculty is optional on a profile.
+func ProgramForFaculty(faculty *string) string {
+	if faculty == nil {
+		return ""
+	}
+	lowered := strings.ToLower(*faculty)
+	for _, m := range facultyProgram {
+		if strings.Contains(lowered, m.keyword) {
+			return m.program
 		}
 	}
-	return nil
+	return ""
+}
+
+// CoreCoursesForProgram returns the courses the OCR feature should look for.
+// An empty program returns every course, deduplicated by code (the same course
+// is listed once per program, and the transcript only carries the code).
+func CoreCoursesForProgram(program string) []models.CoreCourse {
+	var courses []models.CoreCourse
+	q := DB.Order("code")
+	if program != "" {
+		q = q.Where("program = ?", program)
+	}
+	if err := q.Find(&courses).Error; err != nil {
+		return nil
+	}
+	if program != "" {
+		return courses
+	}
+
+	seen := make(map[string]bool, len(courses))
+	unique := courses[:0]
+	for _, c := range courses {
+		if seen[c.Code] {
+			continue
+		}
+		seen[c.Code] = true
+		unique = append(unique, c)
+	}
+	return unique
 }
