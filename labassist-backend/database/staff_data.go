@@ -80,7 +80,7 @@ func reviewByCourseIDLocked(courseID uint) models.FormReview {
 // status is returned.
 func ListFormReviews(statusFilter, search string) []models.FormReview {
 	var courses []models.Course
-	DB.Where("labboy_slots > 0").Order("id DESC").Find(&courses)
+	DB.Where("lab_boy_slots > 0").Order("id DESC").Find(&courses)
 
 	staffMu.RLock()
 	defer staffMu.RUnlock()
@@ -117,6 +117,18 @@ func CreateStaffDocument(d models.StaffDocument) models.StaffDocument {
 	cp := d
 	staffDocuments = append(staffDocuments, &cp)
 	return cp
+}
+
+// StaffDocumentByID returns a single document by ID.
+func StaffDocumentByID(id uint) (models.StaffDocument, bool) {
+	staffMu.RLock()
+	defer staffMu.RUnlock()
+	for _, d := range staffDocuments {
+		if d.ID == id {
+			return *d, true
+		}
+	}
+	return models.StaffDocument{}, false
 }
 
 // ListStaffDocuments returns documents filtered by type and/or status, newest first.

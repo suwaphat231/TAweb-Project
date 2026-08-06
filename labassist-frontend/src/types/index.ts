@@ -201,7 +201,7 @@ export interface ImportCoursesResponse {
 }
 
 export type ReviewStatus = 'pending' | 'verified' | 'returned'
-export type DocType = 'approval_memo' | 'payment_evidence' | 'payment_request'
+export type DocType = 'approval_memo' | 'payment_evidence' | 'payment_request' | 'work_report'
 export type DocStatus = 'draft' | 'pending' | 'approved'
 
 export interface FormReview {
@@ -222,15 +222,60 @@ export interface FormReview {
   submitted_at: string
 }
 
+export interface RosterEntry {
+  student_id: number
+  student_name: string
+  student_code: string
+  hours: number
+  amount: number
+}
+
+export interface DocumentPeriod {
+  month: number
+  year: number
+}
+
 export interface StaffDocument {
   id: number
   name: string
   type: DocType
   course_ref: string
+  course_id?: number
   staff_id: number
   status: DocStatus
   note?: string
+  period?: DocumentPeriod
+  session_dates?: number[]
+  hours_per_session?: number
+  rate?: number
+  roster?: RosterEntry[]
+  total_amount?: number
+  ref_number?: string
+  prior_memo_ref?: string
+  prior_memo_date?: string
+  dept_head_name?: string
+  dean_name?: string
+  staff_officer_name?: string
   created_at: string
+}
+
+export interface CreateStaffDocumentPayload {
+  type: DocType
+  course_ref: string
+  note?: string
+  course_id?: number
+  month?: number
+  year?: number
+  session_dates?: number[]
+  hours_per_session?: number
+  rate?: number
+  excluded_student_ids?: number[]
+  ref_number?: string
+  prior_memo_ref?: string
+  prior_memo_date?: string
+  dept_head_name?: string
+  dean_name?: string
+  staff_officer_name?: string
 }
 
 export interface AdminStats {

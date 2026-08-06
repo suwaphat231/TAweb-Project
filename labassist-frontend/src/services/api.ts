@@ -5,7 +5,7 @@ import type {
   CreateCoursePayload, ApplyPayload, ReviewPayload, BulkReviewPayload, BulkReviewResult,
   AdminStats, CourseStatus, Transcript, Notification,
   CreateUserPayload, UpdateUserPayload, ImportCoursesResponse,
-  FormReview, StaffDocument, TranscriptOCRResult,
+  FormReview, StaffDocument, CreateStaffDocumentPayload, TranscriptOCRResult,
 } from '../types'
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1'
@@ -25,7 +25,11 @@ api.interceptors.response.use(
       useAuthStore.getState().logout()
       window.location.href = '/login'
     }
-    if (err.response?.status >= 500 && !err.response?.data?.error) {
+    // Blob responses (file downloads) never carry parsed JSON in
+    // err.response.data, so the "no .data.error" check below would always
+    // be true and swallow the real status code callers need (e.g. a 501
+    // "not supported yet" vs. a genuine server error) — leave those alone.
+    if (err.response?.status >= 500 && err.config?.responseType !== 'blob' && !err.response?.data?.error) {
       return Promise.reject(new Error('เกิดข้อผิดพลาดจากเซิร์ฟเวอร์ กรุณาลองใหม่อีกครั้ง'))
     }
     return Promise.reject(err)
@@ -207,9 +211,14 @@ export const staffApi = {
   // Documents
   listDocuments: (params?: { type?: string; status?: string; q?: string }) =>
     api.get<StaffDocument[]>('/staff/documents', { params }).then((r) => r.data),
-  createDocument: (data: { type: string; course_ref: string; note?: string }) =>
+  createDocument: (data: CreateStaffDocumentPayload) =>
     api.post<StaffDocument>('/staff/documents', data).then((r) => r.data),
   updateDocumentStatus: (id: number, status: string) =>
     api.put<StaffDocument>(`/staff/documents/${id}/status`, { status }).then((r) => r.data),
+  // The download route needs the Bearer token like any other request, so a
+  // plain <a href> can't hit it directly — fetch the .docx as a blob through
+  // the authenticated axios instance and let the caller trigger the save.
+  downloadDocument: (id: number) =>
+    api.get(`/staff/documents/${id}/file`, { responseType: 'blob' }).then((r) => r.data as Blob),
 }
 export const adminApi = adminAPI

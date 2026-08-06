@@ -107,6 +107,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			staffGroup.GET("/staff/documents",            staffH.ListDocuments)
 			staffGroup.POST("/staff/documents",           staffH.CreateDocument)
 			staffGroup.PUT("/staff/documents/:id/status", staffH.UpdateDocumentStatus)
+			staffGroup.GET("/staff/documents/:id/file",   staffH.DownloadDocument)
 		}
 
 		// Admin
