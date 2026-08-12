@@ -8,6 +8,7 @@ import StudentHome from '../pages/student/StudentHome'
 import StudentApply from '../pages/student/StudentApply'
 import StudentStatus from '../pages/student/StudentStatus'
 import StudentProfile from '../pages/student/StudentProfile'
+import StudentGradeCheck from '../pages/student/StudentGradeCheck'
 
 import InstructorHome from '../pages/instructor/InstructorHome'
 import InstructorMyCourses from '../pages/instructor/InstructorMyCourses'
@@ -60,6 +61,7 @@ export function AppRouter() {
       <Route path="/student/apply"   element={<ProtectedRoute roles={['student']}><StudentApply /></ProtectedRoute>} />
       <Route path="/student/status"  element={<ProtectedRoute roles={['student']}><StudentStatus /></ProtectedRoute>} />
       <Route path="/student/profile" element={<ProtectedRoute roles={['student']}><StudentProfile /></ProtectedRoute>} />
+      <Route path="/student/grade-check" element={<ProtectedRoute roles={['student']}><StudentGradeCheck /></ProtectedRoute>} />
 
       {/* Instructor */}
       <Route path="/instructor/home"     element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorHome /></ProtectedRoute>} />

@@ -13,7 +13,16 @@ def normalize_grade(grade_text: str) -> str:
         'O': 'D',
         'Q': 'D',
     }
-    return mapping.get(grade_text, grade_text)
+    if grade_text in mapping:
+        return mapping[grade_text]
+
+    # EasyOCR occasionally reads the '+' in "B+"/"C+"/"D+" as a trailing '.'
+    # instead (e.g. "D+" -> "d.") — only remap when doing so lands on an
+    # actual plus-grade, so a genuinely invalid "X." isn't silently rewritten.
+    if grade_text.endswith('.') and grade_text[:-1] + '+' in VALID_GRADES:
+        return grade_text[:-1] + '+'
+
+    return grade_text
 
 # ทรานสคริปต์/ใบเกรดบางแบบพิมพ์รหัสหลักสูตรต่อท้ายรหัสวิชามาด้วย เช่น
 # '517121-165' แต่ core_courses ฝั่ง backend เก็บเป็นรหัส 6 หลักล้วน
@@ -106,6 +115,11 @@ def evaluate_grades(extracted_grades: dict, criteria: list, avg_confidence: floa
 
         if actual_gpa < min_gpa:
             return "fail", f"วิชา {subject} ได้ GPA {actual_gpa:.1f} (เกรด {actual_grade}) ต่ำกว่าเกณฑ์ขั้นต่ำ {min_gpa:.1f} (เกรด {min_grade_letter})"
+
+    # ไม่เจอวิชาแกนที่ต้องการเลยสักตัว (avg_confidence เป็น 0 เพราะไม่มีอะไรให้เฉลี่ย
+    # ไม่ใช่เพราะ OCR อ่านได้แต่ไม่มั่นใจ) แยกข้อความออกจากเคส "อ่านได้แต่มั่นใจต่ำ" ด้านล่าง
+    if not extracted_grades:
+        return "needs_review", "ไม่พบวิชาแกนที่ต้องการในไฟล์นี้ กรุณาตรวจสอบว่าแนบไฟล์ถูกต้องและครบทุกหน้า"
 
     if avg_confidence < 0.7:
         return "needs_review", "ผ่านเกณฑ์ แต่ระบบมีความมั่นใจในการอ่านต่ำ โปรดตรวจสอบด้วยมนุษย์"

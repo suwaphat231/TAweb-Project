@@ -39,6 +39,7 @@ const navMap: Record<UserRole, NavItem[]> = {
     { to: '/student/home',    label: 'หน้าหลัก',        icon: 'home' },
     { to: '/student/apply',   label: 'ค้นหาและสมัคร',   icon: 'search' },
     { to: '/student/status',  label: 'สถานะการสมัคร',   icon: 'check-square' },
+    { to: '/student/grade-check', label: 'ตรวจสอบเกรด', icon: 'file-text' },
     { to: '/student/profile', label: 'โปรไฟล์ของฉัน',   icon: 'user' },
   ],
   instructor: [

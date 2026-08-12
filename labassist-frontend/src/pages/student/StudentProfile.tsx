@@ -142,8 +142,8 @@ export default function StudentProfile() {
                 onChange={(e) => setForm(f => ({ ...f, faculty: e.target.value }))}
                 options={[
                   { value: '', label: '— เลือกภาควิชา —' },
-                  { value: 'IT', label: 'เทคโนโลยีสารสนเทศ (IT)' },
-                  { value: 'CS', label: 'วิทยาการคอมพิวเตอร์ (CS)' },
+                  { value: 'เทคโนโลยีสารสนเทศ', label: 'เทคโนโลยีสารสนเทศ (IT)' },
+                  { value: 'วิทยาการคอมพิวเตอร์', label: 'วิทยาการคอมพิวเตอร์ (CS)' },
                 ]}
               />
               <Input

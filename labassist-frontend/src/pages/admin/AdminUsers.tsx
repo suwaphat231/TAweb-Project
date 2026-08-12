@@ -28,6 +28,7 @@ const ROLE_OPTIONS = [
 export default function AdminUsers() {
   const [showCreate, setShowCreate] = useState(false)
   const [roleFilter, setRoleFilter] = useState<UserRole | ''>('')
+  const [search, setSearch] = useState('')
   const [form, setForm] = useState({ full_name: '', role: 'instructor' as UserRole })
 
   const [editingUser, setEditingUser] = useState<User | null>(null)
@@ -41,6 +42,15 @@ export default function AdminUsers() {
     queryKey: ['admin-users', { role: roleFilter }],
     queryFn: () => adminApi.users({ role: roleFilter || undefined }),
   })
+
+  const q = search.trim().toLowerCase()
+  const filteredUsers = q === ''
+    ? users
+    : users.filter((u) =>
+        u.full_name.toLowerCase().includes(q) ||
+        (u.username ?? '').toLowerCase().includes(q) ||
+        (u.email ?? '').toLowerCase().includes(q)
+      )
 
   const { data: taughtCourses = [], isLoading: coursesLoading } = useQuery({
     queryKey: ['admin-user-courses', viewingUser?.id],
@@ -128,31 +138,47 @@ export default function AdminUsers() {
         <Button onClick={() => setShowCreate(true)}>+ เพิ่มผู้ใช้</Button>
       </div>
 
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
-        {ROLE_TABS.map((tab) => (
-          <button
-            key={tab.value}
-            onClick={() => setRoleFilter(tab.value)}
-            style={{
-              padding: '6px 14px',
-              borderRadius: 999,
-              fontSize: 13,
-              fontWeight: 600,
-              border: '1.5px solid var(--line)',
-              background: roleFilter === tab.value ? 'var(--primary)' : '#fff',
-              color: roleFilter === tab.value ? '#fff' : 'var(--ink-700)',
-              cursor: 'pointer',
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {ROLE_TABS.map((tab) => (
+            <button
+              key={tab.value}
+              onClick={() => setRoleFilter(tab.value)}
+              style={{
+                padding: '6px 14px',
+                borderRadius: 999,
+                fontSize: 13,
+                fontWeight: 600,
+                border: '1.5px solid var(--line)',
+                background: roleFilter === tab.value ? 'var(--primary)' : '#fff',
+                color: roleFilter === tab.value ? '#fff' : 'var(--ink-700)',
+                cursor: 'pointer',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="ค้นหาชื่อ / username / อีเมล..."
+          style={{
+            padding: '7px 12px', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-input)',
+            fontSize: 13, color: 'var(--ink-900)', outline: 'none', minWidth: 240,
+          }}
+          onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--primary)')}
+          onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
+        />
       </div>
 
-      {isLoading
-        ? <Skeleton lines={6} height={48} />
-        : <Table columns={columns as never} data={users as never} />
-      }
+      {isLoading ? (
+        <Skeleton lines={6} height={48} />
+      ) : filteredUsers.length === 0 ? (
+        <EmptyState title="ไม่พบผู้ใช้" description={q ? 'ไม่มีชื่อ, username หรืออีเมลที่ตรงกับคำค้นหา' : 'ยังไม่มีผู้ใช้ในหมวดนี้'} />
+      ) : (
+        <Table columns={columns as never} data={filteredUsers as never} />
+      )}
 
       <Modal isOpen={showCreate} onClose={() => setShowCreate(false)} title="เพิ่มผู้ใช้ใหม่" size="md">
         <form onSubmit={(e) => { e.preventDefault(); createMut.mutate(form) }} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

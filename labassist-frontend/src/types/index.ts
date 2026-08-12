@@ -31,6 +31,17 @@ export interface CourseGrade {
   found: boolean
 }
 
+/** One row from GET /admin/core-courses — the department's required-course
+ *  reference list (used for OCR transcript matching), not an imported class
+ *  posting. */
+export interface CoreCourse {
+  id: number
+  program: 'IT' | 'CS'
+  code: string
+  title: string
+  credits?: string
+}
+
 /** Result of POST /student/profile/transcript (OCR). */
 export interface TranscriptOCRResult {
   status: 'pass' | 'needs_review' | 'fail'

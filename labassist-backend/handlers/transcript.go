@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
@@ -163,24 +164,35 @@ func (h *AuthHandler) UploadTranscript(c *gin.Context) {
 	// already filters by the codes we sent, but a course could have been
 	// removed from allcourse.sql between the request and the response, and
 	// this also drops anything the service returned unasked.
-	courses := make([]CourseGrade, 0, len(coreCourses))
-	matchedGrades := make(models.StringMap, len(coreCourses))
+	//
+	// A student's transcript photo/PDF rarely covers every semester at once,
+	// so each upload only surfaces the courses on that particular page.
+	// Merge onto what's already on file (this upload's grade wins on a
+	// repeat code, in case the earlier OCR read it wrong) instead of
+	// overwriting, so a course confirmed by an earlier upload doesn't drop
+	// off just because the latest file doesn't happen to show it.
+	allGrades := make(models.StringMap, len(user.TranscriptGrades)+len(coreCourses))
+	maps.Copy(allGrades, user.TranscriptGrades)
 	for _, cc := range coreCourses {
-		grade, found := ocrResult.ExtractedData[cc.Code]
+		if grade, found := ocrResult.ExtractedData[cc.Code]; found {
+			allGrades[cc.Code] = grade
+		}
+	}
+
+	courses := make([]CourseGrade, 0, len(coreCourses))
+	for _, cc := range coreCourses {
+		grade, found := allGrades[cc.Code]
 		courses = append(courses, CourseGrade{
 			Code:  cc.Code,
 			Title: cc.Title,
 			Grade: grade,
 			Found: found,
 		})
-		if found {
-			matchedGrades[cc.Code] = grade
-		}
 	}
 
 	now := time.Now()
 	updated, _ := database.UpdateUser(sid, func(u *models.User) {
-		u.TranscriptGrades = matchedGrades
+		u.TranscriptGrades = allGrades
 		status := ocrResult.Status
 		u.TranscriptStatus = &status
 		message := ocrResult.Message

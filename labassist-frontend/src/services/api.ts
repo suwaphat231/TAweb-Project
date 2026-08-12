@@ -5,7 +5,7 @@ import type {
   CreateCoursePayload, ApplyPayload, ReviewPayload, BulkReviewPayload, BulkReviewResult,
   AdminStats, CourseStatus, Transcript, Notification,
   CreateUserPayload, UpdateUserPayload, ImportCoursesResponse,
-  FormReview, StaffDocument, CreateStaffDocumentPayload, TranscriptOCRResult,
+  FormReview, StaffDocument, CreateStaffDocumentPayload, TranscriptOCRResult, CoreCourse,
 } from '../types'
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1'
@@ -137,6 +137,10 @@ export const adminAPI = {
   },
   deleteCoursesByTerm: (semester: string, academicYear: number) =>
     api.delete<{ deleted: number }>('/admin/courses/term', { params: { semester, academic_year: academicYear } }).then((r) => r.data),
+  // The department's required-course reference list (core_courses, used for
+  // OCR transcript matching) — separate from the Excel-imported course
+  // postings above. Backs the code-suggestion dropdown in "เพิ่มวิชาเอง".
+  coreCourseCatalog: () => api.get<CoreCourse[]>('/admin/core-courses').then((r) => r.data),
 }
 
 export const notificationApi = {

@@ -239,6 +239,18 @@ func (h *Handler) InstructorCourses(c *gin.Context) {
 	c.JSON(http.StatusOK, courses)
 }
 
+// CoreCourseCatalog godoc
+// @Summary      รายวิชาหลักของภาควิชา (สำหรับช่วยพิมพ์ตอนเพิ่มวิชาเอง)
+// @Description  ดึงจากตาราง core_courses ซึ่งเป็นรายวิชาที่ใช้จับคู่กับ OCR ทรานสคริปต์ ไม่ใช่รายวิชาที่นำเข้าจาก Excel
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {array}   models.CoreCourse
+// @Router       /admin/core-courses [get]
+func (h *Handler) CoreCourseCatalog(c *gin.Context) {
+	c.JSON(http.StatusOK, database.CoreCourseCatalog())
+}
+
 // DeleteCoursesByTerm godoc
 // @Summary      ลบวิชาทั้งหมดของภาคการศึกษาที่ระบุ
 // @Description  ใช้เพื่อล้างข้อมูลที่นำเข้าผิดพลาด เช่น หลังจากอัปโหลดไฟล์ Excel ผิดเทอม

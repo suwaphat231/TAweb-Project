@@ -120,6 +120,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			adminGroup.PUT("/admin/users/:id", adminH.UpdateUser)
 			adminGroup.PUT("/admin/users/:id/status", adminH.UpdateUserStatus)
 			adminGroup.GET("/admin/users/:id/courses", adminH.InstructorCourses)
+			adminGroup.GET("/admin/core-courses", adminH.CoreCourseCatalog)
 			adminGroup.GET("/admin/logs", adminH.Logs)
 			adminGroup.POST("/admin/courses/import", adminH.ImportCourses)
 			adminGroup.DELETE("/admin/courses/term", adminH.DeleteCoursesByTerm)

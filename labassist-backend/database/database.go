@@ -520,6 +520,28 @@ func CoursesTaughtBy(instructorID uint, fullName string, isAdmin bool) []models.
 	return out
 }
 
+// CoreCourseCatalog returns every core_courses code, deduped (the same code
+// can appear once per program — see models.CoreCourse), code ascending. This
+// is the department's required-course reference list (seeded from
+// migrations/allcourse.sql), not the imported class-postings in the courses
+// table — it's what backs the "type a code, see suggestions" helper when an
+// admin adds a course by hand instead of importing it from Excel.
+func CoreCourseCatalog() []models.CoreCourse {
+	var rows []models.CoreCourse
+	DB.Order("code ASC").Find(&rows)
+
+	seenCode := make(map[string]bool, len(rows))
+	out := make([]models.CoreCourse, 0, len(rows))
+	for _, c := range rows {
+		if seenCode[c.Code] {
+			continue
+		}
+		seenCode[c.Code] = true
+		out = append(out, c)
+	}
+	return out
+}
+
 // TaughtCourseSections returns every imported class-section row (unlike
 // CoursesTaughtBy, not deduplicated by code) matching code+semester+year that
 // this instructor teaches, section number ascending. Backs the section

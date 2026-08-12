@@ -146,5 +146,9 @@ func Connect(cfg *config.Config) error {
 		return fmt.Errorf("seed mock applicants: %w", err)
 	}
 
+	if err := seedMockLoginStudents(); err != nil {
+		return fmt.Errorf("seed mock login students: %w", err)
+	}
+
 	return nil
 }

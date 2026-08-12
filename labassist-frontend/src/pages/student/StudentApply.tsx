@@ -17,6 +17,7 @@ const filterOptions = [
 
 export default function StudentApply() {
   const [filter, setFilter] = useState('')
+  const [search, setSearch] = useState('')
   const { openApply, modal } = useApplyLabboy()
 
   const { data: courses = [], isLoading } = useQuery({
@@ -32,7 +33,17 @@ export default function StudentApply() {
   // Each section an instructor teaches is its own Course row under the
   // hood (own schedule + own slot count), but students apply through one
   // combined post per course/instructor/term and pick a section inside it.
-  const groups = groupCourseSections(visibleCourses)
+  const allGroups = groupCourseSections(visibleCourses)
+
+  const q = search.trim().toLowerCase()
+  const groups = q === ''
+    ? allGroups
+    : allGroups.filter((g) =>
+        g.code.toLowerCase().includes(q) ||
+        g.title.toLowerCase().includes(q) ||
+        (g.english_title ?? '').toLowerCase().includes(q) ||
+        g.instructor_name.toLowerCase().includes(q)
+      )
 
   const { data: myApps = [] } = useQuery({
     queryKey: ['my-applications'],
@@ -46,7 +57,20 @@ export default function StudentApply() {
         <p style={{ color: 'var(--ink-500)', fontSize: 14 }}>เลือกวิชาที่คุณต้องการสมัคร</p>
       </div>
 
-      <FilterChips options={filterOptions} value={filter} onChange={setFilter} />
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <FilterChips options={filterOptions} value={filter} onChange={setFilter} />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="ค้นหารหัสวิชา / ชื่อวิชา / อาจารย์..."
+          style={{
+            padding: '7px 12px', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-input)',
+            fontSize: 13, color: 'var(--ink-900)', outline: 'none', minWidth: 240,
+          }}
+          onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--primary)')}
+          onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
+        />
+      </div>
       <div style={{ height: 20 }} />
 
       {isLoading ? (
@@ -54,7 +78,9 @@ export default function StudentApply() {
           {[1,2,3,4,5,6].map(i => <SkeletonCard key={i} />)}
         </div>
       ) : groups.length === 0 ? (
-        <Card style={{ padding: 32, textAlign: 'center', color: 'var(--ink-400)' }}>ยังไม่มีวิชาเปิดรับสมัครในขณะนี้</Card>
+        <Card style={{ padding: 32, textAlign: 'center', color: 'var(--ink-400)' }}>
+          {q ? 'ไม่พบวิชาที่ตรงกับคำค้นหา' : 'ยังไม่มีวิชาเปิดรับสมัครในขณะนี้'}
+        </Card>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 16 }}>
           {groups.map((group) => (

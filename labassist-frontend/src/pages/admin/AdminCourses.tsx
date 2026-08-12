@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
 import { adminApi, coursesAPI } from '../../services/api'
@@ -9,6 +9,7 @@ import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/Toast'
+import { displayCourseTitle } from '../../utils/courseDisplay'
 import type { Course } from '../../types'
 
 // Thai credit notation is "หน่วยกิต (บรรยาย-ปฏิบัติ-ศึกษาด้วยตนเอง)", e.g. "3 (2-2-5)" —
@@ -63,6 +64,39 @@ export default function AdminCourses() {
     instructor_id: '', code: '', title: '', semester: '1', academic_year: '2569', labboy_slots: '0',
   }
   const [addCourseForm, setAddCourseForm] = useState(emptyAddCourseForm)
+  const [showCodeSuggest, setShowCodeSuggest] = useState(false)
+
+  // The department's required-course reference list (core_courses — used for
+  // OCR transcript matching, e.g. "517121") — a much smaller, curated set
+  // than the Excel-imported postings below, and often has a code before any
+  // section for it has ever been imported.
+  const { data: coreCourses = [] } = useQuery({
+    queryKey: ['admin-core-courses'],
+    queryFn: () => adminApi.coreCourseCatalog(),
+    enabled: showAddCourse,
+  })
+
+  // Suggest from courses already known to the system: core_courses first,
+  // then courses already imported from Excel across every term/instructor —
+  // deduped by code, first title seen wins. Lets the admin type a partial
+  // code (e.g. "517") and pick the matching course instead of retyping the
+  // exact title by hand.
+  const codeCatalog = useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const c of coreCourses) {
+      if (!seen.has(c.code)) seen.set(c.code, c.title)
+    }
+    for (const c of courses) {
+      if (!seen.has(c.code)) seen.set(c.code, displayCourseTitle(c.title, c.english_title))
+    }
+    return Array.from(seen, ([code, title]) => ({ code, title }))
+  }, [coreCourses, courses])
+
+  const codeSuggestions = useMemo(() => {
+    const query = addCourseForm.code.trim().toLowerCase()
+    if (!query) return []
+    return codeCatalog.filter((c) => c.code.toLowerCase().startsWith(query)).slice(0, 8)
+  }, [codeCatalog, addCourseForm.code])
 
   // Instructor picker for manually-added courses — same "อาจารย์" role list
   // AdminUsers.tsx manages.
@@ -272,11 +306,44 @@ export default function AdminCourses() {
               ...instructors.map((u) => ({ value: String(u.id), label: u.full_name })),
             ]}
           />
-          <Input
-            label="รหัสวิชา *" value={addCourseForm.code}
-            onChange={(e) => setAddCourseForm((f) => ({ ...f, code: e.target.value }))}
-            required
-          />
+          <div style={{ position: 'relative' }}>
+            <Input
+              label="รหัสวิชา *" value={addCourseForm.code}
+              onChange={(e) => setAddCourseForm((f) => ({ ...f, code: e.target.value }))}
+              onFocus={() => setShowCodeSuggest(true)}
+              onBlur={() => setTimeout(() => setShowCodeSuggest(false), 150)}
+              autoComplete="off"
+              required
+            />
+            {showCodeSuggest && codeSuggestions.length > 0 && (
+              <div style={{
+                position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, zIndex: 10,
+                background: '#fff', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-input)',
+                boxShadow: '0 8px 24px rgba(0,0,0,0.1)', maxHeight: 220, overflowY: 'auto',
+              }}>
+                {codeSuggestions.map((c) => (
+                  <button
+                    key={c.code}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      setAddCourseForm((f) => ({ ...f, code: c.code, title: c.title }))
+                      setShowCodeSuggest(false)
+                    }}
+                    style={{
+                      display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px',
+                      background: 'none', border: 'none', borderBottom: '1px solid var(--line-soft)',
+                      cursor: 'pointer', fontSize: 13,
+                    }}
+                  >
+                    <span style={{ fontWeight: 700, color: 'var(--primary)' }}>{c.code}</span>
+                    {' — '}
+                    <span style={{ color: 'var(--ink-700)' }}>{c.title}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <Input
             label="ชื่อวิชา *" value={addCourseForm.title}
             onChange={(e) => setAddCourseForm((f) => ({ ...f, title: e.target.value }))}
