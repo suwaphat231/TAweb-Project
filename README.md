@@ -9,7 +9,7 @@
 ```
 labassist-frontend/   React 19 + Vite + TypeScript
 labassist-backend/    Go 1.21 + Gin + GORM
-database/             PostgreSQL 16
+database/             MySQL 8.4
 ```
 
 **Frontend:** React, React Router v6, TanStack Query v5, Zustand, Axios, @react-oauth/google
@@ -28,7 +28,7 @@ database/             PostgreSQL 16
 |------|---------|
 | Node.js | 18 หรือสูงกว่า |
 | Go | 1.21 หรือสูงกว่า |
-| PostgreSQL | 16 |
+| MySQL | 8.4 |
 | Docker & Docker Compose | สำหรับ containerized run |
 
 ---
@@ -45,12 +45,27 @@ cd TAweb-test
 ### 2. Database
 
 ```bash
-psql -U postgres -c "CREATE DATABASE labassist;"
-psql -U postgres -d labassist -f labassist-backend/database/migrations/schema.sql
-psql -U postgres -d labassist -f labassist-backend/database/migrations/seed.sql
+docker compose up -d mysql
 ```
 
+The backend creates tables and seeds initial data automatically on startup.
+MySQL uses a new `mysql_data` volume; existing PostgreSQL data is not imported.
+For an existing installation, export and migrate its data separately before switching.
+When running the backend locally against the root Compose database, set `DB_PORT=3307` and `DB_USER=labassist` in its `.env`.
+The root Compose file publishes MySQL on host port `3307` (override with `MYSQL_HOST_PORT`); the Docker backend uses internal port `3306`.
+The database-only Compose file in `labassist-backend/database` uses the same defaults.
+
 ### 3. Backend
+
+For Google Sign-In in Docker, set `GOOGLE_CLIENT_ID` in the repository root `.env`
+(see `.env.example`). For local development, use the same value in backend
+`GOOGLE_CLIENT_ID` and frontend `VITE_GOOGLE_CLIENT_ID`.
+In Google Cloud Console, the Web application OAuth client must authorize
+`http://localhost`, `http://localhost:3000`, and (for Vite) `http://localhost:5173`
+as JavaScript origins. This app uses the popup credential callback.
+After changing the client ID, run `docker compose up -d --build backend frontend`;
+the frontend client ID is embedded at build time.
+Google login accepts verified accounts with hosted domain `silpakorn.edu`.
 
 ```bash
 cd labassist-backend
@@ -60,17 +75,20 @@ cd labassist-backend
 
 ```env
 DB_HOST=localhost
-DB_PORT=5432
-DB_USER=postgres
-DB_PASSWORD=
+DB_PORT=3307
+DB_USER=labassist
+DB_PASSWORD=labassist123
 DB_NAME=labassist
-JWT_SECRET=your-secret-key-here
+# Required: paste a newly generated random secret (see command below)
+JWT_SECRET=
 GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
 CLIENT_URL=http://localhost:5173
 PORT=8080
 ```
 
 ```bash
+# Generate a secret, then paste it into JWT_SECRET in labassist-backend/.env
+python -c "import secrets; print(secrets.token_hex(32))"
 go mod download
 go run main.go
 # API พร้อมใช้งานที่ http://localhost:8080
@@ -105,11 +123,14 @@ cat > .env << 'EOF'
 DB_USER=labassist
 DB_PASSWORD=labassist123
 DB_NAME=labassist
-JWT_SECRET=change-me-in-production
+# Required: paste a newly generated random secret (see command below)
+JWT_SECRET=
 GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
 CLIENT_URL=http://localhost:3000
 EOF
 
+# Generate a secret, then paste it into JWT_SECRET in the root .env
+python -c "import secrets; print(secrets.token_hex(32))"
 docker compose up --build
 ```
 
@@ -117,7 +138,7 @@ docker compose up --build
 |---------|-----|
 | Frontend | http://localhost:3000 |
 | Backend API | http://localhost:8080/api/v1 |
-| PostgreSQL | localhost:5432 |
+| MySQL | localhost:3307 |
 
 ---
 
@@ -205,7 +226,7 @@ TAweb-test/
 │   ├── Dockerfile
 │   ├── config/           — Environment config
 │   ├── database/
-│   │   └── migrations/   — schema.sql, seed.sql
+│   │   └── migrations/   — 001_create_users.sql, allcourse.sql
 │   ├── handlers/         — HTTP handlers (auth, courses, applications, admin)
 │   ├── middleware/        — Auth JWT, CORS, activity logger
 │   ├── models/           — GORM models (User, Course, Application)

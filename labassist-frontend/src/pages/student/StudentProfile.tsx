@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { studentApi } from '../../services/api'
 import { useAuth } from '../../hooks/useAuth'
@@ -6,16 +6,17 @@ import { Card } from '../../components/ui/Card'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { Button } from '../../components/ui/Button'
-import { Avatar, getInitials } from '../../components/ui/Avatar'
+import { Avatar } from '../../components/ui/Avatar'
+import { getInitials } from '../../utils/initials'
 import { StatusBadge } from '../../components/ui/Badge'
 import { Skeleton } from '../../components/ui/Skeleton'
-import { useToast } from '../../components/ui/Toast'
+import { useToast } from '../../hooks/useToast'
 
 export default function StudentProfile() {
   const { user, setUser } = useAuth()
   const qc = useQueryClient()
   const showToast = useToast()
-  const [form, setForm] = useState({ full_name: '', student_id: '', year: '', faculty: '' })
+  const [draft, setDraft] = useState<Partial<Record<'full_name' | 'student_id' | 'year' | 'faculty', string>>>({})
 
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['student-profile'],
@@ -24,21 +25,21 @@ export default function StudentProfile() {
 
   const p = profile ?? user
 
-  useEffect(() => {
-    if (!p) return
-    setForm({
-      full_name: p.full_name ?? '',
-      student_id: p.student_id ?? '',
-      year: String(p.year ?? ''),
-      faculty: p.faculty ?? '',
-    })
-  }, [p?.full_name, p?.student_id, p?.year, p?.faculty])
+  const form = {
+    full_name: p?.full_name ?? '',
+    student_id: p?.student_id ?? '',
+    year: String(p?.year ?? ''),
+    faculty: p?.faculty ?? '',
+    ...draft,
+  }
 
   const updateMut = useMutation({
     mutationFn: (data: { full_name: string; student_id: string; year: number; faculty: string }) =>
       studentApi.updateProfile(data),
     onSuccess: (updated) => {
       setUser(updated)
+      setDraft({})
+      qc.setQueryData(['student-profile'], updated)
       qc.invalidateQueries({ queryKey: ['student-profile'] })
       showToast('บันทึกข้อมูลเรียบร้อยแล้ว', 'success')
     },
@@ -113,21 +114,24 @@ export default function StudentProfile() {
           ) : (
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <Input
+                readOnly={updateMut.isPending}
                 label="ชื่อ-นามสกุล *"
                 value={form.full_name}
-                onChange={(e) => setForm(f => ({ ...f, full_name: e.target.value }))}
+                onChange={(e) => setDraft(f => ({ ...f, full_name: e.target.value }))}
                 required
               />
               <Input
+                readOnly={updateMut.isPending}
                 label="รหัสนักศึกษา"
                 value={form.student_id}
-                onChange={(e) => setForm(f => ({ ...f, student_id: e.target.value }))}
+                onChange={(e) => setDraft(f => ({ ...f, student_id: e.target.value }))}
                 placeholder="กรอกรหัสนักศึกษาของคุณ"
               />
               <Select
+                disabled={updateMut.isPending}
                 label="ชั้นปี"
                 value={form.year}
-                onChange={(e) => setForm(f => ({ ...f, year: e.target.value }))}
+                onChange={(e) => setDraft(f => ({ ...f, year: e.target.value }))}
                 options={[
                   { value: '', label: '— เลือกชั้นปี —' },
                   { value: '1', label: 'ปีที่ 1' },
@@ -137,9 +141,10 @@ export default function StudentProfile() {
                 ]}
               />
               <Select
+                disabled={updateMut.isPending}
                 label="ภาควิชา"
                 value={form.faculty}
-                onChange={(e) => setForm(f => ({ ...f, faculty: e.target.value }))}
+                onChange={(e) => setDraft(f => ({ ...f, faculty: e.target.value }))}
                 options={[
                   { value: '', label: '— เลือกภาควิชา —' },
                   { value: 'เทคโนโลยีสารสนเทศ', label: 'เทคโนโลยีสารสนเทศ (IT)' },
@@ -147,6 +152,7 @@ export default function StudentProfile() {
                 ]}
               />
               <Input
+                readOnly={updateMut.isPending}
                 label="อีเมล (ใช้สำหรับเข้าสู่ระบบ)"
                 value={p?.email ?? ''}
                 disabled

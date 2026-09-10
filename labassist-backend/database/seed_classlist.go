@@ -37,7 +37,7 @@ var classlistInstructors = []classlistInstructor{
 	{"puriwat", "อาจารย์ ดร.ภูริวัจน์  วรวิชัยพัฒน์", ""},
 }
 
-// seedClasslistInstructors creates one Postgres user record per unique
+// seedClasslistInstructors creates one MySQL user record per unique
 // instructor named in the classlist so an admin's later course import (via
 // AdminHandler.ImportCourses) has real instructors to match against. It
 // intentionally does not create any Course records — courses only appear

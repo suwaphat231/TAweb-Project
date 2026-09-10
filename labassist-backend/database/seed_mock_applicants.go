@@ -70,9 +70,8 @@ var mockDemoStudents = []mockDemoStudent{
 // each applied to whichever section suits them, with the grade they got when
 // they previously took the course — enough to try accepting/rejecting
 // applicants and reviewing what each one submitted. The instructor/course/
-// students are DB-backed and idempotent (safe on every startup); the
-// applications themselves are the in-memory application layer (see
-// database.go), so they are re-seeded fresh every time the process starts.
+// students and applications are DB-backed. Duplicate applications are skipped
+// so restarting does not overwrite existing reviews or grade proofs.
 func seedMockApplicants() error {
 	instructor, ok := UserByUsername(mockDemoInstructor.Username)
 	if !ok {

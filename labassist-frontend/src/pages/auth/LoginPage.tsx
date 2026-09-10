@@ -45,6 +45,7 @@ export default function LoginPage() {
   }
 
   async function handleGoogle(credential: string) {
+    setError('')
     try {
       await loginWithGoogle(credential)
     } catch (err: unknown) {
@@ -60,56 +61,37 @@ export default function LoginPage() {
       alignItems: 'center',
       justifyContent: 'center',
       fontFamily: "'Sarabun', sans-serif",
-      background: 'linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 40%, #EDE9FE 100%)',
+      background: 'var(--bg)',
       padding: '24px 16px',
       position: 'relative',
       overflow: 'hidden',
     }}>
-      {/* Decorative blobs */}
-      <div style={{
-        position: 'absolute', top: -80, left: -80,
-        width: 320, height: 320, borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(99,102,241,0.15) 0%, transparent 70%)',
-        pointerEvents: 'none',
-      }} />
-      <div style={{
-        position: 'absolute', bottom: -100, right: -60,
-        width: 400, height: 400, borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(139,92,246,0.12) 0%, transparent 70%)',
-        pointerEvents: 'none',
-      }} />
-      <div style={{
-        position: 'absolute', top: '40%', right: '8%',
-        width: 200, height: 200, borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(59,130,246,0.08) 0%, transparent 70%)',
-        pointerEvents: 'none',
-      }} />
-
       {/* Card */}
       <div style={{
         width: '100%',
         maxWidth: 440,
         background: '#fff',
-        borderRadius: 20,
-        boxShadow: '0 8px 40px rgba(99,102,241,0.12), 0 2px 8px rgba(0,0,0,0.06)',
+        borderRadius: 12,
+        border: '1px solid var(--line)',
+        boxShadow: 'var(--shadow-sm)',
         overflow: 'hidden',
         position: 'relative',
         zIndex: 1,
       }}>
         {/* Card header */}
         <div style={{
-          background: 'linear-gradient(135deg, #1B4FD8 0%, #4F46E5 100%)',
+          background: 'var(--brand-gradient)',
           padding: '32px 40px 28px',
           textAlign: 'center',
           color: '#fff',
         }}>
           <div style={{
             width: 56, height: 56,
-            background: 'rgba(255,255,255,0.2)',
+            background: 'var(--accent)', color: '#fff',
             borderRadius: 16,
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 28, fontWeight: 700,
-            border: '1.5px solid rgba(255,255,255,0.3)',
+            border: 'none',
             marginBottom: 14,
             backdropFilter: 'blur(4px)',
           }}>
@@ -134,29 +116,32 @@ export default function LoginPage() {
 
           {/* Section A: นักศึกษา */}
           <div style={{
-            border: '1.5px solid #E0E7FF',
+            border: '1px solid var(--line)',
             borderRadius: 12,
             padding: '18px 20px',
             marginBottom: 14,
-            background: '#FAFBFF',
+            background: 'var(--bg)',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
               <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-900)' }}>นักศึกษา</span>
               <span style={{
                 fontSize: 10, fontWeight: 700,
-                background: '#EEF2FF', color: '#4F46E5',
+                background: 'var(--bg)', color: 'var(--primary)',
                 padding: '2px 8px', borderRadius: 999, letterSpacing: '0.3px',
               }}>
                 Google Sign-In
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'center' }}>
-              <GoogleLogin
-                onSuccess={(resp) => resp.credential && handleGoogle(resp.credential)}
+              {import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() ? <GoogleLogin
+                onSuccess={(resp) => {
+                  if (resp.credential) void handleGoogle(resp.credential)
+                  else setError('ไม่ได้รับข้อมูลเข้าสู่ระบบจาก Google กรุณาลองใหม่')
+                }}
                 onError={() => setError('Google Sign-In ล้มเหลว กรุณาลองใหม่')}
                 size="large"
                 width={340}
-              />
+              /> : <p role="status">Google Sign-In ยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแลระบบ</p>}
             </div>
             <p style={{ fontSize: 11, color: 'var(--ink-400)', textAlign: 'center', marginTop: 10 }}>
               ต้องใช้อีเมลมหาวิทยาลัย (@silpakorn.edu) เท่านั้น
@@ -172,17 +157,17 @@ export default function LoginPage() {
 
           {/* Section B: บุคลากร */}
           <div style={{
-            border: '1.5px solid #F3F0FF',
+            border: '1px solid var(--line)',
             borderRadius: 12,
             padding: '18px 20px',
             marginBottom: 20,
-            background: '#FDFCFF',
+            background: 'var(--bg)',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
               <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-900)' }}>บุคลากร</span>
               <span style={{
                 fontSize: 10, fontWeight: 700,
-                background: '#F3F0FF', color: '#7C3AED',
+                background: 'var(--bg)', color: 'var(--primary)',
                 padding: '2px 8px', borderRadius: 999, letterSpacing: '0.3px',
               }}>
                 อาจารย์ / เจ้าหน้าที่
@@ -209,7 +194,7 @@ export default function LoginPage() {
                       fontSize: 14, color: 'var(--ink-900)', outline: 'none', background: '#fff',
                       boxSizing: 'border-box',
                     }}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = '#4F46E5')}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--primary)')}
                     onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
                   />
                 </div>
@@ -235,7 +220,7 @@ export default function LoginPage() {
                       fontSize: 14, color: 'var(--ink-900)', outline: 'none', background: '#fff',
                       boxSizing: 'border-box',
                     }}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = '#4F46E5')}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--primary)')}
                     onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
                   />
                   <button
@@ -267,12 +252,12 @@ export default function LoginPage() {
                 disabled={loading}
                 style={{
                   width: '100%', padding: '10px 0',
-                  background: loading ? '#A5B4FC' : 'linear-gradient(135deg, #1B4FD8 0%, #4F46E5 100%)',
+                  background: loading ? 'var(--ink-400)' : 'var(--primary)',
                   color: '#fff', border: 'none', borderRadius: 8,
                   fontSize: 14, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
                   marginTop: 2, transition: 'opacity .15s',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  boxShadow: loading ? 'none' : '0 2px 8px rgba(79,70,229,0.3)',
+                  boxShadow: 'none',
                 }}
               >
                 {loading && (
@@ -324,7 +309,7 @@ export default function LoginPage() {
                       onClick={() => { setUsername(a.username); setPassword(a.password) }}
                     >
                       <td style={{ color: 'var(--ink-700)', paddingBottom: 4 }}>{a.role}</td>
-                      <td style={{ color: '#4F46E5', fontFamily: 'monospace', paddingBottom: 4 }}>{a.username}</td>
+                      <td style={{ color: 'var(--primary)', fontFamily: 'monospace', paddingBottom: 4 }}>{a.username}</td>
                       <td style={{ color: 'var(--ink-500)', fontFamily: 'monospace', paddingBottom: 4 }}>{a.password}</td>
                     </tr>
                   ))}

@@ -7,7 +7,8 @@ import { StatusBadge } from '../../components/ui/Badge'
 import { Skeleton, SkeletonCard } from '../../components/ui/Skeleton'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
-import { Avatar, getInitials } from '../../components/ui/Avatar'
+import { Avatar } from '../../components/ui/Avatar'
+import { getInitials } from '../../utils/initials'
 import { CourseCard } from '../../components/course/CourseCard'
 import { useApplyLabboy } from '../../hooks/useApplyLabboy'
 import { groupCourseSections, getAppliedSection } from '../../utils/courseGrouping'
@@ -33,11 +34,7 @@ export default function StudentHome() {
   return (
     <div>
       {/* Welcome banner */}
-      <div style={{
-        background: 'linear-gradient(135deg, #1B4FD8 0%, #4F46E5 100%)',
-        borderRadius: 16,
-        padding: '24px 28px',
-        marginBottom: 28,
+      <div className="dashboard-banner" style={{
         display: 'flex',
         alignItems: 'center',
         gap: 20,

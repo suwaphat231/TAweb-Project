@@ -6,7 +6,7 @@ import { Modal } from '../../components/ui/Modal'
 import { Textarea } from '../../components/ui/Textarea'
 import { Button } from '../../components/ui/Button'
 import { Skeleton } from '../../components/ui/Skeleton'
-import { useToast } from '../../components/ui/Toast'
+import { useToast } from '../../hooks/useToast'
 import type { FormReview, ReviewStatus } from '../../types'
 
 const STATUS_OPTIONS = [

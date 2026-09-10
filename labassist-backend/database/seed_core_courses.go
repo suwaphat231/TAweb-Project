@@ -11,7 +11,7 @@ import (
 var coreCourseSeedSQL string
 
 // seedCoreCourses loads the course catalog the OCR feature matches against.
-// The SQL is idempotent (ON CONFLICT DO NOTHING), so it runs on every startup
+// The SQL is idempotent (ON DUPLICATE KEY UPDATE), so it runs on every startup
 // and picks up any course rows added to allcourse.sql since the last run.
 func seedCoreCourses() error {
 	return DB.Exec(coreCourseSeedSQL).Error

@@ -22,14 +22,14 @@ type BulkReviewResult struct {
 
 // ReviewRequest is the request body for reviewing an application
 type ReviewRequest struct {
-	Status models.AppStatus `json:"status" binding:"required" example:"accepted"`
+	Status models.AppStatus `json:"status" binding:"required,oneof=accepted rejected" example:"accepted"`
 	Note   *string          `json:"note,omitempty" example:"ผ่านการคัดเลือก"`
 }
 
 // BulkReviewRequest is the request body for bulk reviewing applications
 type BulkReviewRequest struct {
-	ApplicationIDs []uint           `json:"application_ids" binding:"required"`
-	Status         models.AppStatus `json:"status" binding:"required" example:"accepted"`
+	ApplicationIDs []uint           `json:"application_ids" binding:"required,min=1,dive,gt=0"`
+	Status         models.AppStatus `json:"status" binding:"required,oneof=accepted rejected" example:"accepted"`
 	Note           *string          `json:"note,omitempty"`
 }
 
@@ -62,7 +62,15 @@ func (h *Handler) Review(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
 		return
 	}
-	course, _ := database.CourseByID(app.CourseID)
+	if app.Status == models.AppWithdrawn {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "application has been withdrawn"})
+		return
+	}
+	course, ok := database.CourseByID(app.CourseID)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "course not found"})
+		return
+	}
 	rid := reviewerID.(uint)
 	if role.(string) == "instructor" && !ownsCourse(c, course) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
@@ -79,12 +87,16 @@ func (h *Handler) Review(c *gin.Context) {
 	}
 
 	now := time.Now()
-	updated, _ := database.UpdateApplication(uint(id), func(a *models.Application) {
+	updated, saved := database.UpdateApplication(uint(id), func(a *models.Application) {
 		a.Status = body.Status
 		a.ReviewedAt = &now
 		a.ReviewedByID = &rid
 		a.Note = body.Note
 	})
+	if !saved {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot save application"})
+		return
+	}
 
 	// Manage accepted count, and notify the student the moment they're
 	// accepted — they shouldn't have to wait for the instructor to
@@ -164,7 +176,7 @@ func (h *Handler) BulkReview(c *gin.Context) {
 
 	for _, id := range body.ApplicationIDs {
 		app, ok := database.ApplicationByID(id)
-		if !ok || app.Status == body.Status {
+		if !ok || app.Status == body.Status || app.Status == models.AppWithdrawn {
 			continue
 		}
 		course, ok := database.CourseByID(app.CourseID)
@@ -178,12 +190,16 @@ func (h *Handler) BulkReview(c *gin.Context) {
 			continue
 		}
 
-		updated, _ := database.UpdateApplication(id, func(a *models.Application) {
+		updated, saved := database.UpdateApplication(id, func(a *models.Application) {
 			a.Status = body.Status
 			a.ReviewedAt = &now
 			a.ReviewedByID = &rid
 			a.Note = body.Note
 		})
+		if !saved {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot save application"})
+			return
+		}
 		result.Updated++
 
 		if body.Status == models.AppAccepted && prevStatus != models.AppAccepted {

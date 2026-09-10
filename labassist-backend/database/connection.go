@@ -5,13 +5,15 @@ import (
 	_ "embed"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"time"
 
 	"labassist/config"
 	"labassist/models"
 
-	"gorm.io/driver/postgres"
+	mysqldriver "github.com/go-sql-driver/mysql"
+	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -31,19 +33,23 @@ var gormLogger = logger.New(
 //go:embed Docker/user.sql
 var userSeedSQL string
 
-// DB is the Postgres connection backing the users and courses tables.
-// Other domains (applications, notifications, activity logs) still live in
-// the in-memory slices in database.go until they get their own migration.
+// DB is the MySQL connection backing all persistent application data.
 var DB *gorm.DB
 
-// Connect opens the Postgres connection, migrates the users and courses
+// Connect opens the MySQL connection, migrates the users and courses
 // tables, and seeds users from user.sql the first time the table is empty.
 func Connect(cfg *config.Config) error {
-	dsn := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName,
-	)
-	// docker compose up -d db returns before Postgres is actually accepting
+	dsnConfig := mysqldriver.NewConfig()
+	dsnConfig.User = cfg.DBUser
+	dsnConfig.Passwd = cfg.DBPassword
+	dsnConfig.Net = "tcp"
+	dsnConfig.Addr = net.JoinHostPort(cfg.DBHost, cfg.DBPort)
+	dsnConfig.DBName = cfg.DBName
+	dsnConfig.ParseTime = true
+	dsnConfig.Loc = time.UTC
+	dsnConfig.Params = map[string]string{"charset": "utf8mb4"}
+	dsn := dsnConfig.FormatDSN()
+	// docker compose up -d db returns before MySQL is actually accepting
 	// connections yet, so a run right after starting the container (or right
 	// after a codespace resume) would otherwise fail on the first attempt.
 	// Retry with backoff instead of failing immediately.
@@ -53,7 +59,7 @@ func Connect(cfg *config.Config) error {
 	var db *gorm.DB
 	var err error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+		db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
 			Logger: gormLogger,
 			// Imported courses may have InstructorID=0 (no matching instructor
 			// account found in the spreadsheet) — a real FK constraint would
@@ -71,26 +77,10 @@ func Connect(cfg *config.Config) error {
 			break
 		}
 		if attempt == maxAttempts {
-			return fmt.Errorf("connect to postgres after %d attempts: %w", maxAttempts, err)
+			return fmt.Errorf("connect to mysql after %d attempts: %w", maxAttempts, err)
 		}
-		log.Printf("postgres not ready yet (attempt %d/%d), retrying in %s: %v", attempt, maxAttempts, retryDelay, err)
+		log.Printf("mysql not ready yet (attempt %d/%d), retrying in %s: %v", attempt, maxAttempts, retryDelay, err)
 		time.Sleep(retryDelay)
-	}
-
-	if err := db.Exec(`DO $$ BEGIN
-		CREATE TYPE user_role AS ENUM ('student', 'instructor', 'staff', 'admin');
-	EXCEPTION
-		WHEN duplicate_object THEN NULL;
-	END $$;`).Error; err != nil {
-		return fmt.Errorf("create user_role enum: %w", err)
-	}
-
-	if err := db.Exec(`DO $$ BEGIN
-		CREATE TYPE course_status AS ENUM ('open', 'closing_soon', 'closed', 'draft', 'archived');
-	EXCEPTION
-		WHEN duplicate_object THEN NULL;
-	END $$;`).Error; err != nil {
-		return fmt.Errorf("create course_status enum: %w", err)
 	}
 
 	if err := db.AutoMigrate(&models.User{}); err != nil {
@@ -106,8 +96,10 @@ func Connect(cfg *config.Config) error {
 	// both the IT and CS curricula (e.g. 517121), so the key is now
 	// (program, code) — drop the old index first or AutoMigrate keeps it and
 	// the second program's copy fails to insert.
-	if err := db.Exec(`DROP INDEX IF EXISTS idx_core_courses_code;`).Error; err != nil {
-		return fmt.Errorf("drop legacy core_courses code index: %w", err)
+	if db.Migrator().HasIndex(&models.CoreCourse{}, "idx_core_courses_code") {
+		if err := db.Migrator().DropIndex(&models.CoreCourse{}, "idx_core_courses_code"); err != nil {
+			return fmt.Errorf("drop legacy core_courses code index: %w", err)
+		}
 	}
 	if err := db.AutoMigrate(&models.CoreCourse{}); err != nil {
 		return fmt.Errorf("migrate core_courses table: %w", err)
@@ -116,12 +108,25 @@ func Connect(cfg *config.Config) error {
 	// Admin-created accounts start with a blank email (filled in later via
 	// Google sign-in), so multiple blank emails must be allowed — a plain
 	// unique index would reject the second such account.
-	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique
-		ON users (email) WHERE email <> '';`).Error; err != nil {
-		return fmt.Errorf("create users email unique index: %w", err)
+	if !db.Migrator().HasIndex(&models.User{}, "idx_users_email_unique") {
+		if err := db.Exec(`CREATE UNIQUE INDEX idx_users_email_unique ON users ((NULLIF(email, '')))`).Error; err != nil {
+			return fmt.Errorf("create users email unique index: %w", err)
+		}
 	}
 
+	if err := migrateApplicationData(db); err != nil {
+		return fmt.Errorf("migrate application data: %w", err)
+	}
 	DB = db
+
+	if err := seedCoreCourses(); err != nil {
+		return fmt.Errorf("seed core courses: %w", err)
+	}
+
+	if !cfg.SeedDemoData {
+		return nil
+	}
+	log.Println("SEED_DEMO_DATA enabled: populating demo accounts and applications")
 
 	var count int64
 	if err := DB.Model(&models.User{}).Count(&count).Error; err != nil {
@@ -138,16 +143,8 @@ func Connect(cfg *config.Config) error {
 		return fmt.Errorf("seed classlist instructors: %w", err)
 	}
 
-	if err := seedCoreCourses(); err != nil {
-		return fmt.Errorf("seed core courses: %w", err)
-	}
-
 	if err := seedMockApplicants(); err != nil {
 		return fmt.Errorf("seed mock applicants: %w", err)
-	}
-
-	if err := seedMockLoginStudents(); err != nil {
-		return fmt.Errorf("seed mock login students: %w", err)
 	}
 
 	return nil

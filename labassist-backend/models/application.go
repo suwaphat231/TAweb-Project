@@ -19,20 +19,20 @@ const (
 
 type Application struct {
 	ID          uint        `gorm:"primaryKey" json:"id"`
-	StudentID   uint        `gorm:"not null" json:"student_id"`
-	Student     User        `gorm:"foreignKey:StudentID" json:"-"`
-	CourseID    uint        `gorm:"not null" json:"course_id"`
-	Course      Course      `gorm:"foreignKey:CourseID" json:"-"`
-	RoleApplied RoleApplied `gorm:"type:role_applied;not null" json:"role_applied"`
-	Status      AppStatus   `gorm:"type:app_status;default:'pending'" json:"status"`
+	StudentID   uint        `gorm:"not null;uniqueIndex:idx_application_student_course" json:"student_id"`
+	Student     User        `gorm:"belongsTo:Student;foreignKey:StudentID;references:ID" json:"-"`
+	CourseID    uint        `gorm:"not null;index;uniqueIndex:idx_application_student_course" json:"course_id"`
+	Course      Course      `gorm:"foreignKey:CourseID;references:ID" json:"-"`
+	RoleApplied RoleApplied `gorm:"type:enum('labboy');not null" json:"role_applied"`
+	Status      AppStatus   `gorm:"type:enum('pending','accepted','rejected','withdrawn');default:'pending'" json:"status"`
 	// Grade is the letter grade the student earned when they previously took
 	// this course, self-reported at application time so the instructor can
 	// check it against the course's minimum-grade requirement.
 	Grade        *string    `gorm:"size:5" json:"grade,omitempty"`
-	AppliedAt    time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"applied_at"`
+	AppliedAt    time.Time  `gorm:"autoCreateTime" json:"applied_at"`
 	ReviewedAt   *time.Time `json:"reviewed_at,omitempty"`
 	ReviewedByID *uint      `json:"reviewed_by_id,omitempty"`
-	ReviewedBy   *User      `gorm:"foreignKey:ReviewedByID" json:"-"`
+	ReviewedBy   *User      `gorm:"foreignKey:ReviewedByID;references:ID" json:"-"`
 	Note         *string    `gorm:"type:text" json:"note,omitempty"`
 
 	// GradeProof is the image the student attaches as proof of the
@@ -41,7 +41,7 @@ type Application struct {
 	// HasGradeProof below is what callers see; the image itself is only
 	// ever served through the dedicated download endpoints.
 	GradeProofFileName string `json:"-"`
-	GradeProofData     []byte `json:"-"`
+	GradeProofData     []byte `gorm:"type:longblob" json:"-"`
 
 	// Computed fields (not in DB)
 	HasGradeProof      bool    `gorm:"-" json:"has_grade_proof"`

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { User } from '../types'
 import { authApi } from '../services/api'
+import { queryClient } from '../services/queryClient'
 
 interface AuthStore {
   user: User | null
@@ -50,3 +51,10 @@ export const useAuthStore = create<AuthStore>()(
     }
   )
 )
+
+// Clear cached private data synchronously before another account renders.
+useAuthStore.subscribe((state, previous) => {
+  if (state.token !== previous.token || state.user?.id !== previous.user?.id || state.user?.role !== previous.user?.role) {
+    queryClient.clear()
+  }
+})

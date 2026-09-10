@@ -1,23 +1,24 @@
-version: '3.9'
-
 services:
-  postgres:
-    image: postgres:17-alpine
-    container_name: labassist-db
+  mysql:
+    image: mysql:8.4
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
+    container_name: labassist-mysql
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_NAME:-labassist}
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-labassist123}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-labassist-root-local}
+      MYSQL_DATABASE: ${DB_NAME:-labassist}
+      MYSQL_USER: ${DB_USER:-labassist}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-labassist123}
     ports:
-      - "5432:5432"
+      - "${MYSQL_HOST_PORT:-3307}:3306"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-labassist}"]
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql -h 127.0.0.1 -u$$MYSQL_USER -D $$MYSQL_DATABASE -e 'SELECT 1'"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 30s
 
   backend:
     build:
@@ -26,17 +27,18 @@ services:
     container_name: labassist-backend
     restart: unless-stopped
     depends_on:
-      postgres:
+      mysql:
         condition: service_healthy
       ocr-service:
         condition: service_started
     environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: ${DB_USER:-postgres}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-labassist}
       DB_PASSWORD: ${DB_PASSWORD:-labassist123}
       DB_NAME: ${DB_NAME:-labassist}
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET to a generated random secret of at least 32 bytes}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       CLIENT_URL: ${CLIENT_URL:-http://localhost:3000}
       PORT: 8080
@@ -72,5 +74,5 @@ services:
     restart: unless-stopped
 
 volumes:
-  pgdata:
+  mysql_data:
   easyocr_models:

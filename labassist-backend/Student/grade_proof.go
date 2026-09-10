@@ -11,7 +11,7 @@ import (
 )
 
 // maxGradeProofSize caps the uploaded grade image at 5MB — generous for a
-// phone screenshot of MyReg while keeping a single bytea row reasonable.
+// phone screenshot of MyReg while keeping a single binary row reasonable.
 const maxGradeProofSize = 5 << 20
 
 // UploadGradeProof godoc

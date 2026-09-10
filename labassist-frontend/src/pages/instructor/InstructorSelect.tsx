@@ -7,9 +7,10 @@ import { Button } from '../../components/ui/Button'
 import { Select } from '../../components/ui/Select'
 import { FilterChips } from '../../components/ui/FilterChips'
 import { Modal } from '../../components/ui/Modal'
-import { Avatar, getInitials } from '../../components/ui/Avatar'
+import { Avatar } from '../../components/ui/Avatar'
+import { getInitials } from '../../utils/initials'
 import { EmptyState } from '../../components/ui/EmptyState'
-import { useToast } from '../../components/ui/Toast'
+import { useToast } from '../../hooks/useToast'
 import { displayCourseTitle } from '../../utils/courseDisplay'
 import type { Application } from '../../types'
 
@@ -277,7 +278,7 @@ export default function InstructorSelect() {
             }}>
               <SumItem label="ผู้สมัครทั้งหมด" value={`${applicants.length} คน`} color="var(--ink-900)" />
               <div style={{ width: 1, background: 'var(--line)', alignSelf: 'stretch' }} />
-              <SumItem label="Lab Boy" value={`${selectedCourse.labboy_accepted} / ${selectedCourse.labboy_slots} คน`} color="#7C3AED" />
+              <SumItem label="Lab Boy" value={`${selectedCourse.labboy_accepted} / ${selectedCourse.labboy_slots} คน`} color="var(--primary-700)" />
               {!!selectedCourse.section && (
                 <>
                   <div style={{ width: 1, background: 'var(--line)', alignSelf: 'stretch' }} />
@@ -344,13 +345,13 @@ export default function InstructorSelect() {
                     key={row.id}
                     style={{
                       borderBottom: i < filtered.length - 1 ? '1px solid var(--line-soft)' : 'none',
-                      background: row.status === 'accepted' ? '#F2F6FE' : '#fff',
+                      background: row.status === 'accepted' ? 'var(--primary-50)' : '#fff',
                       cursor: 'pointer',
                       transition: 'background .12s',
                     }}
                     onClick={() => openProfile(row)}
                     onMouseEnter={(e) => { if (row.status !== 'accepted') e.currentTarget.style.background = 'var(--bg)' }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = row.status === 'accepted' ? '#F2F6FE' : '#fff' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = row.status === 'accepted' ? 'var(--primary-50)' : '#fff' }}
                   >
                     {columns.map((col) => (
                       <td key={col.key} style={{ padding: '12px 16px', fontSize: 14, color: 'var(--ink-700)', verticalAlign: 'middle' }}>

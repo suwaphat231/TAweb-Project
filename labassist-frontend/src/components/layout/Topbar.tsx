@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../../hooks/useAuth'
-import { Avatar, getInitials } from '../ui/Avatar'
+import { Avatar } from '../ui/Avatar'
+import { getInitials } from '../../utils/initials'
 import { notificationApi, instructorApi } from '../../services/api'
 import type { Notification } from '../../types'
 
@@ -167,7 +168,7 @@ function NotificationBell() {
                 style={{
                   padding: '12px 16px',
                   borderBottom: '1px solid var(--line-soft)',
-                  background: n.is_read ? '#fff' : '#EEF2FF',
+                  background: n.is_read ? '#fff' : 'var(--primary-50)',
                   cursor: n.is_read ? 'default' : 'pointer',
                   borderLeft: n.is_read ? '3px solid transparent' : '3px solid var(--primary)',
                   transition: 'background .1s',
@@ -208,13 +209,13 @@ export function Topbar({ title, breadcrumb, actions, onHamburgerClick }: Props) 
       top: 0,
       height: 'var(--topbar-h)',
       background: '#fff',
-      borderBottom: '1.5px solid var(--line)',
+      borderBottom: '1px solid var(--line)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
       padding: '0 28px',
       zIndex: 50,
-      boxShadow: 'var(--shadow-sm)',
+      boxShadow: 'none',
       flexShrink: 0,
     }}>
       {/* Left: hamburger (mobile) + breadcrumb + title */}

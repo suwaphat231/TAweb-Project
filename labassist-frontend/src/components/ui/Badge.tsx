@@ -8,7 +8,7 @@ const variantMap: Record<BadgeVariant, { bg: string; color: string }> = {
   red:    { bg: 'var(--red-bg)',    color: 'var(--red)' },
   blue:   { bg: 'var(--blue-bg)',   color: 'var(--blue)' },
   gray:   { bg: 'var(--line-soft)', color: 'var(--ink-500)' },
-  purple: { bg: '#EDE9FE',          color: '#7C3AED' },
+  purple: { bg: 'var(--primary-100)',          color: 'var(--primary-700)' },
 }
 
 interface BadgeProps {

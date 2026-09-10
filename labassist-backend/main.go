@@ -24,7 +24,10 @@ func main() {
 		log.Println("No .env file found, using environment variables")
 	}
 
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("invalid configuration: %v", err)
+	}
 
 	if err := database.Connect(cfg); err != nil {
 		log.Fatalf("database connection failed: %v", err)

@@ -18,14 +18,14 @@ type ApplyRequest struct {
 	// Grade is the letter grade the student got when they previously took
 	// this course, so the instructor can check it against the posting's
 	// minimum-grade requirement.
-	Grade *string `json:"grade,omitempty" example:"A"`
+	Grade *string `json:"grade,omitempty" binding:"omitempty,oneof=A B+ B C+ C D+ D F" example:"A"`
 }
 
 // UpdateProfileRequest is the request body for updating student profile
 type UpdateProfileRequest struct {
 	FullName  *string `json:"full_name,omitempty" example:"สมชาย ใจดี"`
 	StudentID *string `json:"student_id,omitempty" example:"640710112"`
-	Year      *int    `json:"year,omitempty" example:"3"`
+	Year      *int    `json:"year,omitempty" binding:"omitempty,min=0,max=4" example:"3"`
 	Faculty   *string `json:"faculty,omitempty" example:"วิทยาการคอมพิวเตอร์"`
 }
 
@@ -90,7 +90,7 @@ func (h *Handler) Apply(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "course not found"})
 		return
 	}
-	if course.Status == models.StatusClosed || course.Status == models.StatusDraft {
+	if course.Status != models.StatusOpen && course.Status != models.StatusClosingSoon {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "course is not accepting applications"})
 		return
 	}
@@ -103,7 +103,11 @@ func (h *Handler) Apply(c *gin.Context) {
 		Grade:       body.Grade,
 	})
 	if err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "already applied"})
+		if err == database.ErrConflict {
+			c.JSON(http.StatusConflict, gin.H{"error": "already applied"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot save application"})
+		}
 		return
 	}
 
@@ -152,9 +156,13 @@ func (h *Handler) Withdraw(c *gin.Context) {
 	}
 
 	prevStatus := app.Status
-	updated, _ := database.UpdateApplication(uint(id), func(a *models.Application) {
+	updated, saved := database.UpdateApplication(uint(id), func(a *models.Application) {
 		a.Status = models.AppWithdrawn
 	})
+	if !saved {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot save application"})
+		return
+	}
 
 	// Decrement slot count if was accepted
 	if prevStatus == models.AppAccepted {
@@ -189,7 +197,18 @@ func (h *Handler) GetProfile(c *gin.Context) {
 func (h *Handler) UpdateProfile(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
 	var body UpdateProfileRequest
-	c.ShouldBindJSON(&body)
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if body.FullName != nil {
+		trimmed := strings.TrimSpace(*body.FullName)
+		if trimmed == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณากรอกชื่อ-นามสกุล"})
+			return
+		}
+		body.FullName = &trimmed
+	}
 
 	if body.StudentID != nil {
 		trimmed := strings.TrimSpace(*body.StudentID)

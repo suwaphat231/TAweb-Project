@@ -1,20 +1,21 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { instructorApi } from '../../services/api'
 import { useAuth } from '../../hooks/useAuth'
 import { Card } from '../../components/ui/Card'
 import { Input } from '../../components/ui/Input'
 import { Button } from '../../components/ui/Button'
-import { Avatar, getInitials } from '../../components/ui/Avatar'
+import { Avatar } from '../../components/ui/Avatar'
+import { getInitials } from '../../utils/initials'
 import { StatusBadge } from '../../components/ui/Badge'
 import { Skeleton } from '../../components/ui/Skeleton'
-import { useToast } from '../../components/ui/Toast'
+import { useToast } from '../../hooks/useToast'
 
 export default function InstructorProfile() {
   const { user, setUser } = useAuth()
   const qc = useQueryClient()
   const showToast = useToast()
-  const [form, setForm] = useState({ full_name: '', email: '', faculty: '' })
+  const [draft, setDraft] = useState<Partial<Record<'full_name' | 'email' | 'faculty', string>>>({})
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['instructor-profile'],
@@ -23,20 +24,20 @@ export default function InstructorProfile() {
 
   const p = profile ?? user
 
-  useEffect(() => {
-    if (!p) return
-    setForm({
-      full_name: p.full_name ?? '',
-      email: p.email ?? '',
-      faculty: p.faculty ?? '',
-    })
-  }, [p?.full_name, p?.email, p?.faculty])
+  const form = {
+    full_name: p?.full_name ?? '',
+    email: p?.email ?? '',
+    faculty: p?.faculty ?? '',
+    ...draft,
+  }
 
   const updateMut = useMutation({
     mutationFn: (data: { full_name: string; email: string; faculty: string }) =>
       instructorApi.updateProfile(data),
     onSuccess: (updated) => {
       setUser(updated)
+      setDraft({})
+      qc.setQueryData(['instructor-profile'], updated)
       qc.invalidateQueries({ queryKey: ['instructor-profile'] })
       // Which courses match this instructor is name-based (matched against
       // the admin's imported spreadsheet), not just account ID — changing
@@ -89,16 +90,18 @@ export default function InstructorProfile() {
           ) : (
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <Input
+                readOnly={updateMut.isPending}
                 label="ชื่อ-นามสกุล *"
                 value={form.full_name}
-                onChange={(e) => setForm(f => ({ ...f, full_name: e.target.value }))}
+                onChange={(e) => setDraft(f => ({ ...f, full_name: e.target.value }))}
                 required
               />
               <Input
+                readOnly={updateMut.isPending}
                 label="อีเมล"
                 type="email"
                 value={form.email}
-                onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))}
+                onChange={(e) => setDraft(f => ({ ...f, email: e.target.value }))}
               />
               
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>

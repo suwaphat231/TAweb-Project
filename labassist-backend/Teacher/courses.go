@@ -72,11 +72,11 @@ type CreateCourseRequest struct {
 	Title        string              `json:"title" binding:"required" example:"Introduction to Programming"`
 	Semester     string              `json:"semester" binding:"required" example:"1"`
 	AcademicYear int                 `json:"academic_year" binding:"required" example:"2567"`
-	LabBoySlots  int                 `json:"labboy_slots" example:"2"`
-	Status       models.CourseStatus `json:"status" example:"draft"`
+	LabBoySlots  int                 `json:"labboy_slots" binding:"min=0" example:"2"`
+	Status       models.CourseStatus `json:"status" binding:"omitempty,oneof=open closing_soon closed draft archived" example:"draft"`
 	Description  *string             `json:"description,omitempty"`
 	Requirements *string             `json:"requirements,omitempty"`
-	Deadline     string              `json:"deadline,omitempty" example:"2026-08-01"`
+	Deadline     string              `json:"deadline,omitempty" binding:"omitempty,datetime=2006-01-02" example:"2026-08-01"`
 	// RequireGradeProof: when true, applicants must attach an image of their
 	// grade instead of just self-reporting it — guards against a typed-in
 	// fake grade.
@@ -99,8 +99,8 @@ type UpdateCourseRequest struct {
 	Title             *string              `json:"title,omitempty" example:"Introduction to Programming"`
 	Semester          *string              `json:"semester,omitempty" example:"1"`
 	AcademicYear      *int                 `json:"academic_year,omitempty" example:"2567"`
-	LabBoySlots       *int                 `json:"labboy_slots,omitempty" example:"2"`
-	Status            *models.CourseStatus `json:"status,omitempty" example:"open"`
+	LabBoySlots       *int                 `json:"labboy_slots,omitempty" binding:"omitempty,min=0" example:"2"`
+	Status            *models.CourseStatus `json:"status,omitempty" binding:"omitempty,oneof=open closing_soon closed draft archived" example:"open"`
 	Description       *string              `json:"description,omitempty"`
 	Requirements      *string              `json:"requirements,omitempty"`
 	Deadline          *string              `json:"deadline,omitempty" example:"2026-08-01"`
@@ -118,7 +118,7 @@ type AddSectionRequest struct {
 
 // UpdateCourseStatusRequest is the request body for updating course status only
 type UpdateCourseStatusRequest struct {
-	Status models.CourseStatus `json:"status" example:"open"`
+	Status models.CourseStatus `json:"status" binding:"required,oneof=open closing_soon closed draft archived" example:"open"`
 }
 
 // InstructorList godoc
@@ -335,7 +335,19 @@ func (h *Handler) Update(c *gin.Context) {
 	}
 
 	var body UpdateCourseRequest
-	c.ShouldBindJSON(&body)
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if body.Deadline != nil && *body.Deadline != "" && parseDeadline(*body.Deadline) == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid deadline; use YYYY-MM-DD"})
+		return
+	}
+	if body.LabBoySlots != nil && *body.LabBoySlots < course.LabBoyAccepted {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "slots cannot be less than accepted applicants"})
+		return
+	}
 
 	effectiveStatus := course.Status
 	if body.Status != nil {
@@ -350,7 +362,7 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
-	updated, _ := database.UpdateCourse(uint(id), func(cs *models.Course) {
+	updated, saved := database.UpdateCourse(uint(id), func(cs *models.Course) {
 		if body.Code != nil {
 			cs.Code = *body.Code
 		}
@@ -388,6 +400,10 @@ func (h *Handler) Update(c *gin.Context) {
 			cs.RequireGradeProof = *body.RequireGradeProof
 		}
 	})
+	if !saved {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save course"})
+		return
+	}
 	c.JSON(http.StatusOK, updated)
 }
 
@@ -417,14 +433,21 @@ func (h *Handler) UpdateStatus(c *gin.Context) {
 	}
 
 	var body UpdateCourseStatusRequest
-	c.ShouldBindJSON(&body)
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if recruiting(body.Status) && deadlinePassed(course.Deadline) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot open a course whose deadline has already passed"})
 		return
 	}
-	updated, _ := database.UpdateCourse(uint(id), func(cs *models.Course) {
+	updated, saved := database.UpdateCourse(uint(id), func(cs *models.Course) {
 		cs.Status = body.Status
 	})
+	if !saved {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save course"})
+		return
+	}
 	c.JSON(http.StatusOK, updated)
 }
 

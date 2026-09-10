@@ -1,0 +1,6 @@
+.env
+.env.*
+.git
+*.exe
+labassist
+tmp

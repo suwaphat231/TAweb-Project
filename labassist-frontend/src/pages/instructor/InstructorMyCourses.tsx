@@ -8,10 +8,11 @@ import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { Modal } from '../../components/ui/Modal'
-import { Avatar, getInitials } from '../../components/ui/Avatar'
+import { Avatar } from '../../components/ui/Avatar'
+import { getInitials } from '../../utils/initials'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { EmptyState } from '../../components/ui/EmptyState'
-import { useToast } from '../../components/ui/Toast'
+import { useToast } from '../../hooks/useToast'
 import { displayCourseTitle } from '../../utils/courseDisplay'
 import type { Course } from '../../types'
 
@@ -141,7 +142,7 @@ export default function InstructorMyCourses() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#7C3AED' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--primary-700)' }}>
                       Lab Boy {c.labboy_accepted} / {c.labboy_slots} คน
                     </div>
                     <Button

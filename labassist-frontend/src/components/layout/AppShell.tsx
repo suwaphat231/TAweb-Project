@@ -61,7 +61,7 @@ export function AppShell({ children }: Props) {
           <Topbar
             onHamburgerClick={isMobile ? () => setDrawerOpen((d) => !d) : undefined}
           />
-          <main style={{ flex: 1, padding: isMobile ? '20px 16px' : '28px 32px' }}>
+          <main style={{ flex: 1, padding: isMobile ? '24px 16px' : '36px 40px', width: '100%', maxWidth: 1440, margin: '0 auto' }}>
             {children}
           </main>
         </div>

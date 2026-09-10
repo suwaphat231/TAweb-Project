@@ -19,7 +19,7 @@ export default function StaffHome() {
 
   return (
     <div>
-      <div style={{ marginBottom: 24 }}>
+      <div className="dashboard-banner">
         <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink-900)' }}>
           สวัสดี, {user?.full_name}
         </h1>

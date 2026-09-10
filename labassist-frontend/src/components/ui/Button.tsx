@@ -5,7 +5,7 @@ type Size = 'sm' | 'md'
 
 const variantStyles: Record<Variant, React.CSSProperties> = {
   primary:        { background: 'var(--primary)', color: '#fff', border: 'none' },
-  outline:        { background: 'transparent', color: 'var(--primary)', border: '1.5px solid var(--primary)' },
+  outline:        { background: 'transparent', color: 'var(--ink-700)', border: '1px solid var(--line)' },
   ghost:          { background: 'transparent', color: 'var(--ink-700)', border: 'none' },
   success:        { background: 'var(--green)', color: '#fff', border: 'none' },
   'danger-ghost': { background: 'transparent', color: 'var(--red)', border: 'none' },

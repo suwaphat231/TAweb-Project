@@ -6,7 +6,7 @@
 // dropped first, then the trailing run of Latin letters/digits (the part
 // after the last Thai character run) is pulled out. Falls back to the
 // paren-stripped raw title when there is no English suffix to extract.
-const TRAILING_ENGLISH = /[A-Za-z][A-Za-z0-9\s'\-]*$/
+const TRAILING_ENGLISH = /[A-Za-z][A-Za-z0-9\s'-]*$/
 
 // Repeatedly removes a balanced "(...)" group from the end of the string
 // (handles nested parens), so a trailing note doesn't leak into the display.

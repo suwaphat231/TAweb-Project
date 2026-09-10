@@ -2,7 +2,7 @@
 --
 -- ตาราง core_courses ถูกสร้างโดย GORM AutoMigrate (models.CoreCourse) ไฟล์นี้
 -- จึงมีแต่ข้อมูล และถูกรันทุกครั้งที่แอปสตาร์ท (ดู database/seed_core_courses.go)
--- ON CONFLICT DO NOTHING ทำให้รันซ้ำได้โดยไม่เกิดข้อมูลซ้ำ
+-- ON DUPLICATE KEY UPDATE ทำให้รันซ้ำได้โดยไม่เกิดข้อมูลซ้ำ
 --
 -- program : 'IT' = เทคโนโลยีสารสนเทศ, 'CS' = วิทยาการคอมพิวเตอร์
 --           ระบบเลือกชุดวิชาจาก faculty ของนักศึกษา (ดู ProgramForFaculty)
@@ -21,7 +21,7 @@ INSERT INTO core_courses (program, code, title) VALUES
 
     ('CS', '517121', 'ทักษะการเขียนโปรแกรมคอมพิวเตอร์ 1'),
     ('CS', '517122', 'ทักษะการเขียนโปรแกรมคอมพิวเตอร์ 2')
-ON CONFLICT (program, code) DO NOTHING;
+ON DUPLICATE KEY UPDATE code = core_courses.code;
 
 -- หมายเหตุ: 517121 ยืนยันแล้วจาก classlist 2569/1 (COMPUTER PROGRAMMING SKILL I)
 -- ส่วน 517122 อนุมานจากลำดับรหัส เพราะเทอม 1/2569 ไม่ได้เปิดสอน — โปรดตรวจสอบกับ

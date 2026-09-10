@@ -8,6 +8,7 @@ import (
 	"labassist/models"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -112,17 +113,27 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 		return
 	}
 
-	payload, err := idtoken.Validate(context.Background(), body.Credential, h.cfg.GoogleClientID)
+	if strings.TrimSpace(h.cfg.GoogleClientID) == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Google Sign-In ยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแลระบบ"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+	payload, err := idtoken.Validate(ctx, body.Credential, h.cfg.GoogleClientID)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Google token ไม่ถูกต้อง"})
 		return
 	}
 
+	if payload.Issuer != "accounts.google.com" && payload.Issuer != "https://accounts.google.com" || payload.Subject == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Google token ไม่ถูกต้อง"})
+		return
+	}
 	googleSub := payload.Subject
 	email, _ := payload.Claims["email"].(string)
 	name, _ := payload.Claims["name"].(string)
 
-	if !strings.HasSuffix(email, "@silpakorn.edu") {
+	if !isUniversityGoogleAccount(payload) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "กรุณาใช้อีเมลมหาวิทยาลัย (@silpakorn.edu) เท่านั้น"})
 		return
 	}
@@ -147,9 +158,19 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 			}
 			user = created
 			isNewUser = true
+		} else if !user.IsActive {
+			c.JSON(http.StatusForbidden, gin.H{"error": "บัญชีถูกระงับ"})
+			return
+		} else if user.GoogleSub != nil && *user.GoogleSub != googleSub {
+			c.JSON(http.StatusConflict, gin.H{"error": "บัญชีนี้ผูกกับบัญชี Google อื่นแล้ว กรุณาติดต่อผู้ดูแลระบบ"})
+			return
 		} else if user.GoogleSub == nil {
 			// เจอด้วย email แต่ยังไม่มี google_sub → อัพเดต
-			updated, _ := database.UpdateUser(user.ID, func(u *models.User) { u.GoogleSub = &googleSub })
+			updated, saved := database.UpdateUser(user.ID, func(u *models.User) { u.GoogleSub = &googleSub })
+			if !saved {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถผูกบัญชี Google ได้ กรุณาลองใหม่"})
+				return
+			}
 			user = updated
 		}
 	}
@@ -194,4 +215,12 @@ func (h *AuthHandler) Me(c *gin.Context) {
 // @Router       /auth/logout [post]
 func (h *AuthHandler) Logout(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "ออกจากระบบแล้ว"})
+}
+
+// Only verified accounts managed by the university may use this sign-in flow.
+func isUniversityGoogleAccount(payload *idtoken.Payload) bool {
+	email, _ := payload.Claims["email"].(string)
+	verified, _ := payload.Claims["email_verified"].(bool)
+	domain, _ := payload.Claims["hd"].(string)
+	return verified && domain == "silpakorn.edu" && strings.HasSuffix(email, "@silpakorn.edu") && strings.Count(email, "@") == 1 && len(email) > len("@silpakorn.edu")
 }

@@ -9,8 +9,9 @@ import { Modal } from '../../components/ui/Modal'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { Skeleton } from '../../components/ui/Skeleton'
-import { Avatar, getInitials } from '../../components/ui/Avatar'
-import { useToast } from '../../components/ui/Toast'
+import { Avatar } from '../../components/ui/Avatar'
+import { getInitials } from '../../utils/initials'
+import { useToast } from '../../hooks/useToast'
 import type { UserRole } from '../../types'
 
 export default function AdminOverview() {
@@ -51,7 +52,7 @@ export default function AdminOverview() {
 
   return (
     <div>
-      <div style={{ marginBottom: 28 }}>
+      <div className="dashboard-banner">
         <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink-900)' }}>ภาพรวมระบบ</h1>
         <p style={{ fontSize: 14, color: 'var(--ink-500)', marginTop: 4 }}>สถิติและข้อมูลรวมของระบบ LabAssist</p>
       </div>

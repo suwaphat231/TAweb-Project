@@ -1,11 +1,11 @@
 export type AvatarColor = 'blue' | 'purple' | 'amber' | 'pink' | 'gray'
 
 const gradients: Record<AvatarColor, string> = {
-  blue:   'linear-gradient(135deg, #3B82F6, #1B4FD8)',
-  purple: 'linear-gradient(135deg, #A78BFA, #7C3AED)',
-  amber:  'linear-gradient(135deg, #FCD34D, #D97706)',
-  pink:   'linear-gradient(135deg, #F9A8D4, #EC4899)',
-  gray:   'linear-gradient(135deg, #CBD5E1, #94A3B8)',
+  blue:   'linear-gradient(135deg, var(--accent), var(--primary-700))',
+  purple: 'var(--brand-gradient)',
+  amber:  'linear-gradient(135deg, var(--primary), var(--primary-700))',
+  pink:   'linear-gradient(135deg, var(--primary-700), var(--navy))',
+  gray:   'linear-gradient(135deg, var(--accent), var(--navy))',
 }
 
 interface Props {
@@ -28,8 +28,4 @@ export function Avatar({ initials, color, size = 36, style }: Props) {
       {initials.slice(0, 2).toUpperCase()}
     </div>
   )
-}
-
-export function getInitials(name: string): string {
-  return name.split(' ').map((w) => w[0] ?? '').join('').slice(0, 2).toUpperCase() || '?'
 }

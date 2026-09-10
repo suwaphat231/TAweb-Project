@@ -8,7 +8,7 @@ import { Input } from '../../components/ui/Input'
 import { Textarea } from '../../components/ui/Textarea'
 import { Button } from '../../components/ui/Button'
 import { Skeleton } from '../../components/ui/Skeleton'
-import { useToast } from '../../components/ui/Toast'
+import { useToast } from '../../hooks/useToast'
 import { triggerBrowserDownload } from '../../utils/download'
 import type { DocType, DocStatus, StaffDocument, CreateStaffDocumentPayload } from '../../types'
 
@@ -32,10 +32,10 @@ const TYPE_STEP: Record<DocType, string> = {
   payment_request:  'ขั้นตอนที่ 6',
 }
 const TYPE_COLOR: Record<DocType, string> = {
-  approval_memo:    '#1B4FD8',
+  approval_memo:    'var(--primary)',
   work_report:      '#059669',
-  payment_evidence: '#0891B2',
-  payment_request:  '#7C3AED',
+  payment_evidence: 'var(--primary-700)',
+  payment_request:  'var(--primary-700)',
 }
 const STATUS_BADGE: Record<DocStatus, React.CSSProperties> = {
   draft:    { background: '#F3F4F6', color: 'var(--ink-500)', border: '1px solid var(--line)' },

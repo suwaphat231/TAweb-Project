@@ -35,11 +35,11 @@ const homeByRole: Record<UserRole, string> = {
 }
 
 function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles?: UserRole[] }) {
-  const { isAuthenticated, user } = useAuth()
+  const { isAuthenticated, user, token } = useAuth()
   const location = useLocation()
-  if (!isAuthenticated) return <Navigate to="/login" state={{ from: location }} replace />
+  if (!isAuthenticated || !user || !token) return <Navigate to="/login" state={{ from: location }} replace />
   if (roles && user && !roles.includes(user.role)) return <Navigate to="/" replace />
-  return <AppShell>{children}</AppShell>
+  return <AppShell key={user.id}>{children}</AppShell>
 }
 
 function HomeRedirect() {

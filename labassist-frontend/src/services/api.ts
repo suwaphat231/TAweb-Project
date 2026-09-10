@@ -1,4 +1,4 @@
-import axios from 'axios'
+import axios, { CanceledError } from 'axios'
 import { useAuthStore } from '../store/authStore'
 import type {
   User, Course, Application, LoginCredentials, GoogleAuthPayload,
@@ -19,11 +19,21 @@ api.interceptors.request.use((config) => {
 })
 
 api.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    const authorization = res.config.headers.Authorization
+    if (authorization && authorization !== `Bearer ${useAuthStore.getState().token}`) {
+      throw new CanceledError('Session changed')
+    }
+    return res
+  },
   (err) => {
-    if (err.response?.status === 401 && !window.location.pathname.includes('/login')) {
+    const authorization = err.config?.headers?.Authorization
+    if (authorization && authorization !== `Bearer ${useAuthStore.getState().token}`) {
+      return Promise.reject(new CanceledError('Session changed'))
+    }
+    if (err.response?.status === 401 && authorization) {
       useAuthStore.getState().logout()
-      window.location.href = '/login'
+      if (!window.location.pathname.startsWith('/login')) window.location.href = '/login'
     }
     // Blob responses (file downloads) never carry parsed JSON in
     // err.response.data, so the "no .data.error" check below would always

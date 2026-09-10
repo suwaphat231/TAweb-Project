@@ -1,45 +1,19 @@
-// Package database is the data-access layer. Users and courses are backed by
-// the real Postgres connection (DB, see connection.go) and persist across
-// restarts. Applications, notifications, and activity logs are still an
-// in-memory mock data layer guarded by a single mutex; nothing there
-// survives a restart until they get their own migration.
 package database
 
 import (
 	"errors"
 	"sort"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"labassist/models"
+
+	mysqldriver "github.com/go-sql-driver/mysql"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var ErrConflict = errors.New("conflict")
-
-var mu sync.RWMutex
-
-var (
-	applications  []*models.Application
-	activityLogs  []*models.ActivityLog
-	notifications []*models.Notification
-
-	nextAppID   uint = 1
-	nextLogID   uint = 1
-	nextNotifID uint = 1
-)
-
-// --- internal helpers (caller must hold mu) ---
-
-func findAppByIDLocked(id uint) *models.Application {
-	for _, a := range applications {
-		if a.ID == id {
-			return a
-		}
-	}
-	return nil
-}
 
 // closeIfPastDeadline flips an open/closing_soon posting to closed once its
 // deadline has passed, persisting the change so every caller — the public
@@ -68,15 +42,9 @@ func courseWithInstructor(c models.Course) models.Course {
 }
 
 func countNonWithdrawnApplications(courseID uint) int {
-	mu.RLock()
-	defer mu.RUnlock()
-	n := 0
-	for _, a := range applications {
-		if a.CourseID == courseID && a.Status != models.AppWithdrawn {
-			n++
-		}
-	}
-	return n
+	var n int64
+	DB.Model(&models.Application{}).Where("course_id = ? AND status <> ?", courseID, models.AppWithdrawn).Count(&n)
+	return int(n)
 }
 
 func enrichApplication(a models.Application) models.Application {
@@ -112,10 +80,10 @@ func enrichApplication(a models.Application) models.Application {
 	return a
 }
 
-// --- Users (Postgres-backed via DB, see database/connection.go) ---
+// --- Users (MySQL-backed via DB, see database/connection.go) ---
 
 func UserByID(id uint) (models.User, bool) {
-	// 0 is never a real id (Postgres serial starts at 1) — imported courses
+	// 0 is never a real id (MySQL AUTO_INCREMENT starts at 1) — imported courses
 	// use it as the "no matching instructor" placeholder, so this is hit on
 	// every such course. Skip the query instead of round-tripping to the DB
 	// just to log a "record not found".
@@ -222,7 +190,7 @@ func CountUsersByRole(role models.UserRole) int64 {
 	return n
 }
 
-// --- Courses (Postgres-backed via DB, see database/connection.go) ---
+// --- Courses (MySQL-backed via DB, see database/connection.go) ---
 
 func ListCourses(status, q string, hasLab *bool) []models.Course {
 	query := DB.Order("id DESC")
@@ -302,33 +270,25 @@ func AdjustCourseAccepted(courseID uint, role models.RoleApplied, delta int) {
 	DB.Save(&c)
 }
 
-// deleteApplicationsForCourseLocked removes every application tied to
-// courseID so a deleted course doesn't leave orphaned applications behind.
-// Caller must hold mu.
-func deleteApplicationsForCourseLocked(courseID uint) {
-	kept := applications[:0]
-	for _, a := range applications {
-		if a.CourseID != courseID {
-			kept = append(kept, a)
-		}
-	}
-	applications = kept
-}
-
 // DeleteCourse removes a single course and any applications submitted for it.
 // Only for admin cleanup of bad/duplicate catalog data (AdminCourses'
 // per-row delete and "ลบทั้งเทอม") — an instructor taking down their own
 // posting goes through ResetCourseToDraft instead, which keeps the
 // underlying section so it can be opened again later.
 func DeleteCourse(id uint) bool {
-	result := DB.Delete(&models.Course{}, id)
-	if result.Error != nil || result.RowsAffected == 0 {
-		return false
-	}
-	mu.Lock()
-	deleteApplicationsForCourseLocked(id)
-	mu.Unlock()
-	return true
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("course_id = ?", id).Delete(&models.Application{}).Error; err != nil {
+			return err
+		}
+		result := tx.Delete(&models.Course{}, id)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
+	}) == nil
 }
 
 // ResetCourseToDraft is what an instructor's "ลบประกาศ" actually does: wipe
@@ -350,35 +310,40 @@ func ResetCourseToDraft(id uint) (models.Course, bool) {
 	c.Description = nil
 	c.Requirements = nil
 	c.RequireGradeProof = false
-	if err := DB.Save(&c).Error; err != nil {
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&c).Error; err != nil {
+			return err
+		}
+		return tx.Where("course_id = ?", id).Delete(&models.Application{}).Error
+	}); err != nil {
 		return models.Course{}, false
 	}
-	mu.Lock()
-	deleteApplicationsForCourseLocked(id)
-	mu.Unlock()
 	return courseWithInstructor(c), true
 }
 
 // DeleteCoursesByTerm removes every course in the given semester/academic
 // year and any applications submitted for them, returning the count removed.
 func DeleteCoursesByTerm(semester string, academicYear int) int {
-	var toDelete []models.Course
-	DB.Where("semester = ? AND academic_year = ?", semester, academicYear).Find(&toDelete)
-	if len(toDelete) == 0 {
+	var n int64
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var ids []uint
+		if err := tx.Model(&models.Course{}).Where("semester = ? AND academic_year = ?", semester, academicYear).Pluck("id", &ids).Error; err != nil {
+			return err
+		}
+		if len(ids) == 0 {
+			return nil
+		}
+		if err := tx.Where("course_id IN ?", ids).Delete(&models.Application{}).Error; err != nil {
+			return err
+		}
+		result := tx.Where("id IN ?", ids).Delete(&models.Course{})
+		n = result.RowsAffected
+		return result.Error
+	})
+	if err != nil {
 		return 0
 	}
-	ids := make([]uint, len(toDelete))
-	for i, c := range toDelete {
-		ids[i] = c.ID
-	}
-	DB.Where("id IN ?", ids).Delete(&models.Course{})
-
-	mu.Lock()
-	for _, id := range ids {
-		deleteApplicationsForCourseLocked(id)
-	}
-	mu.Unlock()
-	return len(ids)
+	return int(n)
 }
 
 func CountCourses() int64 {
@@ -565,7 +530,7 @@ func TaughtCourseSections(instructorID uint, fullName string, isAdmin bool, code
 	return out
 }
 
-// --- Transcripts (Postgres-backed via DB) ---
+// --- Transcripts (MySQL-backed via DB) ---
 //
 // Each student keeps at most one transcript (UserID is uniquely indexed on
 // the model); uploading again replaces the stored file rather than adding a
@@ -608,10 +573,8 @@ func TranscriptByUserID(userID uint) (models.Transcript, bool) {
 // --- Applications ---
 
 func ApplicantsForCourse(courseID uint, roleFilter, statusFilter, search string) []models.Application {
-	mu.RLock()
-	defer mu.RUnlock()
 	out := make([]models.Application, 0)
-	for _, a := range applications {
+	for _, a := range applicationRows("course_id = ?", courseID) {
 		if a.CourseID != courseID {
 			continue
 		}
@@ -621,7 +584,7 @@ func ApplicantsForCourse(courseID uint, roleFilter, statusFilter, search string)
 		if statusFilter != "" && string(a.Status) != statusFilter {
 			continue
 		}
-		enriched := enrichApplication(*a)
+		enriched := enrichApplication(a)
 		if search != "" {
 			s := strings.ToLower(search)
 			if !strings.Contains(strings.ToLower(enriched.StudentName), s) && !strings.Contains(strings.ToLower(enriched.StudentCode), s) {
@@ -635,14 +598,12 @@ func ApplicantsForCourse(courseID uint, roleFilter, statusFilter, search string)
 }
 
 func StudentApplications(studentID uint) []models.Application {
-	mu.RLock()
-	defer mu.RUnlock()
 	out := make([]models.Application, 0)
-	for _, a := range applications {
+	for _, a := range applicationRows("student_id = ?", studentID) {
 		if a.StudentID != studentID {
 			continue
 		}
-		out = append(out, enrichApplication(*a))
+		out = append(out, enrichApplication(a))
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].AppliedAt.After(out[j].AppliedAt) })
 	return out
@@ -657,181 +618,143 @@ func RecentStudentApplications(studentID uint, limit int) []models.Application {
 }
 
 func CountAppliedByStudent(studentID uint) int64 {
-	mu.RLock()
-	defer mu.RUnlock()
 	var n int64
-	for _, a := range applications {
-		if a.StudentID == studentID && a.Status != models.AppWithdrawn {
-			n++
-		}
-	}
+	DB.Model(&models.Application{}).Where("student_id = ? AND status <> ?", studentID, models.AppWithdrawn).Count(&n)
 	return n
 }
 
 func ApplicationByID(id uint) (models.Application, bool) {
-	mu.RLock()
-	defer mu.RUnlock()
-	a := findAppByIDLocked(id)
-	if a == nil {
-		return models.Application{}, false
+	var a models.Application
+	if DB.First(&a, id).Error != nil {
+		return a, false
 	}
-	return enrichApplication(*a), true
+	return enrichApplication(a), true
 }
 
 func ApplicationByIDForStudent(id, studentID uint) (models.Application, bool) {
-	mu.RLock()
-	defer mu.RUnlock()
-	a := findAppByIDLocked(id)
-	if a == nil || a.StudentID != studentID {
-		return models.Application{}, false
+	var a models.Application
+	if DB.Where("id = ? AND student_id = ?", id, studentID).First(&a).Error != nil {
+		return a, false
 	}
-	return enrichApplication(*a), true
+	return enrichApplication(a), true
 }
 
 func CreateApplication(a models.Application) (models.Application, error) {
-	mu.Lock()
-	defer mu.Unlock()
-	for _, existing := range applications {
-		if existing.StudentID == a.StudentID && existing.CourseID == a.CourseID {
+	a.ID = 0
+	a.AppliedAt = time.Now()
+	if err := DB.Omit(clause.Associations).Create(&a).Error; err != nil {
+		var mysqlErr *mysqldriver.MySQLError
+		if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
 			return models.Application{}, ErrConflict
 		}
+		return models.Application{}, err
 	}
-	a.ID = nextAppID
-	nextAppID++
-	a.AppliedAt = time.Now()
-	applications = append(applications, &a)
 	return enrichApplication(a), nil
 }
 
 func UpdateApplication(id uint, fn func(a *models.Application)) (models.Application, bool) {
-	mu.Lock()
-	defer mu.Unlock()
-	a := findAppByIDLocked(id)
-	if a == nil {
+	var a models.Application
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&a, id).Error; err != nil {
+			return err
+		}
+		fn(&a)
+		return tx.Omit(clause.Associations).Save(&a).Error
+	})
+	if err != nil {
 		return models.Application{}, false
 	}
-	fn(a)
-	return enrichApplication(*a), true
+	return enrichApplication(a), true
 }
 
 // SetApplicationGradeProof stores the uploaded grade-proof image on an
 // application, replacing any previous upload. Ownership must be checked by
 // the caller before calling this (e.g. via ApplicationByIDForStudent).
 func SetApplicationGradeProof(id uint, fileName string, data []byte) (models.Application, bool) {
-	mu.Lock()
-	defer mu.Unlock()
-	a := findAppByIDLocked(id)
-	if a == nil {
-		return models.Application{}, false
-	}
-	a.GradeProofFileName = fileName
-	a.GradeProofData = data
-	return enrichApplication(*a), true
+	return UpdateApplication(id, func(a *models.Application) {
+		a.GradeProofFileName = fileName
+		a.GradeProofData = data
+	})
 }
 
 // ApplicationGradeProofData returns the raw image bytes for an application's
 // grade proof, for the download endpoints. Ownership/authorization must be
 // checked by the caller first.
 func ApplicationGradeProofData(id uint) (fileName string, data []byte, ok bool) {
-	mu.RLock()
-	defer mu.RUnlock()
-	a := findAppByIDLocked(id)
-	if a == nil || len(a.GradeProofData) == 0 {
+	var a models.Application
+	if DB.Select("grade_proof_file_name", "grade_proof_data").First(&a, id).Error != nil || len(a.GradeProofData) == 0 {
 		return "", nil, false
 	}
 	return a.GradeProofFileName, a.GradeProofData, true
 }
 
 func BulkUpdateApplications(ids []uint, fn func(a *models.Application)) int64 {
-	mu.Lock()
-	defer mu.Unlock()
-	idSet := make(map[uint]bool, len(ids))
-	for _, id := range ids {
-		idSet[id] = true
-	}
-	var n int64
-	for _, a := range applications {
-		if idSet[a.ID] {
-			fn(a)
-			n++
+	var rows []models.Application
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id IN ?", ids).Order("id").Find(&rows).Error; err != nil {
+			return err
 		}
+		for i := range rows {
+			fn(&rows[i])
+			if err := tx.Omit(clause.Associations).Save(&rows[i]).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return 0
 	}
-	return n
+	return int64(len(rows))
 }
 
 func CountApplications() int64 {
-	mu.RLock()
-	defer mu.RUnlock()
-	return int64(len(applications))
+	var n int64
+	DB.Model(&models.Application{}).Count(&n)
+	return n
 }
 
 func CountApplicationsByStatus(status models.AppStatus) int64 {
-	mu.RLock()
-	defer mu.RUnlock()
 	var n int64
-	for _, a := range applications {
-		if a.Status == status {
-			n++
-		}
-	}
+	DB.Model(&models.Application{}).Where("status = ?", status).Count(&n)
 	return n
 }
 
 // --- Notifications ---
 
 func CreateNotifications(notifs []models.Notification) int {
-	mu.Lock()
-	defer mu.Unlock()
+	if len(notifs) == 0 {
+		return 0
+	}
 	for i := range notifs {
-		notifs[i].ID = nextNotifID
-		nextNotifID++
+		notifs[i].ID = 0
 		notifs[i].CreatedAt = time.Now()
-		cp := notifs[i]
-		notifications = append(notifications, &cp)
+	}
+	if DB.Create(&notifs).Error != nil {
+		return 0
 	}
 	return len(notifs)
 }
 
 func UserNotifications(userID uint) []models.Notification {
-	mu.RLock()
-	defer mu.RUnlock()
 	out := make([]models.Notification, 0)
-	for i := len(notifications) - 1; i >= 0; i-- {
-		if notifications[i].UserID == userID {
-			out = append(out, *notifications[i])
-		}
-	}
+	DB.Where("user_id = ?", userID).Order("id DESC").Find(&out)
 	return out
 }
 
 func MarkNotifRead(id, userID uint) {
-	mu.Lock()
-	defer mu.Unlock()
-	for _, n := range notifications {
-		if n.ID == id && n.UserID == userID {
-			n.IsRead = true
-			return
-		}
-	}
+	DB.Model(&models.Notification{}).Where("id = ? AND user_id = ?", id, userID).Update("is_read", true)
 }
 
 func MarkAllNotifsRead(userID uint) {
-	mu.Lock()
-	defer mu.Unlock()
-	for _, n := range notifications {
-		if n.UserID == userID {
-			n.IsRead = true
-		}
-	}
+	DB.Model(&models.Notification{}).Where("user_id = ?", userID).Update("is_read", true)
 }
 
 func AcceptedStudentsForCourse(courseID uint) []models.Application {
-	mu.RLock()
-	defer mu.RUnlock()
 	out := make([]models.Application, 0)
-	for _, a := range applications {
+	for _, a := range applicationRows("course_id = ? AND status = ?", courseID, models.AppAccepted) {
 		if a.CourseID == courseID && a.Status == models.AppAccepted {
-			out = append(out, enrichApplication(*a))
+			out = append(out, enrichApplication(a))
 		}
 	}
 	return out
@@ -840,41 +763,32 @@ func AcceptedStudentsForCourse(courseID uint) []models.Application {
 // --- Activity logs ---
 
 func CreateActivityLog(l models.ActivityLog) {
-	mu.Lock()
-	defer mu.Unlock()
-	l.ID = nextLogID
-	nextLogID++
+	l.ID = 0
 	l.CreatedAt = time.Now()
-	activityLogs = append(activityLogs, &l)
+	DB.Create(&l)
 }
 
 func ListActivityLogs(userID, method string, offset, limit int) ([]models.ActivityLog, int64) {
-	mu.RLock()
-	defer mu.RUnlock()
-	filtered := make([]*models.ActivityLog, 0)
-	for i := len(activityLogs) - 1; i >= 0; i-- {
-		l := activityLogs[i]
-		if userID != "" {
-			if l.UserID == nil || strconv.FormatUint(uint64(*l.UserID), 10) != userID {
-				continue
-			}
-		}
-		if method != "" && l.Method != method {
-			continue
-		}
-		filtered = append(filtered, l)
+	q := DB.Model(&models.ActivityLog{})
+	if userID != "" {
+		q = q.Where("user_id = ?", userID)
 	}
-	total := int64(len(filtered))
-	if offset > len(filtered) {
-		return []models.ActivityLog{}, total
+	if method != "" {
+		q = q.Where("method = ?", method)
 	}
-	filtered = filtered[offset:]
-	if limit < len(filtered) {
-		filtered = filtered[:limit]
-	}
-	out := make([]models.ActivityLog, len(filtered))
-	for i, l := range filtered {
-		out[i] = *l
-	}
+	var total int64
+	q.Count(&total)
+	out := make([]models.ActivityLog, 0)
+	q.Order("id DESC").Offset(offset).Limit(limit).Find(&out)
 	return out, total
+}
+
+func applicationRows(query string, args ...interface{}) []models.Application {
+	rows := make([]models.Application, 0)
+	DB.Where(query, args...).Order("id").Find(&rows)
+	return rows
+}
+
+func migrateApplicationData(db *gorm.DB) error {
+	return db.AutoMigrate(&models.Application{}, &models.Notification{}, &models.ActivityLog{})
 }

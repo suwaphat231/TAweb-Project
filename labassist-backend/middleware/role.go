@@ -13,7 +13,8 @@ func RequireRole(roles ...string) gin.HandlerFunc {
 	}
 	return func(c *gin.Context) {
 		role, _ := c.Get("role")
-		if !allowed[role.(string)] {
+		roleName, ok := role.(string)
+		if !ok || !allowed[roleName] {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 			return
 		}

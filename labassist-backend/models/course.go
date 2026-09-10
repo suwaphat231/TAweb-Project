@@ -37,7 +37,7 @@ type Course struct {
 	HasLab         bool         `gorm:"default:false" json:"has_lab"`
 	LabBoySlots    int          `gorm:"default:0" json:"labboy_slots"`
 	LabBoyAccepted int          `gorm:"default:0" json:"labboy_accepted"`
-	Status         CourseStatus `gorm:"type:course_status;default:'draft'" json:"status"`
+	Status         CourseStatus `gorm:"type:enum('open','closing_soon','closed','draft','archived');default:'draft'" json:"status"`
 	Deadline       *time.Time   `json:"deadline,omitempty"`
 	Description    *string      `gorm:"type:text" json:"description,omitempty"`
 	Requirements   *string      `gorm:"type:text" json:"requirements,omitempty"`
@@ -45,9 +45,9 @@ type Course struct {
 	// of their grade (e.g. a MyReg screenshot) instead of just self-reporting
 	// a letter grade — set per posting so the instructor decides which
 	// courses need proof against students typing in a fake grade.
-	RequireGradeProof bool `gorm:"default:false" json:"require_grade_proof"`
-	CreatedAt      time.Time    `json:"created_at"`
-	UpdatedAt      time.Time    `json:"updated_at"`
+	RequireGradeProof bool      `gorm:"default:false" json:"require_grade_proof"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 func (Course) TableName() string { return "courses" }

@@ -10,7 +10,7 @@ import { Card, CardHeader, CardBody } from '../../components/ui/Card'
 import { Input } from '../../components/ui/Input'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { EmptyState } from '../../components/ui/EmptyState'
-import { useToast } from '../../components/ui/Toast'
+import { useToast } from '../../hooks/useToast'
 import { Modal } from '../../components/ui/Modal'
 import { CourseFormModal } from './CourseFormModal'
 import { COURSE_FORM_EMPTY, splitRequirements, joinRequirements } from './_courseFormShared'
@@ -256,7 +256,7 @@ export default function InstructorHome() {
     <div>
       <div style={{ fontSize: 13, color: 'var(--ink-400)', marginBottom: 6 }}>อาจารย์ / จัดการประกาศ</div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
+      <div className="dashboard-banner" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink-900)' }}>จัดการประกาศรับสมัคร</h1>
         <div style={{ display: 'flex', gap: 10 }}>
           <Button onClick={openCreate}>+ สร้างประกาศใหม่</Button>
@@ -272,7 +272,7 @@ export default function InstructorHome() {
           <StatCard label="ประกาศของฉัน" value={activePostings.length} icon="📄" iconColor="var(--primary)" />
           <StatCard label="เปิดรับอยู่" value={openCount} icon="🕐" iconColor="var(--green)" />
           <StatCard label="รวมผู้สมัคร" value={totalApplied} icon="🧑" iconColor="var(--accent)" />
-          <StatCard label="คัดเลือกแล้ว" value={totalAccepted} icon="✅" iconColor="#7C3AED" />
+          <StatCard label="คัดเลือกแล้ว" value={totalAccepted} icon="✅" iconColor="var(--primary-700)" />
         </div>
       )}
 

@@ -17,6 +17,4 @@ VALUES
     (9,  'warissara',  '$2a$10$Ws/75uKsYag.vd9tiCiAwuW143PDyh7.3n7dMYXmv6F2.fT5H6PBO', 'วริศรา ทองดี',      'warissara@gmail.com', 'student', '650710421', 'google_sub_004', 2.95, 'วิทยาศาสตร์', 2, true, NOW(), NOW()),
     (10, 'nathapol',   '$2a$10$Ws/75uKsYag.vd9tiCiAwuW143PDyh7.3n7dMYXmv6F2.fT5H6PBO', 'ณัฐพล มีสุข',       'nathapol@gmail.com',  'student', '650710533', 'google_sub_005', 3.62, 'วิทยาศาสตร์', 3, true, NOW(), NOW());
 
--- Ids above are hardcoded, so bump the identity sequence past them or the
--- next INSERT without an explicit id (e.g. a new signup) would collide.
-SELECT setval(pg_get_serial_sequence('users', 'id'), (SELECT MAX(id) FROM users));
+-- MySQL AUTO_INCREMENT advances automatically after explicit IDs.

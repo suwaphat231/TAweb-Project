@@ -2,7 +2,8 @@ import type { ReactNode } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { authApi } from '../../services/api'
-import { Avatar, getInitials } from '../ui/Avatar'
+import { Avatar } from '../ui/Avatar'
+import { getInitials } from '../../utils/initials'
 import type { UserRole } from '../../types'
 
 interface Props {
@@ -81,14 +82,14 @@ export function Sidebar({ collapsed = false, onClose }: Props) {
   }
 
   return (
-    <aside style={{
+    <aside className="app-sidebar" style={{
       position: 'sticky',
       top: 0,
       height: '100vh',
       overflowY: 'auto',
       overflowX: 'hidden',
-      background: '#fff',
-      borderRight: '1.5px solid var(--line)',
+      background: 'var(--navy)',
+      borderRight: '1px solid var(--line)',
       display: 'flex',
       flexDirection: 'column',
       width: collapsed ? 64 : 248,
@@ -108,10 +109,10 @@ export function Sidebar({ collapsed = false, onClose }: Props) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
             width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-            background: 'linear-gradient(135deg, #1B4FD8 0%, #4F46E5 100%)',
+            background: 'var(--accent)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: '#fff', fontSize: 17, fontWeight: 700,
-            boxShadow: '0 2px 8px rgba(79,70,229,0.3)',
+            boxShadow: 'none',
           }}>L</div>
           {!collapsed && (
             <div>
@@ -124,6 +125,7 @@ export function Sidebar({ collapsed = false, onClose }: Props) {
         {onClose && (
           <button
             onClick={onClose}
+            aria-label="???????"
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-400)', padding: 4, display: 'flex' }}
           >
             <Ico name="x" />
@@ -132,7 +134,7 @@ export function Sidebar({ collapsed = false, onClose }: Props) {
       </div>
 
       {/* Navigation */}
-      <nav style={{ flex: 1, padding: collapsed ? '10px 0' : '10px 0' }}>
+      <nav style={{ flex: 1, padding: '16px 8px' }}>
         {items.map((item) => (
           <NavLink
             key={item.to}
@@ -144,13 +146,15 @@ export function Sidebar({ collapsed = false, onClose }: Props) {
               display: 'flex',
               alignItems: 'center',
               gap: collapsed ? 0 : 10,
-              padding: collapsed ? '10px 0' : '9px 20px',
+              padding: collapsed ? '12px 0' : '11px 12px',
+              marginBottom: 4,
+              borderRadius: 8,
               justifyContent: collapsed ? 'center' : 'flex-start',
               fontSize: 14,
               fontWeight: isActive ? 600 : 400,
-              color: isActive ? 'var(--primary)' : 'var(--ink-700)',
-              background: isActive ? 'var(--primary-50)' : 'transparent',
-              borderLeft: isActive ? '3px solid var(--primary)' : '3px solid transparent',
+              color: isActive ? '#fff' : 'var(--ink-700)',
+              background: isActive ? 'var(--primary)' : 'transparent',
+
               textDecoration: 'none',
               transition: 'background .1s, color .1s',
             })}

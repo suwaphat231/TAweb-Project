@@ -12,7 +12,7 @@ import (
 )
 
 // maxTranscriptSize caps the uploaded PDF at 10MB — generous for a
-// transcript scan/export while keeping a single bytea row reasonable.
+// transcript scan/export while keeping a single longblob row reasonable.
 const maxTranscriptSize = 10 << 20
 
 // TranscriptResponse is the metadata returned after upload or on lookup;
