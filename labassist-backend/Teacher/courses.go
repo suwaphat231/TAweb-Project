@@ -1,6 +1,7 @@
 package teacher
 
 import (
+	"fmt"
 	"labassist/database"
 	"labassist/models"
 	"net/http"
@@ -12,22 +13,16 @@ import (
 
 const dateOnlyLayout = "2006-01-02"
 
-// ownsCourse checks whether the caller may act on this course — the same
-// rule the course-catalog listings use (exact account match, or a
-// classlist-name match for cases where the Excel import created a separate
-// account for the same real person). Every write handler in this package
-// must use this instead of a bare InstructorID comparison, or a course that
-// shows up in the instructor's own section picker can end up rejected the
-// moment they try to actually open/edit it.
+// bangkokLoc is UTC+7 with no DST — matches Asia/Bangkok without requiring
+// the system timezone database (safe in slim Docker images).
+var bangkokLoc = time.FixedZone("Asia/Bangkok", 7*60*60)
+
+// ownsCourse uses the same account-based authorization as course listings.
 func ownsCourse(c *gin.Context, course models.Course) bool {
 	instructorID, _ := c.Get("user_id")
 	role, _ := c.Get("role")
 	isAdmin := role.(string) == "admin"
-	fullName := ""
-	if u, ok := database.UserByID(instructorID.(uint)); ok {
-		fullName = u.FullName
-	}
-	return database.InstructorOwnsCourse(course, instructorID.(uint), fullName, isAdmin)
+	return database.InstructorOwnsCourse(course, instructorID.(uint), "", isAdmin)
 }
 
 func parseDeadline(s string) *time.Time {
@@ -47,13 +42,14 @@ func recruiting(status models.CourseStatus) bool {
 	return status == models.StatusOpen || status == models.StatusClosingSoon
 }
 
-// deadlinePassed reports whether d's calendar date has fully elapsed — a
-// course stays open through the end of its deadline day.
+// deadlinePassed reports whether d's calendar date has fully elapsed in
+// Bangkok time — a course stays open through the end of its deadline day.
 func deadlinePassed(d *time.Time) bool {
 	if d == nil {
 		return false
 	}
-	endOfDeadline := time.Date(d.Year(), d.Month(), d.Day(), 23, 59, 59, 0, d.Location())
+	dBangkok := d.In(bangkokLoc)
+	endOfDeadline := time.Date(dBangkok.Year(), dBangkok.Month(), dBangkok.Day(), 23, 59, 59, 0, bangkokLoc)
 	return time.Now().After(endOfDeadline)
 }
 
@@ -234,6 +230,17 @@ func (h *Handler) Create(c *gin.Context) {
 		// Single-section posting — unchanged behavior for callers that don't
 		// specify sections at all.
 		sections = []SectionInput{{}}
+	}
+
+	for _, sec := range sections {
+		if database.CourseExists(ownerID, body.Code, body.Semester, body.AcademicYear, sec.Section) {
+			msg := fmt.Sprintf("วิชา %s ของอาจารย์คนนี้มีอยู่แล้วในภาค %s/%d", body.Code, body.Semester, body.AcademicYear)
+			if sec.Section > 0 {
+				msg = fmt.Sprintf("วิชา %s กลุ่ม %d ของอาจารย์คนนี้มีอยู่แล้วในภาค %s/%d", body.Code, sec.Section, body.Semester, body.AcademicYear)
+			}
+			c.JSON(http.StatusConflict, gin.H{"error": msg})
+			return
+		}
 	}
 
 	created := make([]models.Course, 0, len(sections))

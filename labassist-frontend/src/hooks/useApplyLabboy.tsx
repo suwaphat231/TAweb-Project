@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { studentApi } from '../services/api'
 import { Modal } from '../components/ui/Modal'
@@ -9,6 +9,9 @@ import { GRADE_OPTIONS } from '../utils/grades'
 import { cleanCourseTitle } from '../utils/courseTitle'
 import type { CourseGroup } from '../utils/courseGrouping'
 
+const MAX_FILE_SIZE = 5 * 1024 * 1024
+const ALLOWED_TYPES = ['image/jpeg', 'image/png']
+
 // Shared "สมัคร Lab Boy" modal flow (pick a section, optionally a grade,
 // confirm) so any page showing a CourseCard — the apply-to-courses page and
 // the student home dashboard alike — can open the same modal via onApply.
@@ -17,16 +20,30 @@ export function useApplyLabboy() {
   const [selectedSectionId, setSelectedSectionId] = useState<number | null>(null)
   const [grade, setGrade] = useState('')
   const [gradeProofFile, setGradeProofFile] = useState<File | null>(null)
+  const [fileError, setFileError] = useState<string | null>(null)
+  // Tracks an application that was created but whose grade-proof upload failed,
+  // so a retry can skip re-creating the application and only redo the upload.
+  const pendingAppIdRef = useRef<number | null>(null)
   const qc = useQueryClient()
   const showToast = useToast()
 
   const applyMutation = useMutation({
     mutationFn: async (vars: { course_id: number; grade?: string; gradeProofFile: File | null }) => {
-      const app = await studentApi.apply({ course_id: vars.course_id, role_applied: 'labboy', grade: vars.grade })
-      if (vars.gradeProofFile) {
-        await studentApi.uploadGradeProof(app.id, vars.gradeProofFile)
+      let appId = pendingAppIdRef.current
+      if (appId === null) {
+        const app = await studentApi.apply({ course_id: vars.course_id, role_applied: 'labboy', grade: vars.grade })
+        appId = app.id
+        if (vars.gradeProofFile) {
+          // Record the ID before the upload attempt so a failure here is
+          // recoverable — the next retry skips apply() and goes straight to
+          // uploadGradeProof() with this ID.
+          pendingAppIdRef.current = appId
+        }
       }
-      return app
+      if (vars.gradeProofFile) {
+        await studentApi.uploadGradeProof(appId, vars.gradeProofFile)
+        pendingAppIdRef.current = null
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['my-applications'] })
@@ -37,15 +54,44 @@ export function useApplyLabboy() {
       setSelectedSectionId(null)
       setGrade('')
       setGradeProofFile(null)
+      pendingAppIdRef.current = null
     },
-    onError: (err: { response?: { data?: { error?: string } } }) => {
+    onError: (err: { response?: { data?: { error?: string }; status?: number } }) => {
+      if (err.response?.status === 422) {
+        // Grade rejected by OCR — the application was auto-withdrawn; reset so
+        // the next attempt creates a fresh application instead of re-uploading
+        // to the now-withdrawn one.
+        pendingAppIdRef.current = null
+      }
       showToast(err?.response?.data?.error ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error')
     },
   })
 
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null
+    if (file) {
+      if (file.size > MAX_FILE_SIZE) {
+        setFileError('ไฟล์ต้องมีขนาดไม่เกิน 5MB')
+        setGradeProofFile(null)
+        e.target.value = ''
+        return
+      }
+      if (!ALLOWED_TYPES.includes(file.type)) {
+        setFileError('รองรับเฉพาะไฟล์ .jpg และ .png')
+        setGradeProofFile(null)
+        e.target.value = ''
+        return
+      }
+    }
+    setFileError(null)
+    setGradeProofFile(file)
+  }
+
   function openApply(group: CourseGroup) {
     setGrade('')
     setGradeProofFile(null)
+    setFileError(null)
+    pendingAppIdRef.current = null
     const firstAvailable = group.sections.find((s) => !(s.labboy_slots > 0 && s.labboy_accepted >= s.labboy_slots))
     setSelectedSectionId((firstAvailable ?? group.sections[0])?.id ?? null)
     setApplyTarget(group)
@@ -54,6 +100,7 @@ export function useApplyLabboy() {
   function confirmApply() {
     if (!selectedSectionId) return
     if (requireGradeProof && !gradeProofFile) return
+    if (fileError) return
     applyMutation.mutate({ course_id: selectedSectionId, grade: grade || undefined, gradeProofFile })
   }
 
@@ -136,10 +183,13 @@ export function useApplyLabboy() {
             <input
               type="file"
               accept="image/jpeg,image/png"
-              onChange={(e) => setGradeProofFile(e.target.files?.[0] ?? null)}
+              onChange={handleFileChange}
               style={{ fontSize: 13 }}
             />
-            {gradeProofFile && (
+            {fileError && (
+              <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 4 }}>{fileError}</div>
+            )}
+            {!fileError && gradeProofFile && (
               <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 4 }}>เลือกไฟล์: {gradeProofFile.name}</div>
             )}
           </div>
@@ -150,7 +200,7 @@ export function useApplyLabboy() {
           <Button
             onClick={confirmApply}
             loading={applyMutation.isPending}
-            disabled={!selectedSectionId || (requireGradeProof && !gradeProofFile)}
+            disabled={!selectedSectionId || (requireGradeProof && !gradeProofFile) || !!fileError}
           >
             ยืนยันสมัคร
           </Button>

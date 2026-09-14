@@ -6,6 +6,10 @@
 // own roles.
 package student
 
-type Handler struct{}
+import "labassist/config"
 
-func NewHandler() *Handler { return &Handler{} }
+type Handler struct {
+	cfg *config.Config
+}
+
+func NewHandler(cfg *config.Config) *Handler { return &Handler{cfg: cfg} }

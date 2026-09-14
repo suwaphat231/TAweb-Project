@@ -24,7 +24,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 	courseH := handlers.NewCourseHandler()
 	adminH := admin.NewHandler()
 	teacherH := teacher.NewHandler()
-	studentH := student.NewHandler()
+	studentH := student.NewHandler(cfg)
 	staffH := staff.NewHandler()
 
 	v1 := r.Group("/api/v1")
@@ -52,6 +52,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			studentGroup.PUT("/student/applications/:id/withdraw", studentH.Withdraw)
 			studentGroup.GET("/student/profile", studentH.GetProfile)
 			studentGroup.PUT("/student/profile", studentH.UpdateProfile)
+			studentGroup.POST("/student/profile/avatar", studentH.UploadAvatar)
 			studentGroup.GET("/student/notifications", studentH.MyNotifications)
 			studentGroup.PUT("/student/notifications/read-all", studentH.MarkAllRead)
 			studentGroup.PUT("/student/notifications/:id/read", studentH.MarkRead)

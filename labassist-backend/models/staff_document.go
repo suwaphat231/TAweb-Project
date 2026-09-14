@@ -6,6 +6,7 @@ type DocType string
 type DocStatus string
 
 const (
+	DocHiringNotice    DocType = "hiring_notice"
 	DocApprovalMemo    DocType = "approval_memo"
 	DocPaymentEvidence DocType = "payment_evidence"
 	DocPaymentRequest  DocType = "payment_request"
@@ -36,25 +37,32 @@ type DocumentPeriod struct {
 
 // StaffDocument represents a document created by staff as part of the
 // hiring/payment workflow (approval memo → work report → payment evidence →
-// payment request). Stored in-memory alongside applications and notifications.
+// payment request).
 type StaffDocument struct {
-	ID        uint      `json:"id"`
-	Name      string    `json:"name"`
-	Type      DocType   `json:"type"`
-	CourseRef string    `json:"course_ref"`
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Name      string    `gorm:"not null" json:"name"`
+	Type      DocType   `gorm:"type:enum('hiring_notice','approval_memo','payment_evidence','payment_request','work_report');not null" json:"type"`
+	CourseRef string    `gorm:"size:255" json:"course_ref"`
 	CourseID  *uint     `json:"course_id,omitempty"`
-	StaffID   uint      `json:"staff_id"`
-	Status    DocStatus `json:"status"`
-	Note      string    `json:"note,omitempty"`
+	StaffID   uint      `gorm:"not null" json:"staff_id"`
+	Status    DocStatus `gorm:"type:enum('draft','pending','approved');not null;default:'draft'" json:"status"`
+	Note      string    `gorm:"type:text" json:"note,omitempty"`
 
 	// Line-item fields, populated only for the 3 document types that carry
 	// a per-student roster (payment_evidence, payment_request, work_report).
-	Period          *DocumentPeriod `json:"period,omitempty"`
-	SessionDates    []int           `json:"session_dates,omitempty"` // day-of-month
+	Period          *DocumentPeriod `gorm:"serializer:json" json:"period,omitempty"`
+	SessionDates    []int           `gorm:"serializer:json" json:"session_dates,omitempty"`
 	HoursPerSession float64         `json:"hours_per_session,omitempty"`
 	Rate            float64         `json:"rate,omitempty"`
-	Roster          []RosterEntry   `json:"roster,omitempty"` // creation-time snapshot; excluded students are simply absent
+	Roster          []RosterEntry   `gorm:"serializer:json;type:longtext" json:"roster,omitempty"`
 	TotalAmount     float64         `json:"total_amount,omitempty"`
+
+	// WorkDay/WorkTimeStart/WorkTimeEnd describe the recurring weekly
+	// schedule for line-item documents so the work report can display
+	// "วันพุธ เวลา 10:20 น. - 12:20 น." per session row.
+	WorkDay       string `json:"work_day,omitempty"`
+	WorkTimeStart string `json:"work_time_start,omitempty"`
+	WorkTimeEnd   string `json:"work_time_end,omitempty"`
 
 	// Bureaucratic memo fields — no existing model can derive these, so
 	// they're typed once per document.
@@ -65,5 +73,7 @@ type StaffDocument struct {
 	DeanName         string `json:"dean_name,omitempty"`
 	StaffOfficerName string `json:"staff_officer_name,omitempty"`
 
-	CreatedAt time.Time `json:"created_at"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 }
+
+func (StaffDocument) TableName() string { return "staff_documents" }

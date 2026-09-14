@@ -24,9 +24,10 @@ const routeMeta: Record<string, { title: string; breadcrumb: string }> = {
   '/instructor/announce': { title: 'จัดการประกาศ',       breadcrumb: 'อาจารย์' },
   '/instructor/select':   { title: 'คัดเลือกผู้สมัคร',   breadcrumb: 'อาจารย์' },
   '/instructor/profile':  { title: 'ข้อมูลส่วนตัว',      breadcrumb: 'อาจารย์' },
-  '/staff/home':          { title: 'ภาพรวม',             breadcrumb: 'เจ้าหน้าที่' },
-  '/staff/docs':          { title: 'จัดการเอกสาร',       breadcrumb: 'เจ้าหน้าที่' },
-  '/staff/profile':       { title: 'ข้อมูลส่วนตัว',      breadcrumb: 'เจ้าหน้าที่' },
+  '/staff/home':          { title: 'ภาพรวม',              breadcrumb: 'เจ้าหน้าที่' },
+  '/staff/review':        { title: 'ตรวจสอบแบบฟอร์ม',   breadcrumb: 'เจ้าหน้าที่' },
+  '/staff/docs':          { title: 'จัดการเอกสาร',        breadcrumb: 'เจ้าหน้าที่' },
+  '/staff/profile':       { title: 'ข้อมูลส่วนตัว',       breadcrumb: 'เจ้าหน้าที่' },
   '/admin/overview':      { title: 'ภาพรวมระบบ',         breadcrumb: 'ผู้ดูแลระบบ' },
   '/admin/courses':       { title: 'จัดการรายวิชา',      breadcrumb: 'ผู้ดูแลระบบ' },
   '/admin/users':         { title: 'จัดการผู้ใช้งาน',    breadcrumb: 'ผู้ดูแลระบบ' },
@@ -85,6 +86,9 @@ function NotificationBell() {
     <div ref={ref} style={{ position: 'relative' }}>
       <button
         onClick={() => setIsOpen((v) => !v)}
+        aria-label={unread > 0 ? `การแจ้งเตือน ${unread} รายการที่ยังไม่ได้อ่าน` : 'การแจ้งเตือน'}
+        aria-expanded={isOpen}
+        aria-haspopup="true"
         style={{
           background: 'none', border: 'none', cursor: 'pointer',
           color: isOpen ? 'var(--primary)' : 'var(--ink-500)',
@@ -97,14 +101,17 @@ function NotificationBell() {
           <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
         </svg>
         {enabled && unread > 0 && (
-          <span style={{
-            position: 'absolute', top: 2, right: 2,
-            minWidth: 16, height: 16, borderRadius: 9999,
-            background: 'var(--red)', border: '1.5px solid #fff',
-            fontSize: 9, fontWeight: 700, color: '#fff',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: '0 3px',
-          }}>
+          <span
+            aria-hidden="true"
+            style={{
+              position: 'absolute', top: 2, right: 2,
+              minWidth: 16, height: 16, borderRadius: 9999,
+              background: 'var(--red)', border: '1.5px solid #fff',
+              fontSize: 9, fontWeight: 700, color: '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: '0 3px',
+            }}
+          >
             {unread > 9 ? '9+' : unread}
           </span>
         )}
@@ -162,31 +169,41 @@ function NotificationBell() {
             </div>
           ) : (
             notifs.map((n: Notification) => (
-              <div
-                key={n.id}
-                onClick={() => { if (!n.is_read) markOneMut.mutate(n.id) }}
-                style={{
-                  padding: '12px 16px',
-                  borderBottom: '1px solid var(--line-soft)',
-                  background: n.is_read ? '#fff' : 'var(--primary-50)',
-                  cursor: n.is_read ? 'default' : 'pointer',
-                  borderLeft: n.is_read ? '3px solid transparent' : '3px solid var(--primary)',
-                  transition: 'background .1s',
-                }}
-              >
-                <div style={{
-                  fontSize: 13, fontWeight: n.is_read ? 500 : 700,
-                  color: 'var(--ink-900)', marginBottom: 3,
-                }}>
-                  {n.title}
+              n.is_read ? (
+                <div
+                  key={n.id}
+                  style={{
+                    padding: '12px 16px',
+                    borderBottom: '1px solid var(--line-soft)',
+                    background: '#fff',
+                    borderLeft: '3px solid transparent',
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-900)', marginBottom: 3 }}>{n.title}</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-600)', lineHeight: 1.6 }}>{n.body}</div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 5 }}>{formatTime(n.created_at)}</div>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--ink-600)', lineHeight: 1.6 }}>
-                  {n.body}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 5 }}>
-                  {formatTime(n.created_at)}
-                </div>
-              </div>
+              ) : (
+                <button
+                  key={n.id}
+                  onClick={() => markOneMut.mutate(n.id)}
+                  style={{
+                    display: 'block', width: '100%', textAlign: 'left',
+                    padding: '12px 16px',
+                    borderBottom: '1px solid var(--line-soft)',
+                    background: 'var(--primary-50)',
+                    cursor: 'pointer',
+                    borderLeft: '3px solid var(--primary)',
+                    borderRight: 'none', borderTop: 'none',
+                    transition: 'background .1s',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 3 }}>{n.title}</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-600)', lineHeight: 1.6 }}>{n.body}</div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 5 }}>{formatTime(n.created_at)}</div>
+                </button>
+              )
             ))
           )}
         </div>
@@ -223,6 +240,7 @@ export function Topbar({ title, breadcrumb, actions, onHamburgerClick }: Props) 
         {onHamburgerClick && (
           <button
             onClick={onHamburgerClick}
+            aria-label="เปิดเมนู"
             style={{
               background: 'none', border: 'none', cursor: 'pointer',
               color: 'var(--ink-700)', padding: 6, borderRadius: 8,
@@ -256,7 +274,7 @@ export function Topbar({ title, breadcrumb, actions, onHamburgerClick }: Props) 
 
         {/* Avatar */}
         {user && (
-          <Avatar initials={getInitials(user.full_name)} color="blue" size={32} />
+          <Avatar initials={getInitials(user.full_name)} src={user.avatar_url} color="blue" size={32} />
         )}
       </div>
     </header>

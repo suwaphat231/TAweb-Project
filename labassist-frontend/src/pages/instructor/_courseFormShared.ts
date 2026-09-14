@@ -15,7 +15,7 @@ export const COURSE_FORM_EMPTY: CreateCoursePayload = {
   require_grade_proof: false,
 }
 
-const GRADE_PREFIX_RE = /^เกรดเฉลี่ยขั้นต่ำ:\s*(A|B|C|D)\s*\n?/
+const GRADE_PREFIX_RE = /^เกรดเฉลี่ยขั้นต่ำ:\s*(A|B\+|B|C\+|C|D\+|D)\s*\n?/
 
 export function splitRequirements(requirements: string) {
   const match = requirements.match(GRADE_PREFIX_RE)

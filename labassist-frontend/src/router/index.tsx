@@ -1,29 +1,32 @@
+import { lazy, Suspense } from 'react'
+import { PageLoading } from '../components/ui/PageLoading'
+import { PageLoadBoundary } from '../components/ui/PageLoadBoundary'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { AppShell } from '../components/layout/AppShell'
-import LoginPage from '../pages/auth/LoginPage'
-import AuthCallback from '../pages/auth/AuthCallback'
+const LoginPage = lazy(() => import('../pages/auth/LoginPage'))
+const AuthCallback = lazy(() => import('../pages/auth/AuthCallback'))
 
-import StudentHome from '../pages/student/StudentHome'
-import StudentApply from '../pages/student/StudentApply'
-import StudentStatus from '../pages/student/StudentStatus'
-import StudentProfile from '../pages/student/StudentProfile'
-import StudentGradeCheck from '../pages/student/StudentGradeCheck'
+const StudentHome = lazy(() => import('../pages/student/StudentHome'))
+const StudentApply = lazy(() => import('../pages/student/StudentApply'))
+const StudentStatus = lazy(() => import('../pages/student/StudentStatus'))
+const StudentProfile = lazy(() => import('../pages/student/StudentProfile'))
+const StudentGradeCheck = lazy(() => import('../pages/student/StudentGradeCheck'))
 
-import InstructorHome from '../pages/instructor/InstructorHome'
-import InstructorMyCourses from '../pages/instructor/InstructorMyCourses'
-import InstructorAnnounce from '../pages/instructor/InstructorAnnounce'
-import InstructorSelect from '../pages/instructor/InstructorSelect'
-import InstructorProfile from '../pages/instructor/InstructorProfile'
+const InstructorHome = lazy(() => import('../pages/instructor/InstructorHome'))
+const InstructorMyCourses = lazy(() => import('../pages/instructor/InstructorMyCourses'))
+const InstructorAnnounce = lazy(() => import('../pages/instructor/InstructorAnnounce'))
+const InstructorSelect = lazy(() => import('../pages/instructor/InstructorSelect'))
+const InstructorProfile = lazy(() => import('../pages/instructor/InstructorProfile'))
 
-import StaffHome from '../pages/staff/StaffHome'
-import StaffReview from '../pages/staff/StaffReview'
-import StaffDocs from '../pages/staff/StaffDocs'
-import StaffProfile from '../pages/staff/StaffProfile'
+const StaffHome = lazy(() => import('../pages/staff/StaffHome'))
+const StaffReview = lazy(() => import('../pages/staff/StaffReview'))
+const StaffDocs = lazy(() => import('../pages/staff/StaffDocs'))
+const StaffProfile = lazy(() => import('../pages/staff/StaffProfile'))
 
-import AdminOverview from '../pages/admin/AdminOverview'
-import AdminUsers from '../pages/admin/AdminUsers'
-import AdminCourses from '../pages/admin/AdminCourses'
+const AdminOverview = lazy(() => import('../pages/admin/AdminOverview'))
+const AdminUsers = lazy(() => import('../pages/admin/AdminUsers'))
+const AdminCourses = lazy(() => import('../pages/admin/AdminCourses'))
 
 import type { UserRole } from '../types'
 
@@ -39,7 +42,7 @@ function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles?
   const location = useLocation()
   if (!isAuthenticated || !user || !token) return <Navigate to="/login" state={{ from: location }} replace />
   if (roles && user && !roles.includes(user.role)) return <Navigate to="/" replace />
-  return <AppShell key={user.id}>{children}</AppShell>
+  return <AppShell key={user.id}><PageLoadBoundary key={location.pathname}><Suspense fallback={<PageLoading />}>{children}</Suspense></PageLoadBoundary></AppShell>
 }
 
 function HomeRedirect() {
@@ -50,6 +53,8 @@ function HomeRedirect() {
 
 export function AppRouter() {
   return (
+    <PageLoadBoundary>
+    <Suspense fallback={<PageLoading />}>
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
@@ -84,5 +89,7 @@ export function AppRouter() {
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
+    </PageLoadBoundary>
   )
 }

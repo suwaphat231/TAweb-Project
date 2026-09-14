@@ -64,7 +64,6 @@ export default function StaffReview() {
   })
 
   const pendingCount = reviews.filter((r) => r.status === 'pending').length
-  const verifiedCount = reviews.filter((r) => r.status === 'verified').length
 
   function handleOpenReturn(form: FormReview) {
     setSelected(form)
@@ -79,41 +78,44 @@ export default function StaffReview() {
   }
 
   return (
-    <div>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink-900)' }}>ตรวจสอบแบบฟอร์ม</h1>
-        <p style={{ fontSize: 14, color: 'var(--ink-500)', marginTop: 4 }}>
-          ตรวจสอบความครบถ้วนของแบบฟอร์มแจ้งความประสงค์ขอผู้ช่วยปฏิบัติการที่อาจารย์ส่งมา
-        </p>
-      </div>
+    <div style={{ maxWidth: 1040, margin: '0 auto' }}>
 
-      {/* Stats strip */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-        {[
-          { label: 'รอตรวจสอบ', value: pendingCount,    color: '#F59E0B' },
-          { label: 'ผ่านแล้ว',  value: verifiedCount,   color: '#22C55E' },
-          { label: 'ทั้งหมด',   value: reviews.length,  color: 'var(--primary)' },
-        ].map((s) => (
-          <div key={s.label} style={{
-            background: '#fff', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-card)',
-            padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 12, minWidth: 140,
+      {/* Page header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+        <div style={{ flex: 1 }}>
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 3 }}>
+            ตรวจสอบแบบฟอร์ม
+          </h1>
+          <p style={{ fontSize: 13, color: 'var(--ink-400)' }}>
+            ตรวจสอบแบบฟอร์มแจ้งความประสงค์ที่อาจารย์ส่งมา
+          </p>
+        </div>
+        {!isLoading && pendingCount > 0 && (
+          <div style={{
+            fontSize: 12, fontWeight: 700, padding: '5px 14px',
+            background: 'var(--amber-bg)', color: '#92400E',
+            borderRadius: 999, border: '1px solid #FDE68A',
           }}>
-            <span style={{ fontSize: 24, fontWeight: 700, color: s.color }}>{s.value}</span>
-            <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>{s.label}</span>
+            {pendingCount} รายการรอตรวจสอบ
           </div>
-        ))}
+        )}
       </div>
 
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
+      {/* Filter toolbar */}
+      <div style={{
+        display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap',
+        background: '#fff', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-card)',
+        padding: '10px 14px',
+      }}>
         <FilterChips options={STATUS_OPTIONS} value={statusFilter} onChange={setStatusFilter} />
+        <div style={{ flex: 1 }} />
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="ค้นหารหัสวิชา / อาจารย์..."
           style={{
             padding: '7px 12px', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-input)',
-            fontSize: 13, color: 'var(--ink-900)', outline: 'none', minWidth: 220,
+            fontSize: 13, color: 'var(--ink-900)', outline: 'none', width: 220,
           }}
           onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--primary)')}
           onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
@@ -121,7 +123,7 @@ export default function StaffReview() {
       </div>
 
       {/* Table */}
-      <div style={{ background: '#fff', borderRadius: 'var(--radius-card)', overflow: 'auto', boxShadow: 'var(--shadow-md)' }}>
+      <div style={{ background: '#fff', borderRadius: 'var(--radius-card)', overflow: 'auto', border: '1.5px solid var(--line)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead>
             <tr style={{ background: 'var(--bg)', borderBottom: '1.5px solid var(--line)' }}>
@@ -134,7 +136,11 @@ export default function StaffReview() {
             {isLoading ? (
               <tr><td colSpan={6} style={{ padding: 24 }}><Skeleton lines={4} height={14} /></td></tr>
             ) : reviews.length === 0 ? (
-              <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: 'var(--ink-400)', fontSize: 14 }}>ไม่พบรายการ</td></tr>
+              <tr>
+                <td colSpan={6} style={{ padding: '52px 24px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>ไม่พบรายการ</div>
+                </td>
+              </tr>
             ) : reviews.map((form, i) => (
               <tr key={form.course_id}
                 style={{ borderBottom: i < reviews.length - 1 ? '1px solid var(--line-soft)' : 'none', transition: 'background .1s' }}
@@ -143,7 +149,8 @@ export default function StaffReview() {
               >
                 <td style={{ padding: '13px 16px' }}>
                   <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--ink-900)' }}>
-                    {form.course_code} <span style={{ color: 'var(--ink-400)', fontWeight: 400, fontSize: 12 }}>ตอน {form.section}</span>
+                    {form.course_code}{' '}
+                    <span style={{ color: 'var(--ink-400)', fontWeight: 400, fontSize: 12 }}>ตอน {form.section}</span>
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--ink-600)', marginTop: 2 }}>{form.course_title}</div>
                   {form.status === 'returned' && form.note && (

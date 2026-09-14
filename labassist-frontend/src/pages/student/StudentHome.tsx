@@ -7,6 +7,7 @@ import { StatusBadge } from '../../components/ui/Badge'
 import { Skeleton, SkeletonCard } from '../../components/ui/Skeleton'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
+import { ErrorState } from '../../components/ui/ErrorState'
 import { Avatar } from '../../components/ui/Avatar'
 import { getInitials } from '../../utils/initials'
 import { CourseCard } from '../../components/course/CourseCard'
@@ -17,7 +18,7 @@ import { cleanCourseTitle } from '../../utils/courseTitle'
 export default function StudentHome() {
   const { user } = useAuth()
   const { openApply, modal } = useApplyLabboy()
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['student-dashboard'],
     queryFn: studentApi.dashboard,
   })
@@ -57,8 +58,8 @@ export default function StudentHome() {
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 16, marginBottom: 28 }}>
-          <StatCard label="วิชาที่เปิดรับ" value={data?.stats.open_courses ?? 0} iconColor="var(--primary)" icon="📚" />
-          <StatCard label="สมัครแล้ว" value={data?.stats.applied ?? 0} iconColor="var(--green)" icon="✅" />
+          <StatCard label="วิชาที่เปิดรับ" value={isError ? '—' : (data?.stats.open_courses ?? 0)} iconColor="var(--primary)" icon="📚" />
+          <StatCard label="สมัครแล้ว" value={isError ? '—' : (data?.stats.applied ?? 0)} iconColor="var(--green)" icon="✅" />
         </div>
       )}
 
@@ -73,6 +74,10 @@ export default function StudentHome() {
             <div style={{ display: 'grid', gap: 14 }}>
               {[1,2,3].map(i => <SkeletonCard key={i} />)}
             </div>
+          ) : isError ? (
+            <Card style={{ padding: 0 }}>
+              <ErrorState onRetry={refetch} />
+            </Card>
           ) : (data?.recent_courses?.length ?? 0) === 0 ? (
             <Card style={{ padding: 32, textAlign: 'center', color: 'var(--ink-400)' }}>ยังไม่มีวิชาเปิดรับสมัคร</Card>
           ) : (
@@ -98,6 +103,8 @@ export default function StudentHome() {
           <Card style={{ overflow: 'hidden' }}>
             {isLoading ? (
               <div style={{ padding: 20 }}><Skeleton lines={4} height={18} /></div>
+            ) : isError ? (
+              <ErrorState compact onRetry={refetch} />
             ) : (data?.recent_applications?.length ?? 0) === 0 ? (
               <div style={{ padding: '28px 20px', textAlign: 'center' }}>
                 <p style={{ color: 'var(--ink-400)', fontSize: 14, marginBottom: 14 }}>ยังไม่มีการสมัคร</p>

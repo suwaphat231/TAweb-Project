@@ -6,6 +6,7 @@ export interface User {
   id: number
   username: string
   full_name: string
+  avatar_url?: string
   email: string
   role: UserRole
   student_id?: string
@@ -212,7 +213,7 @@ export interface ImportCoursesResponse {
 }
 
 export type ReviewStatus = 'pending' | 'verified' | 'returned'
-export type DocType = 'approval_memo' | 'payment_evidence' | 'payment_request' | 'work_report'
+export type DocType = 'hiring_notice' | 'approval_memo' | 'payment_evidence' | 'payment_request' | 'work_report'
 export type DocStatus = 'draft' | 'pending' | 'approved'
 
 export interface FormReview {
@@ -261,6 +262,9 @@ export interface StaffDocument {
   rate?: number
   roster?: RosterEntry[]
   total_amount?: number
+  work_day?: string
+  work_time_start?: string
+  work_time_end?: string
   ref_number?: string
   prior_memo_ref?: string
   prior_memo_date?: string
@@ -281,6 +285,9 @@ export interface CreateStaffDocumentPayload {
   hours_per_session?: number
   rate?: number
   excluded_student_ids?: number[]
+  work_day?: string
+  work_time_start?: string
+  work_time_end?: string
   ref_number?: string
   prior_memo_ref?: string
   prior_memo_date?: string

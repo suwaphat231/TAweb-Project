@@ -1,22 +1,9 @@
 package database
 
 import (
-	"sort"
 	"strings"
-	"sync"
-	"time"
 
 	"labassist/models"
-)
-
-var staffMu sync.RWMutex
-
-var (
-	formReviews    []*models.FormReview
-	staffDocuments []*models.StaffDocument
-
-	nextReviewID uint = 1
-	nextDocID    uint = 1
 )
 
 // enrichReview copies course fields onto the review so callers get everything
@@ -40,39 +27,23 @@ func enrichReview(r models.FormReview) models.FormReview {
 
 // UpsertFormReview creates or replaces the staff review for a course.
 func UpsertFormReview(courseID, reviewerID uint, status models.ReviewStatus, note string) models.FormReview {
-	staffMu.Lock()
-	defer staffMu.Unlock()
-	for _, r := range formReviews {
-		if r.CourseID == courseID {
-			r.ReviewerID = reviewerID
-			r.Status = status
-			r.Note = note
-			r.UpdatedAt = time.Now()
-			return enrichReview(*r)
-		}
-	}
-	r := &models.FormReview{
-		ID:         nextReviewID,
-		CourseID:   courseID,
-		ReviewerID: reviewerID,
-		Status:     status,
-		Note:       note,
-		UpdatedAt:  time.Now(),
-	}
-	nextReviewID++
-	formReviews = append(formReviews, r)
-	return enrichReview(*r)
+	var r models.FormReview
+	DB.Where("course_id = ?", courseID).FirstOrInit(&r)
+	r.CourseID = courseID
+	r.ReviewerID = reviewerID
+	r.Status = status
+	r.Note = note
+	DB.Save(&r)
+	return enrichReview(r)
 }
 
-// reviewByCourseIDLocked returns the existing review or a synthetic pending
-// one — caller must hold staffMu.
-func reviewByCourseIDLocked(courseID uint) models.FormReview {
-	for _, r := range formReviews {
-		if r.CourseID == courseID {
-			return *r
-		}
+// reviewByCourseID returns the existing review or a synthetic pending one.
+func reviewByCourseID(courseID uint) models.FormReview {
+	var r models.FormReview
+	if DB.Where("course_id = ?", courseID).First(&r).Error != nil {
+		return models.FormReview{CourseID: courseID, Status: models.ReviewPending}
 	}
-	return models.FormReview{CourseID: courseID, Status: models.ReviewPending}
+	return r
 }
 
 // ListFormReviews returns all courses that have labboy slots, each enriched
@@ -82,12 +53,9 @@ func ListFormReviews(statusFilter, search string) []models.FormReview {
 	var courses []models.Course
 	DB.Where("lab_boy_slots > 0").Order("id DESC").Find(&courses)
 
-	staffMu.RLock()
-	defer staffMu.RUnlock()
-
 	out := make([]models.FormReview, 0, len(courses))
 	for _, c := range courses {
-		raw := reviewByCourseIDLocked(c.ID)
+		raw := reviewByCourseID(c.ID)
 		if statusFilter != "" && string(raw.Status) != statusFilter {
 			continue
 		}
@@ -107,66 +75,49 @@ func ListFormReviews(statusFilter, search string) []models.FormReview {
 
 // --- StaffDocument ---
 
-// CreateStaffDocument adds a new document to the in-memory list.
+// CreateStaffDocument persists a new document to the database.
 func CreateStaffDocument(d models.StaffDocument) models.StaffDocument {
-	staffMu.Lock()
-	defer staffMu.Unlock()
-	d.ID = nextDocID
-	nextDocID++
-	d.CreatedAt = time.Now()
-	cp := d
-	staffDocuments = append(staffDocuments, &cp)
-	return cp
+	d.ID = 0
+	DB.Create(&d)
+	return d
 }
 
 // StaffDocumentByID returns a single document by ID.
 func StaffDocumentByID(id uint) (models.StaffDocument, bool) {
-	staffMu.RLock()
-	defer staffMu.RUnlock()
-	for _, d := range staffDocuments {
-		if d.ID == id {
-			return *d, true
-		}
+	var d models.StaffDocument
+	if DB.First(&d, id).Error != nil {
+		return models.StaffDocument{}, false
 	}
-	return models.StaffDocument{}, false
+	return d, true
 }
 
 // ListStaffDocuments returns documents filtered by type and/or status, newest first.
 func ListStaffDocuments(typeFilter, statusFilter, search string) []models.StaffDocument {
-	staffMu.RLock()
-	defer staffMu.RUnlock()
-
-	out := make([]models.StaffDocument, 0, len(staffDocuments))
-	for i := len(staffDocuments) - 1; i >= 0; i-- {
-		d := *staffDocuments[i]
-		if typeFilter != "" && string(d.Type) != typeFilter {
-			continue
-		}
-		if statusFilter != "" && string(d.Status) != statusFilter {
-			continue
-		}
-		if search != "" {
-			q := strings.ToLower(search)
-			if !strings.Contains(strings.ToLower(d.Name), q) &&
-				!strings.Contains(strings.ToLower(d.CourseRef), q) {
-				continue
-			}
-		}
-		out = append(out, d)
+	query := DB.Order("created_at DESC")
+	if typeFilter != "" {
+		query = query.Where("type = ?", typeFilter)
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	if statusFilter != "" {
+		query = query.Where("status = ?", statusFilter)
+	}
+	if search != "" {
+		q := "%" + strings.ToLower(search) + "%"
+		query = query.Where("LOWER(name) LIKE ? OR LOWER(course_ref) LIKE ?", q, q)
+	}
+	var out []models.StaffDocument
+	query.Find(&out)
 	return out
 }
 
 // UpdateStaffDocumentStatus changes the status of a document by ID.
 func UpdateStaffDocumentStatus(id uint, status models.DocStatus) (models.StaffDocument, bool) {
-	staffMu.Lock()
-	defer staffMu.Unlock()
-	for _, d := range staffDocuments {
-		if d.ID == id {
-			d.Status = status
-			return *d, true
-		}
+	var d models.StaffDocument
+	if DB.First(&d, id).Error != nil {
+		return models.StaffDocument{}, false
 	}
-	return models.StaffDocument{}, false
+	d.Status = status
+	if err := DB.Save(&d).Error; err != nil {
+		return models.StaffDocument{}, false
+	}
+	return d, true
 }

@@ -237,6 +237,19 @@ func (h *Handler) ImportCourses(c *gin.Context) {
 			title = code
 		}
 
+		// Skip lecture-only courses (lab hours = 0 in the credits string).
+		// Only courses with lab sessions are eligible for Lab Boy hiring.
+		credits := get(row, "credits")
+		labHours := database.LabHoursFromCredits(credits)
+		if labHours == 0 {
+			skip := "ไม่มีคาบแลป"
+			if credits != "" {
+				skip += " (หน่วยกิต: " + credits + ")"
+			}
+			resp.Skipped = append(resp.Skipped, ImportSkippedRow{Row: rowNum, Reason: skip})
+			continue
+		}
+
 		// The instructor cell is shown to the admin exactly as written in
 		// the file (InstructorsRaw), co-teaching names and all — nothing is
 		// checked or filtered for display. Separately, the first name that
@@ -259,7 +272,7 @@ func (h *Handler) ImportCourses(c *gin.Context) {
 			Code:           code,
 			Title:          title,
 			EnglishTitle:   get(row, "english_title"),
-			Credits:        get(row, "credits"),
+			Credits:        credits,
 			Schedule:       get(row, "schedule"),
 			Section:        getInt(row, "section"),
 			Capacity:       getInt(row, "capacity"),
@@ -269,6 +282,7 @@ func (h *Handler) ImportCourses(c *gin.Context) {
 			Semester:       semester,
 			AcademicYear:   academicYear,
 			Status:         models.StatusDraft,
+			HasLab:         labHours > 0,
 		})
 		resp.Created = append(resp.Created, ImportCourseResult{
 			Row: rowNum, Code: course.Code, Title: course.Title, Instructor: instructorsRaw,

@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { staffApi, applicationsAPI } from '../../services/api'
-import { FilterChips } from '../../components/ui/FilterChips'
 import { Modal } from '../../components/ui/Modal'
 import { Select } from '../../components/ui/Select'
 import { Input } from '../../components/ui/Input'
@@ -12,26 +11,22 @@ import { useToast } from '../../hooks/useToast'
 import { triggerBrowserDownload } from '../../utils/download'
 import type { DocType, DocStatus, StaffDocument, CreateStaffDocumentPayload } from '../../types'
 
-const STATUS_OPTIONS = [
-  { value: '', label: 'ทุกสถานะ' },
-  { value: 'draft',    label: 'ร่าง' },
-  { value: 'pending',  label: 'รออนุมัติ' },
-  { value: 'approved', label: 'อนุมัติแล้ว' },
-]
-
 const TYPE_LABELS: Record<DocType, string> = {
+  hiring_notice:    'แบบฟอร์มแจ้งความประสงค์',
   approval_memo:    'บันทึกขออนุมัติจ้าง',
   work_report:      'รายงานผลการปฏิบัติงาน',
   payment_evidence: 'หลักฐานการจ่ายเงิน',
   payment_request:  'บันทึกขอเบิกจ่าย',
 }
 const TYPE_STEP: Record<DocType, string> = {
+  hiring_notice:    'ขั้นตอนที่ 1',
   approval_memo:    'ขั้นตอนที่ 3',
   work_report:      'ขั้นตอนที่ 4',
   payment_evidence: 'ขั้นตอนที่ 5',
   payment_request:  'ขั้นตอนที่ 6',
 }
 const TYPE_COLOR: Record<DocType, string> = {
+  hiring_notice:    '#7C3AED',
   approval_memo:    'var(--primary)',
   work_report:      '#059669',
   payment_evidence: 'var(--primary-700)',
@@ -49,9 +44,12 @@ const THAI_MONTHS = [
   'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
 ]
 
+const NEEDS_COURSE_TYPES: DocType[] = ['hiring_notice', 'payment_evidence', 'payment_request', 'work_report']
 const LINE_ITEM_TYPES: DocType[] = ['payment_evidence', 'payment_request', 'work_report']
 
 const nowBE = new Date().getFullYear() + 543
+
+const THAI_DAYS = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์']
 
 const FORM_EMPTY = {
   type: '' as DocType | '',
@@ -63,6 +61,9 @@ const FORM_EMPTY = {
   session_dates: '',
   hours_per_session: '2',
   rate: '50',
+  work_day: '',
+  work_time_start: '',
+  work_time_end: '',
   ref_number: '',
   prior_memo_ref: '',
   prior_memo_date: '',
@@ -70,6 +71,14 @@ const FORM_EMPTY = {
   dean_name: '',
   staff_officer_name: '',
 }
+
+// Status filter options
+const STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: '',         label: 'ทุกสถานะ'  },
+  { value: 'draft',    label: 'ร่าง'      },
+  { value: 'pending',  label: 'รออนุมัติ' },
+  { value: 'approved', label: 'อนุมัติแล้ว' },
+]
 
 export default function StaffDocs() {
   const qc = useQueryClient()
@@ -91,19 +100,25 @@ export default function StaffDocs() {
     }),
   })
 
+  const { data: allDocs = [] } = useQuery({
+    queryKey: ['staff-documents'],
+    queryFn: () => staffApi.listDocuments(),
+  })
+
   const { data: reviews = [] } = useQuery({
     queryKey: ['staff-reviews-for-doc-picker'],
     queryFn: () => staffApi.listReviews(),
     enabled: showCreate,
   })
 
+  const needsCourse = NEEDS_COURSE_TYPES.includes(form.type as DocType)
   const isLineItem = LINE_ITEM_TYPES.includes(form.type as DocType)
   const courseId = form.course_id ? Number(form.course_id) : undefined
 
   const { data: applicants = [] } = useQuery({
     queryKey: ['course-applicants-for-doc', courseId],
     queryFn: () => applicationsAPI.getCourseApplicants(courseId as number),
-    enabled: isLineItem && !!courseId,
+    enabled: needsCourse && !!courseId,
   })
   const roster = useMemo(() => applicants.filter((a) => a.status === 'accepted'), [applicants])
 
@@ -162,28 +177,34 @@ export default function StaffDocs() {
       note: form.note || undefined,
     }
 
-    if (isLineItem) {
+    if (needsCourse) {
       if (!courseId) {
         showToast('กรุณาเลือกรายวิชา', 'error')
         return
       }
       payload.course_id = courseId
-      payload.month = Number(form.month)
-      payload.year = Number(form.year)
-      payload.session_dates = sessionDates
-      payload.hours_per_session = hoursPerSession
-      payload.rate = rate
       payload.excluded_student_ids = Array.from(excludedIds)
-      if (form.type === 'payment_request') {
-        payload.ref_number = form.ref_number || undefined
-        payload.prior_memo_ref = form.prior_memo_ref || undefined
-        payload.prior_memo_date = form.prior_memo_date || undefined
-        payload.dept_head_name = form.dept_head_name || undefined
-        payload.staff_officer_name = form.staff_officer_name || undefined
-      }
-      if (form.type === 'work_report') {
-        payload.dept_head_name = form.dept_head_name || undefined
-        payload.dean_name = form.dean_name || undefined
+
+      if (isLineItem) {
+        payload.month = Number(form.month)
+        payload.year = Number(form.year)
+        payload.session_dates = sessionDates
+        payload.hours_per_session = hoursPerSession
+        payload.rate = rate
+        payload.work_day = form.work_day || undefined
+        payload.work_time_start = form.work_time_start || undefined
+        payload.work_time_end = form.work_time_end || undefined
+        if (form.type === 'payment_request') {
+          payload.ref_number = form.ref_number || undefined
+          payload.prior_memo_ref = form.prior_memo_ref || undefined
+          payload.prior_memo_date = form.prior_memo_date || undefined
+          payload.dept_head_name = form.dept_head_name || undefined
+          payload.staff_officer_name = form.staff_officer_name || undefined
+        }
+        if (form.type === 'work_report') {
+          payload.dept_head_name = form.dept_head_name || undefined
+          payload.dean_name = form.dean_name || undefined
+        }
       }
     }
 
@@ -209,42 +230,58 @@ export default function StaffDocs() {
     })
   }
 
+  const draftCount    = allDocs.filter((d) => d.status === 'draft').length
+  const pendingCount  = allDocs.filter((d) => d.status === 'pending').length
+  const approvedCount = allDocs.filter((d) => d.status === 'approved').length
+
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink-900)' }}>จัดการเอกสาร</h1>
-          <p style={{ fontSize: 14, color: 'var(--ink-500)', marginTop: 4 }}>{docs.length} เอกสาร</p>
+    <div style={{ maxWidth: 1040, margin: '0 auto' }}>
+
+      {/* Page header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink-900)' }}>จัดการเอกสาร</h1>
+        <div style={{ display: 'flex', gap: 6, marginLeft: 4 }}>
+          <DocStatChip label="ร่าง" value={draftCount} />
+          <DocStatChip label="รออนุมัติ" value={pendingCount} color="#92400E" bg="var(--amber-bg)" />
+          <DocStatChip label="อนุมัติแล้ว" value={approvedCount} color="#166534" bg="#DCFCE7" />
         </div>
-        <Button onClick={() => setShowCreate(true)}>+ สร้างเอกสาร</Button>
+        <div style={{ flex: 1 }} />
+        <Button size="sm" onClick={() => setShowCreate(true)}>+ สร้างเอกสาร</Button>
       </div>
 
-      {/* Step filter pills */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-        {(Object.keys(TYPE_LABELS) as DocType[]).map((t) => (
-          <div key={t} onClick={() => setTypeFilter(t === typeFilter ? '' : t)}
-            style={{
-              padding: '6px 14px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: '1.5px solid',
-              borderColor: typeFilter === t ? TYPE_COLOR[t] : 'var(--line)',
-              background: typeFilter === t ? TYPE_COLOR[t] : '#fff',
-              color: typeFilter === t ? '#fff' : 'var(--ink-600)',
-              transition: 'all .15s',
-            }}>
-            <span style={{ opacity: .7, marginRight: 4, fontWeight: 400 }}>{TYPE_STEP[t]}</span>{TYPE_LABELS[t]}
-          </div>
-        ))}
-      </div>
-
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
-        <FilterChips options={STATUS_OPTIONS} value={statusFilter} onChange={setStatusFilter} />
+      {/* Filter toolbar */}
+      <div style={{
+        background: '#fff', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-card)',
+        padding: '10px 14px', marginBottom: 16,
+        display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center',
+      }}>
+        {/* Type filter pills */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <FilterPill label="ทั้งหมด" active={typeFilter === ''} color="var(--ink-600)" onClick={() => setTypeFilter('')} />
+          {(Object.keys(TYPE_LABELS) as DocType[]).map((t) => (
+            <FilterPill key={t} label={TYPE_LABELS[t]} active={typeFilter === t} color={TYPE_COLOR[t]} onClick={() => setTypeFilter(t === typeFilter ? '' : t)} />
+          ))}
+        </div>
+        <div style={{ width: 1, height: 20, background: 'var(--line)', flexShrink: 0 }} />
+        {/* Status select */}
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          style={{
+            padding: '6px 10px', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-input)',
+            fontSize: 12, color: 'var(--ink-700)', background: '#fff', outline: 'none', cursor: 'pointer',
+          }}
+        >
+          {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <div style={{ flex: 1 }} />
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="ค้นหาชื่อหรือรายวิชา..."
           style={{
             padding: '7px 12px', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-input)',
-            fontSize: 13, color: 'var(--ink-900)', outline: 'none', minWidth: 200,
+            fontSize: 13, color: 'var(--ink-900)', outline: 'none', width: 200,
           }}
           onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--primary)')}
           onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
@@ -252,7 +289,7 @@ export default function StaffDocs() {
       </div>
 
       {/* Table */}
-      <div style={{ background: '#fff', borderRadius: 'var(--radius-card)', overflow: 'auto', boxShadow: 'var(--shadow-md)' }}>
+      <div style={{ background: '#fff', borderRadius: 'var(--radius-card)', overflow: 'auto', border: '1.5px solid var(--line)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead>
             <tr style={{ background: 'var(--bg)', borderBottom: '1.5px solid var(--line)' }}>
@@ -265,7 +302,11 @@ export default function StaffDocs() {
             {isLoading ? (
               <tr><td colSpan={6} style={{ padding: 24 }}><Skeleton lines={4} height={14} /></td></tr>
             ) : docs.length === 0 ? (
-              <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: 'var(--ink-400)', fontSize: 14 }}>ไม่พบเอกสาร</td></tr>
+              <tr>
+                <td colSpan={6} style={{ padding: '52px 24px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>ไม่พบเอกสาร</div>
+                </td>
+              </tr>
             ) : docs.map((doc, i) => (
               <tr key={doc.id}
                 style={{ borderBottom: i < docs.length - 1 ? '1px solid var(--line-soft)' : 'none' }}
@@ -318,6 +359,7 @@ export default function StaffDocs() {
         <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg)', borderRadius: 8, fontSize: 13, color: 'var(--ink-600)' }}>
           เลือกประเภทเอกสารให้ตรงกับขั้นตอนการดำเนินงาน:
           <ul style={{ margin: '6px 0 0 0', paddingLeft: 18, lineHeight: 1.8 }}>
+            <li><b>ขั้นตอนที่ 1</b> — แบบฟอร์มแจ้งความประสงค์จ้าง (แนบรายชื่อนักศึกษา)</li>
             <li><b>ขั้นตอนที่ 3</b> — บันทึกขออนุมัติจ้าง (หลังตรวจสอบแบบฟอร์มผ่านแล้ว)</li>
             <li><b>ขั้นตอนที่ 4</b> — รายงานผลการปฏิบัติงาน (สิ้นสุดภาคการศึกษา)</li>
             <li><b>ขั้นตอนที่ 5</b> — หลักฐานการจ่ายเงิน (สิ้นสุดภาคการศึกษา)</li>
@@ -331,6 +373,7 @@ export default function StaffDocs() {
             onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as DocType }))}
             options={[
               { value: '', label: '— เลือกประเภท —' },
+              { value: 'hiring_notice',    label: 'ขั้นตอนที่ 1 — แบบฟอร์มแจ้งความประสงค์จ้าง' },
               { value: 'approval_memo',    label: 'ขั้นตอนที่ 3 — บันทึกขออนุมัติจ้าง' },
               { value: 'work_report',      label: 'ขั้นตอนที่ 4 — รายงานผลการปฏิบัติงาน' },
               { value: 'payment_evidence', label: 'ขั้นตอนที่ 5 — หลักฐานการจ่ายเงิน' },
@@ -339,7 +382,7 @@ export default function StaffDocs() {
             required
           />
 
-          {isLineItem ? (
+          {needsCourse ? (
             <Select
               label="รายวิชา *"
               value={form.course_id}
@@ -370,6 +413,39 @@ export default function StaffDocs() {
                 onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--primary)')}
                 onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
               />
+            </div>
+          )}
+
+          {needsCourse && courseId && (
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)', display: 'block', marginBottom: 6 }}>
+                รายชื่อนักศึกษา (ผ่านการคัดเลือก)
+              </label>
+              {roster.length === 0 ? (
+                <p style={{ fontSize: 13, color: 'var(--ink-400)' }}>ยังไม่มีนักศึกษาที่ผ่านการคัดเลือกในวิชานี้</p>
+              ) : (
+                <div style={{ border: '1.5px solid var(--line)', borderRadius: 8, maxHeight: 180, overflow: 'auto' }}>
+                  {roster.map((s) => (
+                    <label key={s.student_id} style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px',
+                      borderBottom: '1px solid var(--line-soft)', fontSize: 13, cursor: 'pointer',
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={!excludedIds.has(s.student_id)}
+                        onChange={() => toggleExclude(s.student_id)}
+                      />
+                      <span>{s.student_name}</span>
+                      <span style={{ color: 'var(--ink-400)', fontSize: 12 }}>({s.student_code})</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              {isLineItem && (
+                <div style={{ marginTop: 10, padding: '8px 12px', background: 'var(--bg)', borderRadius: 8, fontSize: 13, color: 'var(--ink-700)' }}>
+                  รวม {includedCount} คน × {totalHours} ชม. × {rate.toLocaleString()} บาท/ชม. = <b>{totalAmount.toLocaleString()} บาท</b>
+                </div>
+              )}
             </div>
           )}
 
@@ -409,6 +485,47 @@ export default function StaffDocs() {
                 </div>
               </div>
 
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)', display: 'block', marginBottom: 6 }}>
+                  ตารางปฏิบัติงานประจำสัปดาห์
+                </label>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <div style={{ flex: '0 0 140px' }}>
+                    <Select
+                      label="วัน"
+                      value={form.work_day}
+                      onChange={(e) => setForm((f) => ({ ...f, work_day: e.target.value }))}
+                      options={[
+                        { value: '', label: '— เลือกวัน —' },
+                        ...THAI_DAYS.map((d) => ({ value: d, label: d })),
+                      ]}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <Input
+                      label="เวลาเริ่ม"
+                      type="time"
+                      value={form.work_time_start}
+                      onChange={(e) => setForm((f) => ({ ...f, work_time_start: e.target.value }))}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <Input
+                      label="เวลาสิ้นสุด"
+                      type="time"
+                      value={form.work_time_end}
+                      onChange={(e) => setForm((f) => ({ ...f, work_time_end: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                {form.work_day && form.work_time_start && form.work_time_end && (
+                  <div style={{ marginTop: 6, fontSize: 12, color: 'var(--primary)', fontWeight: 500 }}>
+                    วัน{form.work_day} เวลา {form.work_time_start} น. – {form.work_time_end} น.
+                    {' '}({form.hours_per_session} ชม./ครั้ง)
+                  </div>
+                )}
+              </div>
+
               {form.type === 'payment_request' && (
                 <>
                   <div style={{ display: 'flex', gap: 10 }}>
@@ -436,38 +553,6 @@ export default function StaffDocs() {
                     onChange={(e) => setForm((f) => ({ ...f, dean_name: e.target.value }))} />
                 </div>
               )}
-
-              {courseId && (
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)', display: 'block', marginBottom: 6 }}>
-                    รายชื่อนักศึกษา (ผ่านการคัดเลือก)
-                  </label>
-                  {roster.length === 0 ? (
-                    <p style={{ fontSize: 13, color: 'var(--ink-400)' }}>ยังไม่มีนักศึกษาที่ผ่านการคัดเลือกในวิชานี้</p>
-                  ) : (
-                    <div style={{ border: '1.5px solid var(--line)', borderRadius: 8, maxHeight: 180, overflow: 'auto' }}>
-                      {roster.map((s) => (
-                        <label key={s.student_id} style={{
-                          display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px',
-                          borderBottom: '1px solid var(--line-soft)', fontSize: 13, cursor: 'pointer',
-                        }}>
-                          <input
-                            type="checkbox"
-                            checked={!excludedIds.has(s.student_id)}
-                            onChange={() => toggleExclude(s.student_id)}
-                          />
-                          <span>{s.student_name}</span>
-                          <span style={{ color: 'var(--ink-400)', fontSize: 12 }}>({s.student_code})</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-
-                  <div style={{ marginTop: 10, padding: '8px 12px', background: 'var(--bg)', borderRadius: 8, fontSize: 13, color: 'var(--ink-700)' }}>
-                    รวม {includedCount} คน × {totalHours} ชม. × {rate.toLocaleString()} บาท/ชม. = <b>{totalAmount.toLocaleString()} บาท</b>
-                  </div>
-                </div>
-              )}
             </>
           )}
 
@@ -492,6 +577,37 @@ const iconBtn: React.CSSProperties = {
   background: 'none', border: '1px solid var(--line)', borderRadius: 6,
   cursor: 'pointer', color: 'var(--ink-500)', padding: '4px 6px',
   display: 'flex', alignItems: 'center',
+}
+
+function FilterPill({ label, active, color, onClick }: { label: string; active: boolean; color: string; onClick: () => void }) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        padding: '4px 12px', borderRadius: 999, fontSize: 12, fontWeight: 600,
+        cursor: 'pointer', border: '1.5px solid',
+        borderColor: active ? color : 'var(--line)',
+        background: active ? color : '#fff',
+        color: active ? '#fff' : 'var(--ink-600)',
+        transition: 'all .12s',
+        userSelect: 'none',
+      }}
+    >
+      {label}
+    </div>
+  )
+}
+
+function DocStatChip({ label, value, color = 'var(--ink-500)', bg = '#F3F4F6' }: { label: string; value: number; color?: string; bg?: string }) {
+  return (
+    <div style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      padding: '3px 10px', background: bg, borderRadius: 999, fontSize: 12,
+    }}>
+      <span style={{ fontWeight: 700, color }}>{value}</span>
+      <span style={{ color: 'var(--ink-500)' }}>{label}</span>
+    </div>
+  )
 }
 
 function DownloadIcon() {

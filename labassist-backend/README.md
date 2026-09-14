@@ -71,7 +71,7 @@ see `store/seed.go`.
 | Username | Password | Role |
 |----------|----------|------|
 | admin | password123 | Admin |
-| somchai | password123 | Instructor |
+| ผศ.ดร. ภูริวัจน์ วรวิชัยพัฒน์ | password123 | Instructor |
 | malee | password123 | Instructor |
 | thanakorn | password123 | Instructor |
 | parinya | password123 | Staff |

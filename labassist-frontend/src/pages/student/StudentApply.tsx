@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { courseApi, studentApi } from '../../services/api'
 import { CourseCard } from '../../components/course/CourseCard'
@@ -28,12 +28,12 @@ export default function StudentApply() {
   // "ทั้งหมด" only ever means "every course actually accepting applications" —
   // draft/closed/archived courses are real academic courses not yet opened
   // for Lab Boy hiring, so students must never see them here.
-  const visibleCourses = filter === '' ? courses.filter((c) => c.status === 'open' || c.status === 'closing_soon') : courses
+  const visibleCourses = useMemo(() => filter === '' ? courses.filter((c) => c.status === 'open' || c.status === 'closing_soon') : courses, [courses, filter])
 
   // Each section an instructor teaches is its own Course row under the
   // hood (own schedule + own slot count), but students apply through one
   // combined post per course/instructor/term and pick a section inside it.
-  const allGroups = groupCourseSections(visibleCourses)
+  const allGroups = useMemo(() => groupCourseSections(visibleCourses), [visibleCourses])
 
   const q = search.trim().toLowerCase()
   const groups = q === ''

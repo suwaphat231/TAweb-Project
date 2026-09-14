@@ -1,118 +1,131 @@
-import { useAuth } from '../../hooks/useAuth'
+import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
+import { useAuth } from '../../hooks/useAuth'
+import { staffApi } from '../../services/api'
 import { Button } from '../../components/ui/Button'
-import { Card } from '../../components/ui/Card'
 
-const MOCK_STATS = { pending: 2, verified: 2, docs: 4, returned: 1 }
-
-const WORKFLOW_STEPS = [
-  { num: 1, label: 'ตรวจสอบแบบฟอร์ม',       sub: 'รับและตรวจสอบความครบถ้วน',      to: '/staff/review',  active: true  },
-  { num: 2, label: 'ส่งกลับแก้ไข (ถ้าพบข้อบกพร่อง)', sub: 'แจ้งอาจารย์ให้ปรับปรุง',      to: '/staff/review',  active: false },
-  { num: 3, label: 'จัดทำบันทึกขออนุมัติจ้าง', sub: 'สร้างเอกสารประกอบการจ้าง',      to: '/staff/docs',    active: false },
-  { num: 4, label: 'รวบรวมหลักฐานการปฏิบัติงาน', sub: 'ตรวจสอบปลายภาคการศึกษา',     to: '/staff/docs',    active: false },
-  { num: 5, label: 'จัดทำหลักฐานจ่ายเงิน',    sub: 'เอกสารค่าตอบแทน',               to: '/staff/docs',    active: false },
-  { num: 6, label: 'บันทึกขอเบิกจ่าย',        sub: 'ส่งต่อฝ่ายงบประมาณ',             to: '/staff/docs',    active: false },
+const WORKFLOW = [
+  { n: 1, label: 'สร้างแบบฟอร์มแจ้งความประสงค์', sub: 'ออกเอกสารพร้อมรายชื่อนักศึกษาที่อาจารย์ยืนยัน', to: '/staff/docs' },
+  { n: 2, label: 'ตรวจสอบและอนุมัติแบบฟอร์ม',    sub: 'ตรวจสอบความครบถ้วน หรือส่งกลับแก้ไข',          to: '/staff/review' },
+  { n: 3, label: 'จัดทำบันทึกขออนุมัติจ้าง',     sub: 'สร้างเอกสารประกอบการจ้าง',                    to: '/staff/docs' },
+  { n: 4, label: 'รวบรวมหลักฐานปฏิบัติงาน',      sub: 'ตรวจสอบปลายภาคการศึกษา',                     to: '/staff/docs' },
+  { n: 5, label: 'จัดทำหลักฐานจ่ายเงิน',         sub: 'เอกสารค่าตอบแทนนักศึกษา',                    to: '/staff/docs' },
+  { n: 6, label: 'บันทึกขอเบิกจ่าย',             sub: 'ส่งต่อฝ่ายการเงิน',                           to: '/staff/docs' },
 ]
 
 export default function StaffHome() {
   const { user } = useAuth()
 
+  const { data: reviews = [], isLoading: reviewsLoading } = useQuery({
+    queryKey: ['staff-reviews'],
+    queryFn: () => staffApi.listReviews(),
+  })
+
+  const { data: docs = [], isLoading: docsLoading } = useQuery({
+    queryKey: ['staff-documents'],
+    queryFn: () => staffApi.listDocuments(),
+  })
+
+  const loading = reviewsLoading || docsLoading
+
+  const pendingCount  = reviews.filter((r) => r.status === 'pending').length
+  const returnedCount = reviews.filter((r) => r.status === 'returned').length
+  const verifiedCount = reviews.filter((r) => r.status === 'verified').length
+
   return (
-    <div>
-      <div className="dashboard-banner">
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink-900)' }}>
+    <div style={{ maxWidth: 840, margin: '0 auto' }}>
+
+      {/* Page header */}
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 3 }}>
           สวัสดี, {user?.full_name}
         </h1>
-        <p style={{ fontSize: 14, color: 'var(--ink-500)', marginTop: 4 }}>ระบบจัดการผู้ช่วยปฏิบัติการ — กระบวนการเอกสารและธุรการ</p>
+        <p style={{ fontSize: 13, color: 'var(--ink-400)' }}>
+          ระบบจัดการผู้ช่วยปฏิบัติการ — กระบวนการเอกสารและธุรการ
+        </p>
       </div>
 
-      {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12, marginBottom: 28 }}>
-        <StatCard value={MOCK_STATS.pending}  label="รอตรวจสอบ"   color="#F59E0B" />
-        <StatCard value={MOCK_STATS.returned} label="ส่งกลับแก้ไข" color="#EF4444" />
-        <StatCard value={MOCK_STATS.verified} label="ผ่านการตรวจสอบ" color="#22C55E" />
-        <StatCard value={MOCK_STATS.docs}     label="เอกสารทั้งหมด" color="var(--primary)" />
+      {/* Stat + action bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 28, flexWrap: 'wrap' }}>
+        {loading ? (
+          <div style={{ height: 30, width: 280, background: 'var(--line-soft)', borderRadius: 999, opacity: 0.5 }} />
+        ) : (
+          <>
+            <StatChip label="รอตรวจสอบ" value={pendingCount}  color="var(--amber)" />
+            <StatChip label="ส่งกลับ"    value={returnedCount} color="var(--red)"   />
+            <StatChip label="ผ่านแล้ว"   value={verifiedCount} color="var(--green)" />
+            <StatChip label="เอกสาร"     value={docs.length}   color="var(--primary)" />
+          </>
+        )}
+        <div style={{ flex: 1 }} />
+        {pendingCount > 0 && (
+          <Link to="/staff/review">
+            <Button size="sm">ตรวจสอบแบบฟอร์ม ({pendingCount})</Button>
+          </Link>
+        )}
+        <Link to="/staff/docs">
+          <Button size="sm" variant="outline">จัดการเอกสาร</Button>
+        </Link>
       </div>
 
-      {/* Quick actions */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 16, marginBottom: 32 }}>
-        <Card style={{ padding: 24 }}>
-          <div style={{ fontSize: 28, marginBottom: 12 }}>🔍</div>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>ตรวจสอบแบบฟอร์ม</div>
-          <p style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 16 }}>
-            ตรวจสอบแบบฟอร์มแจ้งความประสงค์ที่อาจารย์ส่งมา และอนุมัติหรือส่งกลับแก้ไข
-          </p>
-          {MOCK_STATS.pending > 0 && (
-            <div style={{ fontSize: 12, color: '#92400E', background: '#FEF9C3', padding: '4px 10px', borderRadius: 6, marginBottom: 12, display: 'inline-block' }}>
-              รอตรวจสอบ {MOCK_STATS.pending} รายการ
-            </div>
-          )}
-          <Link to="/staff/review"><Button size="sm">ตรวจสอบแบบฟอร์ม</Button></Link>
-        </Card>
-
-        <Card style={{ padding: 24 }}>
-          <div style={{ fontSize: 28, marginBottom: 12 }}>📄</div>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>จัดการเอกสาร</div>
-          <p style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 16 }}>
-            จัดทำบันทึกขออนุมัติ หลักฐานจ่ายเงิน และบันทึกขอเบิกจ่ายค่าตอบแทน
-          </p>
-          <Link to="/staff/docs"><Button size="sm" variant="outline">จัดการเอกสาร</Button></Link>
-        </Card>
-
-        <Card style={{ padding: 24 }}>
-          <div style={{ fontSize: 28, marginBottom: 12 }}>👥</div>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>ดูผู้สมัครทุกวิชา</div>
-          <p style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 16 }}>
-            ดูรายชื่อผู้สมัครและผลการพิจารณาของทุกวิชาในระบบ
-          </p>
-          <Link to="/instructor/select"><Button size="sm" variant="outline">ดูผู้สมัคร</Button></Link>
-        </Card>
-      </div>
-
-      {/* Workflow steps */}
-      <div style={{ marginBottom: 8 }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 14 }}>ขั้นตอนการดำเนินงาน</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-          {WORKFLOW_STEPS.map((step, i) => (
-            <div key={step.num} style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-              {/* connector */}
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
-                <div style={{
-                  width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontWeight: 700, fontSize: 13,
-                  background: step.active ? 'var(--primary)' : 'var(--line-soft)',
-                  color: step.active ? '#fff' : 'var(--ink-400)',
-                }}>
-                  {step.num}
-                </div>
-                {i < WORKFLOW_STEPS.length - 1 && (
-                  <div style={{ width: 2, height: 28, background: 'var(--line-soft)', margin: '2px 0' }} />
-                )}
-              </div>
-              <div style={{ paddingBottom: i < WORKFLOW_STEPS.length - 1 ? 4 : 0, paddingTop: 4 }}>
-                <Link to={step.to} style={{ textDecoration: 'none' }}>
-                  <span style={{ fontSize: 14, fontWeight: step.active ? 600 : 400, color: step.active ? 'var(--primary)' : 'var(--ink-700)' }}>
-                    {step.label}
-                  </span>
-                </Link>
-                <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 1 }}>{step.sub}</div>
-              </div>
-            </div>
-          ))}
+      {/* Workflow */}
+      <div style={{ background: '#fff', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-card)', overflow: 'hidden' }}>
+        <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--line-soft)' }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-400)', letterSpacing: 0.5, textTransform: 'uppercase' }}>
+            ขั้นตอนการดำเนินงาน
+          </span>
         </div>
+        {WORKFLOW.map((step, i) => (
+          <Link key={step.n} to={step.to} style={{ textDecoration: 'none', display: 'block' }}>
+            <div
+              style={{
+                display: 'flex', alignItems: 'center', gap: 14,
+                padding: '14px 20px',
+                borderBottom: i < WORKFLOW.length - 1 ? '1px solid var(--line-soft)' : 'none',
+                transition: 'background .12s',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}
+            >
+              <div style={{
+                width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+                background: step.n <= 2 ? 'var(--primary)' : 'var(--line-soft)',
+                color: step.n <= 2 ? '#fff' : 'var(--ink-400)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 11, fontWeight: 700,
+              }}>
+                {step.n}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontSize: 14, fontWeight: step.n <= 2 ? 600 : 400,
+                  color: step.n <= 2 ? 'var(--primary)' : 'var(--ink-700)',
+                  lineHeight: 1.3,
+                }}>
+                  {step.label}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 2 }}>{step.sub}</div>
+              </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ink-300)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <polyline points="9 18 15 12 9 6"/>
+              </svg>
+            </div>
+          </Link>
+        ))}
       </div>
     </div>
   )
 }
 
-function StatCard({ value, label, color }: { value: number; label: string; color: string }) {
+function StatChip({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div style={{
-      background: '#fff', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-card)',
-      padding: '16px 20px',
+      display: 'flex', alignItems: 'center', gap: 5,
+      padding: '5px 12px', background: '#fff',
+      border: '1.5px solid var(--line)', borderRadius: 999, fontSize: 12,
     }}>
-      <div style={{ fontSize: 28, fontWeight: 700, color, lineHeight: 1 }}>{value}</div>
-      <div style={{ fontSize: 13, color: 'var(--ink-500)', marginTop: 4 }}>{label}</div>
+      <span style={{ fontWeight: 700, color }}>{value}</span>
+      <span style={{ color: 'var(--ink-500)' }}>{label}</span>
     </div>
   )
 }

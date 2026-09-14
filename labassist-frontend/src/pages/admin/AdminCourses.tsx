@@ -10,20 +10,8 @@ import { Select } from '../../components/ui/Select'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../hooks/useToast'
 import { displayCourseTitle } from '../../utils/courseDisplay'
+import { isLabCourse } from '../../utils/labCourse'
 import type { Course } from '../../types'
-
-// Thai credit notation is "หน่วยกิต (บรรยาย-ปฏิบัติ-ศึกษาด้วยตนเอง)", e.g. "3 (2-2-5)" —
-// the middle number is lab/practice hours; 2+ means the course has a lab component.
-function labHours(credits?: string): number | null {
-  const m = credits?.match(/\((\d+)-(\d+)-(\d+)\)/)
-  return m ? Number(m[2]) : null
-}
-
-// RESEARCH PROJECT I/II ("โครงงานวิจัย 1/2") are thesis-style courses with no
-// real lab/TA hiring need — always excluded from this list regardless of filter.
-function isResearchProject(c: Course): boolean {
-  return c.title.includes('โครงงานวิจัย') || (c.english_title ?? '').toUpperCase().includes('RESEARCH PROJECT')
-}
 
 const SEMESTER_TABS: { label: string; value: string }[] = [
   { label: 'ทั้งหมด', value: '' },
@@ -45,8 +33,7 @@ export default function AdminCourses() {
   // `credits` string to parse hours from — labboy_slots > 0 is the same "has
   // a lab" signal for those, so it isn't silently hidden from this list.
   const visibleCourses = courses.filter((c) =>
-    ((labHours(c.credits) ?? 0) >= 2 || c.labboy_slots > 0) &&
-    !isResearchProject(c) &&
+    isLabCourse(c) &&
     (semesterFilter === '' || c.semester === semesterFilter)
   )
 
@@ -84,9 +71,11 @@ export default function AdminCourses() {
   const codeCatalog = useMemo(() => {
     const seen = new Map<string, string>()
     for (const c of coreCourses) {
+      if (!isLabCourse({ ...c, labboy_slots: 0 })) continue
       if (!seen.has(c.code)) seen.set(c.code, c.title)
     }
     for (const c of courses) {
+      if (!isLabCourse(c)) continue
       if (!seen.has(c.code)) seen.set(c.code, displayCourseTitle(c.title, c.english_title))
     }
     return Array.from(seen, ([code, title]) => ({ code, title }))

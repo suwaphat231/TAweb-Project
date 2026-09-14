@@ -77,38 +77,29 @@ func (h *Handler) Review(c *gin.Context) {
 		return
 	}
 
-	prevStatus := app.Status
-
-	if body.Status == models.AppAccepted && prevStatus != models.AppAccepted {
-		if app.RoleApplied == models.RoleLabBoy && course.LabBoyAccepted >= course.LabBoySlots {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Lab Boy slots are full"})
-			return
-		}
-	}
-
 	now := time.Now()
-	updated, saved := database.UpdateApplication(uint(id), func(a *models.Application) {
+	txRes, err := database.ReviewApplicationTx(uint(id), body.Status, func(a *models.Application) {
 		a.Status = body.Status
 		a.ReviewedAt = &now
 		a.ReviewedByID = &rid
 		a.Note = body.Note
 	})
-	if !saved {
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot save application"})
 		return
 	}
-
-	// Manage accepted count, and notify the student the moment they're
-	// accepted — they shouldn't have to wait for the instructor to
-	// separately click "ส่งแจ้งเตือนผู้ผ่านเกณฑ์" to find out.
-	if body.Status == models.AppAccepted && prevStatus != models.AppAccepted {
-		database.AdjustCourseAccepted(app.CourseID, app.RoleApplied, 1)
-		database.CreateNotifications([]models.Notification{acceptanceNotification(updated, course)})
-	} else if prevStatus == models.AppAccepted && body.Status != models.AppAccepted {
-		database.AdjustCourseAccepted(app.CourseID, app.RoleApplied, -1)
+	if txRes.SlotsFull {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Lab Boy slots are full"})
+		return
 	}
 
-	c.JSON(http.StatusOK, updated)
+	// Notify the student the moment they're accepted — they shouldn't have
+	// to wait for a separate "ส่งแจ้งเตือนผู้ผ่านเกณฑ์" click.
+	if body.Status == models.AppAccepted && txRes.PrevStatus != models.AppAccepted {
+		database.CreateNotifications([]models.Notification{acceptanceNotification(txRes.Updated, course)})
+	}
+
+	c.JSON(http.StatusOK, txRes.Updated)
 }
 
 // GradeProof godoc
@@ -184,29 +175,24 @@ func (h *Handler) BulkReview(c *gin.Context) {
 			continue
 		}
 
-		prevStatus := app.Status
-		if body.Status == models.AppAccepted && app.RoleApplied == models.RoleLabBoy && course.LabBoyAccepted >= course.LabBoySlots {
-			result.SkippedFull++
-			continue
-		}
-
-		updated, saved := database.UpdateApplication(id, func(a *models.Application) {
+		txRes, err := database.ReviewApplicationTx(id, body.Status, func(a *models.Application) {
 			a.Status = body.Status
 			a.ReviewedAt = &now
 			a.ReviewedByID = &rid
 			a.Note = body.Note
 		})
-		if !saved {
+		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot save application"})
 			return
 		}
+		if txRes.SlotsFull {
+			result.SkippedFull++
+			continue
+		}
 		result.Updated++
 
-		if body.Status == models.AppAccepted && prevStatus != models.AppAccepted {
-			database.AdjustCourseAccepted(app.CourseID, app.RoleApplied, 1)
-			notifs = append(notifs, acceptanceNotification(updated, course))
-		} else if prevStatus == models.AppAccepted && body.Status != models.AppAccepted {
-			database.AdjustCourseAccepted(app.CourseID, app.RoleApplied, -1)
+		if body.Status == models.AppAccepted && txRes.PrevStatus != models.AppAccepted {
+			notifs = append(notifs, acceptanceNotification(txRes.Updated, course))
 		}
 	}
 

@@ -5,7 +5,7 @@
 INSERT INTO users
     (id, username, password_hash, full_name, email, role, student_id, google_sub, gpa, faculty, year, is_active, created_at, updated_at)
 VALUES
-    (1, 'somchai',   '$2a$10$Ws/75uKsYag.vd9tiCiAwuW143PDyh7.3n7dMYXmv6F2.fT5H6PBO', 'ผศ.ดร. ภูริวัจน์ วรวิชัยพัฒน์', 'somchai@cp.su.ac.th',   'instructor', NULL,         NULL,             NULL, NULL,             NULL, true, NOW(), NOW()),
+    (1, 'ผศ.ดร. ภูริวัจน์ วรวิชัยพัฒน์', '$2a$10$Ws/75uKsYag.vd9tiCiAwuW143PDyh7.3n7dMYXmv6F2.fT5H6PBO', 'ผศ.ดร. ภูริวัจน์ วรวิชัยพัฒน์', 'somchai@cp.su.ac.th',   'instructor', NULL,         NULL,             NULL, NULL,             NULL, true, NOW(), NOW()),
     (2, 'malee',     '$2a$10$Ws/75uKsYag.vd9tiCiAwuW143PDyh7.3n7dMYXmv6F2.fT5H6PBO', 'รศ.ดร. มาลี ศรีสุข',            'malee@cp.su.ac.th',     'instructor', NULL,         NULL,             NULL, NULL,             NULL, true, NOW(), NOW()),
     (3, 'thanakorn', '$2a$10$Ws/75uKsYag.vd9tiCiAwuW143PDyh7.3n7dMYXmv6F2.fT5H6PBO', 'อ. ธนากร แสงอรุณ',            'thanakorn@cp.su.ac.th', 'instructor', NULL,         NULL,             NULL, NULL,             NULL, true, NOW(), NOW()),
     (4, 'parinya',   '$2a$10$Ws/75uKsYag.vd9tiCiAwuW143PDyh7.3n7dMYXmv6F2.fT5H6PBO', 'ปริญญา สุภาวดี',               'parinya@cp.su.ac.th',   'staff',      NULL,         NULL,             NULL, NULL,             NULL, true, NOW(), NOW()),

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { studentApi } from '../../services/api'
 import { useAuth } from '../../hooks/useAuth'
@@ -16,6 +16,19 @@ export default function StudentProfile() {
   const { user, setUser } = useAuth()
   const qc = useQueryClient()
   const showToast = useToast()
+  const avatarInput = useRef<HTMLInputElement>(null)
+  const avatarMut = useMutation({
+    mutationFn: studentApi.uploadAvatar,
+    onSuccess: (updated) => {
+      setUser(updated)
+      qc.setQueryData(['student-profile'], updated)
+      showToast('เปลี่ยนรูปโปรไฟล์เรียบร้อยแล้ว', 'success')
+    },
+    onError: (err: unknown) => {
+      const message = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
+      showToast(message ?? 'เปลี่ยนรูปไม่สำเร็จ กรุณาลองใหม่', 'error')
+    },
+  })
   const [draft, setDraft] = useState<Partial<Record<'full_name' | 'student_id' | 'year' | 'faculty', string>>>({})
 
   const { data: profile, isLoading: profileLoading } = useQuery({
@@ -75,12 +88,25 @@ export default function StudentProfile() {
           ) : (
             <>
               <div style={{ position: 'relative', width: 72, marginBottom: 14 }}>
-                <Avatar initials={getInitials(p?.full_name ?? '?')} color="blue" size={72} />
+                <Avatar initials={getInitials(p?.full_name ?? '?')} src={p?.avatar_url} color="blue" size={72} />
                 <span style={{
                   position: 'absolute', bottom: 2, right: 2, width: 14, height: 14,
                   borderRadius: '50%', background: 'var(--green)', border: '2.5px solid #fff',
                 }} />
               </div>
+              <input ref={avatarInput} type="file" accept="image/jpeg,image/png" aria-label="เลือกรูปโปรไฟล์" hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  e.target.value = ''
+                  if (!file) return
+                  if (!['image/jpeg', 'image/png'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+                    showToast('กรุณาเลือกไฟล์ JPG หรือ PNG ขนาดไม่เกิน 5 MB', 'error')
+                    return
+                  }
+                  avatarMut.mutate(file)
+                }} />
+              <Button type="button" size="sm" variant="ghost" loading={avatarMut.isPending} disabled={updateMut.isPending} onClick={() => avatarInput.current?.click()}>เปลี่ยนรูปโปรไฟล์</Button>
+              <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 6, marginBottom: 14 }}>JPG หรือ PNG ไม่เกิน 5 MB · รูปจะถูกครอปตรงกลางและบันทึกทันที</div>
               <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 2 }}>{p?.full_name}</div>
               <div style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 10, wordBreak: 'break-all' }}>{p?.email}</div>
               <StatusBadge value="student" />
@@ -158,7 +184,7 @@ export default function StudentProfile() {
                 disabled
               />
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <Button type="submit" loading={updateMut.isPending}>บันทึกการเปลี่ยนแปลง</Button>
+                <Button type="submit" loading={updateMut.isPending} disabled={avatarMut.isPending}>บันทึกการเปลี่ยนแปลง</Button>
               </div>
             </form>
           )}

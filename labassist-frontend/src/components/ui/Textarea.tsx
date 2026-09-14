@@ -1,4 +1,5 @@
 import type { TextareaHTMLAttributes } from 'react'
+import { useId } from 'react'
 
 interface Props extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   label?: string
@@ -7,12 +8,23 @@ interface Props extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   rows?: number
 }
 
-export function Textarea({ label, hint, error, rows, style, onFocus, onBlur, ...rest }: Props) {
+export function Textarea({ label, hint, error, id, rows, style, onFocus, onBlur, ...rest }: Props) {
+  const autoId = useId()
+  const textareaId = id ?? autoId
+  const errorId = `${textareaId}-error`
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-      {label && <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>{label}</label>}
+      {label && (
+        <label htmlFor={textareaId} style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>
+          {label}
+        </label>
+      )}
       <textarea
+        id={textareaId}
         rows={rows}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
         style={{
           border: `1.5px solid ${error ? 'var(--red)' : 'var(--line)'}`,
           borderRadius: 'var(--radius-input)',
@@ -38,7 +50,7 @@ export function Textarea({ label, hint, error, rows, style, onFocus, onBlur, ...
         }}
         {...rest}
       />
-      {error && <span style={{ fontSize: 12, color: 'var(--red)' }}>{error}</span>}
+      {error && <span id={errorId} role="alert" style={{ fontSize: 12, color: 'var(--red)' }}>{error}</span>}
       {hint && !error && <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>{hint}</span>}
     </div>
   )

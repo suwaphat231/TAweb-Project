@@ -1,14 +1,54 @@
 package student
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"regexp"
 	"strconv"
+	"time"
 
 	"labassist/database"
+	"labassist/models"
 
 	"github.com/gin-gonic/gin"
 )
+
+// gradeRank maps letter grades to numeric rank for comparison.
+// Higher rank = better grade.
+var gradeRank = map[string]int{
+	"D": 1, "D+": 2, "C": 3, "C+": 4, "B": 5, "B+": 6, "A": 7,
+}
+
+// minGradeRe parses "เกรดเฉลี่ยขั้นต่ำ: X" written at the start of a course's
+// requirements text. Longer alternatives (B+, C+, D+) must come before the
+// single-letter ones so the regex engine matches them first.
+var minGradeRe = regexp.MustCompile(`เกรดเฉลี่ยขั้นต่ำ:\s*(A|B\+|B|C\+|C|D\+|D)`)
+
+func minGradeFromRequirements(req *string) string {
+	if req == nil {
+		return ""
+	}
+	m := minGradeRe.FindStringSubmatch(*req)
+	if m == nil {
+		return ""
+	}
+	return m[1]
+}
+
+// gradeAtLeast returns true when grade meets or exceeds min.
+// Returns true for any unknown grade string to avoid false positives.
+func gradeAtLeast(grade, min string) bool {
+	gv, gok := gradeRank[grade]
+	mv, mok := gradeRank[min]
+	if !gok || !mok {
+		return true
+	}
+	return gv >= mv
+}
 
 // maxGradeProofSize caps the uploaded grade image at 5MB — generous for a
 // phone screenshot of MyReg while keeping a single binary row reasonable.
@@ -16,7 +56,7 @@ const maxGradeProofSize = 5 << 20
 
 // UploadGradeProof godoc
 // @Summary      แนบรูปภาพเกรดยืนยันสำหรับใบสมัคร
-// @Description  ใช้เมื่อวิชานั้นเปิดให้ต้องแนบรูปเกรด (require_grade_proof) — อัปโหลดซ้ำจะแทนที่รูปเดิม
+// @Description  ใช้เมื่อวิชานั้นเปิดให้ต้องแนบรูปเกรด (require_grade_proof) — อัปโหลดซ้ำจะแทนที่รูปเดิม ระบบจะ OCR เกรดจากรูปโดยอัตโนมัติ
 // @Tags         student
 // @Accept       multipart/form-data
 // @Produce      json
@@ -71,6 +111,36 @@ func (h *Handler) UploadGradeProof(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
 		return
 	}
+
+	// OCR: extract the grade for this course from the uploaded image, then
+	// validate it against the course's minimum-grade requirement.
+	// If OCR cannot read the grade we still accept the upload (best-effort).
+	if app, ok := database.ApplicationByID(uint(id)); ok {
+		if course, ok := database.CourseByID(app.CourseID); ok {
+			if grade, ok := ocrGradeFromImage(h.cfg.OCRServiceURL, course.Code, data, fileHeader.Filename); ok {
+				minGrade := minGradeFromRequirements(course.Requirements)
+				if minGrade != "" && !gradeAtLeast(grade, minGrade) {
+					// Grade is below the requirement — auto-withdraw and reject.
+					database.UpdateApplication(uint(id), func(a *models.Application) {
+						a.Status = models.AppWithdrawn
+					})
+					c.JSON(http.StatusUnprocessableEntity, gin.H{
+						"error": fmt.Sprintf(
+							"เกรดที่อ่านได้จากรูป (%s) ต่ำกว่าเกณฑ์ขั้นต่ำที่อาจารย์กำหนดไว้ (%s) ไม่สามารถสมัครวิชานี้ได้",
+							grade, minGrade,
+						),
+					})
+					return
+				}
+				if u, ok := database.UpdateApplication(uint(id), func(a *models.Application) {
+					a.Grade = &grade
+				}); ok {
+					updated = u
+				}
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, updated)
 }
 
@@ -99,4 +169,55 @@ func (h *Handler) GetGradeProof(c *gin.Context) {
 	}
 	c.Header("Content-Disposition", `inline; filename="`+fileName+`"`)
 	c.Data(http.StatusOK, http.DetectContentType(data), data)
+}
+
+// ocrGradeFromImage sends the image to the OCR service and returns the grade
+// found for courseCode. Returns ("", false) on any failure so callers can
+// treat OCR as best-effort without disrupting the upload flow.
+func ocrGradeFromImage(ocrURL, courseCode string, data []byte, filename string) (string, bool) {
+	codesJSON, err := json.Marshal([]string{courseCode})
+	if err != nil {
+		return "", false
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		return "", false
+	}
+	if _, err := io.Copy(part, bytes.NewReader(data)); err != nil {
+		return "", false
+	}
+	if err := writer.WriteField("criteria_json", "[]"); err != nil {
+		return "", false
+	}
+	if err := writer.WriteField("course_codes_json", string(codesJSON)); err != nil {
+		return "", false
+	}
+	writer.Close()
+
+	req, err := http.NewRequest(http.MethodPost, ocrURL+"/api/ocr/process-transcript", &body)
+	if err != nil {
+		return "", false
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", false
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		ExtractedData map[string]string `json:"extracted_data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", false
+	}
+
+	grade, found := result.ExtractedData[courseCode]
+	return grade, found
 }

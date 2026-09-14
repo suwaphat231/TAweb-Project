@@ -2,8 +2,10 @@ package staff
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"labassist/database"
 	"labassist/docxgen"
@@ -27,6 +29,10 @@ type createDocumentRequest struct {
 	Rate               float64 `json:"rate"`
 	ExcludedStudentIDs []uint  `json:"excluded_student_ids"`
 
+	WorkDay       string `json:"work_day"`
+	WorkTimeStart string `json:"work_time_start"`
+	WorkTimeEnd   string `json:"work_time_end"`
+
 	RefNumber        string `json:"ref_number"`
 	PriorMemoRef     string `json:"prior_memo_ref"`
 	PriorMemoDate    string `json:"prior_memo_date"`
@@ -40,6 +46,7 @@ type updateDocStatusRequest struct {
 }
 
 var docTypeLabel = map[models.DocType]string{
+	models.DocHiringNotice:    "แบบฟอร์มแจ้งความประสงค์จ้าง",
 	models.DocApprovalMemo:    "บันทึกขออนุมัติจ้าง",
 	models.DocPaymentEvidence: "หลักฐานการจ่ายเงิน",
 	models.DocPaymentRequest:  "บันทึกขอเบิกจ่าย",
@@ -47,9 +54,15 @@ var docTypeLabel = map[models.DocType]string{
 }
 
 // needsRoster reports whether a document type carries a per-student roster
-// built from the course's currently-accepted applicants.
+// with financial line items (hours/rate/amount).
 func needsRoster(t models.DocType) bool {
 	return t == models.DocPaymentEvidence || t == models.DocPaymentRequest || t == models.DocWorkReport
+}
+
+// needsCourse reports whether a document type requires a course_id and
+// builds its student list from that course's accepted applicants.
+func needsCourse(t models.DocType) bool {
+	return t == models.DocHiringNotice || needsRoster(t)
 }
 
 // ListDocuments godoc
@@ -100,6 +113,9 @@ func (h *Handler) CreateDocument(c *gin.Context) {
 		StaffID:          staffID.(uint),
 		Status:           models.DocDraft,
 		Note:             body.Note,
+		WorkDay:          body.WorkDay,
+		WorkTimeStart:    body.WorkTimeStart,
+		WorkTimeEnd:      body.WorkTimeEnd,
 		RefNumber:        body.RefNumber,
 		PriorMemoRef:     body.PriorMemoRef,
 		PriorMemoDate:    body.PriorMemoDate,
@@ -108,7 +124,7 @@ func (h *Handler) CreateDocument(c *gin.Context) {
 		StaffOfficerName: body.StaffOfficerName,
 	}
 
-	if needsRoster(body.Type) {
+	if needsCourse(body.Type) {
 		if body.CourseID == nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "course_id is required for this document type"})
 			return
@@ -123,31 +139,84 @@ func (h *Handler) CreateDocument(c *gin.Context) {
 			excluded[id] = true
 		}
 
-		hours := body.HoursPerSession * float64(len(body.SessionDates))
-		var roster []models.RosterEntry
-		var total float64
-		for _, app := range database.AcceptedStudentsForCourse(*body.CourseID) {
-			if excluded[app.StudentID] {
-				continue
-			}
-			amount := hours * body.Rate
-			roster = append(roster, models.RosterEntry{
-				StudentID:   app.StudentID,
-				StudentName: app.StudentName,
-				StudentCode: app.StudentCode,
-				Hours:       hours,
-				Amount:      amount,
-			})
-			total += amount
-		}
-
 		doc.CourseID = body.CourseID
-		doc.Period = &models.DocumentPeriod{Month: body.Month, Year: body.Year}
-		doc.SessionDates = body.SessionDates
-		doc.HoursPerSession = body.HoursPerSession
-		doc.Rate = body.Rate
-		doc.Roster = roster
-		doc.TotalAmount = total
+
+		if needsRoster(body.Type) {
+			if body.HoursPerSession <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "hours_per_session must be greater than zero"})
+				return
+			}
+			if body.Rate <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "rate must be greater than zero"})
+				return
+			}
+			if body.Month < 1 || body.Month > 12 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "month must be between 1 and 12"})
+				return
+			}
+			if body.Year <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "year must be a positive Buddhist era year"})
+				return
+			}
+			if len(body.SessionDates) == 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "session_dates must not be empty"})
+				return
+			}
+			// Validate each day is real in the given month and not duplicated.
+			// ceYear converts Buddhist era (พ.ศ.) to Common Era for time.Date.
+			ceYear := body.Year - 543
+			daysInMonth := time.Date(ceYear, time.Month(body.Month+1), 0, 0, 0, 0, 0, time.UTC).Day()
+			seen := make(map[int]bool, len(body.SessionDates))
+			for _, day := range body.SessionDates {
+				if day < 1 || day > daysInMonth {
+					c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("day %d does not exist in the specified month", day)})
+					return
+				}
+				if seen[day] {
+					c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("day %d appears more than once in session_dates", day)})
+					return
+				}
+				seen[day] = true
+			}
+
+			hours := body.HoursPerSession * float64(len(body.SessionDates))
+			var roster []models.RosterEntry
+			var total float64
+			for _, app := range database.AcceptedStudentsForCourse(*body.CourseID) {
+				if excluded[app.StudentID] {
+					continue
+				}
+				amount := hours * body.Rate
+				roster = append(roster, models.RosterEntry{
+					StudentID:   app.StudentID,
+					StudentName: app.StudentName,
+					StudentCode: app.StudentCode,
+					Hours:       hours,
+					Amount:      amount,
+				})
+				total += amount
+			}
+			doc.Period = &models.DocumentPeriod{Month: body.Month, Year: body.Year}
+			doc.SessionDates = body.SessionDates
+			doc.HoursPerSession = body.HoursPerSession
+			doc.Rate = body.Rate
+			doc.Roster = roster
+			doc.TotalAmount = total
+		} else {
+			// hiring_notice: student list only, no financial fields.
+			var roster []models.RosterEntry
+			for _, app := range database.AcceptedStudentsForCourse(*body.CourseID) {
+				if excluded[app.StudentID] {
+					continue
+				}
+				roster = append(roster, models.RosterEntry{
+					StudentID:   app.StudentID,
+					StudentName: app.StudentName,
+					StudentCode: app.StudentCode,
+				})
+			}
+			doc.Roster = roster
+		}
 	}
 
 	created := database.CreateStaffDocument(doc)

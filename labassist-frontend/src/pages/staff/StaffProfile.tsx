@@ -2,12 +2,10 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { staffApi } from '../../services/api'
 import { useAuth } from '../../hooks/useAuth'
-import { Card } from '../../components/ui/Card'
 import { Input } from '../../components/ui/Input'
 import { Button } from '../../components/ui/Button'
 import { Avatar } from '../../components/ui/Avatar'
 import { getInitials } from '../../utils/initials'
-import { StatusBadge } from '../../components/ui/Badge'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../hooks/useToast'
 
@@ -50,34 +48,59 @@ export default function StaffProfile() {
   }
 
   return (
-    <div>
-      <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 24 }}>ข้อมูลส่วนตัว</h1>
-      <div style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 20 }}>จัดการข้อมูลส่วนตัวของคุณ</div>
+    <div style={{ maxWidth: 720, margin: '0 auto' }}>
 
-      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-        {/* Left: avatar summary card */}
-        <Card style={{ padding: 24, width: 260, flexShrink: 0 }}>
+      {/* Page header */}
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 3 }}>ข้อมูลส่วนตัว</h1>
+        <p style={{ fontSize: 13, color: 'var(--ink-400)' }}>จัดการข้อมูลและการตั้งค่าบัญชีของคุณ</p>
+      </div>
+
+      <div style={{ background: '#fff', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-card)', overflow: 'hidden' }}>
+
+        {/* Avatar section */}
+        <div style={{ padding: '24px 28px', borderBottom: '1px solid var(--line-soft)', display: 'flex', alignItems: 'center', gap: 20 }}>
           {isLoading ? (
-            <Skeleton height={64} borderRadius={999} width={64} />
+            <>
+              <Skeleton height={64} width={64} borderRadius={999} />
+              <div>
+                <Skeleton height={16} width={160} />
+                <div style={{ marginTop: 8 }}><Skeleton height={13} width={120} /></div>
+              </div>
+            </>
           ) : (
             <>
-              <div style={{ position: 'relative', width: 72, marginBottom: 14 }}>
-                <Avatar initials={getInitials(p?.full_name ?? '?')} color="blue" size={72} />
+              <div style={{ position: 'relative', flexShrink: 0 }}>
+                <Avatar initials={getInitials(p?.full_name ?? '?')} color="blue" size={64} />
                 <span style={{
                   position: 'absolute', bottom: 2, right: 2, width: 14, height: 14,
                   borderRadius: '50%', background: 'var(--green)', border: '2.5px solid #fff',
                 }} />
               </div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 2 }}>{p?.full_name}</div>
-              <div style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 10, wordBreak: 'break-all' }}>{p?.email || '—'}</div>
-              <StatusBadge value="staff" />
+              <div>
+                <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 4 }}>
+                  {p?.full_name}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 13, color: 'var(--ink-400)' }}>{p?.email || '—'}</span>
+                  <span style={{
+                    padding: '2px 10px', borderRadius: 999,
+                    background: 'var(--primary-50)', color: 'var(--primary)',
+                    fontSize: 11, fontWeight: 700, border: '1px solid var(--primary)',
+                  }}>
+                    เจ้าหน้าที่
+                  </span>
+                </div>
+              </div>
             </>
           )}
-        </Card>
+        </div>
 
-        {/* Right: inline edit form */}
-        <Card style={{ padding: 24, flex: 1, minWidth: 320 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 18 }}>แก้ไขข้อมูลส่วนตัว</div>
+        {/* Edit form */}
+        <div style={{ padding: '24px 28px' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-700)', marginBottom: 18 }}>
+            แก้ไขข้อมูล
+          </div>
           {isLoading ? (
             <Skeleton lines={3} height={16} />
           ) : (
@@ -86,7 +109,7 @@ export default function StaffProfile() {
                 readOnly={updateMut.isPending}
                 label="ชื่อ-นามสกุล *"
                 value={form.full_name}
-                onChange={(e) => setDraft(f => ({ ...f, full_name: e.target.value }))}
+                onChange={(e) => setDraft((f) => ({ ...f, full_name: e.target.value }))}
                 required
               />
               <Input
@@ -94,15 +117,14 @@ export default function StaffProfile() {
                 label="อีเมล"
                 type="email"
                 value={form.email}
-                onChange={(e) => setDraft(f => ({ ...f, email: e.target.value }))}
+                onChange={(e) => setDraft((f) => ({ ...f, email: e.target.value }))}
               />
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 4 }}>
                 <Button type="submit" loading={updateMut.isPending}>บันทึกการเปลี่ยนแปลง</Button>
               </div>
             </form>
           )}
-        </Card>
+        </div>
       </div>
     </div>
   )

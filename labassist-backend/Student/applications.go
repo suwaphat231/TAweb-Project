@@ -111,10 +111,7 @@ func (h *Handler) Apply(c *gin.Context) {
 		return
 	}
 
-	// Notify every instructor account that actually owns this course by name
-	// match — not just course.InstructorID, which can point at an unused
-	// duplicate account left over from the classlist import (see
-	// InstructorOwnsCourse) while the instructor logs in under a different one.
+	// Notify the instructor account linked to this course.
 	if applicant, ok := database.UserByID(studentID.(uint)); ok {
 		notifs := make([]models.Notification, 0, 1)
 		for _, ins := range database.InstructorsForCourse(course) {

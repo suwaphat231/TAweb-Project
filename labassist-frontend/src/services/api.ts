@@ -163,6 +163,11 @@ export const notificationApi = {
 
 export const courseApi = { list: coursesAPI.getAll, get: coursesAPI.getById }
 export const studentApi = {
+  uploadAvatar: (file: File) => {
+    const body = new FormData()
+    body.append('file', file)
+    return api.post<User>('/student/profile/avatar', body).then((r) => r.data)
+  },
   dashboard: studentAPI.getDashboard,
   applications: applicationsAPI.getMyApplications,
   apply: applicationsAPI.apply,

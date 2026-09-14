@@ -2,6 +2,7 @@ package docxgen
 
 import (
 	"fmt"
+	"strings"
 
 	"labassist/models"
 )
@@ -12,8 +13,8 @@ func renderWorkReport(doc models.StaffDocument, course models.Course) ([]byte, e
 		period = *doc.Period
 	}
 
+	sessionTime := buildSessionTime(doc)
 	sessionDesc := fmt.Sprintf("ปฏิบัติงานในห้องปฏิบัติการคอมพิวเตอร์สำหรับรายวิชา %s %s", course.Code, course.Title)
-	sessionTime := fmt.Sprintf("%s ชม.", formatInt(doc.HoursPerSession))
 
 	sessionRows := make([]map[string]string, 0, len(doc.SessionDates))
 	for _, day := range doc.SessionDates {
@@ -44,4 +45,28 @@ func renderWorkReport(doc models.StaffDocument, course models.Course) ([]byte, e
 		},
 		Scalars: scalars,
 	})
+}
+
+// buildSessionTime formats the session schedule description from the document's
+// work schedule fields. Example output:
+//
+//	"วันพุธ เวลา 10:20 น. - 12:20 น. รวม 2 ชั่วโมง"
+//
+// Falls back to just the hour count when day/time fields are not filled in.
+func buildSessionTime(doc models.StaffDocument) string {
+	parts := make([]string, 0, 3)
+
+	if doc.WorkDay != "" {
+		parts = append(parts, "วัน"+doc.WorkDay)
+	}
+	if doc.WorkTimeStart != "" && doc.WorkTimeEnd != "" {
+		parts = append(parts, fmt.Sprintf("เวลา %s น. - %s น.", doc.WorkTimeStart, doc.WorkTimeEnd))
+	} else if doc.WorkTimeStart != "" {
+		parts = append(parts, fmt.Sprintf("เวลา %s น.", doc.WorkTimeStart))
+	}
+
+	hoursLabel := fmt.Sprintf("รวม %s ชั่วโมง", formatInt(doc.HoursPerSession))
+	parts = append(parts, hoursLabel)
+
+	return strings.Join(parts, " ")
 }

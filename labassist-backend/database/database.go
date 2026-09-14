@@ -2,7 +2,9 @@ package database
 
 import (
 	"errors"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,7 +15,26 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// labCreditRe matches the "(lecture-lab-self_study)" part of a credit string.
+var labCreditRe = regexp.MustCompile(`\((\d+)-(\d+)-(\d+)\)`)
+
+// LabHoursFromCredits parses a credit string like "3 (2-3-6)" and returns the
+// lab-hour component (the middle number). Returns -1 when the format cannot be
+// parsed — callers should treat -1 as "unknown" and not filter the course out.
+func LabHoursFromCredits(credits string) int {
+	m := labCreditRe.FindStringSubmatch(credits)
+	if m == nil {
+		return -1
+	}
+	n, _ := strconv.Atoi(m[2])
+	return n
+}
+
 var ErrConflict = errors.New("conflict")
+
+// bangkokLoc is UTC+7 with no DST — matches Asia/Bangkok without requiring
+// the system timezone database (safe in slim Docker images).
+var bangkokLoc = time.FixedZone("Asia/Bangkok", 7*60*60)
 
 // closeIfPastDeadline flips an open/closing_soon posting to closed once its
 // deadline has passed, persisting the change so every caller — the public
@@ -24,8 +45,8 @@ func closeIfPastDeadline(c models.Course) models.Course {
 	if c.Deadline == nil || (c.Status != models.StatusOpen && c.Status != models.StatusClosingSoon) {
 		return c
 	}
-	d := c.Deadline
-	endOfDeadline := time.Date(d.Year(), d.Month(), d.Day(), 23, 59, 59, 0, d.Location())
+	d := c.Deadline.In(bangkokLoc)
+	endOfDeadline := time.Date(d.Year(), d.Month(), d.Day(), 23, 59, 59, 0, bangkokLoc)
 	if time.Now().After(endOfDeadline) {
 		c.Status = models.StatusClosed
 		DB.Model(&models.Course{}).Where("id = ?", c.ID).Update("status", models.StatusClosed)
@@ -221,10 +242,7 @@ func CourseByID(id uint) (models.Course, bool) {
 	return courseWithInstructor(c), true
 }
 
-// InstructorCourses returns every course this instructor owns — exact
-// account match, or (like CoursesTaughtBy/TaughtCourseSections) a classlist
-// name match, so a course they can open/edit also shows up in their own
-// "ประกาศของฉัน" list instead of disappearing after being opened.
+// InstructorCourses returns courses authorized by stored account ID.
 func InstructorCourses(instructorID uint, fullName string, isAdmin bool, hasLab *bool) []models.Course {
 	query := DB.Order("id DESC")
 	if hasLab != nil {
@@ -323,6 +341,17 @@ func ResetCourseToDraft(id uint) (models.Course, bool) {
 
 // DeleteCoursesByTerm removes every course in the given semester/academic
 // year and any applications submitted for them, returning the count removed.
+// CourseExists returns true when a course row with the same instructor,
+// code, semester, academic year, and section already exists in the database.
+func CourseExists(instructorID uint, code, semester string, academicYear, section int) bool {
+	var n int64
+	DB.Model(&models.Course{}).
+		Where("instructor_id = ? AND code = ? AND semester = ? AND academic_year = ? AND section = ?",
+			instructorID, code, semester, academicYear, section).
+		Count(&n)
+	return n > 0
+}
+
 func DeleteCoursesByTerm(semester string, academicYear int) int {
 	var n int64
 	err := DB.Transaction(func(tx *gorm.DB) error {
@@ -414,41 +443,13 @@ func SplitInstructorNames(s string) []string {
 	return names
 }
 
-// InstructorOwnsCourse is the single source of truth for "does this
-// instructor teach this course" — matches instructorID directly (e.g.
-// courses the instructor created/was linked to themselves) or, failing
-// that, the spreadsheet-imported InstructorsRaw text against fullName
-// (covering co-taught sections, and cases where the classlist import
-// created a separate account for the same real person rather than linking
-// to their existing login). isAdmin bypasses the match entirely.
-//
-// Every read path (course-catalog listings) and every write path
-// (update/delete/status/applicants/review handlers in the Teacher package)
-// must use this same check — a course visible to an instructor as "theirs"
-// via name-matching but rejected on write by a stricter ID-only check is
-// exactly the "why can't I open this course" bug this exists to prevent.
-func InstructorOwnsCourse(c models.Course, instructorID uint, fullName string, isAdmin bool) bool {
-	if isAdmin || c.InstructorID == instructorID {
-		return true
-	}
-	target := NormalizeInstructorName(fullName)
-	if target == "" {
-		return false
-	}
-	for _, n := range SplitInstructorNames(c.InstructorsRaw) {
-		if NormalizeInstructorName(n) == target {
-			return true
-		}
-	}
-	return false
+// InstructorOwnsCourse authorizes only the stored account ID or an admin.
+// Display names are user-editable and must never grant access.
+func InstructorOwnsCourse(c models.Course, instructorID uint, _ string, isAdmin bool) bool {
+	return isAdmin || (instructorID != 0 && c.InstructorID == instructorID)
 }
 
-// InstructorsForCourse returns every instructor account that owns this
-// course by the same rule InstructorOwnsCourse checks on read/write — not
-// just the row's InstructorID, since a classlist import can leave the real
-// account matched only by name (see InstructorOwnsCourse's doc comment).
-// Used to notify the right person(s) when a student applies, so the
-// notification doesn't silently land on an unused duplicate account.
+// InstructorsForCourse returns the instructor account linked to the course.
 func InstructorsForCourse(c models.Course) []models.User {
 	var instructors []models.User
 	DB.Where("role = ?", models.RoleInstructor).Find(&instructors)
@@ -462,13 +463,9 @@ func InstructorsForCourse(c models.Course) []models.User {
 	return out
 }
 
-// CoursesTaughtBy returns, most-recent first, every course whose instructor
-// matches instructorID directly (e.g. courses the instructor created
-// themselves) or whose spreadsheet-imported InstructorsRaw text names
-// fullName (covering co-taught sections where only the first-listed name
-// got linked to a real account). isAdmin bypasses the match entirely. Used
-// to populate the course-code choices when an instructor creates a new
-// posting, so they can only pick a code the classlist says they teach.
+// CoursesTaughtBy returns authorized courses, deduplicated by course code.
+// Courses whose credits string explicitly shows 0 lab hours (e.g. "3 (3-0-6)")
+// are excluded — only lecture-only courses are eligible for Lab Boy hiring.
 func CoursesTaughtBy(instructorID uint, fullName string, isAdmin bool) []models.Course {
 	var rows []models.Course
 	DB.Order("id DESC").Find(&rows)
@@ -477,6 +474,9 @@ func CoursesTaughtBy(instructorID uint, fullName string, isAdmin bool) []models.
 	out := make([]models.Course, 0)
 	for _, c := range rows {
 		if !InstructorOwnsCourse(c, instructorID, fullName, isAdmin) || seenCode[c.Code] {
+			continue
+		}
+		if LabHoursFromCredits(c.Credits) == 0 {
 			continue
 		}
 		seenCode[c.Code] = true
@@ -611,10 +611,16 @@ func StudentApplications(studentID uint) []models.Application {
 
 func RecentStudentApplications(studentID uint, limit int) []models.Application {
 	all := StudentApplications(studentID)
-	if len(all) > limit {
-		return all[:limit]
+	active := all[:0]
+	for _, a := range all {
+		if a.Status != models.AppWithdrawn {
+			active = append(active, a)
+		}
 	}
-	return all
+	if len(active) > limit {
+		return active[:limit]
+	}
+	return active
 }
 
 func CountAppliedByStudent(studentID uint) int64 {
@@ -665,6 +671,67 @@ func UpdateApplication(id uint, fn func(a *models.Application)) (models.Applicat
 		return models.Application{}, false
 	}
 	return enrichApplication(a), true
+}
+
+// ReviewTxResult is returned by ReviewApplicationTx.
+type ReviewTxResult struct {
+	Updated    models.Application
+	PrevStatus models.AppStatus
+	SlotsFull  bool // true when skipped because the course had no remaining slots
+}
+
+// ReviewApplicationTx atomically checks slot availability, updates the
+// application, and adjusts the course's accepted count inside one transaction
+// with row-level locks on both the course and the application. This prevents
+// two concurrent accepts from both passing the slot check when only one slot
+// remains. When SlotsFull is true the application is unchanged and no error
+// is returned.
+func ReviewApplicationTx(appID uint, newStatus models.AppStatus, applyFields func(a *models.Application)) (ReviewTxResult, error) {
+	var res ReviewTxResult
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var app models.Application
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&app, appID).Error; err != nil {
+			return err
+		}
+
+		var course models.Course
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&course, app.CourseID).Error; err != nil {
+			return err
+		}
+
+		prevStatus := app.Status
+
+		if newStatus == models.AppAccepted && prevStatus != models.AppAccepted {
+			if app.RoleApplied == models.RoleLabBoy && course.LabBoyAccepted >= course.LabBoySlots {
+				res.SlotsFull = true
+				return nil
+			}
+		}
+
+		applyFields(&app)
+		if err := tx.Omit(clause.Associations).Save(&app).Error; err != nil {
+			return err
+		}
+
+		if newStatus == models.AppAccepted && prevStatus != models.AppAccepted {
+			course.LabBoyAccepted++
+			if err := tx.Omit(clause.Associations).Save(&course).Error; err != nil {
+				return err
+			}
+		} else if prevStatus == models.AppAccepted && newStatus != models.AppAccepted {
+			if course.LabBoyAccepted > 0 {
+				course.LabBoyAccepted--
+			}
+			if err := tx.Omit(clause.Associations).Save(&course).Error; err != nil {
+				return err
+			}
+		}
+
+		res.PrevStatus = prevStatus
+		res.Updated = enrichApplication(app)
+		return nil
+	})
+	return res, err
 }
 
 // SetApplicationGradeProof stores the uploaded grade-proof image on an
@@ -790,5 +857,11 @@ func applicationRows(query string, args ...interface{}) []models.Application {
 }
 
 func migrateApplicationData(db *gorm.DB) error {
-	return db.AutoMigrate(&models.Application{}, &models.Notification{}, &models.ActivityLog{})
+	return db.AutoMigrate(
+		&models.Application{},
+		&models.Notification{},
+		&models.ActivityLog{},
+		&models.FormReview{},
+		&models.StaffDocument{},
+	)
 }

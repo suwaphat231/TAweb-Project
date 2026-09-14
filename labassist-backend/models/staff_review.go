@@ -11,23 +11,25 @@ const (
 )
 
 // FormReview tracks the staff's review decision for a single course posting.
-// Stored in-memory; CourseID is the unique key (one review per course).
+// CourseID is the unique key (one review per course).
 type FormReview struct {
-	ID         uint         `json:"id"`
-	CourseID   uint         `json:"course_id"`
-	ReviewerID uint         `json:"reviewer_id"`
-	Status     ReviewStatus `json:"status"`
-	Note       string       `json:"note,omitempty"`
+	ID         uint         `gorm:"primaryKey" json:"id"`
+	CourseID   uint         `gorm:"not null;uniqueIndex" json:"course_id"`
+	ReviewerID uint         `gorm:"not null" json:"reviewer_id"`
+	Status     ReviewStatus `gorm:"type:enum('pending','verified','returned');not null;default:'pending'" json:"status"`
+	Note       string       `gorm:"type:text" json:"note,omitempty"`
 	UpdatedAt  time.Time    `json:"updated_at"`
 
 	// Enriched from the courses table — never stored
-	CourseCode     string `json:"course_code"`
-	CourseTitle    string `json:"course_title"`
-	Section        int    `json:"section"`
-	Semester       string `json:"semester"`
-	AcademicYear   int    `json:"academic_year"`
-	InstructorName string `json:"instructor_name"`
-	LabBoySlots    int    `json:"labboy_slots"`
-	AcceptedCount  int    `json:"labboy_accepted"`
-	SubmittedAt    string `json:"submitted_at"`
+	CourseCode     string `gorm:"-" json:"course_code"`
+	CourseTitle    string `gorm:"-" json:"course_title"`
+	Section        int    `gorm:"-" json:"section"`
+	Semester       string `gorm:"-" json:"semester"`
+	AcademicYear   int    `gorm:"-" json:"academic_year"`
+	InstructorName string `gorm:"-" json:"instructor_name"`
+	LabBoySlots    int    `gorm:"-" json:"labboy_slots"`
+	AcceptedCount  int    `gorm:"-" json:"labboy_accepted"`
+	SubmittedAt    string `gorm:"-" json:"submitted_at"`
 }
+
+func (FormReview) TableName() string { return "form_reviews" }

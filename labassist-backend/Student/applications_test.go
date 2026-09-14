@@ -11,7 +11,7 @@ import (
 
 func TestRejectInvalidStudentRequestsBeforeDatabaseAccess(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	h := NewHandler()
+	h := NewHandler(nil)
 	for _, tc := range []struct {
 		name, body string
 		handler    gin.HandlerFunc

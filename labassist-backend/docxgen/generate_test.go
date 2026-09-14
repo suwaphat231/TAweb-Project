@@ -3,6 +3,7 @@ package docxgen
 import (
 	"archive/zip"
 	"bytes"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -153,5 +154,107 @@ func TestRenderDocument_NoTemplateForApprovalMemo(t *testing.T) {
 	_, _, err := RenderDocument(doc)
 	if err != ErrNoTemplate {
 		t.Fatalf("expected ErrNoTemplate, got %v", err)
+	}
+}
+
+func TestRenderLabBoyHiringNotice_Basic(t *testing.T) {
+	in := LabBoyHiringNoticeInput{
+		FormDate:       "13 กันยายน 2569",
+		CourseCode:     "517122",
+		CourseTitle:    "ทักษะการเขียนโปรแกรมคอมพิวเตอร์ II",
+		InstructorName: "ผศ.ดร.ทดสอบ อาจารย์",
+		Semester:       1,
+		AcademicYear:   "2568",
+		Students: []HiringNoticeStudent{
+			{StudentCode: "650710001", StudentName: "TESTSTUDENT_MARKER_A"},
+			{StudentCode: "650710002", StudentName: "TESTSTUDENT_MARKER_B"},
+			{StudentCode: "650710003", StudentName: "TESTSTUDENT_MARKER_C"},
+		},
+	}
+	data, err := RenderLabBoyHiringNotice(in)
+	if err != nil {
+		t.Fatalf("RenderLabBoyHiringNotice: %v", err)
+	}
+	xml := assertValidDocx(t, data)
+
+	if !strings.Contains(xml, "517122") {
+		t.Error("expected course code in output")
+	}
+	if got := strings.Count(xml, "TESTSTUDENT_MARKER_"); got != 3 {
+		t.Errorf("expected 3 student rows, found %d", got)
+	}
+	// Selected semester (ต้น) should be marked with filled box.
+	if !strings.Contains(xml, "■") {
+		t.Error("expected filled checkbox (■) in output")
+	}
+}
+
+func TestRenderLabBoyHiringNotice_ZeroStudents(t *testing.T) {
+	in := LabBoyHiringNoticeInput{
+		FormDate:       "1 มกราคม 2569",
+		CourseCode:     "517122",
+		CourseTitle:    "TEST COURSE",
+		InstructorName: "อาจารย์ทดสอบ",
+		Semester:       2,
+		AcademicYear:   "2568",
+		Students:       nil,
+	}
+	data, err := RenderLabBoyHiringNotice(in)
+	if err != nil {
+		t.Fatalf("RenderLabBoyHiringNotice with zero students: %v", err)
+	}
+	assertValidDocx(t, data)
+}
+
+func TestPrepareHiringNoticeTemplate_InjectsTokens(t *testing.T) {
+	// Load the raw template XML and verify that after preparation, the expected
+	// tokens are present and no Wingdings F0A3 symbols remain.
+	raw, err := templateFS.ReadFile("templates/lab_boy_hiring_notice.docx")
+	if err != nil {
+		t.Fatalf("reading template: %v", err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
+	if err != nil {
+		t.Fatalf("opening template zip: %v", err)
+	}
+	var docXML string
+	for _, f := range zr.File {
+		if f.Name == "word/document.xml" {
+			rc, err := f.Open()
+			if err != nil {
+				t.Fatalf("opening word/document.xml: %v", err)
+			}
+			var buf bytes.Buffer
+			buf.ReadFrom(rc)
+			rc.Close()
+			docXML = buf.String()
+		}
+	}
+	if docXML == "" {
+		t.Fatal("template word/document.xml is empty")
+	}
+
+	prepared := prepareHiringNoticeTemplate(docXML)
+
+	for _, tok := range []string{
+		"{{FORM_DATE}}", "{{COURSE_CODE}}", "{{COURSE_TITLE}}",
+		"{{INSTRUCTOR_NAME}}", "{{ACADEMIC_YEAR}}",
+		"{{SEMESTER_1_BOX}}", "{{SEMESTER_2_BOX}}", "{{SEMESTER_3_BOX}}",
+		"{{TYPE_TA_BOX}}", "{{TYPE_LABBOY_BOX}}",
+		"{{ROW_NUM}}", "{{STUDENT_CODE}}", "{{STUDENT_NAME}}",
+	} {
+		if !strings.Contains(prepared, tok) {
+			t.Errorf("missing token %s after prepare", tok)
+		}
+	}
+	if strings.Contains(prepared, `w:char="F0A3"`) {
+		t.Error("F0A3 Wingdings symbols should all be replaced by tokens")
+	}
+	// Rows 2-10 should be removed; row 1 is now the RowGroup template.
+	for n := 2; n <= 10; n++ {
+		needle := fmt.Sprintf("<w:t>%d.</w:t>", n)
+		if strings.Contains(prepared, needle) {
+			t.Errorf("row %d should have been deleted from template", n)
+		}
 	}
 }

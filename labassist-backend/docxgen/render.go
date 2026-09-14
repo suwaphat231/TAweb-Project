@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"labassist/database"
 	"labassist/models"
@@ -27,6 +28,8 @@ func RenderDocument(doc models.StaffDocument) (data []byte, filename string, err
 	}
 
 	switch doc.Type {
+	case models.DocHiringNotice:
+		data, err = renderHiringNotice(doc, course)
 	case models.DocPaymentEvidence:
 		data, err = renderPaymentEvidence(doc, course)
 	case models.DocPaymentRequest:
@@ -40,6 +43,37 @@ func RenderDocument(doc models.StaffDocument) (data []byte, filename string, err
 		return nil, "", err
 	}
 	return data, doc.Name + ".docx", nil
+}
+
+func renderHiringNotice(doc models.StaffDocument, course models.Course) ([]byte, error) {
+	students := make([]HiringNoticeStudent, 0, len(doc.Roster))
+	for _, r := range doc.Roster {
+		students = append(students, HiringNoticeStudent{
+			StudentCode: r.StudentCode,
+			StudentName: r.StudentName,
+		})
+	}
+
+	semNum := 1
+	switch course.Semester {
+	case "2":
+		semNum = 2
+	case "3":
+		semNum = 3
+	}
+
+	now := time.Now()
+	formDate := fmt.Sprintf("%d %s %d", now.Day(), thaiMonthName(int(now.Month())), now.Year()+543)
+
+	return RenderLabBoyHiringNotice(LabBoyHiringNoticeInput{
+		FormDate:       formDate,
+		CourseCode:     course.Code,
+		CourseTitle:    course.Title,
+		InstructorName: course.InstructorName,
+		Semester:       semNum,
+		AcademicYear:   strconv.Itoa(course.AcademicYear),
+		Students:       students,
+	})
 }
 
 // formatInt renders a whole-number float without a trailing ".0" (hours,

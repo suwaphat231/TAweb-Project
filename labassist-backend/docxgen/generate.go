@@ -15,7 +15,7 @@ import (
 	"strings"
 )
 
-//go:embed templates/*.docx
+//go:embed templates/payment_evidence.docx templates/payment_request.docx templates/work_report.docx templates/lab_boy_hiring_notice.docx
 var templateFS embed.FS
 
 var trPattern = regexp.MustCompile(`(?s)<w:tr\b.*?</w:tr>`)
@@ -84,6 +84,70 @@ func Render(in RenderInput) ([]byte, error) {
 	var out bytes.Buffer
 	zw := zip.NewWriter(&out)
 	for _, f := range zr.File { // preserve original entry order
+		w, err := zw.Create(f.Name)
+		if err != nil {
+			return nil, err
+		}
+		if f.Name == "word/document.xml" {
+			if _, err := w.Write([]byte(docXML)); err != nil {
+				return nil, err
+			}
+		} else if _, err := w.Write(entries[f.Name]); err != nil {
+			return nil, err
+		}
+	}
+	if err := zw.Close(); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
+}
+
+// RenderWithPreparedXML renders a document using a pre-prepared XML string
+// instead of loading from the embedded template. The XML has already had
+// tokens injected programmatically. All zip entries except word/document.xml
+// are copied from the named template file.
+func RenderWithPreparedXML(templateFile, preparedDocXML string, in RenderInput) ([]byte, error) {
+	raw, err := templateFS.ReadFile("templates/" + templateFile)
+	if err != nil {
+		return nil, fmt.Errorf("docxgen: template %s: %w", templateFile, err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
+	if err != nil {
+		return nil, fmt.Errorf("docxgen: opening template %s: %w", templateFile, err)
+	}
+
+	entries := make(map[string][]byte, len(zr.File))
+	for _, f := range zr.File {
+		if f.Name == "word/document.xml" {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return nil, err
+		}
+		b, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			return nil, err
+		}
+		entries[f.Name] = b
+	}
+
+	docXML := preparedDocXML
+	for _, group := range in.RowGroups {
+		var err error
+		docXML, err = expandRows(docXML, group.Anchor, group.Rows)
+		if err != nil {
+			return nil, fmt.Errorf("docxgen: %s: %w", templateFile, err)
+		}
+	}
+	for token, val := range in.Scalars {
+		docXML = strings.ReplaceAll(docXML, token, escapeXML(val))
+	}
+
+	var out bytes.Buffer
+	zw := zip.NewWriter(&out)
+	for _, f := range zr.File {
 		w, err := zw.Create(f.Name)
 		if err != nil {
 			return nil, err

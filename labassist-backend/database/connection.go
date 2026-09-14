@@ -123,6 +123,16 @@ func Connect(cfg *config.Config) error {
 		return fmt.Errorf("seed core courses: %w", err)
 	}
 
+	// Classlist instructors and courses are real production data — seed them
+	// regardless of SEED_DEMO_DATA so the system works out of the box.
+	if err := seedClasslistInstructors(); err != nil {
+		return fmt.Errorf("seed classlist instructors: %w", err)
+	}
+
+	if err := seedCoursesFromClasslist(); err != nil {
+		return fmt.Errorf("seed courses from classlist: %w", err)
+	}
+
 	if !cfg.SeedDemoData {
 		return nil
 	}
@@ -137,10 +147,6 @@ func Connect(cfg *config.Config) error {
 			return fmt.Errorf("seed users from user.sql: %w", err)
 		}
 		log.Println("Seeded users table from database/user.sql")
-	}
-
-	if err := seedClasslistInstructors(); err != nil {
-		return fmt.Errorf("seed classlist instructors: %w", err)
 	}
 
 	if err := seedMockApplicants(); err != nil {

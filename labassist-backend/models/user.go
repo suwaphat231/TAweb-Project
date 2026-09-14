@@ -49,6 +49,7 @@ type User struct {
 	Username     *string `gorm:"uniqueIndex;size:100" json:"username"`
 	PasswordHash *string `gorm:"size:255" json:"-"`
 	FullName     string  `gorm:"size:200;not null" json:"full_name"`
+	AvatarURL    string  `gorm:"type:mediumtext" json:"avatar_url,omitempty"`
 	// Email has no gorm uniqueIndex tag: admin-created accounts start with a
 	// blank email (filled in later via Google sign-in), so uniqueness is
 	// enforced instead by a functional index that ignores empty strings — see

@@ -10,12 +10,13 @@ const gradients: Record<AvatarColor, string> = {
 
 interface Props {
   initials: string
+  src?: string
   color: AvatarColor
   size?: number
   style?: React.CSSProperties
 }
 
-export function Avatar({ initials, color, size = 36, style }: Props) {
+export function Avatar({ initials, src, color, size = 36, style }: Props) {
   return (
     <div style={{
       width: size, height: size, borderRadius: '50%',
@@ -25,7 +26,7 @@ export function Avatar({ initials, color, size = 36, style }: Props) {
       fontSize: size * 0.38, fontWeight: 700, flexShrink: 0, userSelect: 'none',
       ...style,
     }}>
-      {initials.slice(0, 2).toUpperCase()}
+      {src ? <img src={src} alt="รูปโปรไฟล์" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} /> : initials.slice(0, 2).toUpperCase()}
     </div>
   )
 }
