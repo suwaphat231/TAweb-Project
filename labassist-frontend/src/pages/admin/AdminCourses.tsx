@@ -102,23 +102,32 @@ export default function AdminCourses() {
     // the rest of the batch from importing.
     mutationFn: async () => {
       const failed: string[] = []
+      let totalCreated = 0
+      let totalSkipped = 0
       for (const f of files) {
         try {
-          await adminApi.importCourses(f, semester, Number(academicYear))
+          const res = await adminApi.importCourses(f, semester, Number(academicYear))
+          totalCreated += res.created.length
+          totalSkipped += res.skipped.length
         } catch (err) {
           const detail = isAxiosError(err) ? err.response?.data?.error : undefined
           failed.push(`${f.name}${detail ? ` (${detail})` : ''}`)
         }
       }
-      return failed
+      return { failed, totalCreated, totalSkipped }
     },
-    onSuccess: (failed) => {
+    onSuccess: ({ failed, totalCreated, totalSkipped }) => {
       qc.invalidateQueries({ queryKey: ['all-courses'] })
       setShowImport(false)
       setFiles([])
-      // Silent on success — only surface a toast when something went wrong.
+      setSemesterFilter(semester)
       if (failed.length > 0) {
         showToast(`นำเข้าไม่สำเร็จ ${failed.length} ไฟล์: ${failed.join(', ')}`, 'error')
+      } else if (totalCreated === 0) {
+        showToast(`ไม่มีวิชาถูกนำเข้า — ข้าม ${totalSkipped} แถว (ตรวจสอบคอลัมน์หน่วยกิตในไฟล์)`, 'error')
+      } else {
+        const skipMsg = totalSkipped > 0 ? ` (ข้าม ${totalSkipped} แถวที่ไม่มีคาบแลป)` : ''
+        showToast(`นำเข้าสำเร็จ ${totalCreated} วิชา${skipMsg}`, 'success')
       }
     },
   })

@@ -365,6 +365,9 @@ func DeleteCoursesByTerm(semester string, academicYear int) int {
 		if err := tx.Where("course_id IN ?", ids).Delete(&models.Application{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("course_id IN ?", ids).Delete(&models.FormReview{}).Error; err != nil {
+			return err
+		}
 		result := tx.Where("id IN ?", ids).Delete(&models.Course{})
 		n = result.RowsAffected
 		return result.Error
@@ -473,7 +476,12 @@ func CoursesTaughtBy(instructorID uint, fullName string, isAdmin bool) []models.
 	seenCode := make(map[string]bool, len(rows))
 	out := make([]models.Course, 0)
 	for _, c := range rows {
-		if !InstructorOwnsCourse(c, instructorID, fullName, isAdmin) || seenCode[c.Code] {
+		// Unmatched imports (InstructorID=0) are visible to any instructor
+		// in the autocomplete, same policy as TaughtCourseSections.
+		if c.InstructorID != 0 && !InstructorOwnsCourse(c, instructorID, fullName, isAdmin) {
+			continue
+		}
+		if seenCode[c.Code] {
 			continue
 		}
 		if LabHoursFromCredits(c.Credits) == 0 {
@@ -513,14 +521,28 @@ func CoreCourseCatalog() []models.CoreCourse {
 // picker shown when opening a posting — section/schedule always come from
 // the spreadsheet import, never typed in by the instructor, so this is the
 // only source of truth for "which real sections exist for this code."
+//
+// The query also matches codes with a curriculum suffix (e.g. searching
+// "517122" also returns "517122-165") because the university classlist
+// appends a curriculum code to the subject code, and instructors typically
+// search by the bare subject code.
+//
+// Courses whose InstructorID was not matched during import (ID = 0) are
+// included so that the posting flow does not break when name-matching fails
+// at import time — the actual course link is recorded on the Course row
+// created when the posting is opened.
 func TaughtCourseSections(instructorID uint, fullName string, isAdmin bool, code, semester string, academicYear int) []models.Course {
 	var rows []models.Course
-	DB.Where("code = ? AND semester = ? AND academic_year = ?", code, semester, academicYear).
+	DB.Where("(code = ? OR code LIKE ?) AND semester = ? AND academic_year = ?",
+		code, code+"-%", semester, academicYear).
 		Order("section ASC").Find(&rows)
 
 	out := make([]models.Course, 0)
 	for _, c := range rows {
-		if !InstructorOwnsCourse(c, instructorID, fullName, isAdmin) {
+		// Courses with a matched instructor must belong to this instructor.
+		// Courses with InstructorID=0 (unmatched import) are shown to any
+		// instructor so they can still open postings for their own sections.
+		if c.InstructorID != 0 && !InstructorOwnsCourse(c, instructorID, fullName, isAdmin) {
 			continue
 		}
 		cc := courseWithInstructor(c)

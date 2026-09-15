@@ -1,131 +1,172 @@
+import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { staffApi } from '../../services/api'
-import { Button } from '../../components/ui/Button'
+import { buildCourseOffering, applyFilters } from './staffCourseUtils'
+import { SummaryCards } from './components/SummaryCards'
+import { CourseFilters, type FilterState } from './components/CourseFilters'
+import { StaffCourseCard } from './components/StaffCourseCard'
+import type { CourseOffering } from '../../types'
 
-const WORKFLOW = [
-  { n: 1, label: 'สร้างแบบฟอร์มแจ้งความประสงค์', sub: 'ออกเอกสารพร้อมรายชื่อนักศึกษาที่อาจารย์ยืนยัน', to: '/staff/docs' },
-  { n: 2, label: 'ตรวจสอบและอนุมัติแบบฟอร์ม',    sub: 'ตรวจสอบความครบถ้วน หรือส่งกลับแก้ไข',          to: '/staff/review' },
-  { n: 3, label: 'จัดทำบันทึกขออนุมัติจ้าง',     sub: 'สร้างเอกสารประกอบการจ้าง',                    to: '/staff/docs' },
-  { n: 4, label: 'รวบรวมหลักฐานปฏิบัติงาน',      sub: 'ตรวจสอบปลายภาคการศึกษา',                     to: '/staff/docs' },
-  { n: 5, label: 'จัดทำหลักฐานจ่ายเงิน',         sub: 'เอกสารค่าตอบแทนนักศึกษา',                    to: '/staff/docs' },
-  { n: 6, label: 'บันทึกขอเบิกจ่าย',             sub: 'ส่งต่อฝ่ายการเงิน',                           to: '/staff/docs' },
-]
+const DEFAULT_FILTERS: FilterState = {
+  search: '',
+  semester: '',
+  academicYear: '',
+  docStatus: '',
+  instructor: '',
+}
 
 export default function StaffHome() {
   const { user } = useAuth()
+  const navigate = useNavigate()
+  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS)
 
   const { data: reviews = [], isLoading: reviewsLoading } = useQuery({
     queryKey: ['staff-reviews'],
     queryFn: () => staffApi.listReviews(),
   })
 
-  const { data: docs = [], isLoading: docsLoading } = useQuery({
+  const { data: allDocs = [], isLoading: docsLoading } = useQuery({
     queryKey: ['staff-documents'],
     queryFn: () => staffApi.listDocuments(),
   })
 
   const loading = reviewsLoading || docsLoading
 
-  const pendingCount  = reviews.filter((r) => r.status === 'pending').length
-  const returnedCount = reviews.filter((r) => r.status === 'returned').length
-  const verifiedCount = reviews.filter((r) => r.status === 'verified').length
-
-  return (
-    <div style={{ maxWidth: 840, margin: '0 auto' }}>
-
-      {/* Page header */}
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 3 }}>
-          สวัสดี, {user?.full_name}
-        </h1>
-        <p style={{ fontSize: 13, color: 'var(--ink-400)' }}>
-          ระบบจัดการผู้ช่วยปฏิบัติการ — กระบวนการเอกสารและธุรการ
-        </p>
-      </div>
-
-      {/* Stat + action bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 28, flexWrap: 'wrap' }}>
-        {loading ? (
-          <div style={{ height: 30, width: 280, background: 'var(--line-soft)', borderRadius: 999, opacity: 0.5 }} />
-        ) : (
-          <>
-            <StatChip label="รอตรวจสอบ" value={pendingCount}  color="var(--amber)" />
-            <StatChip label="ส่งกลับ"    value={returnedCount} color="var(--red)"   />
-            <StatChip label="ผ่านแล้ว"   value={verifiedCount} color="var(--green)" />
-            <StatChip label="เอกสาร"     value={docs.length}   color="var(--primary)" />
-          </>
-        )}
-        <div style={{ flex: 1 }} />
-        {pendingCount > 0 && (
-          <Link to="/staff/review">
-            <Button size="sm">ตรวจสอบแบบฟอร์ม ({pendingCount})</Button>
-          </Link>
-        )}
-        <Link to="/staff/docs">
-          <Button size="sm" variant="outline">จัดการเอกสาร</Button>
-        </Link>
-      </div>
-
-      {/* Workflow */}
-      <div style={{ background: '#fff', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-card)', overflow: 'hidden' }}>
-        <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--line-soft)' }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-400)', letterSpacing: 0.5, textTransform: 'uppercase' }}>
-            ขั้นตอนการดำเนินงาน
-          </span>
-        </div>
-        {WORKFLOW.map((step, i) => (
-          <Link key={step.n} to={step.to} style={{ textDecoration: 'none', display: 'block' }}>
-            <div
-              style={{
-                display: 'flex', alignItems: 'center', gap: 14,
-                padding: '14px 20px',
-                borderBottom: i < WORKFLOW.length - 1 ? '1px solid var(--line-soft)' : 'none',
-                transition: 'background .12s',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}
-            >
-              <div style={{
-                width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-                background: step.n <= 2 ? 'var(--primary)' : 'var(--line-soft)',
-                color: step.n <= 2 ? '#fff' : 'var(--ink-400)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 11, fontWeight: 700,
-              }}>
-                {step.n}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontSize: 14, fontWeight: step.n <= 2 ? 600 : 400,
-                  color: step.n <= 2 ? 'var(--primary)' : 'var(--ink-700)',
-                  lineHeight: 1.3,
-                }}>
-                  {step.label}
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 2 }}>{step.sub}</div>
-              </div>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ink-300)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                <polyline points="9 18 15 12 9 6"/>
-              </svg>
-            </div>
-          </Link>
-        ))}
-      </div>
-    </div>
+  // Build CourseOffering from FormReview + Document data
+  const offerings = useMemo<CourseOffering[]>(
+    () => reviews.map((r) => buildCourseOffering(r, allDocs)),
+    [reviews, allDocs],
   )
-}
 
-function StatChip({ label, value, color }: { label: string; value: number; color: string }) {
+  // Unique filter options derived from offerings
+  const instructors = useMemo(
+    () => [...new Set(offerings.flatMap((o) => o.instructors.map((i) => i.name)))].sort(),
+    [offerings],
+  )
+  const semesters = useMemo(
+    () => [...new Set(offerings.map((o) => o.semester))].sort(),
+    [offerings],
+  )
+  const academicYears = useMemo(
+    () => [...new Set(offerings.map((o) => String(o.academicYear)))].sort((a, b) => Number(b) - Number(a)),
+    [offerings],
+  )
+
+  const filtered = useMemo(
+    () => applyFilters(offerings, filters.search, filters.instructor, filters.semester, filters.academicYear, filters.docStatus),
+    [offerings, filters],
+  )
+
+  function handleCourseAction(offering: CourseOffering) {
+    navigate(`/staff/course/${offering.academicYear}/${offering.semester}/${offering.courseCode}/${offering.sectionNo}`)
+  }
+
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 5,
-      padding: '5px 12px', background: '#fff',
-      border: '1.5px solid var(--line)', borderRadius: 999, fontSize: 12,
-    }}>
-      <span style={{ fontWeight: 700, color }}>{value}</span>
-      <span style={{ color: 'var(--ink-500)' }}>{label}</span>
+    <div>
+      {/* Page header */}
+      <div className="dashboard-banner" style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <h1 style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>
+              สวัสดี, {user?.full_name}
+            </h1>
+            <p style={{ fontSize: 13, opacity: 0.85 }}>
+              ระบบจัดการงานเอกสารแยกตามรายวิชา — ภาควิชาคอมพิวเตอร์ มศก.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <a
+              href="/staff/docs"
+              style={{
+                padding: '7px 16px', fontSize: 13, fontWeight: 600,
+                borderRadius: 'var(--radius-btn)', cursor: 'pointer',
+                background: 'rgba(255,255,255,0.15)', color: '#fff',
+                border: '1px solid rgba(255,255,255,0.3)', textDecoration: 'none',
+                display: 'inline-flex', alignItems: 'center',
+              }}
+            >
+              เอกสารทั้งหมด
+            </a>
+            <a
+              href="/staff/review"
+              style={{
+                padding: '7px 16px', fontSize: 13, fontWeight: 600,
+                borderRadius: 'var(--radius-btn)', cursor: 'pointer',
+                background: '#fff', color: 'var(--primary)',
+                border: 'none', textDecoration: 'none',
+                display: 'inline-flex', alignItems: 'center',
+              }}
+            >
+              ตรวจสอบแบบฟอร์ม
+            </a>
+          </div>
+        </div>
+      </div>
+
+      {/* Summary cards */}
+      <SummaryCards offerings={filtered.length > 0 ? offerings : offerings} loading={loading} />
+
+      {/* Filters */}
+      <CourseFilters
+        filters={filters}
+        instructors={instructors}
+        semesters={semesters}
+        academicYears={academicYears}
+        onChange={setFilters}
+      />
+
+      {/* Course cards grid */}
+      {loading ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16 }}>
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} style={{
+              height: 260, background: '#fff', border: '1.5px solid var(--line)',
+              borderRadius: 'var(--radius-card)', padding: 20,
+            }}>
+              <div style={{ height: 16, width: '60%', background: 'var(--line-soft)', borderRadius: 4, marginBottom: 12 }} />
+              <div style={{ height: 13, width: '80%', background: 'var(--line-soft)', borderRadius: 4, marginBottom: 20 }} />
+              <div style={{ height: 13, width: '50%', background: 'var(--line-soft)', borderRadius: 4, marginBottom: 10 }} />
+              <div style={{ height: 5, background: 'var(--line-soft)', borderRadius: 999 }} />
+            </div>
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
+        <div style={{
+          padding: '64px 24px', textAlign: 'center',
+          background: '#fff', border: '1.5px solid var(--line)',
+          borderRadius: 'var(--radius-card)',
+        }}>
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--ink-300)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 12 }}>
+            <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+            <rect x="9" y="3" width="6" height="4" rx="2"/>
+          </svg>
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 6 }}>
+            {offerings.length === 0 ? 'ยังไม่มีรายวิชาในระบบ' : 'ไม่พบรายวิชาที่ตรงกัน'}
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>
+            {offerings.length === 0
+              ? 'รายวิชาจะปรากฏเมื่ออาจารย์ส่งแบบฟอร์มแจ้งความประสงค์เข้ามา'
+              : 'ลองเปลี่ยนคำค้นหาหรือตัวกรอง'}
+          </div>
+        </div>
+      ) : (
+        <>
+          <div style={{ fontSize: 12, color: 'var(--ink-400)', marginBottom: 12 }}>
+            แสดง {filtered.length} รายวิชา{filtered.length !== offerings.length ? ` (จากทั้งหมด ${offerings.length})` : ''}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16 }}>
+            {filtered.map((offering) => (
+              <StaffCourseCard
+                key={`${offering.academicYear}-${offering.semester}-${offering.courseCode}-${offering.sectionNo}`}
+                offering={offering}
+                onAction={handleCourseAction}
+              />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   )
 }

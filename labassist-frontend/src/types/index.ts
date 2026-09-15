@@ -306,3 +306,51 @@ export interface AdminStats {
   accepted_applications: number
   pending_applications: number
 }
+
+// ─── Staff course management ──────────────────────────────────────────────────
+export type CourseDocStatus = 'waiting' | 'in_progress' | 'completed'
+export type DocStepStatus = 'not_reached' | 'waiting' | 'in_review' | 'created' | 'approved' | 'completed'
+
+export interface Instructor {
+  id?: number
+  name: string
+  email?: string
+  isMain?: boolean
+}
+
+export interface SelectedLabBoy {
+  studentId: number
+  studentCode: string
+  studentName: string
+  studentEmail?: string
+}
+
+export interface CourseOffering {
+  courseId: number
+  academicYear: number
+  semester: string
+  courseCode: string
+  sectionNo: number
+  courseTitle: string
+  credits?: string
+  schedule?: string
+  room?: string
+  instructors: Instructor[]
+  selectedLabBoys: SelectedLabBoy[]
+  labboySlots: number
+  labboyAccepted: number
+  docStatus: CourseDocStatus
+  completedDocs: number
+  totalDocs: number
+  reviewStatus: ReviewStatus
+}
+
+export interface DocumentWorkflowItem {
+  step: number
+  label: string
+  docType: DocType | null
+  status: DocStepStatus
+  documentId?: number
+  documentName?: string
+  createdAt?: string
+}

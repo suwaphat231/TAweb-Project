@@ -6,6 +6,8 @@ import { displayCourseTitle } from '../../utils/courseDisplay'
 interface Suggestion {
   code: string
   title: string
+  semester: string
+  academic_year: number
 }
 
 interface Props {
@@ -37,11 +39,11 @@ export function CourseCodeAutocomplete({ value, onChange, onSelect, disabled }: 
     !q || c.code.toLowerCase().includes(q) || c.title.toLowerCase().includes(q)
   )
 
-  function handleSelect(c: { code: string; title: string; english_title?: string }) {
+  function handleSelect(c: { code: string; title: string; english_title?: string; semester: string; academic_year: number }) {
     const title = displayCourseTitle(c.title, c.english_title)
     setInputValue(c.code)
     onChange(c.code)
-    onSelect({ code: c.code, title })
+    onSelect({ code: c.code, title, semester: c.semester, academic_year: c.academic_year })
     setOpen(false)
   }
 

@@ -79,7 +79,12 @@ export const applicationsAPI = {
   uploadGradeProof: (applicationId: number, file: File) => {
     const formData = new FormData()
     formData.append('file', file)
-    return api.post<Application>(`/student/applications/${applicationId}/grade-proof`, formData).then((r) => r.data)
+    return api
+      .post<Application | { application: Application; grade_below_threshold: true; warning: string }>(
+        `/student/applications/${applicationId}/grade-proof`,
+        formData,
+      )
+      .then((r) => r.data)
   },
   // Grade-proof images need the Bearer token like any other request, so a
   // plain <img src> can't hit these directly — fetch as a blob through the

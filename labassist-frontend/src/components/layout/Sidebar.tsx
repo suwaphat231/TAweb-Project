@@ -50,9 +50,9 @@ const navMap: Record<UserRole, NavItem[]> = {
     { to: '/instructor/profile',  label: 'ข้อมูลส่วนตัว',    icon: 'user' },
   ],
   staff: [
-    { to: '/staff/home',    label: 'ภาพรวม',            icon: 'home' },
+    { to: '/staff/home',    label: 'หน้าหลัก',          icon: 'home' },
+    { to: '/staff/docs',    label: 'เอกสารทั้งหมด',     icon: 'file-text' },
     { to: '/staff/review',  label: 'ตรวจสอบแบบฟอร์ม',  icon: 'check-square' },
-    { to: '/staff/docs',    label: 'จัดการเอกสาร',      icon: 'file-text' },
     { to: '/staff/profile', label: 'ข้อมูลส่วนตัว',     icon: 'user' },
   ],
   admin: [

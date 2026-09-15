@@ -41,15 +41,21 @@ export function useApplyLabboy() {
         }
       }
       if (vars.gradeProofFile) {
-        await studentApi.uploadGradeProof(appId, vars.gradeProofFile)
+        const result = await studentApi.uploadGradeProof(appId, vars.gradeProofFile)
         pendingAppIdRef.current = null
+        return result
       }
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ['my-applications'] })
       qc.invalidateQueries({ queryKey: ['student-dashboard'] })
       const code = applyTarget?.code ?? ''
-      showToast(`ส่งใบสมัคร Lab Boy วิชา ${code} เรียบร้อย รออาจารย์พิจารณา`, 'success')
+      const below = result && typeof result === 'object' && 'grade_below_threshold' in result
+      if (below && (result as { warning: string }).warning) {
+        showToast((result as { warning: string }).warning, 'warning')
+      } else {
+        showToast(`ส่งใบสมัคร Lab Boy วิชา ${code} เรียบร้อย รออาจารย์พิจารณา`, 'success')
+      }
       setApplyTarget(null)
       setSelectedSectionId(null)
       setGrade('')
@@ -57,12 +63,6 @@ export function useApplyLabboy() {
       pendingAppIdRef.current = null
     },
     onError: (err: { response?: { data?: { error?: string }; status?: number } }) => {
-      if (err.response?.status === 422) {
-        // Grade rejected by OCR — the application was auto-withdrawn; reset so
-        // the next attempt creates a fresh application instead of re-uploading
-        // to the now-withdrawn one.
-        pendingAppIdRef.current = null
-      }
       showToast(err?.response?.data?.error ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error')
     },
   })

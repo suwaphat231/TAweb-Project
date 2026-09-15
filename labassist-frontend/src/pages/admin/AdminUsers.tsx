@@ -116,13 +116,15 @@ export default function AdminUsers() {
           <Button size="sm" variant="ghost" onClick={() => openEdit(u)} style={{ border: '1px solid var(--line)' }}>
             แก้ไข
           </Button>
-          <Button
-            size="sm" variant="ghost"
-            onClick={() => toggleMut.mutate({ id: u.id, is_active: !u.is_active })}
-            style={{ color: u.is_active ? 'var(--red)' : 'var(--green)', border: '1px solid var(--line)' }}
-          >
-            {u.is_active ? 'ระงับ' : 'เปิดใช้'}
-          </Button>
+          {!u.is_active && (
+            <Button
+              size="sm" variant="ghost"
+              onClick={() => toggleMut.mutate({ id: u.id, is_active: true })}
+              style={{ color: 'var(--green)', border: '1px solid var(--line)' }}
+            >
+              เปิดใช้
+            </Button>
+          )}
         </div>
       ),
     },

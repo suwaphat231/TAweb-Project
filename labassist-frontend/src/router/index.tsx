@@ -23,6 +23,7 @@ const StaffHome = lazy(() => import('../pages/staff/StaffHome'))
 const StaffReview = lazy(() => import('../pages/staff/StaffReview'))
 const StaffDocs = lazy(() => import('../pages/staff/StaffDocs'))
 const StaffProfile = lazy(() => import('../pages/staff/StaffProfile'))
+const StaffCourseDetail = lazy(() => import('../pages/staff/StaffCourseDetail'))
 
 const AdminOverview = lazy(() => import('../pages/admin/AdminOverview'))
 const AdminUsers = lazy(() => import('../pages/admin/AdminUsers'))
@@ -80,6 +81,7 @@ export function AppRouter() {
       <Route path="/staff/review"  element={<ProtectedRoute roles={['staff', 'admin']}><StaffReview /></ProtectedRoute>} />
       <Route path="/staff/docs"    element={<ProtectedRoute roles={['staff', 'admin']}><StaffDocs /></ProtectedRoute>} />
       <Route path="/staff/profile" element={<ProtectedRoute roles={['staff']}><StaffProfile /></ProtectedRoute>} />
+      <Route path="/staff/course/:year/:semester/:code/:section" element={<ProtectedRoute roles={['staff', 'admin']}><StaffCourseDetail /></ProtectedRoute>} />
 
       {/* Admin */}
       <Route path="/admin" element={<Navigate to="/admin/overview" replace />} />

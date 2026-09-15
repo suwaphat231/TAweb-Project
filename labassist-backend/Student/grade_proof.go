@@ -119,23 +119,23 @@ func (h *Handler) UploadGradeProof(c *gin.Context) {
 		if course, ok := database.CourseByID(app.CourseID); ok {
 			if grade, ok := ocrGradeFromImage(h.cfg.OCRServiceURL, course.Code, data, fileHeader.Filename); ok {
 				minGrade := minGradeFromRequirements(course.Requirements)
-				if minGrade != "" && !gradeAtLeast(grade, minGrade) {
-					// Grade is below the requirement — auto-withdraw and reject.
-					database.UpdateApplication(uint(id), func(a *models.Application) {
-						a.Status = models.AppWithdrawn
-					})
-					c.JSON(http.StatusUnprocessableEntity, gin.H{
-						"error": fmt.Sprintf(
-							"เกรดที่อ่านได้จากรูป (%s) ต่ำกว่าเกณฑ์ขั้นต่ำที่อาจารย์กำหนดไว้ (%s) ไม่สามารถสมัครวิชานี้ได้",
-							grade, minGrade,
-						),
-					})
-					return
-				}
 				if u, ok := database.UpdateApplication(uint(id), func(a *models.Application) {
 					a.Grade = &grade
 				}); ok {
 					updated = u
+				}
+				// Grade below the instructor's threshold — keep as pending for manual
+				// review instead of auto-withdrawing.
+				if minGrade != "" && !gradeAtLeast(grade, minGrade) {
+					c.JSON(http.StatusOK, gin.H{
+						"application":           updated,
+						"grade_below_threshold": true,
+						"warning": fmt.Sprintf(
+							"เกรดที่อ่านได้จากรูป (%s) ต่ำกว่าเกณฑ์ขั้นต่ำที่อาจารย์กำหนดไว้ (%s) ใบสมัครยังคงอยู่ในสถานะรอพิจารณา",
+							grade, minGrade,
+						),
+					})
+					return
 				}
 			}
 		}

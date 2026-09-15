@@ -63,7 +63,7 @@ export function SectionCatalogPicker({ code, semester, academicYear, selectedIds
                 <input type="checkbox" checked={isSelected} disabled={alreadyOpen} onChange={() => toggle(s.id)} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-900)' }}>
-                   {/* Sec {s.section } */}
+                    Sec {s.section}
                     {alreadyOpen && (
                       <span style={{ fontWeight: 400, fontSize: 11, marginLeft: 6, color: 'var(--ink-400)' }}>
                         เปิดรับสมัครแล้ว

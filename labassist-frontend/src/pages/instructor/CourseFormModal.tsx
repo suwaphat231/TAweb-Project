@@ -43,19 +43,42 @@ export function CourseFormModal({
           <CourseCodeAutocomplete
             value={form.code}
             onChange={(v) => { setForm(f => ({ ...f, code: v })); setSectionIds([]) }}
-            onSelect={(c) => setForm(f => ({ ...f, code: c.code, title: c.title }))}
+            onSelect={(c) => {
+              setForm(f => ({
+                ...f,
+                code: c.code,
+                title: c.title,
+                semester: c.semester,
+                academic_year: c.academic_year,
+              }))
+              setSectionIds([])
+            }}
             disabled={!!editId}
           />
-          {/* ปีการศึกษา/ภาคเรียน มาจากไฟล์ที่นำเข้าอยู่แล้วตอนสร้างประกาศใหม่ (ผูกกับ
-              section ที่เลือก) — ให้แก้ได้เฉพาะตอนแก้ไข section ที่เปิดอยู่แล้วเท่านั้น */}
           {editId && (
             <Input label="ปีการศึกษา *" type="number" value={form.academic_year} onChange={set('academic_year')} required />
           )}
         </div>
         <Input label="ชื่อวิชา *" value={form.title} onChange={set('title')} placeholder="การโปรแกรมคอมพิวเตอร์" required />
-        {editId && (
+        {editId ? (
           <Select label="ภาคเรียน" value={form.semester} onChange={set('semester')}
             options={[{ value: '1', label: '1' }, { value: '2', label: '2' }, { value: '3', label: '3' }]} />
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <Select
+              label="ภาคเรียน *"
+              value={form.semester}
+              onChange={(e) => { set('semester')(e); setSectionIds([]) }}
+              options={[{ value: '1', label: '1' }, { value: '2', label: '2' }, { value: '3', label: '3' }]}
+            />
+            <Input
+              label="ปีการศึกษา *"
+              type="number"
+              value={form.academic_year}
+              onChange={(e) => { set('academic_year')(e); setSectionIds([]) }}
+              required
+            />
+          </div>
         )}
 
         {editId ? (
