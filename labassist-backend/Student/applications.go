@@ -1,6 +1,7 @@
 package student
 
 import (
+	"errors"
 	"fmt"
 	"labassist/database"
 	"labassist/models"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // ApplyRequest is the request body for submitting an application
@@ -142,31 +144,48 @@ func (h *Handler) Withdraw(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
 	id, _ := strconv.Atoi(c.Param("id"))
 
-	app, ok := database.ApplicationByIDForStudent(uint(id), studentID.(uint))
-	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-		return
-	}
-	if app.Status == models.AppWithdrawn {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "already withdrawn"})
-		return
-	}
-
-	prevStatus := app.Status
-	updated, saved := database.UpdateApplication(uint(id), func(a *models.Application) {
-		a.Status = models.AppWithdrawn
-	})
-	if !saved {
+	updated, err := database.WithdrawApplication(uint(id), studentID.(uint))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+			return
+		}
+		if errors.Is(err, database.ErrAlreadyWithdrawn) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "already withdrawn"})
+			return
+		}
+		if errors.Is(err, database.ErrWithdrawalClosed) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "ไม่สามารถถอนใบสมัครได้หลังจากอาจารย์ปิดรับสมัครแล้ว"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot save application"})
 		return
 	}
 
-	// Decrement slot count if was accepted
-	if prevStatus == models.AppAccepted {
-		database.AdjustCourseAccepted(app.CourseID, app.RoleApplied, -1)
+	c.JSON(http.StatusOK, updated)
+}
+
+// ApplicationHistory godoc
+// @Summary      ประวัติการสมัครรอบก่อนหน้า
+// @Description  คืนรายการ snapshot ของใบสมัครที่ถูกปฏิเสธหรือถอนไปในรอบก่อน ก่อนที่นักศึกษาจะสมัครใหม่
+// @Tags         student
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path  int  true  "Application ID"
+// @Success      200  {array}   models.ApplicationHistory
+// @Failure      404  {object}  handlers.ErrorResponse
+// @Router       /student/applications/{id}/history [get]
+func (h *Handler) ApplicationHistory(c *gin.Context) {
+	studentID, _ := c.Get("user_id")
+	id, _ := strconv.Atoi(c.Param("id"))
+
+	if _, ok := database.ApplicationByIDForStudent(uint(id), studentID.(uint)); !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+		return
 	}
 
-	c.JSON(http.StatusOK, updated)
+	history := database.ApplicationHistoryForApplication(uint(id))
+	c.JSON(http.StatusOK, history)
 }
 
 // GetProfile godoc

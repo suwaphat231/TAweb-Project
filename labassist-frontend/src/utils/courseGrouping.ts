@@ -76,7 +76,7 @@ export function groupCourseSections(courses: Course[]): CourseGroup[] {
 // section belonging to the group, not just one specific course row.
 export function getAppliedSection(group: CourseGroup, apps: Application[]): Course | undefined {
   const sectionIds = new Set(group.sections.map((s) => s.id))
-  const app = apps.find((a) => sectionIds.has(a.course_id) && a.status !== 'withdrawn')
+  const app = apps.find((a) => sectionIds.has(a.course_id) && (a.status === 'pending' || a.status === 'accepted'))
   if (!app) return undefined
   return group.sections.find((s) => s.id === app.course_id)
 }

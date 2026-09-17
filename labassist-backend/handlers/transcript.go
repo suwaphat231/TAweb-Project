@@ -154,8 +154,30 @@ func (h *AuthHandler) UploadTranscript(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
+	// Reject non-2xx before attempting to decode as a success payload.
+	// FastAPI error responses are {"detail":"..."} — surface that message when
+	// available so the caller knows what went wrong, but never write to the DB.
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var errBody struct {
+			Detail string `json:"detail"`
+		}
+		if jsonErr := json.NewDecoder(resp.Body).Decode(&errBody); jsonErr == nil && errBody.Detail != "" {
+			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("บริการ OCR แจ้งข้อผิดพลาด: %s", errBody.Detail)})
+		} else {
+			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("บริการ OCR ตอบกลับ HTTP %d", resp.StatusCode)})
+		}
+		return
+	}
+
 	var ocrResult ocrResponse
 	if err := json.NewDecoder(resp.Body).Decode(&ocrResult); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "บริการ OCR ส่งข้อมูลกลับมาไม่ถูกต้อง"})
+		return
+	}
+
+	// A proxy or misconfigured service might return 200 with a non-OCR body
+	// that decodes without error but leaves Status empty.
+	if ocrResult.Status == "" {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "บริการ OCR ส่งข้อมูลกลับมาไม่ถูกต้อง"})
 		return
 	}

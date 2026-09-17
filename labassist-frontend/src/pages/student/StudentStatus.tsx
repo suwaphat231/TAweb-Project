@@ -37,6 +37,7 @@ export default function StudentStatus() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['my-applications'] })
       qc.invalidateQueries({ queryKey: ['student-dashboard'] })
+      qc.invalidateQueries({ queryKey: ['courses'] })
       showToast(`ถอนใบสมัคร ${pendingWithdraw?.course_code ?? ''} เรียบร้อยแล้ว`, 'success')
       setPendingWithdraw(null)
     },
@@ -143,7 +144,7 @@ export default function StudentStatus() {
               )}
             </div>
             <p style={{ fontSize: 14, color: 'var(--ink-600)', margin: 0 }}>
-              หากถอนใบสมัครแล้ว ใบสมัครนี้จะถูกปิดถาวร และไม่สามารถสมัครวิชาเดียวกันนี้ซ้ำได้อีก
+              หากถอนใบสมัครแล้ว สถานะจะเปลี่ยนเป็น &quot;ถอนแล้ว&quot; และสามารถสมัครใหม่ได้หากวิชายังเปิดรับอยู่
             </p>
           </div>
         )}

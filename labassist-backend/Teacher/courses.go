@@ -387,6 +387,9 @@ func (h *Handler) Update(c *gin.Context) {
 		}
 		if body.Status != nil {
 			cs.Status = *body.Status
+			// Track whether the course was closed intentionally by the instructor
+			// (vs deadline-based auto-close which leaves ClosedByInstructor=false).
+			cs.ClosedByInstructor = *body.Status == models.StatusClosed
 		}
 		if body.Description != nil {
 			cs.Description = body.Description
@@ -450,6 +453,7 @@ func (h *Handler) UpdateStatus(c *gin.Context) {
 	}
 	updated, saved := database.UpdateCourse(uint(id), func(cs *models.Course) {
 		cs.Status = body.Status
+		cs.ClosedByInstructor = body.Status == models.StatusClosed
 	})
 	if !saved {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save course"})

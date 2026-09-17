@@ -10,3 +10,13 @@ class OCRResponse(BaseModel):
     message: str
     extracted_data: Dict[str, str] # คืนค่ารหัสวิชาและเกรดที่อ่านได้ เช่น {"254101": "A"}
     confidence_score: float
+
+class ScheduleSlot(BaseModel):
+    day: str         # English abbreviation: MON TUE WED THU FRI SAT SUN
+    start_time: str  # HH:MM (24-hour)
+    end_time: str    # HH:MM (24-hour)
+
+class ScheduleOCRResponse(BaseModel):
+    slots: List[ScheduleSlot]
+    raw_text: str     # full OCR text dump for debugging
+    confidence: float # average confidence of detected tokens

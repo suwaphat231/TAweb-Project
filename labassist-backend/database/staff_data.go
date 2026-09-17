@@ -26,15 +26,17 @@ func enrichReview(r models.FormReview) models.FormReview {
 }
 
 // UpsertFormReview creates or replaces the staff review for a course.
-func UpsertFormReview(courseID, reviewerID uint, status models.ReviewStatus, note string) models.FormReview {
+func UpsertFormReview(courseID, reviewerID uint, status models.ReviewStatus, note string) (models.FormReview, error) {
 	var r models.FormReview
 	DB.Where("course_id = ?", courseID).FirstOrInit(&r)
 	r.CourseID = courseID
 	r.ReviewerID = reviewerID
 	r.Status = status
 	r.Note = note
-	DB.Save(&r)
-	return enrichReview(r)
+	if err := DB.Save(&r).Error; err != nil {
+		return models.FormReview{}, err
+	}
+	return enrichReview(r), nil
 }
 
 // reviewByCourseID returns the existing review or a synthetic pending one.
@@ -76,10 +78,12 @@ func ListFormReviews(statusFilter, search string) []models.FormReview {
 // --- StaffDocument ---
 
 // CreateStaffDocument persists a new document to the database.
-func CreateStaffDocument(d models.StaffDocument) models.StaffDocument {
+func CreateStaffDocument(d models.StaffDocument) (models.StaffDocument, error) {
 	d.ID = 0
-	DB.Create(&d)
-	return d
+	if err := DB.Create(&d).Error; err != nil {
+		return models.StaffDocument{}, err
+	}
+	return d, nil
 }
 
 // StaffDocumentByID returns a single document by ID.
@@ -116,6 +120,32 @@ func UpdateStaffDocumentStatus(id uint, status models.DocStatus) (models.StaffDo
 		return models.StaffDocument{}, false
 	}
 	d.Status = status
+	if err := DB.Save(&d).Error; err != nil {
+		return models.StaffDocument{}, false
+	}
+	return d, true
+}
+
+// UpdateRosterRegEntry sets the RegVerified flag and RegNote for one
+// roster entry identified by StudentCode. Returns the updated document
+// and false when the document or student code is not found.
+func UpdateRosterRegEntry(docID uint, studentCode string, verified bool, note string) (models.StaffDocument, bool) {
+	var d models.StaffDocument
+	if DB.First(&d, docID).Error != nil {
+		return models.StaffDocument{}, false
+	}
+	changed := false
+	for i := range d.Roster {
+		if d.Roster[i].StudentCode == studentCode {
+			d.Roster[i].RegVerified = verified
+			d.Roster[i].RegNote = note
+			changed = true
+			break
+		}
+	}
+	if !changed {
+		return models.StaffDocument{}, false
+	}
 	if err := DB.Save(&d).Error; err != nil {
 		return models.StaffDocument{}, false
 	}

@@ -45,9 +45,14 @@ type Course struct {
 	// of their grade (e.g. a MyReg screenshot) instead of just self-reporting
 	// a letter grade — set per posting so the instructor decides which
 	// courses need proof against students typing in a fake grade.
-	RequireGradeProof bool      `gorm:"default:false" json:"require_grade_proof"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	RequireGradeProof bool `gorm:"default:false" json:"require_grade_proof"`
+	// ClosedByInstructor is true only when an instructor or admin explicitly
+	// sets status to "closed". Deadline-based auto-close leaves this false,
+	// so accepted students may still withdraw after a deadline expires but
+	// not after the instructor has deliberately closed the posting.
+	ClosedByInstructor bool      `gorm:"default:false" json:"closed_by_instructor"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 func (Course) TableName() string { return "courses" }

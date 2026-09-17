@@ -29,6 +29,7 @@ function Ico({ name }: { name: string }): ReactNode {
     case 'book':      return <svg {...s}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
     case 'log-out':   return <svg {...s}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
     case 'x':         return <svg {...s}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    case 'calendar':  return <svg {...s}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
     default: return null
   }
 }
@@ -37,11 +38,12 @@ interface NavItem { to: string; label: string; icon: string }
 
 const navMap: Record<UserRole, NavItem[]> = {
   student: [
-    { to: '/student/home',    label: 'หน้าหลัก',        icon: 'home' },
-    { to: '/student/apply',   label: 'ค้นหาและสมัคร',   icon: 'search' },
-    { to: '/student/status',  label: 'สถานะการสมัคร',   icon: 'check-square' },
-    { to: '/student/grade-check', label: 'ตรวจสอบเกรด', icon: 'file-text' },
-    { to: '/student/profile', label: 'โปรไฟล์ของฉัน',   icon: 'user' },
+    { to: '/student/home',     label: 'หน้าหลัก',          icon: 'home' },
+    { to: '/student/apply',    label: 'ค้นหาและสมัคร',     icon: 'search' },
+    { to: '/student/status',   label: 'สถานะการสมัคร',     icon: 'check-square' },
+    { to: '/student/schedule', label: 'ตารางปฏิบัติงาน',   icon: 'calendar' },
+    { to: '/student/grade-check', label: 'ตรวจสอบเกรด',   icon: 'file-text' },
+    { to: '/student/profile',  label: 'โปรไฟล์ของฉัน',    icon: 'user' },
   ],
   instructor: [
     { to: '/instructor/home',     label: 'หน้าหลัก',           icon: 'home' },

@@ -6,6 +6,7 @@ import type {
   AdminStats, CourseStatus, Transcript, Notification,
   CreateUserPayload, UpdateUserPayload, ImportCoursesResponse,
   FormReview, StaffDocument, CreateStaffDocumentPayload, TranscriptOCRResult, CoreCourse,
+  WorkSession, ClassSchedule, ClassScheduleImageResult, TermSchedule, TermOption, ScheduleSlot, TermScheduleStatus,
 } from '../types'
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1'
@@ -186,6 +187,23 @@ export const studentApi = {
   downloadTranscript: transcriptAPI.download,
   uploadGradeProof: applicationsAPI.uploadGradeProof,
   gradeProof: applicationsAPI.gradeProof,
+  workSchedule: () => api.get<WorkSession[]>('/student/work-schedule').then((r) => r.data),
+  // Image evidence upload — no OCR, no slot extraction.
+  uploadScheduleImage: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post<ClassScheduleImageResult>('/student/profile/class-schedule', formData).then((r) => r.data)
+  },
+  getClassSchedule: () => api.get<ClassSchedule>('/student/profile/class-schedule').then((r) => r.data),
+  getClassScheduleImage: () =>
+    api.get('/student/profile/class-schedule/file', { responseType: 'blob' }).then((r) => r.data as Blob),
+  // Per-term manual schedule
+  getTermSchedule: (semester: string, academicYear: number) =>
+    api.get<TermSchedule>('/student/profile/term-schedule', { params: { semester, academic_year: academicYear } }).then((r) => r.data),
+  saveTermSchedule: (data: { semester: string; academic_year: number; slots: ScheduleSlot[]; status: TermScheduleStatus }) =>
+    api.put<TermSchedule>('/student/profile/term-schedule', data).then((r) => r.data),
+  getAvailableTerms: () =>
+    api.get<TermOption[]>('/student/available-terms').then((r) => r.data),
 }
 export const instructorApi = {
   courses: (params?: { has_lab?: boolean }) =>

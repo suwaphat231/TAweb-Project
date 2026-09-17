@@ -32,6 +32,10 @@ func LabHoursFromCredits(credits string) int {
 
 var ErrConflict = errors.New("conflict")
 
+// ErrWithdrawalClosed is returned by WithdrawApplication when an accepted
+// student tries to withdraw after the instructor has manually closed the posting.
+var ErrWithdrawalClosed = errors.New("withdrawal not allowed after instructor closed the posting")
+
 // bangkokLoc is UTC+7 with no DST — matches Asia/Bangkok without requiring
 // the system timezone database (safe in slim Docker images).
 var bangkokLoc = time.FixedZone("Asia/Bangkok", 7*60*60)
@@ -670,11 +674,63 @@ func ApplicationByIDForStudent(id, studentID uint) (models.Application, bool) {
 func CreateApplication(a models.Application) (models.Application, error) {
 	a.ID = 0
 	a.AppliedAt = time.Now()
-	if err := DB.Omit(clause.Associations).Create(&a).Error; err != nil {
-		var mysqlErr *mysqldriver.MySQLError
-		if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
-			return models.Application{}, ErrConflict
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var existing models.Application
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("student_id = ? AND course_id = ?", a.StudentID, a.CourseID).
+			First(&existing).Error
+		if err == nil {
+			if existing.Status != models.AppWithdrawn && existing.Status != models.AppRejected {
+				return ErrConflict
+			}
+			// Archive the old round so the student's history and grade proof
+			// from the rejected/withdrawn round are preserved for the instructor.
+			snapshot := models.ApplicationHistory{
+				ApplicationID:      existing.ID,
+				StudentID:          existing.StudentID,
+				CourseID:           existing.CourseID,
+				RoleApplied:        existing.RoleApplied,
+				Status:             existing.Status,
+				Grade:              existing.Grade,
+				AppliedAt:          existing.AppliedAt,
+				ReviewedAt:         existing.ReviewedAt,
+				ReviewedByID:       existing.ReviewedByID,
+				Note:               existing.Note,
+				OcrWarning:         existing.OcrWarning,
+				GradeProofFileName: existing.GradeProofFileName,
+				GradeProofData:     existing.GradeProofData,
+				ArchivedAt:         time.Now(),
+			}
+			if err := tx.Create(&snapshot).Error; err != nil {
+				return err
+			}
+			// Reuse the row — reset it to a fresh pending application.
+			existing.Status = models.AppPending
+			existing.RoleApplied = a.RoleApplied
+			existing.Grade = a.Grade
+			existing.AppliedAt = a.AppliedAt
+			existing.ReviewedAt = nil
+			existing.ReviewedByID = nil
+			existing.Note = nil
+			existing.OcrWarning = nil
+			existing.GradeProofFileName = ""
+			existing.GradeProofData = nil
+			a = existing
+			return tx.Omit(clause.Associations).Save(&existing).Error
 		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if err := tx.Omit(clause.Associations).Create(&a).Error; err != nil {
+			var mysqlErr *mysqldriver.MySQLError
+			if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+				return ErrConflict
+			}
+			return err
+		}
+		return nil
+	})
+	if err != nil {
 		return models.Application{}, err
 	}
 	return enrichApplication(a), nil
@@ -693,6 +749,50 @@ func UpdateApplication(id uint, fn func(a *models.Application)) (models.Applicat
 		return models.Application{}, false
 	}
 	return enrichApplication(a), true
+}
+
+// ErrAlreadyWithdrawn is returned by WithdrawApplication when the row is already withdrawn.
+var ErrAlreadyWithdrawn = errors.New("already withdrawn")
+
+// WithdrawApplication atomically sets the application to withdrawn and, if it
+// was previously accepted, decrements the course's accepted-slot counter — all
+// within a single transaction so concurrent withdrawals cannot double-decrement.
+func WithdrawApplication(id, studentID uint) (models.Application, error) {
+	var a models.Application
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND student_id = ?", id, studentID).
+			First(&a).Error; err != nil {
+			return err
+		}
+		if a.Status == models.AppWithdrawn {
+			return ErrAlreadyWithdrawn
+		}
+		// Accepted students may not withdraw once the instructor has
+		// deliberately closed the posting; deadline-based auto-close alone
+		// does not block withdrawal (ClosedByInstructor stays false).
+		if a.Status == models.AppAccepted {
+			var course models.Course
+			if err := tx.First(&course, a.CourseID).Error; err == nil && course.ClosedByInstructor {
+				return ErrWithdrawalClosed
+			}
+		}
+		prevStatus := a.Status
+		a.Status = models.AppWithdrawn
+		if err := tx.Omit(clause.Associations).Save(&a).Error; err != nil {
+			return err
+		}
+		if prevStatus == models.AppAccepted {
+			return tx.Model(&models.Course{}).
+				Where("id = ?", a.CourseID).
+				UpdateColumn("lab_boy_accepted", gorm.Expr("lab_boy_accepted + ?", -1)).Error
+		}
+		return nil
+	})
+	if err != nil {
+		return models.Application{}, err
+	}
+	return enrichApplication(a), nil
 }
 
 // ReviewTxResult is returned by ReviewApplicationTx.
@@ -878,6 +978,15 @@ func applicationRows(query string, args ...interface{}) []models.Application {
 	return rows
 }
 
+// ApplicationHistoryForApplication returns all archived rounds for an
+// application, newest first. Each entry represents one rejected or withdrawn
+// round the student re-applied from.
+func ApplicationHistoryForApplication(applicationID uint) []models.ApplicationHistory {
+	var rows []models.ApplicationHistory
+	DB.Where("application_id = ?", applicationID).Order("archived_at DESC").Find(&rows)
+	return rows
+}
+
 func migrateApplicationData(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&models.Application{},
@@ -885,5 +994,8 @@ func migrateApplicationData(db *gorm.DB) error {
 		&models.ActivityLog{},
 		&models.FormReview{},
 		&models.StaffDocument{},
+		&models.ApplicationHistory{},
+		&models.ClassSchedule{},
+		&models.TermSchedule{},
 	)
 }

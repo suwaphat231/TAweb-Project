@@ -43,6 +43,13 @@ type Application struct {
 	GradeProofFileName string `json:"-"`
 	GradeProofData     []byte `gorm:"type:longblob" json:"-"`
 
+	// OcrWarning is set after grade-proof upload when OCR detects a
+	// mismatch between the student's self-reported grade and the image,
+	// the grade is below the course threshold, or OCR cannot read the
+	// image. Stored so instructors see the flag when reviewing — never
+	// blocks submission per Rule 3.
+	OcrWarning *string `gorm:"type:text" json:"ocr_warning,omitempty"`
+
 	// Computed fields (not in DB)
 	HasGradeProof      bool    `gorm:"-" json:"has_grade_proof"`
 	StudentName        string  `gorm:"-" json:"student_name"`
@@ -60,3 +67,29 @@ type Application struct {
 }
 
 func (Application) TableName() string { return "applications" }
+
+// ApplicationHistory archives a rejected or withdrawn application round
+// before the student re-applies to the same course. The unique index on
+// (student_id, course_id) allows only one live row per student+course, so
+// older rounds live here instead of being deleted.
+type ApplicationHistory struct {
+	ID            uint        `gorm:"primaryKey" json:"id"`
+	ApplicationID uint        `gorm:"not null;index" json:"application_id"`
+	StudentID     uint        `gorm:"not null" json:"student_id"`
+	CourseID      uint        `gorm:"not null" json:"course_id"`
+	RoleApplied   RoleApplied `json:"role_applied"`
+	Status        AppStatus   `json:"status"`
+	Grade         *string     `gorm:"size:5" json:"grade,omitempty"`
+	AppliedAt     time.Time   `json:"applied_at"`
+	ReviewedAt    *time.Time  `json:"reviewed_at,omitempty"`
+	ReviewedByID  *uint       `json:"reviewed_by_id,omitempty"`
+	Note          *string     `gorm:"type:text" json:"note,omitempty"`
+	OcrWarning    *string     `gorm:"type:text" json:"ocr_warning,omitempty"`
+	// GradeProofData is included so the instructor can still view proof
+	// from a rejected round when reconsidering.
+	GradeProofFileName string `json:"grade_proof_file_name,omitempty"`
+	GradeProofData     []byte `gorm:"type:longblob" json:"-"`
+	ArchivedAt         time.Time `json:"archived_at"`
+}
+
+func (ApplicationHistory) TableName() string { return "application_history" }

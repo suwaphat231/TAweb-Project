@@ -27,6 +27,10 @@ type RosterEntry struct {
 	StudentCode string  `json:"student_code"`
 	Hours       float64 `json:"hours"`
 	Amount      float64 `json:"amount"`
+	// RegVerified is set by staff after comparing this student's name,
+	// student ID, and enrollment status against the REG system.
+	RegVerified bool   `json:"reg_verified"`
+	RegNote     string `json:"reg_note,omitempty"`
 }
 
 // DocumentPeriod is the month/year a StaffDocument's line items cover.

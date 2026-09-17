@@ -45,6 +45,12 @@ type updateDocStatusRequest struct {
 	Status models.DocStatus `json:"status" binding:"required"`
 }
 
+type regVerifyRequest struct {
+	StudentCode string `json:"student_code" binding:"required"`
+	Verified    bool   `json:"verified"`
+	Note        string `json:"note"`
+}
+
 var docTypeLabel = map[models.DocType]string{
 	models.DocHiringNotice:    "แบบฟอร์มแจ้งความประสงค์จ้าง",
 	models.DocApprovalMemo:    "บันทึกขออนุมัติจ้าง",
@@ -219,7 +225,11 @@ func (h *Handler) CreateDocument(c *gin.Context) {
 		}
 	}
 
-	created := database.CreateStaffDocument(doc)
+	created, err := database.CreateStaffDocument(doc)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save document"})
+		return
+	}
 	c.JSON(http.StatusCreated, created)
 }
 
@@ -294,4 +304,36 @@ func (h *Handler) DownloadDocument(c *gin.Context) {
 
 	c.Header("Content-Disposition", `attachment; filename="`+filename+`"`)
 	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", data)
+}
+
+// RegVerifyRosterEntry godoc
+// @Summary      ทำเครื่องหมายว่าตรวจสอบนักศึกษากับ REG แล้ว
+// @Description  เจ้าหน้าที่เทียบชื่อ รหัสนักศึกษา และสถานภาพกับ REG แล้วบันทึกผล ทำได้ทีละคน
+// @Tags         staff
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path  int                true  "Document ID"
+// @Param        body  body  regVerifyRequest   true  "ผลการตรวจ REG"
+// @Success      200  {object}  models.StaffDocument
+// @Failure      400  {object}  handlers.ErrorResponse
+// @Failure      404  {object}  handlers.ErrorResponse
+// @Router       /staff/documents/{id}/reg-verify [put]
+func (h *Handler) RegVerifyRosterEntry(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	var body regVerifyRequest
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	doc, ok := database.UpdateRosterRegEntry(uint(id), body.StudentCode, body.Verified, body.Note)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "document or student not found in roster"})
+		return
+	}
+	c.JSON(http.StatusOK, doc)
 }

@@ -2,10 +2,11 @@ from pathlib import Path
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 import json
-from models.schemas import OCRResponse, SubjectCriteria
+from models.schemas import OCRResponse, SubjectCriteria, ScheduleOCRResponse
 from services.preprocessor import preprocess_image, preprocess_pages
 from services.ocr_engine import extract_text
 from services.processor import parse_transcript, evaluate_grades
+from services.schedule_parser import parse_schedule
 
 router = APIRouter()
 
@@ -86,3 +87,38 @@ async def process_transcript(
             extracted_data={},
             confidence_score=0.0
         )
+
+
+@router.post("/process-schedule", response_model=ScheduleOCRResponse)
+async def process_schedule(file: UploadFile = File(...)):
+    """
+    อ่านตารางเรียนจากรูปภาพ ส่งคืนรายการวัน+เวลาที่ตรวจพบ
+    รองรับรูปภาพ PNG / JPG เท่านั้น (ตารางเรียนมักเป็นภาพถ่ายหน้าจอ)
+    """
+    extension = Path(file.filename or "").suffix.lower()
+    if extension not in {".png", ".jpg", ".jpeg"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"ไม่รองรับไฟล์นามสกุล '{extension}' กรุณาอัปโหลดไฟล์ PNG หรือ JPG เท่านั้น"
+        )
+
+    try:
+        file_bytes = await file.read()
+        processed_image = preprocess_image(file_bytes)
+        ocr_results = extract_text(processed_image)
+
+        raw_parts = [text for _box, text, _conf in ocr_results]
+        raw_text = " | ".join(raw_parts)
+
+        confidences = [float(conf) for _box, _text, conf in ocr_results]
+        avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
+
+        slots = parse_schedule(ocr_results)
+
+        return ScheduleOCRResponse(
+            slots=slots,
+            raw_text=raw_text,
+            confidence=round(avg_confidence, 3),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาดในการประมวลผล: {str(e)}")

@@ -48,7 +48,11 @@ func (h *Handler) VerifyForm(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "course not found"})
 		return
 	}
-	result := database.UpsertFormReview(uint(courseID), staffID.(uint), models.ReviewVerified, "")
+	result, err := database.UpsertFormReview(uint(courseID), staffID.(uint), models.ReviewVerified, "")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save review"})
+		return
+	}
 	c.JSON(http.StatusOK, result)
 }
 
@@ -84,6 +88,10 @@ func (h *Handler) ReturnForm(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "note is required when returning a form"})
 		return
 	}
-	result := database.UpsertFormReview(uint(courseID), staffID.(uint), models.ReviewReturned, body.Note)
+	result, err := database.UpsertFormReview(uint(courseID), staffID.(uint), models.ReviewReturned, body.Note)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save review"})
+		return
+	}
 	c.JSON(http.StatusOK, result)
 }

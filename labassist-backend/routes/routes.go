@@ -64,6 +64,14 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			studentGroup.POST("/student/profile/transcript", authH.UploadTranscript)
 			studentGroup.POST("/student/applications/:id/grade-proof", studentH.UploadGradeProof)
 			studentGroup.GET("/student/applications/:id/grade-proof", studentH.GetGradeProof)
+			studentGroup.GET("/student/applications/:id/history", studentH.ApplicationHistory)
+			studentGroup.GET("/student/work-schedule", studentH.WorkSchedule)
+			studentGroup.POST("/student/profile/class-schedule", studentH.UploadClassSchedule)
+			studentGroup.GET("/student/profile/class-schedule", studentH.GetClassSchedule)
+			studentGroup.GET("/student/profile/class-schedule/file", studentH.GetClassScheduleImage)
+			studentGroup.GET("/student/profile/term-schedule", studentH.GetTermSchedule)
+			studentGroup.PUT("/student/profile/term-schedule", studentH.SaveTermSchedule)
+			studentGroup.GET("/student/available-terms", studentH.GetAvailableTerms)
 		}
 
 		// Instructor
@@ -105,10 +113,11 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			staffGroup.GET("/staff/reviews",              staffH.ListReviews)
 			staffGroup.PUT("/staff/reviews/:courseId/verify", staffH.VerifyForm)
 			staffGroup.PUT("/staff/reviews/:courseId/return", staffH.ReturnForm)
-			staffGroup.GET("/staff/documents",            staffH.ListDocuments)
-			staffGroup.POST("/staff/documents",           staffH.CreateDocument)
-			staffGroup.PUT("/staff/documents/:id/status", staffH.UpdateDocumentStatus)
-			staffGroup.GET("/staff/documents/:id/file",   staffH.DownloadDocument)
+			staffGroup.GET("/staff/documents",                staffH.ListDocuments)
+			staffGroup.POST("/staff/documents",               staffH.CreateDocument)
+			staffGroup.PUT("/staff/documents/:id/status",     staffH.UpdateDocumentStatus)
+			staffGroup.GET("/staff/documents/:id/file",       staffH.DownloadDocument)
+			staffGroup.PUT("/staff/documents/:id/reg-verify", staffH.RegVerifyRosterEntry)
 		}
 
 		// Admin

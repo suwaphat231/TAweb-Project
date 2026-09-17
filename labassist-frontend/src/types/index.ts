@@ -354,3 +354,65 @@ export interface DocumentWorkflowItem {
   documentName?: string
   createdAt?: string
 }
+
+/** One time slot parsed from a class timetable image. */
+export interface ScheduleSlot {
+  day: string        // MON TUE WED THU FRI SAT SUN
+  start_time: string // HH:MM
+  end_time: string   // HH:MM
+}
+
+/** Stored class schedule image evidence for a student. */
+export interface ClassSchedule {
+  id: number
+  user_id: number
+  file_name: string
+  /** Legacy OCR slots — may be present from earlier uploads, not confirmed. */
+  slots: ScheduleSlot[]
+  updated_at: string
+}
+
+/** Result of POST /student/profile/class-schedule (image evidence upload, no OCR). */
+export interface ClassScheduleImageResult {
+  id: number
+  file_name: string
+  updated_at: string
+}
+
+/** Status of a student's term schedule entry. */
+export type TermScheduleStatus = 'unset' | 'set' | 'no_class'
+
+/** A student's manually-entered class schedule for one academic term. */
+export interface TermSchedule {
+  id?: number
+  user_id?: number
+  semester: string
+  academic_year: number
+  slots: ScheduleSlot[]
+  status: TermScheduleStatus
+  updated_at?: string
+}
+
+/** A distinct (semester, academic_year) pair from the courses table. */
+export interface TermOption {
+  semester: string
+  academic_year: number
+}
+
+/** One lab-assistant work session derived from a StaffDocument. */
+export interface WorkSession {
+  course_id: number
+  course_code: string
+  course_title: string
+  course_section: number
+  semester: string
+  academic_year: number
+  document_id: number
+  document_type: DocType
+  /** ISO date string YYYY-MM-DD (Common Era) */
+  session_date: string
+  work_day: string
+  work_time_start: string
+  work_time_end: string
+  hours_per_session: number
+}

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"labassist/database"
@@ -112,31 +113,49 @@ func (h *Handler) UploadGradeProof(c *gin.Context) {
 		return
 	}
 
-	// OCR: extract the grade for this course from the uploaded image, then
-	// validate it against the course's minimum-grade requirement.
-	// If OCR cannot read the grade we still accept the upload (best-effort).
+	// OCR: extract the grade from the image and compare with what the student
+	// self-reported. Per Rule 3, OCR results are advisory only — none of the
+	// cases below block the application; all produce a stored warning so the
+	// instructor can judge.
 	if app, ok := database.ApplicationByID(uint(id)); ok {
 		if course, ok := database.CourseByID(app.CourseID); ok {
-			if grade, ok := ocrGradeFromImage(h.cfg.OCRServiceURL, course.Code, data, fileHeader.Filename); ok {
-				minGrade := minGradeFromRequirements(course.Requirements)
-				if u, ok := database.UpdateApplication(uint(id), func(a *models.Application) {
-					a.Grade = &grade
-				}); ok {
-					updated = u
+			minGrade := minGradeFromRequirements(course.Requirements)
+			ocrGrade, ocrOK := ocrGradeFromImage(h.cfg.OCRServiceURL, course.Code, data, fileHeader.Filename)
+
+			var warnParts []string
+			if !ocrOK {
+				warnParts = append(warnParts, "OCR ไม่สามารถอ่านเกรดจากรูปได้ — อาจารย์จะตรวจสอบเอง")
+			} else {
+				if app.Grade != nil && *app.Grade != ocrGrade {
+					warnParts = append(warnParts, fmt.Sprintf(
+						"เกรดที่กรอก (%s) ต่างจากที่อ่านได้จากรูป (%s)", *app.Grade, ocrGrade,
+					))
 				}
-				// Grade below the instructor's threshold — keep as pending for manual
-				// review instead of auto-withdrawing.
-				if minGrade != "" && !gradeAtLeast(grade, minGrade) {
-					c.JSON(http.StatusOK, gin.H{
-						"application":           updated,
-						"grade_below_threshold": true,
-						"warning": fmt.Sprintf(
-							"เกรดที่อ่านได้จากรูป (%s) ต่ำกว่าเกณฑ์ขั้นต่ำที่อาจารย์กำหนดไว้ (%s) ใบสมัครยังคงอยู่ในสถานะรอพิจารณา",
-							grade, minGrade,
-						),
-					})
-					return
+				if minGrade != "" && !gradeAtLeast(ocrGrade, minGrade) {
+					warnParts = append(warnParts, fmt.Sprintf(
+						"เกรดที่อ่านได้ (%s) ต่ำกว่าเกณฑ์ขั้นต่ำ (%s)", ocrGrade, minGrade,
+					))
 				}
+			}
+
+			var warn *string
+			if len(warnParts) > 0 {
+				s := strings.Join(warnParts, " — ")
+				warn = &s
+			}
+
+			if u, ok := database.UpdateApplication(uint(id), func(a *models.Application) {
+				a.OcrWarning = warn
+			}); ok {
+				updated = u
+			}
+
+			if warn != nil {
+				c.JSON(http.StatusOK, gin.H{
+					"application": updated,
+					"ocr_warning": *warn,
+				})
+				return
 			}
 		}
 	}
