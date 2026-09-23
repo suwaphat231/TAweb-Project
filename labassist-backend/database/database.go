@@ -356,6 +356,15 @@ func CourseExists(instructorID uint, code, semester string, academicYear, sectio
 	return n > 0
 }
 
+// FindCourseByKey returns the existing course occupying the same slot
+// (code + section + semester + academic year), regardless of instructor.
+func FindCourseByKey(code, semester string, academicYear, section int) (models.Course, bool) {
+	var c models.Course
+	err := DB.Where("code = ? AND semester = ? AND academic_year = ? AND section = ?",
+		code, semester, academicYear, section).First(&c).Error
+	return c, err == nil
+}
+
 func DeleteCoursesByTerm(semester string, academicYear int) int {
 	var n int64
 	err := DB.Transaction(func(tx *gorm.DB) error {

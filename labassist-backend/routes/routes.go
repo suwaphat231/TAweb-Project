@@ -133,6 +133,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			adminGroup.GET("/admin/core-courses", adminH.CoreCourseCatalog)
 			adminGroup.GET("/admin/logs", adminH.Logs)
 			adminGroup.POST("/admin/courses/import", adminH.ImportCourses)
+			adminGroup.POST("/admin/courses/import/resolve", adminH.ResolveImportConflicts)
 			adminGroup.DELETE("/admin/courses/term", adminH.DeleteCoursesByTerm)
 		}
 	}

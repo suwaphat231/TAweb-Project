@@ -207,9 +207,38 @@ export interface ImportSkippedRow {
   reason: string
 }
 
+export interface ImportCourseFields {
+  title: string
+  english_title: string
+  credits: string
+  schedule: string
+  capacity: number
+  enrolled: number
+  instructors_raw: string
+}
+
+export interface ImportDuplicate {
+  row: number
+  code: string
+  section: number
+  title: string
+}
+
+export interface ImportConflict {
+  row: number
+  course_id: number
+  code: string
+  section: number
+  old: ImportCourseFields
+  new: ImportCourseFields
+  different: (keyof ImportCourseFields)[]
+}
+
 export interface ImportCoursesResponse {
   created: ImportCourseResult[]
   skipped: ImportSkippedRow[]
+  duplicates: ImportDuplicate[]
+  conflicts: ImportConflict[]
 }
 
 export type ReviewStatus = 'pending' | 'verified' | 'returned'

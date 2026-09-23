@@ -4,7 +4,7 @@ import type {
   User, Course, Application, LoginCredentials, GoogleAuthPayload,
   CreateCoursePayload, ApplyPayload, ReviewPayload, BulkReviewPayload, BulkReviewResult,
   AdminStats, CourseStatus, Transcript, Notification,
-  CreateUserPayload, UpdateUserPayload, ImportCoursesResponse,
+  CreateUserPayload, UpdateUserPayload, ImportCoursesResponse, ImportCourseFields,
   FormReview, StaffDocument, CreateStaffDocumentPayload, TranscriptOCRResult, CoreCourse,
   WorkSession, ClassSchedule, ClassScheduleImageResult, TermSchedule, TermOption, ScheduleSlot, TermScheduleStatus,
 } from '../types'
@@ -151,6 +151,8 @@ export const adminAPI = {
     // Let the browser set Content-Type itself so it includes the multipart boundary.
     return api.post<ImportCoursesResponse>('/admin/courses/import', formData).then((r) => r.data)
   },
+  resolveImportConflicts: (updates: { course_id: number; fields: ImportCourseFields }[]) =>
+    api.post<{ updated: number }>('/admin/courses/import/resolve', { updates }).then((r) => r.data),
   deleteCoursesByTerm: (semester: string, academicYear: number) =>
     api.delete<{ deleted: number }>('/admin/courses/term', { params: { semester, academic_year: academicYear } }).then((r) => r.data),
   // The department's required-course reference list (core_courses, used for

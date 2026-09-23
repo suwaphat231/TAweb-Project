@@ -11,7 +11,7 @@ import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../hooks/useToast'
 import { displayCourseTitle } from '../../utils/courseDisplay'
 import { isLabCourse } from '../../utils/labCourse'
-import type { Course } from '../../types'
+import type { Course, ImportConflict, ImportCourseFields } from '../../types'
 
 const SEMESTER_TABS: { label: string; value: string }[] = [
   { label: 'ทั้งหมด', value: '' },
@@ -19,6 +19,16 @@ const SEMESTER_TABS: { label: string; value: string }[] = [
   { label: 'ภาค 2', value: '2' },
   { label: 'ภาค 3', value: '3' },
 ]
+
+const FIELD_LABELS: Record<keyof ImportCourseFields, string> = {
+  title: 'ชื่อวิชา',
+  english_title: 'ชื่อภาษาอังกฤษ',
+  credits: 'หน่วยกิต',
+  schedule: 'เวลาเรียน',
+  capacity: 'จำนวนรับ',
+  enrolled: 'ลงทะเบียนแล้ว',
+  instructors_raw: 'ผู้สอน',
+}
 
 export default function AdminCourses() {
   const qc = useQueryClient()
@@ -41,6 +51,11 @@ export default function AdminCourses() {
   const [files, setFiles] = useState<File[]>([])
   const [semester, setSemester] = useState('1')
   const [academicYear, setAcademicYear] = useState('2569')
+
+  // Uploaded rows that match an existing course but differ — the admin picks
+  // per course whether to keep the existing data or take the uploaded data.
+  const [conflicts, setConflicts] = useState<ImportConflict[]>([])
+  const [useNew, setUseNew] = useState<Record<number, boolean>>({})
 
   const [showBulkDelete, setShowBulkDelete] = useState(false)
   const [bulkSemester, setBulkSemester] = useState('1')
@@ -104,25 +119,38 @@ export default function AdminCourses() {
       const failed: string[] = []
       let totalCreated = 0
       let totalSkipped = 0
+      let totalDuplicates = 0
+      const allConflicts: ImportConflict[] = []
       for (const f of files) {
         try {
           const res = await adminApi.importCourses(f, semester, Number(academicYear))
           totalCreated += res.created.length
           totalSkipped += res.skipped.length
+          totalDuplicates += res.duplicates?.length ?? 0
+          allConflicts.push(...(res.conflicts ?? []))
         } catch (err) {
           const detail = isAxiosError(err) ? err.response?.data?.error : undefined
           failed.push(`${f.name}${detail ? ` (${detail})` : ''}`)
         }
       }
-      return { failed, totalCreated, totalSkipped }
+      return { failed, totalCreated, totalSkipped, totalDuplicates, allConflicts }
     },
-    onSuccess: ({ failed, totalCreated, totalSkipped }) => {
+    onSuccess: ({ failed, totalCreated, totalSkipped, totalDuplicates, allConflicts }) => {
       qc.invalidateQueries({ queryKey: ['all-courses'] })
       setShowImport(false)
       setFiles([])
       setSemesterFilter(semester)
+      if (allConflicts.length > 0) {
+        setConflicts(allConflicts)
+        setUseNew({})
+      }
       if (failed.length > 0) {
         showToast(`นำเข้าไม่สำเร็จ ${failed.length} ไฟล์: ${failed.join(', ')}`, 'error')
+      } else if (totalDuplicates > 0 || allConflicts.length > 0) {
+        // Any course already in the system replaces the success message — the
+        // admin sees "already exists" (and the compare dialog if data differs).
+        const newMsg = totalCreated > 0 ? ` (นำเข้าวิชาใหม่ ${totalCreated} วิชา)` : ''
+        showToast(`รายวิชานี้มีอยู่ในระบบแล้ว${newMsg}`, 'error')
       } else if (totalCreated === 0) {
         showToast(`ไม่มีวิชาถูกนำเข้า — ข้าม ${totalSkipped} แถว (ตรวจสอบคอลัมน์หน่วยกิตในไฟล์)`, 'error')
       } else {
@@ -130,6 +158,21 @@ export default function AdminCourses() {
         showToast(`นำเข้าสำเร็จ ${totalCreated} วิชา${skipMsg}`, 'success')
       }
     },
+  })
+
+  const resolveMut = useMutation({
+    mutationFn: () => {
+      const updates = conflicts
+        .filter((c) => useNew[c.course_id])
+        .map((c) => ({ course_id: c.course_id, fields: c.new }))
+      return updates.length > 0 ? adminApi.resolveImportConflicts(updates) : Promise.resolve({ updated: 0 })
+    },
+    onSuccess: ({ updated }) => {
+      qc.invalidateQueries({ queryKey: ['all-courses'] })
+      setConflicts([])
+      showToast(updated > 0 ? `อัปเดตข้อมูลใหม่ ${updated} วิชา` : 'คงข้อมูลเดิมไว้ทั้งหมด', 'success')
+    },
+    onError: () => showToast('บันทึกการเลือกไม่สำเร็จ', 'error'),
   })
 
   const deleteMut = useMutation({
@@ -284,6 +327,68 @@ export default function AdminCourses() {
             <Button type="submit" loading={importMut.isPending} disabled={files.length === 0}>นำเข้า</Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        isOpen={conflicts.length > 0}
+        onClose={() => setConflicts([])}
+        title="พบวิชาที่มีในระบบแล้วแต่ข้อมูลไม่ตรงกัน"
+        size="lg"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <p style={{ fontSize: 13, color: 'var(--ink-500)' }}>
+            วิชาเหล่านี้มีในระบบแล้ว แต่ข้อมูลในไฟล์ใหม่ต่างจากเดิม เลือกว่าจะใช้ข้อมูลเดิมหรือข้อมูลใหม่ในแต่ละวิชา
+          </p>
+          {conflicts.map((c) => (
+            <div key={c.course_id} style={{ border: '1px solid var(--ink-200, #ddd)', borderRadius: 8, padding: 12 }}>
+              <div style={{ fontWeight: 600, marginBottom: 8 }}>
+                {c.code} · กลุ่ม {c.section} — {c.old.title}
+              </div>
+              <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', color: 'var(--ink-500)' }}>
+                    <th style={{ padding: 4 }}>ข้อมูล</th>
+                    <th style={{ padding: 4 }}>เดิมในระบบ</th>
+                    <th style={{ padding: 4 }}>ไฟล์ใหม่</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {c.different.map((k) => (
+                    <tr key={k}>
+                      <td style={{ padding: 4 }}>{FIELD_LABELS[k]}</td>
+                      <td style={{ padding: 4, background: 'rgba(220,38,38,0.08)' }}>{String(c.old[k]) || '—'}</td>
+                      <td style={{ padding: 4, background: 'rgba(22,163,74,0.10)' }}>{String(c.new[k]) || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 13 }}>
+                <label>
+                  <input
+                    type="radio" name={`conflict-${c.course_id}`}
+                    checked={!useNew[c.course_id]}
+                    onChange={() => setUseNew((m) => ({ ...m, [c.course_id]: false }))}
+                  /> ใช้ข้อมูลเดิม
+                </label>
+                <label>
+                  <input
+                    type="radio" name={`conflict-${c.course_id}`}
+                    checked={!!useNew[c.course_id]}
+                    onChange={() => setUseNew((m) => ({ ...m, [c.course_id]: true }))}
+                  /> ใช้ข้อมูลใหม่
+                </label>
+              </div>
+            </div>
+          ))}
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <Button
+              type="button" variant="ghost"
+              onClick={() => setUseNew(Object.fromEntries(conflicts.map((c) => [c.course_id, true])))}
+            >เลือกใช้ข้อมูลใหม่ทั้งหมด</Button>
+            <Button type="button" variant="ghost" onClick={() => setConflicts([])}>ยกเลิก</Button>
+            <Button type="button" loading={resolveMut.isPending} onClick={() => resolveMut.mutate()}>ยืนยัน</Button>
+          </div>
+        </div>
       </Modal>
 
       <Modal isOpen={showAddCourse} onClose={() => setShowAddCourse(false)} title="เพิ่มวิชา" size="md">

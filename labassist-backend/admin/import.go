@@ -129,10 +129,78 @@ type ImportSkippedRow struct {
 	Reason string `json:"reason" example:"empty row"`
 }
 
+// ImportCourseFields are the spreadsheet-sourced values of a course, used to
+// compare an uploaded row against the course already in the system.
+type ImportCourseFields struct {
+	Title          string `json:"title"`
+	EnglishTitle   string `json:"english_title"`
+	Credits        string `json:"credits"`
+	Schedule       string `json:"schedule"`
+	Capacity       int    `json:"capacity"`
+	Enrolled       int    `json:"enrolled"`
+	InstructorsRaw string `json:"instructors_raw"`
+}
+
+// ImportDuplicate is an uploaded row identical to a course already in the system.
+type ImportDuplicate struct {
+	Row     int    `json:"row"`
+	Code    string `json:"code"`
+	Section int    `json:"section"`
+	Title   string `json:"title"`
+}
+
+// ImportConflict is an uploaded row that matches an existing course (same code,
+// section, semester, year) but with different values. Nothing is changed until
+// the admin picks a side via ResolveImportConflicts.
+type ImportConflict struct {
+	Row       int                `json:"row"`
+	CourseID  uint               `json:"course_id"`
+	Code      string             `json:"code"`
+	Section   int                `json:"section"`
+	Old       ImportCourseFields `json:"old"`
+	New       ImportCourseFields `json:"new"`
+	Different []string           `json:"different"`
+}
+
 // ImportCoursesResponse is the response for the spreadsheet course import endpoint
 type ImportCoursesResponse struct {
-	Created []ImportCourseResult `json:"created"`
-	Skipped []ImportSkippedRow   `json:"skipped"`
+	Created    []ImportCourseResult `json:"created"`
+	Skipped    []ImportSkippedRow   `json:"skipped"`
+	Duplicates []ImportDuplicate    `json:"duplicates"`
+	Conflicts  []ImportConflict     `json:"conflicts"`
+}
+
+func diffImportFields(old, nw ImportCourseFields) []string {
+	var d []string
+	if old.Title != nw.Title {
+		d = append(d, "title")
+	}
+	if old.EnglishTitle != nw.EnglishTitle {
+		d = append(d, "english_title")
+	}
+	if old.Credits != nw.Credits {
+		d = append(d, "credits")
+	}
+	if old.Schedule != nw.Schedule {
+		d = append(d, "schedule")
+	}
+	if old.Capacity != nw.Capacity {
+		d = append(d, "capacity")
+	}
+	if old.Enrolled != nw.Enrolled {
+		d = append(d, "enrolled")
+	}
+	if old.InstructorsRaw != nw.InstructorsRaw {
+		d = append(d, "instructors_raw")
+	}
+	return d
+}
+
+func courseImportFields(c models.Course) ImportCourseFields {
+	return ImportCourseFields{
+		Title: c.Title, EnglishTitle: c.EnglishTitle, Credits: c.Credits, Schedule: c.Schedule,
+		Capacity: c.Capacity, Enrolled: c.Enrolled, InstructorsRaw: c.InstructorsRaw,
+	}
 }
 
 // ImportCourses godoc
@@ -208,7 +276,10 @@ func (h *Handler) ImportCourses(c *gin.Context) {
 
 	instructors := database.ListUsers(string(models.RoleInstructor), "", 1000, 0)
 
-	resp := ImportCoursesResponse{Created: []ImportCourseResult{}, Skipped: []ImportSkippedRow{}}
+	resp := ImportCoursesResponse{
+		Created: []ImportCourseResult{}, Skipped: []ImportSkippedRow{},
+		Duplicates: []ImportDuplicate{}, Conflicts: []ImportConflict{},
+	}
 
 	get := func(row []string, key string) string {
 		idx, ok := colIdx[key]
@@ -265,6 +336,30 @@ func (h *Handler) ImportCourses(c *gin.Context) {
 			}
 		}
 
+		// A code legitimately repeats across sections, so a course is only
+		// "already in the system" when code + section + term all match.
+		// Identical -> report as duplicate; different -> let the admin choose.
+		section := getInt(row, "section")
+		if existing, found := database.FindCourseByKey(code, semester, academicYear, section); found {
+			newFields := ImportCourseFields{
+				Title: title, EnglishTitle: get(row, "english_title"), Credits: credits,
+				Schedule: get(row, "schedule"), Capacity: getInt(row, "capacity"),
+				Enrolled: getInt(row, "enrolled"), InstructorsRaw: instructorsRaw,
+			}
+			oldFields := courseImportFields(existing)
+			if diff := diffImportFields(oldFields, newFields); len(diff) > 0 {
+				resp.Conflicts = append(resp.Conflicts, ImportConflict{
+					Row: rowNum, CourseID: existing.ID, Code: code, Section: section,
+					Old: oldFields, New: newFields, Different: diff,
+				})
+			} else {
+				resp.Duplicates = append(resp.Duplicates, ImportDuplicate{
+					Row: rowNum, Code: code, Section: section, Title: title,
+				})
+			}
+			continue
+		}
+
 		// Course codes intentionally aren't required to be unique here: a
 		// real classlist export legitimately repeats one code across
 		// several rows, one per section/group.
@@ -274,7 +369,7 @@ func (h *Handler) ImportCourses(c *gin.Context) {
 			EnglishTitle:   get(row, "english_title"),
 			Credits:        credits,
 			Schedule:       get(row, "schedule"),
-			Section:        getInt(row, "section"),
+			Section:        section,
 			Capacity:       getInt(row, "capacity"),
 			Enrolled:       getInt(row, "enrolled"),
 			InstructorID:   instructorID,
@@ -290,4 +385,57 @@ func (h *Handler) ImportCourses(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// ResolveImportConflictsRequest carries the conflicts where the admin chose the
+// uploaded (new) version over the existing one.
+type ResolveImportConflictsRequest struct {
+	Updates []struct {
+		CourseID uint               `json:"course_id"`
+		Fields   ImportCourseFields `json:"fields"`
+	} `json:"updates"`
+}
+
+// ResolveImportConflicts godoc
+// @Summary      ใช้ข้อมูลใหม่จากไฟล์แทนข้อมูลเดิมของวิชาที่ซ้ำ
+// @Tags         admin
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body  ResolveImportConflictsRequest  true  "รายการวิชาที่เลือกใช้ข้อมูลใหม่"
+// @Success      200  {object}  map[string]int
+// @Router       /admin/courses/import/resolve [post]
+func (h *Handler) ResolveImportConflicts(c *gin.Context) {
+	var req ResolveImportConflictsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	instructors := database.ListUsers(string(models.RoleInstructor), "", 1000, 0)
+	updated := 0
+	for _, u := range req.Updates {
+		f := u.Fields
+		_, ok := database.UpdateCourse(u.CourseID, func(course *models.Course) {
+			course.Title = f.Title
+			course.EnglishTitle = f.EnglishTitle
+			course.Credits = f.Credits
+			course.Schedule = f.Schedule
+			course.Capacity = f.Capacity
+			course.Enrolled = f.Enrolled
+			if f.InstructorsRaw != course.InstructorsRaw {
+				course.InstructorsRaw = f.InstructorsRaw
+				for _, n := range database.SplitInstructorNames(f.InstructorsRaw) {
+					if inst, ok := matchInstructor(instructors, n); ok {
+						course.InstructorID = inst.ID
+						break
+					}
+				}
+			}
+			course.HasLab = database.LabHoursFromCredits(f.Credits) > 0
+		})
+		if ok {
+			updated++
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"updated": updated})
 }
