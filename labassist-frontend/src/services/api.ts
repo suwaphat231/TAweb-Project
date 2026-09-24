@@ -81,7 +81,7 @@ export const applicationsAPI = {
     const formData = new FormData()
     formData.append('file', file)
     return api
-      .post<Application | { application: Application; grade_below_threshold: true; warning: string }>(
+      .post<Application | { application: Application; ocr_warning: string }>(
         `/student/applications/${applicationId}/grade-proof`,
         formData,
       )

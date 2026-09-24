@@ -11,11 +11,15 @@ from services.schedule_parser import parse_schedule
 router = APIRouter()
 
 ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".pdf"}
+MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB — defense-in-depth when Content-Length is absent
+
 
 @router.post("/debug-ocr")
 async def debug_ocr(file: UploadFile = File(...)):
     """Debug endpoint: คืนค่า raw OCR output เพื่อดูว่า EasyOCR อ่านเห็นอะไร"""
     file_bytes = await file.read()
+    if len(file_bytes) > MAX_FILE_BYTES:
+        raise HTTPException(status_code=413, detail=f"ไฟล์ใหญ่เกิน {MAX_FILE_BYTES // (1024 * 1024)} MB")
     processed_image = preprocess_image(file_bytes)
     ocr_results = extract_text(processed_image)
     return {
@@ -54,6 +58,8 @@ async def process_transcript(
 
         # 1. อ่านไฟล์และ Preprocess (รองรับทั้งรูปภาพและ PDF ทุกหน้า เพราะทรานสคริปต์จริงมักมีหลายหน้า)
         file_bytes = await file.read()
+        if len(file_bytes) > MAX_FILE_BYTES:
+            raise HTTPException(status_code=413, detail=f"ไฟล์ใหญ่เกิน {MAX_FILE_BYTES // (1024 * 1024)} MB")
         page_images = preprocess_pages(file_bytes)
 
         # 2-5. ทำ OCR แต่ละหน้า แล้วสกัดรหัสวิชา/เกรด รวมผลทุกหน้าเข้าด้วยกัน
@@ -104,6 +110,8 @@ async def process_schedule(file: UploadFile = File(...)):
 
     try:
         file_bytes = await file.read()
+        if len(file_bytes) > MAX_FILE_BYTES:
+            raise HTTPException(status_code=413, detail=f"ไฟล์ใหญ่เกิน {MAX_FILE_BYTES // (1024 * 1024)} MB")
         processed_image = preprocess_image(file_bytes)
         ocr_results = extract_text(processed_image)
 

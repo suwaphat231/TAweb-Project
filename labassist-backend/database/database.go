@@ -277,19 +277,19 @@ func UpdateCourse(id uint, fn func(c *models.Course)) (models.Course, bool) {
 		return models.Course{}, false
 	}
 	fn(&c)
-	if err := DB.Save(&c).Error; err != nil {
+	// Omit LabBoyAccepted so a concurrent AdjustCourseAccepted cannot be
+	// overwritten by the stale value we read at the top of this call.
+	if err := DB.Model(&c).Omit("LabBoyAccepted").Save(&c).Error; err != nil {
 		return models.Course{}, false
 	}
 	return courseWithInstructor(c), true
 }
 
 func AdjustCourseAccepted(courseID uint, role models.RoleApplied, delta int) {
-	var c models.Course
-	if err := DB.First(&c, courseID).Error; err != nil {
-		return
-	}
-	c.LabBoyAccepted += delta
-	DB.Save(&c)
+	// Atomic increment/decrement — avoids the read-modify-write race that
+	// would occur if two acceptances ran concurrently.
+	DB.Model(&models.Course{}).Where("id = ?", courseID).
+		UpdateColumn("lab_boy_accepted", gorm.Expr("lab_boy_accepted + ?", delta))
 }
 
 // DeleteCourse removes a single course and any applications submitted for it.
@@ -806,9 +806,10 @@ func WithdrawApplication(id, studentID uint) (models.Application, error) {
 
 // ReviewTxResult is returned by ReviewApplicationTx.
 type ReviewTxResult struct {
-	Updated    models.Application
-	PrevStatus models.AppStatus
-	SlotsFull  bool // true when skipped because the course had no remaining slots
+	Updated      models.Application
+	PrevStatus   models.AppStatus
+	SlotsFull    bool // true when skipped because the course had no remaining slots
+	WasWithdrawn bool // true when skipped because the student withdrew after the pre-check
 }
 
 // ReviewApplicationTx atomically checks slot availability, updates the
@@ -828,6 +829,13 @@ func ReviewApplicationTx(appID uint, newStatus models.AppStatus, applyFields fun
 		var course models.Course
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&course, app.CourseID).Error; err != nil {
 			return err
+		}
+
+		// Re-check after acquiring the lock: the student may have withdrawn
+		// between the handler's pre-check and this point.
+		if app.Status == models.AppWithdrawn {
+			res.WasWithdrawn = true
+			return nil
 		}
 
 		prevStatus := app.Status

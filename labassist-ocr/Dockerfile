@@ -12,13 +12,17 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     build-essential \
     libglib2.0-0 \
+    libgl1 \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # คัดลอกไฟล์ requirements.txt มาก่อนเพื่อใช้ประโยชน์จาก Docker Cache
 COPY requirements.txt .
 
-# ติดตั้งไลบรารี Python
-# (หมายเหตุ: EasyOCR จะติดตั้ง PyTorch มาให้โดยอัตโนมัติ ซึ่งอาจใช้เวลาโหลดสักพัก)
+# ติดตั้ง PyTorch CPU-only ก่อน (เล็กกว่า GPU version มาก)
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# ติดตั้งไลบรารี Python ที่เหลือ
 RUN pip install --no-cache-dir -r requirements.txt
 
 # คัดลอกโค้ดทั้งหมดในโฟลเดอร์ labassist-ocr เข้าไปใน Container
