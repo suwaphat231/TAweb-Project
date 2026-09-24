@@ -23,13 +23,24 @@ export function useApplyLabboy() {
   const [fileError, setFileError] = useState<string | null>(null)
   // Tracks an application that was created but whose grade-proof upload failed,
   // so a retry can skip re-creating the application and only redo the upload.
+  // pendingCourseIdRef is kept in sync so that changing Sec between retries
+  // is detected: if the course_id no longer matches, the stale app is discarded
+  // and a fresh application is submitted for the newly selected section.
   const pendingAppIdRef = useRef<number | null>(null)
+  const pendingCourseIdRef = useRef<number | null>(null)
   const qc = useQueryClient()
   const showToast = useToast()
 
   const applyMutation = useMutation({
     mutationFn: async (vars: { course_id: number; grade?: string; gradeProofFile: File | null }) => {
       let appId = pendingAppIdRef.current
+      // If the user changed Sec between retries, the pending app belongs to a
+      // different section — discard it and create a fresh application instead.
+      if (appId !== null && pendingCourseIdRef.current !== vars.course_id) {
+        appId = null
+        pendingAppIdRef.current = null
+        pendingCourseIdRef.current = null
+      }
       if (appId === null) {
         const app = await studentApi.apply({ course_id: vars.course_id, role_applied: 'labboy', grade: vars.grade })
         appId = app.id
@@ -38,11 +49,13 @@ export function useApplyLabboy() {
           // recoverable — the next retry skips apply() and goes straight to
           // uploadGradeProof() with this ID.
           pendingAppIdRef.current = appId
+          pendingCourseIdRef.current = vars.course_id
         }
       }
       if (vars.gradeProofFile) {
         const result = await studentApi.uploadGradeProof(appId, vars.gradeProofFile)
         pendingAppIdRef.current = null
+        pendingCourseIdRef.current = null
         return result
       }
     },
@@ -50,9 +63,9 @@ export function useApplyLabboy() {
       qc.invalidateQueries({ queryKey: ['my-applications'] })
       qc.invalidateQueries({ queryKey: ['student-dashboard'] })
       const code = applyTarget?.code ?? ''
-      const below = result && typeof result === 'object' && 'grade_below_threshold' in result
-      if (below && (result as { warning: string }).warning) {
-        showToast((result as { warning: string }).warning, 'warning')
+      const hasOcrWarning = result && typeof result === 'object' && 'ocr_warning' in result
+      if (hasOcrWarning) {
+        showToast((result as { ocr_warning: string }).ocr_warning, 'warning')
       } else {
         showToast(`ส่งใบสมัคร Lab Boy วิชา ${code} เรียบร้อย รออาจารย์พิจารณา`, 'success')
       }
@@ -61,6 +74,7 @@ export function useApplyLabboy() {
       setGrade('')
       setGradeProofFile(null)
       pendingAppIdRef.current = null
+      pendingCourseIdRef.current = null
     },
     onError: (err: { response?: { data?: { error?: string }; status?: number } }) => {
       showToast(err?.response?.data?.error ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error')
@@ -92,6 +106,7 @@ export function useApplyLabboy() {
     setGradeProofFile(null)
     setFileError(null)
     pendingAppIdRef.current = null
+    pendingCourseIdRef.current = null
     const firstAvailable = group.sections.find((s) => !(s.labboy_slots > 0 && s.labboy_accepted >= s.labboy_slots))
     setSelectedSectionId((firstAvailable ?? group.sections[0])?.id ?? null)
     setApplyTarget(group)

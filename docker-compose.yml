@@ -44,7 +44,7 @@ services:
       PORT: 8080
       OCR_SERVICE_URL: http://ocr-service:8000
     ports:
-      - "8080:8080"
+      - "9000:8080"
 
   frontend:
     build:
@@ -64,8 +64,9 @@ services:
     build:
       context: ./labassist-ocr
     container_name: labassist-ocr
-    ports:
-      - "8000:8000"
+    # No host-port binding — reachable only on the internal Docker network
+    # (backend uses http://ocr-service:8000). Binding 8000 to the host would
+    # let anyone on the network call OCR endpoints without authentication.
     volumes:
       - ./labassist-ocr:/app
       - easyocr_models:/root/.EasyOCR

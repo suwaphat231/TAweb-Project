@@ -88,6 +88,10 @@ func (h *Handler) Review(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot save application"})
 		return
 	}
+	if txRes.WasWithdrawn {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "application has been withdrawn"})
+		return
+	}
 	if txRes.SlotsFull {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Lab Boy slots are full"})
 		return
@@ -185,8 +189,10 @@ func (h *Handler) BulkReview(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot save application"})
 			return
 		}
-		if txRes.SlotsFull {
-			result.SkippedFull++
+		if txRes.WasWithdrawn || txRes.SlotsFull {
+			if txRes.SlotsFull {
+				result.SkippedFull++
+			}
 			continue
 		}
 		result.Updated++
