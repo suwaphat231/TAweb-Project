@@ -97,6 +97,18 @@ func (h *Handler) Apply(c *gin.Context) {
 		return
 	}
 
+	// Block if the student's confirmed term schedule conflicts with this course.
+	// Only enforced when the student has status="set" — unset means no data.
+	ts := database.TermScheduleByUserTerm(studentID.(uint), course.Semester, course.AcademicYear)
+	if day := database.ConflictingDay(course.Schedule, ts); day != "" {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":             "ตารางเรียนของคุณมีวิชาที่เรียนใน" + day + " ซึ่งตรงกับเวลาของวิชานี้ กรุณาตรวจสอบตารางเรียนของคุณในหน้าโปรไฟล์",
+			"schedule_conflict": true,
+			"conflict_day":      day,
+		})
+		return
+	}
+
 	app, err := database.CreateApplication(models.Application{
 		StudentID:   studentID.(uint),
 		CourseID:    body.CourseID,

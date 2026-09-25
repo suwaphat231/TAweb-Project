@@ -78,7 +78,18 @@ export interface Course {
   // When true, applicants must attach an image of their grade instead of
   // just self-reporting it — set per posting by the instructor.
   require_grade_proof: boolean
+  labboy_schedule_confirmed: boolean
   created_at: string
+}
+
+export interface LabBoyAssignment {
+  course_id: number
+  course_code: string
+  course_title: string
+  course_section: number
+  course_schedule: string
+  semester: string
+  academic_year: number
 }
 
 export interface Notification {
@@ -149,6 +160,7 @@ export interface BulkReviewResult {
   updated: number
   notified: number
   skipped_full: number
+  skipped_no_proof: number
 }
 
 export interface CreateUserPayload {

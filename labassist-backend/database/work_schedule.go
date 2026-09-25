@@ -27,6 +27,42 @@ type WorkSession struct {
 	HoursPerSession float64        `json:"hours_per_session"`
 }
 
+// LabBoyAssignment is a course where the student is an accepted Lab Boy and
+// the instructor has confirmed the work schedule.
+type LabBoyAssignment struct {
+	CourseID       uint   `json:"course_id"`
+	CourseCode     string `json:"course_code"`
+	CourseTitle    string `json:"course_title"`
+	CourseSection  int    `json:"course_section"`
+	CourseSchedule string `json:"course_schedule"`
+	Semester       string `json:"semester"`
+	AcademicYear   int    `json:"academic_year"`
+}
+
+// LabBoyAssignmentsForStudent returns all courses where the student has an
+// accepted application and the instructor has confirmed the schedule.
+func LabBoyAssignmentsForStudent(studentUserID uint) []LabBoyAssignment {
+	var apps []models.Application
+	DB.Where("student_id = ? AND status = ?", studentUserID, models.AppAccepted).Find(&apps)
+	out := make([]LabBoyAssignment, 0, len(apps))
+	for _, app := range apps {
+		course, ok := CourseByID(app.CourseID)
+		if !ok || !course.LabBoyScheduleConfirmed {
+			continue
+		}
+		out = append(out, LabBoyAssignment{
+			CourseID:       course.ID,
+			CourseCode:     course.Code,
+			CourseTitle:    course.Title,
+			CourseSection:  course.Section,
+			CourseSchedule: course.Schedule,
+			Semester:       course.Semester,
+			AcademicYear:   course.AcademicYear,
+		})
+	}
+	return out
+}
+
 // WorkScheduleForStudent returns every work session found in StaffDocuments
 // where the student (by userID) appears as an accepted Lab Boy in the roster.
 // Sessions are deduplicated by (course, date) — multiple document types can

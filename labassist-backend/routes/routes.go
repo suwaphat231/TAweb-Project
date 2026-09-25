@@ -66,6 +66,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			studentGroup.GET("/student/applications/:id/grade-proof", studentH.GetGradeProof)
 			studentGroup.GET("/student/applications/:id/history", studentH.ApplicationHistory)
 			studentGroup.GET("/student/work-schedule", studentH.WorkSchedule)
+				studentGroup.GET("/student/labboy-assignments", studentH.LabBoyAssignments)
 			studentGroup.POST("/student/profile/class-schedule", studentH.UploadClassSchedule)
 			studentGroup.GET("/student/profile/class-schedule", studentH.GetClassSchedule)
 			studentGroup.GET("/student/profile/class-schedule/file", studentH.GetClassScheduleImage)
@@ -102,6 +103,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			review.PUT("/instructor/applications/:id/review", teacherH.Review)
 			review.PUT("/instructor/applications/bulk-review", teacherH.BulkReview)
 			review.GET("/instructor/applications/:id/grade-proof", teacherH.GradeProof)
+			review.POST("/instructor/courses/:id/confirm-schedule", teacherH.ConfirmSchedule)
 		}
 
 		// Staff

@@ -7,6 +7,7 @@ import type {
   CreateUserPayload, UpdateUserPayload, ImportCoursesResponse, ImportCourseFields,
   FormReview, StaffDocument, CreateStaffDocumentPayload, TranscriptOCRResult, CoreCourse,
   WorkSession, ClassSchedule, ClassScheduleImageResult, TermSchedule, TermOption, ScheduleSlot, TermScheduleStatus,
+  LabBoyAssignment,
 } from '../types'
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1'
@@ -190,6 +191,7 @@ export const studentApi = {
   uploadGradeProof: applicationsAPI.uploadGradeProof,
   gradeProof: applicationsAPI.gradeProof,
   workSchedule: () => api.get<WorkSession[]>('/student/work-schedule').then((r) => r.data),
+  laboyAssignments: () => api.get<LabBoyAssignment[]>('/student/labboy-assignments').then((r) => r.data),
   // Image evidence upload — no OCR, no slot extraction.
   uploadScheduleImage: (file: File) => {
     const formData = new FormData()
@@ -229,6 +231,8 @@ export const instructorApi = {
   bulkReview: applicationsAPI.bulkReview,
   gradeProof: applicationsAPI.instructorGradeProof,
   notifyCourse: notificationApi.notifyCourse,
+  confirmSchedule: (courseId: number) =>
+    api.post<{ confirmed: boolean; notified: number; accepted_count: number }>(`/instructor/courses/${courseId}/confirm-schedule`).then((r) => r.data),
   // The instructor's own inbox (e.g. "a student just applied") — separate
   // from notifyCourse above, which is the instructor sending notifications
   // out to accepted students.

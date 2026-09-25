@@ -32,6 +32,7 @@ export default function InstructorSelect() {
   const [noteText, setNoteText] = useState('')
   const [profileTarget, setProfileTarget] = useState<Application | null>(null)
   const [showAcceptAll, setShowAcceptAll] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
 
   const qc = useQueryClient()
   const showToast = useToast()
@@ -67,6 +68,16 @@ export default function InstructorSelect() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileTarget?.id, profileTarget?.has_grade_proof])
 
+  const confirmScheduleMut = useMutation({
+    mutationFn: () => instructorApi.confirmSchedule(courseId),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['instructor-courses'] })
+      setShowConfirm(false)
+      showToast(`ยืนยันตารางปฏิบัติงานแล้ว — แจ้งเตือน ${data.notified} คน`, 'success')
+    },
+    onError: () => showToast('ไม่สามารถยืนยันตารางได้ กรุณาลองใหม่', 'error'),
+  })
+
   const notifyMut = useMutation({
     mutationFn: () => notificationApi.notifyCourse(courseId),
     onSuccess: (data) => {
@@ -88,9 +99,11 @@ export default function InstructorSelect() {
       qc.invalidateQueries({ queryKey: ['instructor-courses'] })
       setShowAcceptAll(false)
       setSelectedIds(new Set())
-      if (data.updated === 0) showToast('ไม่มีที่ว่างเหลือ ไม่สามารถรับเพิ่มได้', 'info')
-      else if (data.skipped_full > 0) showToast(`รับเข้าและแจ้งเตือนแล้ว ${data.updated} คน — เหลืออีก ${data.skipped_full} คนที่รอเพราะที่นั่งเต็ม`, 'success')
-      else showToast(`รับเข้าและแจ้งเตือนแล้ว ${data.updated} คน`, 'success')
+      const parts: string[] = []
+      if (data.skipped_full > 0) parts.push(`ที่นั่งเต็ม ${data.skipped_full} คน`)
+      if (data.skipped_no_proof > 0) parts.push(`ยังไม่แนบเกรด ${data.skipped_no_proof} คน`)
+      if (data.updated === 0) showToast(parts.length ? `ไม่ได้รับเพิ่ม — ${parts.join(', ')}` : 'ไม่มีที่ว่างเหลือ', 'info')
+      else showToast(`รับเข้าและแจ้งเตือนแล้ว ${data.updated} คน${parts.length ? ` — ข้ามไป: ${parts.join(', ')}` : ''}`, 'success')
     },
     onError: () => showToast('ไม่สามารถรับผู้สมัครทั้งหมดได้ กรุณาลองใหม่', 'error'),
   })
@@ -103,8 +116,10 @@ export default function InstructorSelect() {
       qc.invalidateQueries({ queryKey: ['instructor-courses'] })
       setSelectedIds(new Set())
       if (vars.status === 'accepted') {
-        if (data.skipped_full > 0) showToast(`รับแล้ว ${data.updated} คน — ${data.skipped_full} คนที่นั่งเต็ม`, 'success')
-        else showToast(`รับเข้าแล้ว ${data.updated} คน`, 'success')
+        const parts: string[] = []
+        if (data.skipped_full > 0) parts.push(`ที่นั่งเต็ม ${data.skipped_full} คน`)
+        if (data.skipped_no_proof > 0) parts.push(`ยังไม่แนบเกรด ${data.skipped_no_proof} คน`)
+        showToast(`รับเข้าแล้ว ${data.updated} คน${parts.length ? ` — ข้ามไป: ${parts.join(', ')}` : ''}`, data.updated > 0 ? 'success' : 'info')
       } else {
         showToast(`ปฏิเสธแล้ว ${data.updated} คน`, 'info')
       }
@@ -141,6 +156,7 @@ export default function InstructorSelect() {
 
   const selectedCourse = courses.find((c) => c.id === courseId)
   const pendingCount = applicants.filter((a) => a.status === 'pending').length
+  const acceptedCount = applicants.filter((a) => a.status === 'accepted').length
   const remainingSlots = selectedCourse ? Math.max(0, selectedCourse.labboy_slots - selectedCourse.labboy_accepted) : 0
   const slotFill = selectedCourse && selectedCourse.labboy_slots > 0
     ? selectedCourse.labboy_accepted / selectedCourse.labboy_slots
@@ -193,6 +209,29 @@ export default function InstructorSelect() {
             >
               <CheckIcon /> รับทั้งหมด ({pendingCount})
             </Button>
+          )}
+          {!!courseId && acceptedCount > 0 && !selectedCourse?.labboy_schedule_confirmed && (
+            <Button
+              style={{
+                background: 'linear-gradient(135deg, #7C3AED, #5B21B6)',
+                borderColor: '#7C3AED',
+                display: 'flex', alignItems: 'center', gap: 6,
+                boxShadow: '0 2px 8px rgba(124,58,237,0.3)',
+              }}
+              onClick={() => setShowConfirm(true)}
+            >
+              <ConfirmIcon /> ยืนยันตารางปฏิบัติงาน
+            </Button>
+          )}
+          {!!courseId && selectedCourse?.labboy_schedule_confirmed && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '8px 14px', borderRadius: 8,
+              background: '#F0FDF4', border: '1px solid #BBF7D0',
+              fontSize: 13, fontWeight: 600, color: '#15803D',
+            }}>
+              ✅ ยืนยันตารางแล้ว
+            </div>
           )}
           {!!courseId && (
             <Button variant="outline" loading={notifyMut.isPending} onClick={() => notifyMut.mutate()} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -588,6 +627,36 @@ export default function InstructorSelect() {
         </div>
       )}
 
+      {/* ── Confirm Schedule Modal ── */}
+      <Modal isOpen={showConfirm} onClose={() => setShowConfirm(false)} title="ยืนยันตารางปฏิบัติงาน" size="sm">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(124,58,237,0.08), rgba(91,33,182,0.04))',
+            border: '1px solid rgba(124,58,237,0.2)',
+            borderRadius: 12, padding: '16px 18px',
+          }}>
+            <div style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.7 }}>
+              ยืนยันให้นักศึกษา <strong>{acceptedCount} คน</strong> ที่ผ่านการคัดเลือกเป็น Lab Boy วิชา{' '}
+              <strong>{selectedCourse?.code}</strong> เห็นตารางปฏิบัติงานในระบบ
+              ระบบจะแจ้งเตือนนักศึกษาทุกคนที่ผ่านการคัดเลือกทันที
+            </div>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--ink-400)', lineHeight: 1.6 }}>
+            หลังจากยืนยัน นักศึกษาจะเห็นรายวิชานี้ในหน้า "ตารางปฏิบัติงาน" ของตนเอง
+          </div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <Button variant="ghost" onClick={() => setShowConfirm(false)}>ยกเลิก</Button>
+            <Button
+              style={{ background: 'linear-gradient(135deg, #7C3AED, #5B21B6)', borderColor: '#7C3AED' }}
+              loading={confirmScheduleMut.isPending}
+              onClick={() => confirmScheduleMut.mutate()}
+            >
+              ยืนยันตารางปฏิบัติงาน
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* ── Accept All Confirm Modal ── */}
       <Modal isOpen={showAcceptAll} onClose={() => setShowAcceptAll(false)} title="รับ Lab Boy ทั้งหมด" size="sm">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -780,6 +849,17 @@ function XIcon({ size = 14 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M18 6 6 18M6 6l12 12"/>
+    </svg>
+  )
+}
+
+function ConfirmIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 12l2 2 4-4"/>
+      <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9c1.81 0 3.5.54 4.9 1.46"/>
+      <path d="M16 5l3 3-3 3"/>
+      <line x1="19" y1="8" x2="13" y2="8"/>
     </svg>
   )
 }

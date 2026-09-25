@@ -1,5 +1,4 @@
 import { Select } from '../../../components/ui/Select'
-import { Input } from '../../../components/ui/Input'
 
 const DAY_OPTIONS = [
   { value: '', label: '— วัน —' },
@@ -11,6 +10,82 @@ const DAY_OPTIONS = [
   { value: 'SAT', label: 'วันเสาร์' },
   { value: 'SUN', label: 'วันอาทิตย์' },
 ]
+
+// University hours: 07:00 – 21:00
+const HOURS = Array.from({ length: 15 }, (_, i) => String(i + 7).padStart(2, '0'))
+// Minutes in 5-minute increments
+const MINUTES = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55']
+
+const selectStyle: React.CSSProperties = {
+  padding: '6px 8px',
+  border: '1.5px solid var(--line)',
+  borderRadius: 'var(--radius-input, 8px)',
+  fontSize: 13,
+  color: 'var(--ink-900)',
+  background: '#fff',
+  cursor: 'pointer',
+  outline: 'none',
+  appearance: 'none',
+  WebkitAppearance: 'none',
+  textAlign: 'center',
+}
+
+interface TimeSelectProps {
+  label?: string
+  value: string   // "HH:MM" or ""
+  onChange: (v: string) => void
+  disabled?: boolean
+  'aria-label'?: string
+}
+
+function TimeSelect({ label, value, onChange, disabled, 'aria-label': ariaLabel }: TimeSelectProps) {
+  const [hh, mm] = value ? value.split(':') : ['', '']
+
+  function emit(newH: string, newM: string) {
+    if (newH && newM) {
+      onChange(`${newH}:${newM}`)
+    } else {
+      onChange('')
+    }
+  }
+
+  return (
+    <div>
+      {label && (
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 4 }}>
+          {label}
+        </div>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 2 }} aria-label={ariaLabel}>
+        <select
+          value={hh || ''}
+          onChange={(e) => emit(e.target.value, mm || '00')}
+          disabled={disabled}
+          aria-label={`${ariaLabel ?? label} ชั่วโมง`}
+          style={{ ...selectStyle, width: 56 }}
+          onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--primary)')}
+          onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
+        >
+          <option value="">ชม.</option>
+          {HOURS.map(h => <option key={h} value={h}>{h}</option>)}
+        </select>
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-400)', padding: '0 1px' }}>:</span>
+        <select
+          value={mm || ''}
+          onChange={(e) => emit(hh || '', e.target.value)}
+          disabled={disabled}
+          aria-label={`${ariaLabel ?? label} นาที`}
+          style={{ ...selectStyle, width: 56 }}
+          onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--primary)')}
+          onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
+        >
+          <option value="">นาที</option>
+          {MINUTES.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+      </div>
+    </div>
+  )
+}
 
 export interface DraftSlot {
   _id: string
@@ -32,6 +107,7 @@ export function SlotRow({ slot, index, error, disabled, onChange, onDelete }: Pr
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        {/* Day picker */}
         <div style={{ flex: '1 1 130px', minWidth: 130 }}>
           <Select
             label={index === 0 ? 'วัน' : undefined}
@@ -42,26 +118,35 @@ export function SlotRow({ slot, index, error, disabled, onChange, onDelete }: Pr
             aria-label={`วันที่ ${index + 1}`}
           />
         </div>
-        <div style={{ flex: '0 0 110px' }}>
-          <Input
-            label={index === 0 ? 'เริ่ม' : undefined}
-            type="time"
-            value={slot.start_time}
-            onChange={(e) => onChange(slot._id, 'start_time', e.target.value)}
-            disabled={disabled}
-            aria-label={`เวลาเริ่มที่ ${index + 1}`}
-          />
+
+        {/* Start time */}
+        <TimeSelect
+          label={index === 0 ? 'เริ่ม' : undefined}
+          value={slot.start_time}
+          onChange={(v) => onChange(slot._id, 'start_time', v)}
+          disabled={disabled}
+          aria-label={`เวลาเริ่มที่ ${index + 1}`}
+        />
+
+        {/* Separator */}
+        <div style={{
+          alignSelf: index === 0 ? 'flex-end' : 'center',
+          paddingBottom: index === 0 ? 8 : 0,
+          fontSize: 13, color: 'var(--ink-300)', fontWeight: 500,
+        }}>
+          –
         </div>
-        <div style={{ flex: '0 0 110px' }}>
-          <Input
-            label={index === 0 ? 'สิ้นสุด' : undefined}
-            type="time"
-            value={slot.end_time}
-            onChange={(e) => onChange(slot._id, 'end_time', e.target.value)}
-            disabled={disabled}
-            aria-label={`เวลาสิ้นสุดที่ ${index + 1}`}
-          />
-        </div>
+
+        {/* End time */}
+        <TimeSelect
+          label={index === 0 ? 'สิ้นสุด' : undefined}
+          value={slot.end_time}
+          onChange={(v) => onChange(slot._id, 'end_time', v)}
+          disabled={disabled}
+          aria-label={`เวลาสิ้นสุดที่ ${index + 1}`}
+        />
+
+        {/* Delete */}
         <button
           type="button"
           onClick={() => onDelete(slot._id)}

@@ -495,6 +495,54 @@ func (h *Handler) Delete(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// ConfirmSchedule godoc
+// @Summary      ยืนยันตารางปฏิบัติงาน Lab Boy
+// @Description  ทำเครื่องหมายว่าตารางปฏิบัติงานพร้อมแล้ว และส่งแจ้งเตือนให้นักศึกษาที่ผ่านการคัดเลือกทุกคน
+// @Tags         instructor
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path  int  true  "Course ID"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      403  {object}  handlers.ErrorResponse
+// @Failure      404  {object}  handlers.ErrorResponse
+// @Router       /instructor/courses/{id}/confirm-schedule [post]
+func (h *Handler) ConfirmSchedule(c *gin.Context) {
+	courseID, _ := strconv.Atoi(c.Param("id"))
+
+	course, ok := database.CourseByID(uint(courseID))
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "course not found"})
+		return
+	}
+	if !ownsCourse(c, course) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+
+	updated, saved := database.UpdateCourse(uint(courseID), func(cs *models.Course) {
+		cs.LabBoyScheduleConfirmed = true
+	})
+	if !saved {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save course"})
+		return
+	}
+
+	accepted := database.AcceptedStudentsForCourse(uint(courseID))
+	notifs := make([]models.Notification, 0, len(accepted))
+	for _, app := range accepted {
+		cid := updated.ID
+		notifs = append(notifs, models.Notification{
+			UserID:   app.StudentID,
+			CourseID: &cid,
+			Title:    fmt.Sprintf("ตารางปฏิบัติงาน Lab Boy — %s", updated.Code),
+			Body:     fmt.Sprintf("อาจารย์ยืนยันตารางปฏิบัติงานแล้ว กรุณาตรวจสอบตารางในระบบ วิชา %s (%s) ภาค %s/%d", updated.Title, updated.Code, updated.Semester, updated.AcademicYear),
+		})
+	}
+	notified := database.CreateNotifications(notifs)
+
+	c.JSON(http.StatusOK, gin.H{"confirmed": true, "notified": notified, "accepted_count": len(accepted)})
+}
+
 // Applicants godoc
 // @Summary      รายชื่อผู้สมัครของวิชา
 // @Tags         instructor

@@ -810,6 +810,7 @@ type ReviewTxResult struct {
 	PrevStatus   models.AppStatus
 	SlotsFull    bool // true when skipped because the course had no remaining slots
 	WasWithdrawn bool // true when skipped because the student withdrew after the pre-check
+	MissingProof bool // true when skipped because course requires grade proof but none uploaded
 }
 
 // ReviewApplicationTx atomically checks slot availability, updates the
@@ -843,6 +844,12 @@ func ReviewApplicationTx(appID uint, newStatus models.AppStatus, applyFields fun
 		if newStatus == models.AppAccepted && prevStatus != models.AppAccepted {
 			if app.RoleApplied == models.RoleLabBoy && course.LabBoyAccepted >= course.LabBoySlots {
 				res.SlotsFull = true
+				return nil
+			}
+			// Enforce grade-proof requirement inside the lock so a direct API
+			// call or a race between upload and review cannot bypass it.
+			if course.RequireGradeProof && len(app.GradeProofData) == 0 {
+				res.MissingProof = true
 				return nil
 			}
 		}
