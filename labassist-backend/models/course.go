@@ -50,9 +50,13 @@ type Course struct {
 	// sets status to "closed". Deadline-based auto-close leaves this false,
 	// so accepted students may still withdraw after a deadline expires but
 	// not after the instructor has deliberately closed the posting.
-	ClosedByInstructor bool      `gorm:"default:false" json:"closed_by_instructor"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	ClosedByInstructor bool `gorm:"default:false" json:"closed_by_instructor"`
+	// LabBoyScheduleConfirmed is set by the instructor after finalising which
+	// students are accepted — it signals that the work schedule is ready and
+	// students can now see it on their /student/schedule page.
+	LabBoyScheduleConfirmed bool      `gorm:"default:false" json:"labboy_schedule_confirmed"`
+	CreatedAt               time.Time `json:"created_at"`
+	UpdatedAt               time.Time `json:"updated_at"`
 }
 
 func (Course) TableName() string { return "courses" }

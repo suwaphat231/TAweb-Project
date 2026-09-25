@@ -13,11 +13,13 @@ import (
 // BulkReviewResult is the response body for a bulk review — beyond a plain
 // updated count, callers (the "accept all Lab Boy" button in particular)
 // need to know how many students actually got notified and how many pending
-// applicants were left untouched because the course ran out of slots.
+// applicants were left untouched because the course ran out of slots or
+// because grade proof was required but not yet uploaded.
 type BulkReviewResult struct {
-	Updated     int `json:"updated"`
-	Notified    int `json:"notified"`
-	SkippedFull int `json:"skipped_full"`
+	Updated        int `json:"updated"`
+	Notified       int `json:"notified"`
+	SkippedFull    int `json:"skipped_full"`
+	SkippedNoProof int `json:"skipped_no_proof"`
 }
 
 // ReviewRequest is the request body for reviewing an application
@@ -94,6 +96,10 @@ func (h *Handler) Review(c *gin.Context) {
 	}
 	if txRes.SlotsFull {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Lab Boy slots are full"})
+		return
+	}
+	if txRes.MissingProof {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ผู้สมัครยังไม่ได้แนบหลักฐานเกรด — วิชานี้กำหนดให้แนบรูปภาพเกรดก่อนอนุมัติ"})
 		return
 	}
 
@@ -189,9 +195,12 @@ func (h *Handler) BulkReview(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot save application"})
 			return
 		}
-		if txRes.WasWithdrawn || txRes.SlotsFull {
+		if txRes.WasWithdrawn || txRes.SlotsFull || txRes.MissingProof {
 			if txRes.SlotsFull {
 				result.SkippedFull++
+			}
+			if txRes.MissingProof {
+				result.SkippedNoProof++
 			}
 			continue
 		}
