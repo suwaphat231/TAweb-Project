@@ -34,6 +34,11 @@ type Application struct {
 	ReviewedByID *uint      `json:"reviewed_by_id,omitempty"`
 	ReviewedBy   *User      `gorm:"foreignKey:ReviewedByID;references:ID" json:"-"`
 	Note         *string    `gorm:"type:text" json:"note,omitempty"`
+	// Cancelled marks a rejection that came from the instructor undoing an
+	// accept clicked by mistake. The instructor's list shows no status for
+	// it and can accept again; the student sees it as still pending (see
+	// StudentView), so like a pending application it cannot be re-applied.
+	Cancelled bool `gorm:"not null;default:false" json:"cancelled,omitempty"`
 
 	// GradeProof is the image the student attaches as proof of the
 	// self-reported Grade above, required only on postings where the
@@ -64,9 +69,30 @@ type Application struct {
 	CourseSection      int     `gorm:"-" json:"course_section,omitempty"`
 	CourseSchedule     string  `gorm:"-" json:"course_schedule,omitempty"`
 	ReviewedByName     string  `gorm:"-" json:"reviewed_by_name,omitempty"`
+
+	// Blacklists holds the student's active blacklist entries. Only the
+	// instructor applicants endpoint fills it in — student-facing responses
+	// must never carry it.
+	Blacklists []Blacklist `gorm:"-" json:"blacklists,omitempty"`
 }
 
 func (Application) TableName() string { return "applications" }
+
+// StudentView is the application as its student should see it. A cancelled
+// acceptance is only a rejection on the instructor's side — to the student it
+// reads as still awaiting review, with no trace of the reverted decision.
+// Every student-facing response must go through this.
+func (a Application) StudentView() Application {
+	if a.Cancelled && a.Status == AppRejected {
+		a.Status = AppPending
+		a.ReviewedAt = nil
+		a.ReviewedByID = nil
+		a.ReviewedByName = ""
+		a.Note = nil
+	}
+	a.Cancelled = false
+	return a
+}
 
 // ApplicationHistory archives a rejected or withdrawn application round
 // before the student re-applies to the same course. The unique index on

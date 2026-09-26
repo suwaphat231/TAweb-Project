@@ -571,5 +571,6 @@ func (h *Handler) Applicants(c *gin.Context) {
 	}
 
 	apps := database.ApplicantsForCourse(uint(courseID), c.Query("role_applied"), c.Query("status"), c.Query("search"))
+	attachBlacklists(apps)
 	c.JSON(http.StatusOK, apps)
 }

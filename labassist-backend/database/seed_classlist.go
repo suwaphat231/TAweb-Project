@@ -74,3 +74,27 @@ func seedClasslistInstructors() error {
 	}
 	return nil
 }
+
+// seedAdminAccount makes sure at least one admin login exists. The demo
+// user.sql also carries an admin, but it only runs on an empty users table
+// with SEED_DEMO_DATA=true — and the classlist instructors above are always
+// seeded first, so without this the system would have no admin at all.
+func seedAdminAccount() error {
+	var count int64
+	if err := DB.Model(&models.User{}).Where("role = ? OR username = ?", models.RoleAdmin, "admin").Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	username := "admin"
+	u := models.User{
+		Username:     &username,
+		PasswordHash: strPtr(pwHash),
+		FullName:     "ผู้ดูแลระบบ",
+		Email:        "admin@cp.su.ac.th",
+		Role:         models.RoleAdmin,
+		IsActive:     true,
+	}
+	return DB.Create(&u).Error
+}

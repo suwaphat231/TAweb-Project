@@ -133,6 +133,14 @@ func Connect(cfg *config.Config) error {
 		return fmt.Errorf("seed courses from classlist: %w", err)
 	}
 
+	if err := mergeDuplicateCourses(); err != nil {
+		return fmt.Errorf("merge duplicate courses: %w", err)
+	}
+
+	if err := seedAdminAccount(); err != nil {
+		return fmt.Errorf("seed admin account: %w", err)
+	}
+
 	if !cfg.SeedDemoData {
 		return nil
 	}

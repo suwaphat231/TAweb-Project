@@ -638,7 +638,7 @@ func StudentApplications(studentID uint) []models.Application {
 		if a.StudentID != studentID {
 			continue
 		}
-		out = append(out, enrichApplication(a))
+		out = append(out, enrichApplication(a).StudentView())
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].AppliedAt.After(out[j].AppliedAt) })
 	return out
@@ -690,6 +690,11 @@ func CreateApplication(a models.Application) (models.Application, error) {
 			First(&existing).Error
 		if err == nil {
 			if existing.Status != models.AppWithdrawn && existing.Status != models.AppRejected {
+				return ErrConflict
+			}
+			// An instructor-cancelled acceptance is not an invitation to
+			// re-apply; only the instructor can accept the student again.
+			if existing.Cancelled {
 				return ErrConflict
 			}
 			// Archive the old round so the student's history and grade proof
@@ -788,6 +793,9 @@ func WithdrawApplication(id, studentID uint) (models.Application, error) {
 		}
 		prevStatus := a.Status
 		a.Status = models.AppWithdrawn
+		// The student saw a cancelled acceptance as pending, so withdrawing
+		// it must leave them free to re-apply like any other withdrawal.
+		a.Cancelled = false
 		if err := tx.Omit(clause.Associations).Save(&a).Error; err != nil {
 			return err
 		}
@@ -1021,5 +1029,6 @@ func migrateApplicationData(db *gorm.DB) error {
 		&models.ApplicationHistory{},
 		&models.ClassSchedule{},
 		&models.TermSchedule{},
+		&models.Blacklist{},
 	)
 }
