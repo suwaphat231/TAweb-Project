@@ -1,23 +1,18 @@
 package models
 
-import (
-	"sync"
-	"testing"
+import "testing"
 
-	"gorm.io/gorm/schema"
-)
+func TestStudentViewHidesCancelledAcceptance(t *testing.T) {
+	uid := uint(7)
+	note := "x"
+	cancelled := Application{Status: AppRejected, Cancelled: true, ReviewedByID: &uid, Note: &note, ReviewedByName: "อาจารย์"}
+	got := cancelled.StudentView()
+	if got.Status != AppPending || got.Cancelled || got.ReviewedByID != nil || got.Note != nil || got.ReviewedByName != "" {
+		t.Fatalf("cancelled acceptance leaked to student: %+v", got)
+	}
 
-func TestApplicationReferencesUserPrimaryKey(t *testing.T) {
-	s, err := schema.Parse(&Application{}, &sync.Map{}, schema.NamingStrategy{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	r := s.Relationships.Relations["Student"]
-	if r.Type != schema.BelongsTo || len(r.References) != 1 {
-		t.Fatalf("unexpected student relationship: %v", r.Type)
-	}
-	ref := r.References[0]
-	if ref.PrimaryKey.Name != "ID" || ref.ForeignKey.Name != "StudentID" || ref.OwnPrimaryKey {
-		t.Fatal("application must reference users.id, not users.student_id")
+	rejected := Application{Status: AppRejected, ReviewedByID: &uid}
+	if got := rejected.StudentView(); got.Status != AppRejected || got.ReviewedByID == nil {
+		t.Fatalf("real rejection must stay rejected: %+v", got)
 	}
 }

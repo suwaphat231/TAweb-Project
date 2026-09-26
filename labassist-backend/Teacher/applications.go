@@ -85,6 +85,7 @@ func (h *Handler) Review(c *gin.Context) {
 		a.ReviewedAt = &now
 		a.ReviewedByID = &rid
 		a.Note = body.Note
+		a.Cancelled = false
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot save application"})
@@ -107,6 +108,68 @@ func (h *Handler) Review(c *gin.Context) {
 	// to wait for a separate "ส่งแจ้งเตือนผู้ผ่านเกณฑ์" click.
 	if body.Status == models.AppAccepted && txRes.PrevStatus != models.AppAccepted {
 		database.CreateNotifications([]models.Notification{acceptanceNotification(txRes.Updated, course)})
+	}
+	c.JSON(http.StatusOK, txRes.Updated)
+}
+
+// CancelAcceptance godoc
+// @Summary      ยกเลิกการรับผู้สมัครที่กดรับผิดคน
+// @Description  ผลเหมือนไม่รับ (คืนที่นั่ง Lab Boy และนักศึกษาเห็นว่าไม่ผ่าน) แต่ฝั่งอาจารย์จะไม่แสดงสถานะของแถวนี้ อาจารย์ยังกดรับใหม่ได้ ส่วนนักศึกษาสมัครซ้ำไม่ได้
+// @Tags         instructor
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path  int  true  "Application ID"
+// @Success      200  {object}  models.Application
+// @Failure      400  {object}  handlers.ErrorResponse
+// @Failure      403  {object}  handlers.ErrorResponse
+// @Failure      404  {object}  handlers.ErrorResponse
+// @Router       /instructor/applications/{id}/cancel [put]
+func (h *Handler) CancelAcceptance(c *gin.Context) {
+	reviewerID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
+	id, _ := strconv.Atoi(c.Param("id"))
+
+	app, ok := database.ApplicationByID(uint(id))
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+		return
+	}
+	if app.Status != models.AppAccepted {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "only an accepted application can be cancelled"})
+		return
+	}
+	course, ok := database.CourseByID(app.CourseID)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "course not found"})
+		return
+	}
+	if role.(string) == "instructor" && !ownsCourse(c, course) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+
+	// ReviewApplicationTx hands the Lab Boy slot back when leaving accepted.
+	now := time.Now()
+	rid := reviewerID.(uint)
+	txRes, err := database.ReviewApplicationTx(uint(id), models.AppRejected, func(a *models.Application) {
+		a.Status = models.AppRejected
+		a.ReviewedAt = &now
+		a.ReviewedByID = &rid
+		a.Note = nil
+		a.Cancelled = true
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot save application"})
+		return
+	}
+	if txRes.WasWithdrawn {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "application has been withdrawn"})
+		return
+	}
+
+	// The student was already told they were accepted; correct that.
+	if txRes.PrevStatus == models.AppAccepted {
+		database.CreateNotifications([]models.Notification{acceptanceRevokedNotification(txRes.Updated, course)})
 	}
 
 	c.JSON(http.StatusOK, txRes.Updated)
@@ -190,6 +253,7 @@ func (h *Handler) BulkReview(c *gin.Context) {
 			a.ReviewedAt = &now
 			a.ReviewedByID = &rid
 			a.Note = body.Note
+			a.Cancelled = false
 		})
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot save application"})

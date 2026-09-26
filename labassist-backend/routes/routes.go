@@ -92,6 +92,8 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			instructor.GET("/instructor/notifications", teacherH.MyNotifications)
 			instructor.PUT("/instructor/notifications/read-all", teacherH.MarkAllRead)
 			instructor.PUT("/instructor/notifications/:id/read", teacherH.MarkRead)
+			instructor.POST("/instructor/blacklist", teacherH.CreateBlacklist)
+			instructor.DELETE("/instructor/blacklist/:id", teacherH.RevokeBlacklist)
 		}
 
 		// Instructor + Staff + Admin for applicants and reviews
@@ -101,9 +103,11 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			review.GET("/instructor/courses/:id/applicants", teacherH.Applicants)
 			review.POST("/instructor/courses/:id/notify", teacherH.NotifyCourse)
 			review.PUT("/instructor/applications/:id/review", teacherH.Review)
+			review.PUT("/instructor/applications/:id/cancel", teacherH.CancelAcceptance)
 			review.PUT("/instructor/applications/bulk-review", teacherH.BulkReview)
 			review.GET("/instructor/applications/:id/grade-proof", teacherH.GradeProof)
 			review.POST("/instructor/courses/:id/confirm-schedule", teacherH.ConfirmSchedule)
+			review.GET("/instructor/blacklist", teacherH.ListBlacklist)
 		}
 
 		// Staff

@@ -152,7 +152,7 @@ func (h *Handler) UploadGradeProof(c *gin.Context) {
 
 			if warn != nil {
 				c.JSON(http.StatusOK, gin.H{
-					"application": updated,
+					"application": updated.StudentView(),
 					"ocr_warning": *warn,
 				})
 				return
@@ -160,7 +160,7 @@ func (h *Handler) UploadGradeProof(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, updated)
+	c.JSON(http.StatusOK, updated.StudentView())
 }
 
 // GetGradeProof godoc

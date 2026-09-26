@@ -24,6 +24,18 @@ func acceptanceNotification(app models.Application, course models.Course) models
 	}
 }
 
+// acceptanceRevokedNotification corrects an acceptance the instructor
+// clicked by mistake and has cancelled — to the student it is pending again.
+func acceptanceRevokedNotification(app models.Application, course models.Course) models.Notification {
+	cid := course.ID
+	return models.Notification{
+		UserID:   app.StudentID,
+		CourseID: &cid,
+		Title:    fmt.Sprintf("ยกเลิกผลการคัดเลือก Lab Boy — %s", course.Code),
+		Body:     fmt.Sprintf("ผลการคัดเลือก Lab Boy วิชา %s (%s) ถูกยกเลิก ใบสมัครของคุณกลับไปอยู่ในสถานะรอพิจารณา", course.Title, course.Code),
+	}
+}
+
 // NotifyCourse godoc
 // @Summary      ส่งแจ้งเตือนนักศึกษาที่ผ่านการคัดเลือก
 // @Tags         instructor
