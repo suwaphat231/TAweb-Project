@@ -27,10 +27,16 @@ func TestPersistenceAcrossConnections(t *testing.T) {
 		DB = db
 	}
 	open()
-	if err := DB.AutoMigrate(&models.User{}, &models.Course{}); err != nil {
+	if err := DB.AutoMigrate(&models.User{}, &models.Course{}, &models.Transcript{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := migrateApplicationData(DB); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateToPostingFKs(DB); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureForeignKeys(DB); err != nil {
 		t.Fatal(err)
 	}
 	suffix := time.Now().Format("150405.000000000")
@@ -38,7 +44,7 @@ func TestPersistenceAcrossConnections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	course := CreateCourse(models.Course{Code: "TEST", Title: "Persistence", Status: models.StatusDraft})
+	course := CreateCourse(models.Course{Code: suffix, Title: "Persistence", Status: models.StatusOpen, LabBoySlots: 2, Semester: "1", AcademicYear: 2569})
 	app, err := CreateApplication(models.Application{StudentID: student.ID, CourseID: course.ID, RoleApplied: models.RoleLabBoy})
 	if err != nil {
 		t.Fatal(err)
@@ -103,7 +109,63 @@ func TestPersistenceAcrossConnections(t *testing.T) {
 	if _, ok := ResetCourseToDraft(course.ID); !ok {
 		t.Fatal("reset failed")
 	}
-	if _, ok := ApplicationByID(app.ID); ok {
-		t.Fatal("reset retained application")
+	if saved, ok := ApplicationByID(app.ID); !ok || saved.PostingID != app.PostingID {
+		t.Fatal("reset lost historical application")
+	}
+	if len(ApplicantsForCourse(course.ID, "", "", "")) != 0 {
+		t.Fatal("old applications leaked into new round")
+	}
+	newApp, err := CreateApplication(models.Application{StudentID: student.ID, CourseID: course.ID, RoleApplied: models.RoleLabBoy})
+	if err != nil || newApp.PostingID == app.PostingID || newApp.ID == app.ID {
+		t.Fatalf("new round application: %+v, %v", newApp, err)
+	}
+	if DeleteCourse(course.ID) {
+		t.Fatal("deleted course with historical applications")
+	}
+	if _, ok := UpdateCourse(course.ID, func(c *models.Course) {
+		c.LabBoySlots = 3
+		c.RequireGradeProof = true
+	}); !ok {
+		t.Fatal("set posting fields")
+	}
+	if _, ok := UpdateCourse(course.ID, func(c *models.Course) {
+		c.LabBoySlots = 0
+		c.RequireGradeProof = false
+		c.Deadline = nil
+	}); !ok {
+		t.Fatal("clear posting fields")
+	}
+	current, _ := ActivePostingForCourse(course.ID)
+	if current.LabBoySlots != 0 || current.RequireGradeProof || current.Deadline != nil {
+		t.Fatalf("zero values were not saved: %+v", current)
+	}
+	if _, err := WithdrawApplication(app.ID, student.ID); err != nil {
+		t.Fatal(err)
+	}
+	current, _ = ActivePostingForCourse(course.ID)
+	if current.LabBoyAccepted != 0 {
+		t.Fatal("old withdrawal changed new round counter")
+	}
+	if err := DB.Create(&models.Posting{CourseID: course.ID, IsActive: true, Status: models.StatusDraft}).Error; err == nil {
+		t.Fatal("database allowed two active postings")
+	}
+	duplicate := models.Course{Code: course.Code, Title: "Duplicate", Semester: course.Semester, AcademicYear: course.AcademicYear}
+	if err := DB.Create(&duplicate).Error; err == nil {
+		t.Fatal("database allowed duplicate course")
+	}
+	if err := DB.Create(&models.Posting{CourseID: 999999999, IsActive: true, Status: models.StatusDraft}).Error; err == nil {
+		t.Fatal("database allowed orphan posting")
+	}
+	if err := migrateToPostingFKs(DB); err != nil {
+		t.Fatal("repeat posting migration:", err)
+	}
+	if err := ensureForeignKeys(DB); err != nil {
+		t.Fatal("repeat foreign keys:", err)
+	}
+	if _, err := UpsertFormReview(course.ID, student.ID, models.ReviewVerified, "checked"); err != nil {
+		t.Fatal(err)
+	}
+	if err := DB.Create(&models.FormReview{CourseID: course.ID, PostingID: newApp.PostingID, ReviewerID: student.ID, Status: models.ReviewPending}).Error; err == nil {
+		t.Fatal("database allowed duplicate posting review")
 	}
 }

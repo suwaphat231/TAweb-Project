@@ -14,7 +14,7 @@ import { Skeleton } from '../../components/ui/Skeleton'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { useToast } from '../../hooks/useToast'
 import { displayCourseTitle } from '../../utils/courseDisplay'
-import type { Course } from '../../types'
+import type { Course, CourseRelation } from '../../types'
 
 function DeleteIcon() {
   return (
@@ -28,71 +28,105 @@ function DeleteIcon() {
   )
 }
 
+function LinkIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    </svg>
+  )
+}
+
+function SourceBadge({ source }: { source: CourseRelation['source'] }) {
+  const isImported = source === 'imported'
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4,
+      fontSize: 11, fontWeight: 600,
+      color: isImported ? 'var(--ink-500)' : '#92400E',
+      background: isImported ? 'var(--bg)' : '#FFFBEB',
+      padding: '2px 8px',
+      borderRadius: 'var(--radius-pill)',
+      border: `1px solid ${isImported ? 'var(--line-soft)' : '#FDE68A'}`,
+    }}>
+      {!isImported && <LockIcon />}
+      {isImported ? 'จากตารางสอน' : 'ดูเท่านั้น'}
+    </span>
+  )
+}
+
+function LockIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  )
+}
+
 function errorDetail(err: unknown, fallback: string): string {
   const detail = isAxiosError(err) ? (err.response?.data as { error?: string } | undefined)?.error : undefined
   return detail ?? fallback
 }
 
-const ADD_COURSE_FORM_EMPTY = {
-  code: '', title: '', semester: '1', academic_year: 2569, labboy_slots: 0, deadline: '',
-}
+const currentYear = new Date().getFullYear() + 543
 
-// This page is both the read-only "which courses do I teach, and who got in
-// as Lab Boy" view, and — since it lists every course the instructor
-// teaches regardless of posting status — the natural place to add a course
-// that never made it into the admin's Excel import, or remove one entirely.
 export default function InstructorMyCourses() {
-  const [showAddCourse, setShowAddCourse] = useState(false)
-  const [addCourseForm, setAddCourseForm] = useState(ADD_COURSE_FORM_EMPTY)
-  const [deleteTarget, setDeleteTarget] = useState<Course | null>(null)
+  const [showPicker, setShowPicker] = useState(false)
+  const [pickerSemester, setPickerSemester] = useState('1')
+  const [pickerYear, setPickerYear] = useState(currentYear)
+  const [pickerSearch, setPickerSearch] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<CourseRelation | null>(null)
   const qc = useQueryClient()
   const showToast = useToast()
 
-  const { data: allCourses = [], isLoading } = useQuery({
-    queryKey: ['instructor-courses'],
-    queryFn: () => instructorApi.courses(),
+  const { data: relations = [], isLoading } = useQuery({
+    queryKey: ['instructor-my-courses'],
+    queryFn: () => instructorApi.myCourses(),
   })
 
-  // Draft rows are unopened sections from the Excel import — not really
-  // "my course" yet. Deleting a course resets it back to draft on the
-  // backend (so the section can be reopened later without re-importing),
-  // so excluding drafts here is also what makes a deleted course actually
-  // disappear from this page instead of reappearing as a draft.
-  const courses = allCourses.filter((c) => c.status !== 'draft')
+  // Show all linked courses (including draft) — instructor may want to see
+  // courses that haven't opened recruitment yet.
+  const displayRelations = relations
 
+  // Only fetch applicants for 'imported' courses — self_added rows do not grant
+  // management rights so the endpoint will 403 for those.
   const applicantQueries = useQueries({
-    queries: courses.map((c) => ({
-      queryKey: ['course-applicants', c.id],
-      queryFn: () => instructorApi.applicants(c.id),
+    queries: displayRelations.map((r) => ({
+      queryKey: ['course-applicants', r.course.id],
+      queryFn: () => instructorApi.applicants(r.course.id),
+      enabled: r.source === 'imported',
     })),
   })
 
-  const createCourseMut = useMutation({
-    mutationFn: () => instructorApi.createCourse({
-      code: addCourseForm.code,
-      title: addCourseForm.title,
-      semester: addCourseForm.semester,
-      academic_year: Number(addCourseForm.academic_year),
-      labboy_slots: Number(addCourseForm.labboy_slots),
-      deadline: addCourseForm.deadline || undefined,
+  const { data: candidates = [], isFetching: candidatesLoading } = useQuery({
+    queryKey: ['course-candidates', pickerSemester, pickerYear, pickerSearch],
+    queryFn: () => instructorApi.courseCandidates({
+      semester: pickerSemester,
+      academic_year: pickerYear,
+      q: pickerSearch || undefined,
     }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['instructor-courses'] })
-      setShowAddCourse(false)
-      setAddCourseForm(ADD_COURSE_FORM_EMPTY)
-      showToast('เพิ่มวิชาเรียบร้อยแล้ว บันทึกเป็นฉบับร่าง — เปิดรับสมัครได้จากหน้าจัดการประกาศ', 'success')
-    },
-    onError: (err) => showToast(errorDetail(err, 'ไม่สามารถเพิ่มวิชาได้ กรุณาลองใหม่'), 'error'),
+    enabled: showPicker,
   })
 
-  const deleteMut = useMutation({
-    mutationFn: (id: number) => instructorApi.deleteCourse(id),
+  const addMut = useMutation({
+    mutationFn: (courseId: number) => instructorApi.addMyCourse(courseId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['instructor-courses'] })
-      setDeleteTarget(null)
-      showToast('ลบวิชาเรียบร้อยแล้ว', 'success')
+      qc.invalidateQueries({ queryKey: ['instructor-my-courses'] })
+      qc.invalidateQueries({ queryKey: ['course-candidates'] })
+      showToast('เพิ่มวิชาเรียบร้อยแล้ว', 'success')
     },
-    onError: () => showToast('ไม่สามารถลบวิชาได้ กรุณาลองใหม่', 'error'),
+    onError: (err) => showToast(errorDetail(err, 'ไม่สามารถเพิ่มวิชาได้'), 'error'),
+  })
+
+  const removeMut = useMutation({
+    mutationFn: (relationId: number) => instructorApi.removeMyCourse(relationId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['instructor-my-courses'] })
+      setDeleteTarget(null)
+      showToast('ยกเลิกการเชื่อมโยงวิชาแล้ว', 'success')
+    },
+    onError: (err) => showToast(errorDetail(err, 'ไม่สามารถยกเลิกการเชื่อมโยงได้'), 'error'),
   })
 
   return (
@@ -102,29 +136,30 @@ export default function InstructorMyCourses() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 4 }}>วิชาของฉัน</h1>
           <p style={{ color: 'var(--ink-500)', fontSize: 14 }}>รายวิชาที่สอนทั้งหมด พร้อม Lab Boy ที่ผ่านการคัดเลือกในแต่ละวิชา</p>
         </div>
-        <Button onClick={() => setShowAddCourse(true)}>+ เพิ่มวิชาเอง</Button>
+        <Button onClick={() => setShowPicker(true)}><LinkIcon /> <span style={{ marginLeft: 6 }}>เพิ่มวิชาเอง</span></Button>
       </div>
 
       {isLoading ? (
         <div style={{ display: 'grid', gap: 16 }}>
           {[1, 2, 3].map((i) => <Skeleton key={i} height={140} borderRadius={12} />)}
         </div>
-      ) : courses.length === 0 ? (
+      ) : displayRelations.length === 0 ? (
         <EmptyState
           title="ยังไม่มีวิชาที่สอน"
           icon="📚"
-          action={{ label: 'เพิ่มวิชาเอง', onClick: () => setShowAddCourse(true) }}
+          action={{ label: 'เพิ่มวิชาเอง', onClick: () => setShowPicker(true) }}
         />
       ) : (
         <div style={{ display: 'grid', gap: 16 }}>
-          {courses.map((c, i) => {
+          {displayRelations.map((rel, i) => {
+            const c = rel.course
             const applicants = applicantQueries[i]?.data ?? []
             const accepted = applicants.filter((a) => a.status === 'accepted')
             return (
-              <Card key={c.id} padding={0}>
+              <Card key={rel.id} padding={0} style={rel.source === 'self_added' ? { borderColor: '#FDE68A' } : undefined}>
                 <CardHeader style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
                   <div>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4, flexWrap: 'wrap' }}>
                       <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--primary)', background: 'var(--primary-50)', padding: '1px 7px', borderRadius: 'var(--radius-pill)' }}>
                         {c.code}
                       </span>
@@ -134,6 +169,7 @@ export default function InstructorMyCourses() {
                         </span>
                       )}
                       <StatusBadge value={c.status} />
+                      <SourceBadge source={rel.source} />
                     </div>
                     <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)' }}>{displayCourseTitle(c.title, c.english_title)}</div>
                     <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 2 }}>
@@ -142,20 +178,47 @@ export default function InstructorMyCourses() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--primary-700)' }}>
-                      Lab Boy {c.labboy_accepted} / {c.labboy_slots} คน
-                    </div>
-                    <Button
-                      size="sm" variant="outline" title="ลบวิชา"
-                      style={{ color: 'var(--red)', borderColor: 'var(--red)' }}
-                      onClick={() => setDeleteTarget(c)}
-                    >
-                      <DeleteIcon />
-                    </Button>
+                    {rel.source === 'imported' && (
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--primary-700)' }}>
+                        Lab Boy {c.labboy_accepted} / {c.labboy_slots} คน
+                      </div>
+                    )}
+                    {rel.source === 'self_added' && (
+                      <Button
+                        size="sm" variant="outline" title="ยกเลิกการเชื่อมโยงวิชา"
+                        style={{ color: 'var(--red)', borderColor: 'var(--red)' }}
+                        onClick={() => setDeleteTarget(rel)}
+                      >
+                        <DeleteIcon />
+                      </Button>
+                    )}
                   </div>
                 </CardHeader>
                 <CardBody>
-                  {accepted.length === 0 ? (
+                  {rel.source === 'self_added' ? (
+                    <div style={{
+                      display: 'flex', gap: 12, alignItems: 'flex-start',
+                      background: '#FFFBEB',
+                      border: '1px solid #FDE68A',
+                      borderRadius: 10,
+                      padding: '12px 16px',
+                    }}>
+                      <svg style={{ flexShrink: 0, marginTop: 1, color: '#D97706' }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                      </svg>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#92400E', marginBottom: 3 }}>
+                          ไม่มีสิทธิ์จัดการวิชานี้
+                        </div>
+                        <div style={{ fontSize: 12, color: '#78350F', lineHeight: 1.6 }}>
+                          วิชาที่เพิ่มด้วยตนเองแสดงในรายการเพื่อติดตามเท่านั้น
+                          การดูผู้สมัคร อนุมัติใบสมัคร และแก้ไขประกาศ
+                          ต้องใช้บัญชีที่ผูกกับตารางสอนจริงในระบบ
+                        </div>
+                      </div>
+                    </div>
+                  ) : accepted.length === 0 ? (
                     <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>ยังไม่มีผู้ผ่านการคัดเลือก</div>
                   ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))', gap: 10 }}>
@@ -179,79 +242,103 @@ export default function InstructorMyCourses() {
         </div>
       )}
 
-      {/* Add Own Course Modal — for a course that never made it into the
-          admin's Excel import (or doesn't exist in the catalog at all) */}
-      <Modal isOpen={showAddCourse} onClose={() => setShowAddCourse(false)} title="เพิ่มวิชาเอง" size="md">
-        <form
-          onSubmit={(e) => { e.preventDefault(); createCourseMut.mutate() }}
-          style={{ display: 'flex', flexDirection: 'column', gap: 14 }}
-        >
-          <p style={{ fontSize: 13, color: 'var(--ink-500)' }}>
-            สำหรับวิชาที่ไม่มีอยู่ในไฟล์ Excel ที่แอดมินนำเข้า — วิชาจะถูกบันทึกเป็นฉบับร่างก่อน แอดมินจะเห็นวิชานี้ในระบบด้วย
+      {/* Course Picker Modal — link to an existing course from the catalog */}
+      <Modal isOpen={showPicker} onClose={() => setShowPicker(false)} title="เพิ่มวิชาเอง" size="lg">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <p style={{ fontSize: 13, color: 'var(--ink-500)', margin: 0 }}>
+            เลือกวิชาที่ต้องการติดตาม — วิชาที่เพิ่มด้วยตนเองจะปรากฏในรายการแต่
+            <strong style={{ color: '#92400E' }}> ไม่ได้รับสิทธิ์จัดการ</strong> จนกว่าระบบจะยืนยันว่าเป็นวิชาที่สอนจริง
           </p>
-          <Input
-            label="รหัสวิชา *" value={addCourseForm.code}
-            onChange={(e) => setAddCourseForm((f) => ({ ...f, code: e.target.value }))}
-            required
-          />
-          <Input
-            label="ชื่อวิชา *" value={addCourseForm.title}
-            onChange={(e) => setAddCourseForm((f) => ({ ...f, title: e.target.value }))}
-            required
-          />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Select
-              label="ภาคการศึกษา *" value={addCourseForm.semester}
-              onChange={(e) => setAddCourseForm((f) => ({ ...f, semester: e.target.value }))}
+              label="ภาคการศึกษา" value={pickerSemester}
+              onChange={(e) => setPickerSemester(e.target.value)}
               options={[{ value: '1', label: '1' }, { value: '2', label: '2' }, { value: '3', label: '3' }]}
             />
             <Input
-              label="ปีการศึกษา *" type="number" value={addCourseForm.academic_year}
-              onChange={(e) => setAddCourseForm((f) => ({ ...f, academic_year: Number(e.target.value) }))}
-              required
+              label="ปีการศึกษา" type="number" value={pickerYear}
+              onChange={(e) => setPickerYear(Number(e.target.value))}
             />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Input
-              label="Lab Boy Slots" type="number" min="0" placeholder="เช่น 2"
-              value={addCourseForm.labboy_slots || ''}
-              onChange={(e) => setAddCourseForm((f) => ({ ...f, labboy_slots: Number(e.target.value) }))}
-            />
-            <Input
-              label="วันปิดรับสมัคร" type="date" value={addCourseForm.deadline}
-              onChange={(e) => setAddCourseForm((f) => ({ ...f, deadline: e.target.value }))}
-            />
+          <Input
+            label="ค้นหา (รหัสวิชา / ชื่อวิชา)"
+            placeholder="เช่น 517122 หรือ Computer"
+            value={pickerSearch}
+            onChange={(e) => setPickerSearch(e.target.value)}
+          />
+
+          <div style={{ maxHeight: 360, overflowY: 'auto', border: '1px solid var(--line-soft)', borderRadius: 10 }}>
+            {candidatesLoading ? (
+              <div style={{ padding: 20, display: 'grid', gap: 8 }}>
+                {[1, 2, 3].map((i) => <Skeleton key={i} height={52} borderRadius={8} />)}
+              </div>
+            ) : candidates.length === 0 ? (
+              <div style={{ padding: 24, textAlign: 'center', color: 'var(--ink-400)', fontSize: 14 }}>
+                ไม่พบวิชาที่ยังไม่ได้เชื่อมโยง
+              </div>
+            ) : (
+              <div style={{ display: 'grid' }}>
+                {candidates.map((course: Course, idx: number) => (
+                  <div
+                    key={course.id}
+                    style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '10px 14px', gap: 12,
+                      borderBottom: idx < candidates.length - 1 ? '1px solid var(--line-soft)' : 'none',
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 2 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--primary)' }}>{course.code}</span>
+                        {!!course.section && <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>Sec {course.section}</span>}
+                        <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>ภาค {course.semester}/{course.academic_year}</span>
+                      </div>
+                      <div style={{ fontSize: 13, color: 'var(--ink-800)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {displayCourseTitle(course.title, course.english_title)}
+                      </div>
+                      {course.schedule && (
+                        <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>🕐 {course.schedule}</div>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      loading={addMut.isPending && addMut.variables === course.id}
+                      onClick={() => addMut.mutate(course.id)}
+                    >
+                      เพิ่ม
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <Button type="button" variant="ghost" onClick={() => setShowAddCourse(false)}>ยกเลิก</Button>
-            <Button type="submit" loading={createCourseMut.isPending}>เพิ่มวิชา</Button>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <Button variant="ghost" onClick={() => setShowPicker(false)}>ปิด</Button>
           </div>
-        </form>
+        </div>
       </Modal>
 
-      {/* Delete Confirm Modal */}
+      {/* Unlink Confirm Modal — only for self_added relations */}
       <Modal
         isOpen={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
-        title="ลบวิชา"
+        title="ยกเลิกการเชื่อมโยงวิชา"
         size="sm"
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <p style={{ fontSize: 14, color: 'var(--ink-600)', margin: 0 }}>
-            ต้องการลบวิชา <strong>{deleteTarget?.code}</strong> ใช่หรือไม่?
-            {(deleteTarget?.applicant_count ?? 0) > 0 && (
-              <> ใบสมัครของผู้สมัคร <strong>{deleteTarget?.applicant_count}</strong> คนที่ยื่นไว้จะถูกลบทั้งหมด (ย้อนกลับไม่ได้)</>
-            )}
-            {' '}ตัววิชา/กลุ่มเรียนนี้จะยังคงอยู่ในระบบ (กลับไปเป็นฉบับร่าง) สามารถเลือกเปิดรับสมัครใหม่ได้อีกภายหลัง
+            ต้องการยกเลิกการเชื่อมโยงวิชา <strong>{deleteTarget?.course.code}</strong> ออกจากรายการวิชาของคุณใช่หรือไม่?
+            {' '}ข้อมูลวิชาและประวัติรับสมัครจะยังคงอยู่ในระบบ
           </p>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
             <Button variant="ghost" onClick={() => setDeleteTarget(null)}>ยกเลิก</Button>
             <Button
               variant="danger"
-              loading={deleteMut.isPending}
-              onClick={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
+              loading={removeMut.isPending}
+              onClick={() => deleteTarget && removeMut.mutate(deleteTarget.id)}
             >
-              ลบวิชา
+              ยืนยันการยกเลิก
             </Button>
           </div>
         </div>

@@ -3,8 +3,8 @@ package docxgen
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
-	"strings"
 	"time"
 
 	"labassist/database"
@@ -76,20 +76,26 @@ func renderHiringNotice(doc models.StaffDocument, course models.Course) ([]byte,
 	})
 }
 
-// formatInt renders a whole-number float without a trailing ".0" (hours,
-// day marks, etc. are always whole numbers in practice).
+// formatInt renders a whole-number float without a trailing ".0".
+// Use only for quantities known to always be integers (session counts, etc.).
 func formatInt(f float64) string {
-	return strconv.FormatInt(int64(f), 10)
+	return strconv.FormatInt(int64(math.Round(f)), 10)
 }
 
-// formatThousands renders a whole-number float with comma thousands
-// separators, e.g. 3300 -> "3,300", matching the source forms' style.
+// formatThousands formats a monetary baht amount with comma thousands
+// separators, showing satang digits only when non-zero.
+// Examples: 3300 → "3,300"  |  3300.5 → "3,300.50"
 func formatThousands(f float64) string {
-	s := formatInt(f)
-	neg := strings.HasPrefix(s, "-")
+	// Round to nearest satang before formatting.
+	rounded := math.Round(f*100) / 100
+	neg := rounded < 0
 	if neg {
-		s = s[1:]
+		rounded = -rounded
 	}
+	intPart := int64(rounded)
+	fracCents := int64(math.Round((rounded - float64(intPart)) * 100))
+
+	s := strconv.FormatInt(intPart, 10)
 	var out []byte
 	for i, c := range []byte(s) {
 		if i > 0 && (len(s)-i)%3 == 0 {
@@ -97,8 +103,12 @@ func formatThousands(f float64) string {
 		}
 		out = append(out, c)
 	}
-	if neg {
-		return "-" + string(out)
+	result := string(out)
+	if fracCents != 0 {
+		result += fmt.Sprintf(".%02d", fracCents)
 	}
-	return string(out)
+	if neg {
+		result = "-" + result
+	}
+	return result
 }

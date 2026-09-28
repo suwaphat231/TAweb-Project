@@ -51,3 +51,27 @@ func DistinctCourseTerms() []TermOption {
 	DB.Raw("SELECT DISTINCT semester, academic_year FROM courses ORDER BY academic_year DESC, semester ASC").Scan(&rows)
 	return rows
 }
+
+// BestTermSchedule returns the student's TermSchedule for the given
+// semester/year. If that specific record is missing or unset, it falls back to
+// the most-recently-updated "set" record the student has for any term —
+// catching the common case where the student entered their schedule under the
+// wrong semester label.
+//
+// "no_class" for the exact term is respected as-is: the student explicitly
+// confirmed no classes that semester, so there can be no conflict and we must
+// not override that decision with a schedule from another term.
+func BestTermSchedule(userID uint, semester string, academicYear int) models.TermSchedule {
+	ts := TermScheduleByUserTerm(userID, semester, academicYear)
+	if ts.Status == models.TermScheduleSet || ts.Status == models.TermScheduleNoClass {
+		return ts
+	}
+	// Status is "unset" — no confirmed data for this specific term.
+	// Fall back to the most-recently-updated "set" record across all terms.
+	var fallback models.TermSchedule
+	if DB.Where("user_id = ? AND status = ?", userID, models.TermScheduleSet).
+		Order("updated_at DESC").First(&fallback).Error == nil {
+		return fallback
+	}
+	return ts
+}

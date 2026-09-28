@@ -233,10 +233,10 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 
 	for _, sec := range sections {
-		if database.CourseExists(ownerID, body.Code, body.Semester, body.AcademicYear, sec.Section) {
-			msg := fmt.Sprintf("วิชา %s ของอาจารย์คนนี้มีอยู่แล้วในภาค %s/%d", body.Code, body.Semester, body.AcademicYear)
+		if database.CourseExists(body.Code, body.Semester, body.AcademicYear, sec.Section) {
+			msg := fmt.Sprintf("วิชา %s มีอยู่ในระบบแล้วในภาค %s/%d", body.Code, body.Semester, body.AcademicYear)
 			if sec.Section > 0 {
-				msg = fmt.Sprintf("วิชา %s กลุ่ม %d ของอาจารย์คนนี้มีอยู่แล้วในภาค %s/%d", body.Code, sec.Section, body.Semester, body.AcademicYear)
+				msg = fmt.Sprintf("วิชา %s กลุ่ม %d มีอยู่ในระบบแล้วในภาค %s/%d", body.Code, sec.Section, body.Semester, body.AcademicYear)
 			}
 			c.JSON(http.StatusConflict, gin.H{"error": msg})
 			return
@@ -245,12 +245,12 @@ func (h *Handler) Create(c *gin.Context) {
 
 	created := make([]models.Course, 0, len(sections))
 	for _, sec := range sections {
-		created = append(created, database.CreateCourse(models.Course{
+		course := database.CreateCourse(models.Course{
 			Code:              body.Code,
 			Title:             body.Title,
 			Section:           sec.Section,
 			Schedule:          sec.Schedule,
-			InstructorID:      ownerID,
+			InstructorID:      &ownerID,
 			Semester:          body.Semester,
 			AcademicYear:      body.AcademicYear,
 			LabBoySlots:       body.LabBoySlots,
@@ -259,7 +259,12 @@ func (h *Handler) Create(c *gin.Context) {
 			Requirements:      body.Requirements,
 			Deadline:          deadline,
 			RequireGradeProof: body.RequireGradeProof,
-		}))
+		})
+		if course.ID == 0 {
+			c.JSON(http.StatusConflict, gin.H{"error": "cannot save course; check duplicate section or instructor"})
+			return
+		}
+		created = append(created, course)
 	}
 	c.JSON(http.StatusCreated, created)
 }
@@ -296,6 +301,12 @@ func (h *Handler) AddSection(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if database.CourseExists(template.Code, template.Semester, template.AcademicYear, body.Section) {
+		msg := fmt.Sprintf("วิชา %s กลุ่ม %d มีอยู่ในระบบแล้วในภาค %s/%d",
+			template.Code, body.Section, template.Semester, template.AcademicYear)
+		c.JSON(http.StatusConflict, gin.H{"error": msg})
+		return
+	}
 
 	created := database.CreateCourse(models.Course{
 		Code:              template.Code,
@@ -313,6 +324,10 @@ func (h *Handler) AddSection(c *gin.Context) {
 		Deadline:          template.Deadline,
 		RequireGradeProof: template.RequireGradeProof,
 	})
+	if created.ID == 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "cannot save section; check duplicate section or instructor"})
+		return
+	}
 	c.JSON(http.StatusCreated, created)
 }
 
@@ -488,9 +503,110 @@ func (h *Handler) Delete(c *gin.Context) {
 
 	role, _ := c.Get("role")
 	if role.(string) == "admin" {
-		database.DeleteCourse(uint(id))
+		if !database.DeleteCourse(uint(id)) {
+			c.JSON(http.StatusConflict, gin.H{"error": "ลบไม่ได้: รายวิชามีประวัติที่ต้องเก็บ หรือไม่สามารถบันทึกการลบได้"})
+			return
+		}
 	} else {
-		database.ResetCourseToDraft(uint(id))
+		if _, ok := database.ResetCourseToDraft(uint(id)); !ok {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot archive posting"})
+			return
+		}
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// MyCourses godoc
+// @Summary      รายการวิชาที่อาจารย์เชื่อมโยงไว้ (M:N) พร้อม source badge
+// @Tags         instructor
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {array}   database.CourseRelation
+// @Router       /instructor/my-courses [get]
+func (h *Handler) MyCourses(c *gin.Context) {
+	instructorID, _ := c.Get("user_id")
+	c.JSON(http.StatusOK, database.MyCourseRelations(instructorID.(uint)))
+}
+
+// CourseCandidatesList godoc
+// @Summary      วิชาที่ยังไม่ได้เชื่อมโยง (สำหรับ picker เพิ่มวิชา)
+// @Tags         instructor
+// @Produce      json
+// @Security     BearerAuth
+// @Param        semester       query  string  false  "ภาคเรียน"
+// @Param        academic_year  query  int     false  "ปีการศึกษา"
+// @Param        q              query  string  false  "ค้นหา"
+// @Success      200  {array}   models.Course
+// @Router       /instructor/course-candidates [get]
+func (h *Handler) CourseCandidatesList(c *gin.Context) {
+	instructorID, _ := c.Get("user_id")
+	academicYear, _ := strconv.Atoi(c.Query("academic_year"))
+	c.JSON(http.StatusOK, database.CourseCandidates(
+		instructorID.(uint),
+		c.Query("semester"),
+		academicYear,
+		c.Query("q"),
+	))
+}
+
+type addMyCourseRequest struct {
+	CourseID uint `json:"course_id" binding:"required"`
+}
+
+// AddMyCourse godoc
+// @Summary      เพิ่มวิชาเข้ารายการ (self_added — ดูเท่านั้น ไม่ได้สิทธิ์จัดการ)
+// @Description  สร้าง course_instructors row ที่มี source='self_added' เพื่อให้อาจารย์
+//               ติดตามวิชาได้จากหน้า "วิชาของฉัน" เท่านั้น  self_added ไม่ผ่าน
+//               InstructorOwnsCourse ดังนั้นจะไม่ได้สิทธิ์ใด ๆ เพิ่มเติม เช่น
+//               ดูผู้สมัคร อนุมัติใบสมัคร หรือแก้ประกาศ
+// @Tags         instructor
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body  addMyCourseRequest  true  "course_id"
+// @Success      201  {object}  models.CourseInstructor
+// @Failure      400  {object}  handlers.ErrorResponse
+// @Failure      404  {object}  handlers.ErrorResponse
+// @Router       /instructor/my-courses [post]
+func (h *Handler) AddMyCourse(c *gin.Context) {
+	instructorID, _ := c.Get("user_id")
+	var body addMyCourseRequest
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if _, ok := database.CourseByID(body.CourseID); !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "course not found"})
+		return
+	}
+	rel, ok := database.AddCourseRelation(body.CourseID, instructorID.(uint))
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not add course"})
+		return
+	}
+	c.JSON(http.StatusCreated, rel)
+}
+
+// RemoveMyCourse godoc
+// @Summary      ยกเลิกการเชื่อมโยงวิชาที่เพิ่มเอง
+// @Description  ทำได้เฉพาะ source='self_added' เท่านั้น — วิชาจากตารางสอน (imported) ลบออกไม่ได้
+// @Tags         instructor
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path  int  true  "CourseInstructor relation ID"
+// @Success      204
+// @Failure      404  {object}  handlers.ErrorResponse
+// @Router       /instructor/my-courses/{id} [delete]
+func (h *Handler) RemoveMyCourse(c *gin.Context) {
+	instructorID, _ := c.Get("user_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	if !database.RemoveCourseRelation(uint(id), instructorID.(uint)) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "relation not found or not removable (imported courses cannot be unlinked)"})
+		return
 	}
 	c.Status(http.StatusNoContent)
 }

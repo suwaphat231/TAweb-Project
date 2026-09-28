@@ -13,6 +13,11 @@ interface Props {
 
 export function CourseCard({ group, onApply, appliedSection }: Props) {
   const allFull = group.totalSlots > 0 && group.totalAccepted >= group.totalSlots
+  // A group conflicts when every section the student could take has a schedule
+  // conflict. If even one section is conflict-free, the card stays actionable.
+  const conflictDay = group.sections.every((s) => s.conflict_day)
+    ? (group.sections[0]?.conflict_day ?? '')
+    : ''
 
   const deadline = group.deadline
     ? new Date(group.deadline).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
@@ -119,6 +124,15 @@ export function CourseCard({ group, onApply, appliedSection }: Props) {
           <Badge variant="gray">ปิดรับ</Badge>
         ) : appliedSection ? (
           <Badge variant="green">สมัครแล้ว{appliedSection.section ? ` (Sec ${appliedSection.section})` : ''}</Badge>
+        ) : conflictDay ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--amber)', flexShrink: 0 }}>
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <span style={{ fontSize: 12, color: 'var(--amber)', fontWeight: 600 }}>
+              ชนกับช่วงเวลาที่ติดเรียน ไม่สามารถสมัครได้
+            </span>
+          </div>
         ) : allFull ? (
           <Button size="sm" variant="outline" disabled style={{ cursor: 'not-allowed' }}>เต็มแล้ว</Button>
         ) : (

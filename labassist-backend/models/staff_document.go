@@ -47,6 +47,7 @@ type StaffDocument struct {
 	Name      string    `gorm:"not null" json:"name"`
 	Type      DocType   `gorm:"type:enum('hiring_notice','approval_memo','payment_evidence','payment_request','work_report');not null" json:"type"`
 	CourseRef string    `gorm:"size:255" json:"course_ref"`
+	PostingID *uint     `gorm:"index" json:"posting_id,omitempty"`
 	CourseID  *uint     `json:"course_id,omitempty"`
 	StaffID   uint      `gorm:"not null" json:"staff_id"`
 	Status    DocStatus `gorm:"type:enum('draft','pending','approved');not null;default:'draft'" json:"status"`
@@ -54,12 +55,13 @@ type StaffDocument struct {
 
 	// Line-item fields, populated only for the 3 document types that carry
 	// a per-student roster (payment_evidence, payment_request, work_report).
+	// Monetary columns use DECIMAL to avoid floating-point representation errors.
 	Period          *DocumentPeriod `gorm:"serializer:json" json:"period,omitempty"`
 	SessionDates    []int           `gorm:"serializer:json" json:"session_dates,omitempty"`
-	HoursPerSession float64         `json:"hours_per_session,omitempty"`
-	Rate            float64         `json:"rate,omitempty"`
+	HoursPerSession float64         `gorm:"type:decimal(8,2);default:0" json:"hours_per_session,omitempty"`
+	Rate            float64         `gorm:"type:decimal(10,2);default:0" json:"rate,omitempty"`
 	Roster          []RosterEntry   `gorm:"serializer:json;type:longtext" json:"roster,omitempty"`
-	TotalAmount     float64         `json:"total_amount,omitempty"`
+	TotalAmount     float64         `gorm:"type:decimal(12,2);default:0" json:"total_amount,omitempty"`
 
 	// WorkDay/WorkTimeStart/WorkTimeEnd describe the recurring weekly
 	// schedule for line-item documents so the work report can display

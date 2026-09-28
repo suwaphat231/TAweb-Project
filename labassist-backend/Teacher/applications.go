@@ -95,6 +95,10 @@ func (h *Handler) Review(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "application has been withdrawn"})
 		return
 	}
+	if txRes.Archived {
+		c.JSON(http.StatusConflict, gin.H{"error": "รอบรับสมัครนี้ถูกเก็บเป็นประวัติแล้ว"})
+		return
+	}
 	if txRes.SlotsFull {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Lab Boy slots are full"})
 		return
@@ -259,7 +263,7 @@ func (h *Handler) BulkReview(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot save application"})
 			return
 		}
-		if txRes.WasWithdrawn || txRes.SlotsFull || txRes.MissingProof {
+		if txRes.Archived || txRes.WasWithdrawn || txRes.SlotsFull || txRes.MissingProof {
 			if txRes.SlotsFull {
 				result.SkippedFull++
 			}

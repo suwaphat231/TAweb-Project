@@ -2,13 +2,13 @@ import type { ReactNode } from 'react'
 
 export type BadgeVariant = 'green' | 'amber' | 'red' | 'blue' | 'gray' | 'purple'
 
-const variantMap: Record<BadgeVariant, { bg: string; color: string }> = {
-  green:  { bg: 'var(--green-bg)',  color: 'var(--green)' },
-  amber:  { bg: 'var(--amber-bg)',  color: 'var(--amber)' },
-  red:    { bg: 'var(--red-bg)',    color: 'var(--red)' },
-  blue:   { bg: 'var(--blue-bg)',   color: 'var(--blue)' },
-  gray:   { bg: 'var(--line-soft)', color: 'var(--ink-500)' },
-  purple: { bg: 'var(--primary-100)',          color: 'var(--primary-700)' },
+const variantMap: Record<BadgeVariant, { bg: string; color: string; border: string }> = {
+  green:  { bg: 'var(--green-bg)',    color: 'var(--green)',        border: '#BBF7D0' },
+  amber:  { bg: 'var(--amber-bg)',    color: 'var(--amber)',        border: '#FDE68A' },
+  red:    { bg: 'var(--red-bg)',      color: 'var(--red)',          border: '#FECACA' },
+  blue:   { bg: 'var(--blue-bg)',     color: 'var(--blue)',         border: '#BFDBFE' },
+  gray:   { bg: 'var(--line-soft)',   color: 'var(--ink-500)',      border: 'var(--line)' },
+  purple: { bg: 'var(--primary-100)', color: 'var(--primary-700)', border: '#C7D2FE' },
 }
 
 interface BadgeProps {
@@ -18,13 +18,14 @@ interface BadgeProps {
 }
 
 export function Badge({ variant, children, showDot }: BadgeProps) {
-  const { bg, color } = variantMap[variant]
+  const { bg, color, border } = variantMap[variant]
   return (
     <span style={{
       background: bg, color,
       fontSize: 12, fontWeight: 600,
       padding: '2px 10px',
       borderRadius: 'var(--radius-pill)',
+      border: `1px solid ${border}`,
       display: 'inline-flex', alignItems: 'center', gap: 5,
       lineHeight: '20px', whiteSpace: 'nowrap',
     }}>

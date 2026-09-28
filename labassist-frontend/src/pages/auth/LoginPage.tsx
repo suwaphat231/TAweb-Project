@@ -11,6 +11,35 @@ const roleRedirect: Record<UserRole, string> = {
   admin:      '/admin/overview',
 }
 
+const DEV_LOGIN_ENABLED = import.meta.env.VITE_DEV_LOGIN === 'true'
+
+const devQuickAccounts: { label: string; username: string; color: string }[] = [
+  { label: 'นักศึกษา',    username: 'demo_std01', color: '#0EA5E9' },
+  { label: 'เจ้าหน้าที่', username: 'parinya',    color: '#10B981' },
+  { label: 'Admin',        username: 'admin',      color: '#F59E0B' },
+]
+
+const devInstructors: { username: string; fullName: string }[] = [
+  { username: 'puriwat',      fullName: 'ดร.ภูริวัจน์ วรวิชัยพัฒน์ (มีผู้สมัครทดสอบ)' },
+  { username: 'kanraya',      fullName: 'ผศ.ดร.กรัญญา สิทธิสงวน' },
+  { username: 'saowaluck',    fullName: 'อ.ดร.เสาวลักษณ์ อร่ามพงศานุวัต' },
+  { username: 'kritsana',     fullName: 'ผศ.ดร.กฤษณะ สีพนมวัน' },
+  { username: 'natchote',     fullName: 'ผศ.ดร.ณัฐโชติ พรหมฤทธิ์' },
+  { username: 'katha',        fullName: 'ผศ.ดร.คทา ประดิษฐวงศ์' },
+  { username: 'sunee',        fullName: 'ผศ.ดร.สุนีย์ พงษ์พินิจภิญโญ' },
+  { username: 'buchapat',     fullName: 'นายบูชาภัทร ป้านศรี' },
+  { username: 'orawan',       fullName: 'ผศ.ดร.อรวรรณ เชาวลิต' },
+  { username: 'opas',         fullName: 'ผศ.โอภาส วงษ์ทวีทรัพย์' },
+  { username: 'sajjaporn',    fullName: 'ผศ.ดร.สัจจาภรณ์ ไวจรรยา' },
+  { username: 'setthalath',   fullName: 'อ.เสฐลัทธ์ รอดเหตุภัย' },
+  { username: 'aphisek',      fullName: 'อ.อภิเษก หงษ์วิทยากร' },
+  { username: 'panjai',       fullName: 'รศ.ดร.ปานใจ ธารทัศนวงศ์' },
+  { username: 'weenawadee',   fullName: 'ผศ.ดร.วีณาวดี ม่วงอ้น' },
+  { username: 'panyanat',     fullName: 'ผศ.ดร.ปัญญนัท อ้นพงษ์' },
+  { username: 'watsara',      fullName: 'อ.ดร.วัสรา รอดเหตุภัย' },
+  { username: 'ratchadaporn', fullName: 'ผศ.ดร.รัชดาพร คณาวงษ์' },
+]
+
 const demoAccounts = [
   { role: 'อาจารย์ (มีผู้สมัคร 10 คนให้ทดสอบ)', username: 'puriwat', password: 'password123' },
   { role: 'เจ้าหน้าที่', username: 'parinya', password: 'password123' },
@@ -18,13 +47,15 @@ const demoAccounts = [
 ]
 
 export default function LoginPage() {
-  const { isAuthenticated, user, loginWithCredentials, loginWithGoogle } = useAuthStore()
+  const { isAuthenticated, user, loginWithCredentials, loginWithGoogle, loginWithDevAccount } = useAuthStore()
   const navigate = useNavigate()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [devLoadingFor, setDevLoadingFor] = useState<string | null>(null)
+  const [selectedInstructor, setSelectedInstructor] = useState(devInstructors[0].username)
 
   useEffect(() => {
     if (isAuthenticated && user) navigate(roleRedirect[user.role] || '/', { replace: true })
@@ -51,6 +82,19 @@ export default function LoginPage() {
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } }).response?.data?.error
       setError(msg || 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ กรุณาลองใหม่')
+    }
+  }
+
+  async function handleDevLogin(username: string) {
+    setError('')
+    setDevLoadingFor(username)
+    try {
+      await loginWithDevAccount(username)
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } }).response?.data?.error
+      setError(msg || `Dev login ล้มเหลว (${username})`)
+    } finally {
+      setDevLoadingFor(null)
     }
   }
 
@@ -272,54 +316,159 @@ export default function LoginPage() {
             </form>
           </div>
 
-          {/* Demo accounts */}
-          <details style={{ marginTop: 4 }}>
-            <summary style={{
-              fontSize: 12, color: 'var(--ink-400)', cursor: 'pointer',
-              listStyle: 'none', display: 'flex', alignItems: 'center', gap: 6,
-              userSelect: 'none',
-            }}>
-              <span style={{
-                display: 'inline-block', width: 16, height: 16,
-                background: 'var(--line)', borderRadius: 4,
-                fontSize: 9, textAlign: 'center', lineHeight: '16px',
-              }}>▾</span>
-              บัญชีทดสอบ
-            </summary>
+          {/* Dev Quick Login panel — only shown when VITE_DEV_LOGIN=true */}
+          {DEV_LOGIN_ENABLED ? (
             <div style={{
-              marginTop: 10,
-              background: '#F8F9FB',
-              borderRadius: 8,
+              marginTop: 4,
+              background: '#FFF7ED',
+              border: '1px dashed #F97316',
+              borderRadius: 10,
               padding: '12px 14px',
-              border: '1px solid var(--line)',
             }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                <thead>
-                  <tr>
-                    {['บทบาท', 'Username', 'Password'].map((h) => (
-                      <th key={h} style={{ textAlign: 'left', color: 'var(--ink-400)', fontWeight: 600, paddingBottom: 6 }}>{h}</th>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                <span style={{ fontSize: 13 }}>🛠️</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#C2410C' }}>Dev Login</span>
+                <span style={{ fontSize: 11, color: '#9A3412', opacity: 0.7 }}>— เฉพาะ dev เท่านั้น</span>
+              </div>
+
+              {/* Quick roles */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 7, marginBottom: 8 }}>
+                {devQuickAccounts.map((a) => (
+                  <button
+                    key={a.username}
+                    type="button"
+                    disabled={devLoadingFor !== null}
+                    onClick={() => void handleDevLogin(a.username)}
+                    style={{
+                      padding: '7px 6px',
+                      background: devLoadingFor === a.username ? '#E5E7EB' : '#fff',
+                      border: `1.5px solid ${a.color}`,
+                      borderRadius: 7,
+                      cursor: devLoadingFor !== null ? 'not-allowed' : 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                      transition: 'background .1s',
+                    }}
+                  >
+                    <span style={{
+                      display: 'inline-block', width: 7, height: 7,
+                      borderRadius: '50%', background: a.color, flexShrink: 0,
+                    }} />
+                    <span style={{ fontSize: 11, fontWeight: 600, color: '#1F2937' }}>{a.label}</span>
+                    {devLoadingFor === a.username && (
+                      <span style={{
+                        display: 'inline-block', width: 11, height: 11,
+                        border: `2px solid ${a.color}40`, borderTopColor: a.color,
+                        borderRadius: '50%', animation: 'spin 0.7s linear infinite',
+                      }} />
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              {/* Instructor picker */}
+              <div style={{
+                display: 'flex', gap: 6, alignItems: 'stretch',
+                borderTop: '1px solid #FED7AA', paddingTop: 8,
+              }}>
+                <div style={{ position: 'relative', flex: 1 }}>
+                  <span style={{
+                    position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)',
+                    fontSize: 11, color: '#9A3412', fontWeight: 600, pointerEvents: 'none',
+                    whiteSpace: 'nowrap',
+                  }}>อาจารย์</span>
+                  <select
+                    value={selectedInstructor}
+                    onChange={(e) => setSelectedInstructor(e.target.value)}
+                    disabled={devLoadingFor !== null}
+                    style={{
+                      width: '100%', padding: '7px 8px 7px 52px',
+                      border: '1.5px solid #8B5CF6', borderRadius: 7,
+                      fontSize: 11, color: '#1F2937', background: '#fff',
+                      cursor: 'pointer', appearance: 'none',
+                    }}
+                  >
+                    {devInstructors.map((ins) => (
+                      <option key={ins.username} value={ins.username}>
+                        {ins.fullName}
+                      </option>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {demoAccounts.map((a) => (
-                    <tr
-                      key={a.username}
-                      style={{ cursor: 'pointer' }}
-                      onClick={() => { setUsername(a.username); setPassword(a.password) }}
-                    >
-                      <td style={{ color: 'var(--ink-700)', paddingBottom: 4 }}>{a.role}</td>
-                      <td style={{ color: 'var(--primary)', fontFamily: 'monospace', paddingBottom: 4 }}>{a.username}</td>
-                      <td style={{ color: 'var(--ink-500)', fontFamily: 'monospace', paddingBottom: 4 }}>{a.password}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <p style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 4 }}>
-                คลิกแถวเพื่อกรอกอัตโนมัติ
-              </p>
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  disabled={devLoadingFor !== null}
+                  onClick={() => void handleDevLogin(selectedInstructor)}
+                  style={{
+                    padding: '7px 12px',
+                    background: devLoadingFor === selectedInstructor ? '#E5E7EB' : '#8B5CF6',
+                    color: '#fff', border: 'none', borderRadius: 7,
+                    fontSize: 11, fontWeight: 600,
+                    cursor: devLoadingFor !== null ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
+                    transition: 'opacity .1s',
+                  }}
+                >
+                  {devLoadingFor === selectedInstructor ? (
+                    <span style={{
+                      display: 'inline-block', width: 11, height: 11,
+                      border: '2px solid rgba(255,255,255,.4)', borderTopColor: '#fff',
+                      borderRadius: '50%', animation: 'spin 0.7s linear infinite',
+                    }} />
+                  ) : null}
+                  เข้าสู่ระบบ
+                </button>
+              </div>
             </div>
-          </details>
+          ) : (
+            /* Demo accounts (fallback when DEV_LOGIN is off) */
+            <details style={{ marginTop: 4 }}>
+              <summary style={{
+                fontSize: 12, color: 'var(--ink-400)', cursor: 'pointer',
+                listStyle: 'none', display: 'flex', alignItems: 'center', gap: 6,
+                userSelect: 'none',
+              }}>
+                <span style={{
+                  display: 'inline-block', width: 16, height: 16,
+                  background: 'var(--line)', borderRadius: 4,
+                  fontSize: 9, textAlign: 'center', lineHeight: '16px',
+                }}>▾</span>
+                บัญชีทดสอบ
+              </summary>
+              <div style={{
+                marginTop: 10,
+                background: '#F8F9FB',
+                borderRadius: 8,
+                padding: '12px 14px',
+                border: '1px solid var(--line)',
+              }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr>
+                      {['บทบาท', 'Username', 'Password'].map((h) => (
+                        <th key={h} style={{ textAlign: 'left', color: 'var(--ink-400)', fontWeight: 600, paddingBottom: 6 }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {demoAccounts.map((a) => (
+                      <tr
+                        key={a.username}
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => { setUsername(a.username); setPassword(a.password) }}
+                      >
+                        <td style={{ color: 'var(--ink-700)', paddingBottom: 4 }}>{a.role}</td>
+                        <td style={{ color: 'var(--primary)', fontFamily: 'monospace', paddingBottom: 4 }}>{a.username}</td>
+                        <td style={{ color: 'var(--ink-500)', fontFamily: 'monospace', paddingBottom: 4 }}>{a.password}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 4 }}>
+                  คลิกแถวเพื่อกรอกอัตโนมัติ
+                </p>
+              </div>
+            </details>
+          )}
         </div>
       </div>
 

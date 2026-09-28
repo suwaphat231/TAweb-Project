@@ -11,6 +11,7 @@ interface AuthStore {
   login: (token: string, user: User) => void
   loginWithCredentials: (username: string, password: string) => Promise<void>
   loginWithGoogle: (credential: string) => Promise<{ isNewUser: boolean }>
+  loginWithDevAccount: (username: string) => Promise<void>
   logout: () => void
   setUser: (user: User) => void
   hydrateFromStorage: () => void
@@ -34,6 +35,11 @@ export const useAuthStore = create<AuthStore>()(
         const res = await authApi.google({ credential })
         set({ token: res.token, user: res.user, isAuthenticated: true })
         return { isNewUser: res.is_new_user ?? false }
+      },
+
+      loginWithDevAccount: async (username) => {
+        const { token, user } = await authApi.devLogin(username)
+        set({ token, user, isAuthenticated: true })
       },
 
       logout: () => set({ token: null, user: null, isAuthenticated: false }),

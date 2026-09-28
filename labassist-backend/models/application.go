@@ -18,10 +18,19 @@ const (
 )
 
 type Application struct {
-	ID          uint        `gorm:"primaryKey" json:"id"`
-	StudentID   uint        `gorm:"not null;uniqueIndex:idx_application_student_course" json:"student_id"`
-	Student     User        `gorm:"belongsTo:Student;foreignKey:StudentID;references:ID" json:"-"`
-	CourseID    uint        `gorm:"not null;index;uniqueIndex:idx_application_student_course" json:"course_id"`
+	PostingActive bool `gorm:"-" json:"posting_active"`
+	ID            uint `gorm:"primaryKey" json:"id"`
+	StudentID     uint `gorm:"not null;index" json:"student_id"`
+	Student       User `gorm:"belongsTo:Student;foreignKey:StudentID;references:ID" json:"-"`
+	// PostingID is the recruitment round this application belongs to.
+	// Unique per (student, posting) so a student can re-apply to a new round
+	// of the same course without a conflict. Index and unique constraint are
+	// managed manually in migrateToPostingFKs (not via GORM tag) to allow a
+	// safe backfill before the constraint is applied.
+	PostingID uint `gorm:"not null;default:0;index" json:"posting_id"`
+	// CourseID is kept as a DB column for legacy reference and backfill.
+	// Application logic now uses PostingID; CourseID is set from the posting chain.
+	CourseID    uint        `gorm:"not null;index" json:"course_id"`
 	Course      Course      `gorm:"foreignKey:CourseID;references:ID" json:"-"`
 	RoleApplied RoleApplied `gorm:"type:enum('labboy');not null" json:"role_applied"`
 	Status      AppStatus   `gorm:"type:enum('pending','accepted','rejected','withdrawn');default:'pending'" json:"status"`
@@ -57,6 +66,7 @@ type Application struct {
 
 	// Computed fields (not in DB)
 	HasGradeProof      bool    `gorm:"-" json:"has_grade_proof"`
+	RequireGradeProof  bool    `gorm:"-" json:"require_grade_proof"`
 	StudentName        string  `gorm:"-" json:"student_name"`
 	StudentCode        string  `gorm:"-" json:"student_code"`
 	StudentGPA         float64 `gorm:"-" json:"student_gpa"`
@@ -102,6 +112,7 @@ type ApplicationHistory struct {
 	ID            uint        `gorm:"primaryKey" json:"id"`
 	ApplicationID uint        `gorm:"not null;index" json:"application_id"`
 	StudentID     uint        `gorm:"not null" json:"student_id"`
+	PostingID     uint        `gorm:"not null;default:0;index" json:"posting_id"`
 	CourseID      uint        `gorm:"not null" json:"course_id"`
 	RoleApplied   RoleApplied `json:"role_applied"`
 	Status        AppStatus   `json:"status"`
@@ -113,8 +124,8 @@ type ApplicationHistory struct {
 	OcrWarning    *string     `gorm:"type:text" json:"ocr_warning,omitempty"`
 	// GradeProofData is included so the instructor can still view proof
 	// from a rejected round when reconsidering.
-	GradeProofFileName string `json:"grade_proof_file_name,omitempty"`
-	GradeProofData     []byte `gorm:"type:longblob" json:"-"`
+	GradeProofFileName string    `json:"grade_proof_file_name,omitempty"`
+	GradeProofData     []byte    `gorm:"type:longblob" json:"-"`
 	ArchivedAt         time.Time `json:"archived_at"`
 }
 
