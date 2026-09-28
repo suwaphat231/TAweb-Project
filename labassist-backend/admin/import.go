@@ -328,10 +328,11 @@ func (h *Handler) ImportCourses(c *gin.Context) {
 		// real FK a matched instructor needs to log in and see this course;
 		// if none match, the course simply has no linked account yet.
 		instructorsRaw := get(row, "instructor")
-		var instructorID uint
+		var instructorID *uint
 		for _, n := range database.SplitInstructorNames(instructorsRaw) {
 			if instructor, ok := matchInstructor(instructors, n); ok {
-				instructorID = instructor.ID
+				id := instructor.ID
+				instructorID = &id
 				break
 			}
 		}
@@ -379,6 +380,10 @@ func (h *Handler) ImportCourses(c *gin.Context) {
 			Status:         models.StatusDraft,
 			HasLab:         labHours > 0,
 		})
+		if course.ID == 0 {
+			resp.Skipped = append(resp.Skipped, ImportSkippedRow{Row: rowNum, Reason: "cannot save course; check duplicate section or instructor"})
+			continue
+		}
 		resp.Created = append(resp.Created, ImportCourseResult{
 			Row: rowNum, Code: course.Code, Title: course.Title, Instructor: instructorsRaw,
 		})
@@ -426,7 +431,8 @@ func (h *Handler) ResolveImportConflicts(c *gin.Context) {
 				course.InstructorsRaw = f.InstructorsRaw
 				for _, n := range database.SplitInstructorNames(f.InstructorsRaw) {
 					if inst, ok := matchInstructor(instructors, n); ok {
-						course.InstructorID = inst.ID
+						id := inst.ID
+						course.InstructorID = &id
 						break
 					}
 				}

@@ -18,12 +18,12 @@ export function FilterChips({ options, value, onChange }: Props) {
             cursor: 'pointer',
             fontSize: 13,
             fontWeight: 600,
-            background: value === o.value ? 'var(--primary)' : '#fff',
+            background: value === o.value ? 'var(--primary)' : 'var(--bg-card)',
             color: value === o.value ? '#fff' : 'var(--ink-500)',
             transition: 'background .15s, color .15s, border-color .15s',
           }}
-          onMouseEnter={(e) => { if (value !== o.value) e.currentTarget.style.background = 'var(--line-soft)' }}
-          onMouseLeave={(e) => { if (value !== o.value) e.currentTarget.style.background = '#fff' }}
+          onMouseEnter={(e) => { if (value !== o.value) { e.currentTarget.style.background = 'var(--primary-50)'; e.currentTarget.style.borderColor = 'var(--primary-100)'; e.currentTarget.style.color = 'var(--primary)' } }}
+          onMouseLeave={(e) => { if (value !== o.value) { e.currentTarget.style.background = 'var(--bg-card)'; e.currentTarget.style.borderColor = 'var(--line)'; e.currentTarget.style.color = 'var(--ink-500)' } }}
         >
           {o.label}
         </button>

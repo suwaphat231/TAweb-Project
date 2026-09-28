@@ -11,6 +11,7 @@ import { getInitials } from '../../../utils/initials'
 import { StatusBadge } from '../../../components/ui/Badge'
 import { Skeleton } from '../../../components/ui/Skeleton'
 import { useToast } from '../../../hooks/useToast'
+import { StudentInfoVerification } from './StudentInfoVerification'
 
 export function ProfileInfoTab() {
   const { user, setUser } = useAuth()
@@ -78,7 +79,8 @@ export function ProfileInfoTab() {
   const gpaPercent = Math.min(100, (gpa / 4) * 100)
 
   return (
-    <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
       {/* Left: avatar summary card */}
       <Card style={{ padding: 24, width: 260, flexShrink: 0 }}>
         {profileLoading ? (
@@ -220,6 +222,8 @@ export function ProfileInfoTab() {
           )}
         </Card>
       </div>
+      </div>
+      <StudentInfoVerification />
     </div>
   )
 }

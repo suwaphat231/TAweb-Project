@@ -56,6 +56,7 @@ export interface TranscriptOCRResult {
 }
 
 export interface Course {
+	posting_id?: number
   id: number
   code: string
   title: string
@@ -63,7 +64,7 @@ export interface Course {
   credits?: string
   section?: number
   schedule?: string
-  instructor_id: number
+  instructor_id: number | null
   instructor_name: string
   instructors_raw?: string
   applicant_count?: number
@@ -79,6 +80,20 @@ export interface Course {
   // just self-reporting it — set per posting by the instructor.
   require_grade_proof: boolean
   labboy_schedule_confirmed: boolean
+  // Set by /student/courses and /student/dashboard when the course schedule
+  // overlaps the student's confirmed term schedule. Empty / absent = no conflict.
+  conflict_day?: string
+  created_at: string
+}
+
+export type CourseInstructorSource = 'imported' | 'self_added'
+
+/** One row from GET /instructor/my-courses — a course linked to the instructor
+ *  via the M:N course_instructors table, with a source badge. */
+export interface CourseRelation {
+  id: number
+  course: Course
+  source: CourseInstructorSource
   created_at: string
 }
 
@@ -103,6 +118,8 @@ export interface Notification {
 }
 
 export interface Application {
+	posting_id?: number
+	posting_active?: boolean
   id: number
   student_id: number
   student_name: string
@@ -121,6 +138,7 @@ export interface Application {
   status: ApplicationStatus
   grade?: string
   has_grade_proof?: boolean
+  require_grade_proof?: boolean
   applied_at: string
   reviewed_at?: string
   reviewed_by_name?: string
@@ -258,6 +276,7 @@ export type DocType = 'hiring_notice' | 'approval_memo' | 'payment_evidence' | '
 export type DocStatus = 'draft' | 'pending' | 'approved'
 
 export interface FormReview {
+	posting_id?: number
   id: number
   course_id: number
   reviewer_id: number
@@ -289,6 +308,7 @@ export interface DocumentPeriod {
 }
 
 export interface StaffDocument {
+	posting_id?: number
   id: number
   name: string
   type: DocType
@@ -394,6 +414,46 @@ export interface DocumentWorkflowItem {
   documentId?: number
   documentName?: string
   createdAt?: string
+}
+
+// ─── Student info OCR ────────────────────────────────────────────────────────
+
+export interface StudentInfoDocument {
+  id: number
+  user_id: number
+  file_name: string
+  ocr_student_id?: string
+  ocr_full_name_th?: string
+  ocr_full_name_en?: string
+  ocr_education_level?: string
+  ocr_curriculum?: string
+  ocr_faculty?: string
+  ocr_campus?: string
+  confidence: number
+  confirmed_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface StudentInfoFieldStr {
+  ocr: string | null
+  current: string | null
+  match: boolean
+}
+
+export interface StudentInfoComparison {
+  student_id: StudentInfoFieldStr
+  full_name_th: StudentInfoFieldStr
+  full_name_en: StudentInfoFieldStr
+  education_level: StudentInfoFieldStr
+  curriculum: StudentInfoFieldStr
+  faculty: StudentInfoFieldStr
+  campus: StudentInfoFieldStr
+}
+
+export interface StudentInfoUploadResult {
+  document: StudentInfoDocument
+  comparison: StudentInfoComparison
 }
 
 /** One time slot parsed from a class timetable image. */

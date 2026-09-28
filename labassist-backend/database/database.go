@@ -2,6 +2,7 @@ package database
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"sort"
 	"strconv"
@@ -40,11 +41,27 @@ var ErrWithdrawalClosed = errors.New("withdrawal not allowed after instructor cl
 // the system timezone database (safe in slim Docker images).
 var bangkokLoc = time.FixedZone("Asia/Bangkok", 7*60*60)
 
+// applyPostingToCourse copies the recruitment-round fields from a Posting onto
+// the Course's gorm:"-" fields so callers get a fully populated Course value
+// without a separate Posting lookup.
+func applyPostingToCourse(p models.Posting, c *models.Course) {
+	c.PostingID = p.ID
+	c.LabBoySlots = p.LabBoySlots
+	c.LabBoyAccepted = p.LabBoyAccepted
+	c.Status = p.Status
+	c.Deadline = p.Deadline
+	c.Description = p.Description
+	c.Requirements = p.Requirements
+	c.RequireGradeProof = p.RequireGradeProof
+	c.ClosedByInstructor = p.ClosedByInstructor
+	c.LabBoyScheduleConfirmed = p.LabBoyScheduleConfirmed
+}
+
 // closeIfPastDeadline flips an open/closing_soon posting to closed once its
-// deadline has passed, persisting the change so every caller — the public
-// catalog, the instructor's own list, admin — sees it closed without needing
-// a background job. Runs lazily on read via courseWithInstructor, the one
-// chokepoint every course-returning query already passes through.
+// deadline has passed, persisting the change to the postings table so every
+// caller sees it closed without needing a background job. Runs lazily on read
+// via courseWithInstructor, the one chokepoint every course-returning query
+// already passes through.
 func closeIfPastDeadline(c models.Course) models.Course {
 	if c.Deadline == nil || (c.Status != models.StatusOpen && c.Status != models.StatusClosingSoon) {
 		return c
@@ -53,22 +70,31 @@ func closeIfPastDeadline(c models.Course) models.Course {
 	endOfDeadline := time.Date(d.Year(), d.Month(), d.Day(), 23, 59, 59, 0, bangkokLoc)
 	if time.Now().After(endOfDeadline) {
 		c.Status = models.StatusClosed
-		DB.Model(&models.Course{}).Where("id = ?", c.ID).Update("status", models.StatusClosed)
+		DB.Model(&models.Posting{}).
+			Where("id = ? AND status IN ?", c.PostingID, []models.CourseStatus{models.StatusOpen, models.StatusClosingSoon}).
+			Update("status", models.StatusClosed)
 	}
 	return c
 }
 
 func courseWithInstructor(c models.Course) models.Course {
+	if p, ok := ActivePostingForCourse(c.ID); ok {
+		applyPostingToCourse(p, &c)
+	}
 	c = closeIfPastDeadline(c)
-	if u, ok := UserByID(c.InstructorID); ok {
-		c.InstructorName = u.FullName
+	if c.InstructorID != nil {
+		if u, ok := UserByID(*c.InstructorID); ok {
+			c.InstructorName = u.FullName
+		}
 	}
 	return c
 }
 
 func countNonWithdrawnApplications(courseID uint) int {
 	var n int64
-	DB.Model(&models.Application{}).Where("course_id = ? AND status <> ?", courseID, models.AppWithdrawn).Count(&n)
+	if p, ok := ActivePostingForCourse(courseID); ok {
+		DB.Model(&models.Application{}).Where("posting_id = ? AND status <> ?", p.ID, models.AppWithdrawn).Count(&n)
+	}
 	return int(n)
 }
 
@@ -89,7 +115,21 @@ func enrichApplication(a models.Application) models.Application {
 			a.StudentYear = int(*u.Year)
 		}
 	}
-	if c, ok := CourseByID(a.CourseID); ok {
+	// Resolve course from the application's own recruitment round so CourseID
+	// is populated correctly even after ResetCourseToDraft creates new postings.
+	if p, ok := postingByID(a.PostingID); ok {
+		a.PostingActive = p.IsActive
+		a.RequireGradeProof = p.RequireGradeProof
+		a.CourseID = p.CourseID
+		if c, ok := CourseByID(p.CourseID); ok {
+			a.CourseCode = c.Code
+			a.CourseTitle = c.Title
+			a.CourseEnglishTitle = c.EnglishTitle
+			a.CourseSection = c.Section
+			a.CourseSchedule = c.Schedule
+		}
+	} else if c, ok := CourseByID(a.CourseID); ok {
+		// Fallback for legacy rows where posting_id was not yet set.
 		a.CourseCode = c.Code
 		a.CourseTitle = c.Title
 		a.CourseEnglishTitle = c.EnglishTitle
@@ -103,6 +143,18 @@ func enrichApplication(a models.Application) models.Application {
 	}
 	a.HasGradeProof = len(a.GradeProofData) > 0
 	return a
+}
+
+// postingByID returns a Posting by its primary key.
+func postingByID(id uint) (models.Posting, bool) {
+	if id == 0 {
+		return models.Posting{}, false
+	}
+	var p models.Posting
+	if DB.First(&p, id).Error != nil {
+		return models.Posting{}, false
+	}
+	return p, true
 }
 
 // --- Users (MySQL-backed via DB, see database/connection.go) ---
@@ -219,9 +271,6 @@ func CountUsersByRole(role models.UserRole) int64 {
 
 func ListCourses(status, q string, hasLab *bool) []models.Course {
 	query := DB.Order("id DESC")
-	if status != "" {
-		query = query.Where("status = ?", status)
-	}
 	if hasLab != nil {
 		query = query.Where("has_lab = ?", *hasLab)
 	}
@@ -231,9 +280,13 @@ func ListCourses(status, q string, hasLab *bool) []models.Course {
 	}
 	var rows []models.Course
 	query.Find(&rows)
-	out := make([]models.Course, len(rows))
-	for i, c := range rows {
-		out[i] = courseWithInstructor(c)
+	out := make([]models.Course, 0, len(rows))
+	for _, c := range rows {
+		enriched := courseWithInstructor(c)
+		if status != "" && string(enriched.Status) != status {
+			continue
+		}
+		out = append(out, enriched)
 	}
 	return out
 }
@@ -246,19 +299,22 @@ func CourseByID(id uint) (models.Course, bool) {
 	return courseWithInstructor(c), true
 }
 
-// InstructorCourses returns courses authorized by stored account ID.
+// InstructorCourses returns courses the instructor owns via the M:N table.
 func InstructorCourses(instructorID uint, fullName string, isAdmin bool, hasLab *bool) []models.Course {
-	query := DB.Order("id DESC")
+	query := DB.Table("courses").Order("courses.id DESC")
+	if !isAdmin {
+		query = query.Joins(
+			"JOIN course_instructors ci ON ci.course_id = courses.id AND ci.instructor_id = ? AND ci.archived_at IS NULL",
+			instructorID,
+		)
+	}
 	if hasLab != nil {
-		query = query.Where("has_lab = ?", *hasLab)
+		query = query.Where("courses.has_lab = ?", *hasLab)
 	}
 	var rows []models.Course
 	query.Find(&rows)
 	out := make([]models.Course, 0, len(rows))
 	for _, c := range rows {
-		if !InstructorOwnsCourse(c, instructorID, fullName, isAdmin) {
-			continue
-		}
 		cc := courseWithInstructor(c)
 		cc.ApplicantCount = countNonWithdrawnApplications(c.ID)
 		out = append(out, cc)
@@ -267,76 +323,163 @@ func InstructorCourses(instructorID uint, fullName string, isAdmin bool, hasLab 
 }
 
 func CreateCourse(c models.Course) models.Course {
-	DB.Create(&c)
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Omit(clause.Associations).Create(&c).Error; err != nil {
+			return err
+		}
+		if c.InstructorID != nil && *c.InstructorID != 0 {
+			ci := models.CourseInstructor{
+				CourseID:     c.ID,
+				InstructorID: *c.InstructorID,
+				Source:       models.CourseInstructorSelfAdded,
+			}
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&ci).Error; err != nil {
+				return err
+			}
+		}
+		return syncPostingTx(tx, c)
+	}); err != nil {
+		return models.Course{}
+	}
 	return courseWithInstructor(c)
 }
 
 func UpdateCourse(id uint, fn func(c *models.Course)) (models.Course, bool) {
 	var c models.Course
-	if err := DB.First(&c, id).Error; err != nil {
-		return models.Course{}, false
-	}
-	fn(&c)
-	// Omit LabBoyAccepted so a concurrent AdjustCourseAccepted cannot be
-	// overwritten by the stale value we read at the top of this call.
-	if err := DB.Model(&c).Omit("LabBoyAccepted").Save(&c).Error; err != nil {
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&c, id).Error; err != nil {
+			return err
+		}
+		var p models.Posting
+		if err := tx.Where("course_id = ? AND is_active = true", id).First(&p).Error; err != nil {
+			return err
+		}
+		applyPostingToCourse(p, &c)
+		fn(&c)
+		if err := tx.Omit(clause.Associations).Save(&c).Error; err != nil {
+			return err
+		}
+		return syncPostingTx(tx, c)
+	}); err != nil {
 		return models.Course{}, false
 	}
 	return courseWithInstructor(c), true
 }
 
 func AdjustCourseAccepted(courseID uint, role models.RoleApplied, delta int) {
-	// Atomic increment/decrement — avoids the read-modify-write race that
-	// would occur if two acceptances ran concurrently.
-	DB.Model(&models.Course{}).Where("id = ?", courseID).
+	// Atomic increment/decrement directly on the posting — courses no longer
+	// stores the accepted count (it's a gorm:"-" field populated from posting).
+	syncPostingAcceptedTx(DB, courseID, delta)
+}
+
+// --- Recruitment posting persistence ---
+
+// postingFromCourse builds a Posting value from a course's recruitment fields.
+func postingFromCourse(c models.Course) models.Posting {
+	return models.Posting{
+		CourseID:                c.ID,
+		IsActive:                true,
+		LabBoySlots:             c.LabBoySlots,
+		LabBoyAccepted:          c.LabBoyAccepted,
+		Status:                  c.Status,
+		Deadline:                c.Deadline,
+		Description:             c.Description,
+		Requirements:            c.Requirements,
+		RequireGradeProof:       c.RequireGradeProof,
+		ClosedByInstructor:      c.ClosedByInstructor,
+		LabBoyScheduleConfirmed: c.LabBoyScheduleConfirmed,
+	}
+}
+
+// syncPostingTx creates or updates the active posting for the course inside
+// the given DB handle (which may be a transaction). LabBoyAccepted is
+// intentionally omitted — use syncPostingAcceptedTx for that field.
+func syncPostingTx(tx *gorm.DB, c models.Course) error {
+	p := postingFromCourse(c)
+	var existing models.Posting
+	err := tx.Where("course_id = ? AND is_active = true", c.ID).First(&existing).Error
+	if err == nil {
+		return tx.Model(&existing).
+			Select("LabBoySlots", "Status", "Deadline", "Description", "Requirements", "RequireGradeProof", "ClosedByInstructor", "LabBoyScheduleConfirmed").
+			Updates(p).Error
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	return tx.Create(&p).Error
+}
+
+// syncPostingAcceptedTx mirrors an atomic lab_boy_accepted delta onto the
+// active posting, matching the concurrent-safe update applied to courses.
+func syncPostingAcceptedTx(tx *gorm.DB, courseID uint, delta int) {
+	tx.Model(&models.Posting{}).
+		Where("course_id = ? AND is_active = true", courseID).
 		UpdateColumn("lab_boy_accepted", gorm.Expr("lab_boy_accepted + ?", delta))
 }
 
-// DeleteCourse removes a single course and any applications submitted for it.
-// Only for admin cleanup of bad/duplicate catalog data (AdminCourses'
-// per-row delete and "ลบทั้งเทอม") — an instructor taking down their own
-// posting goes through ResetCourseToDraft instead, which keeps the
-// underlying section so it can be opened again later.
-func DeleteCourse(id uint) bool {
-	return DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("course_id = ?", id).Delete(&models.Application{}).Error; err != nil {
-			return err
-		}
-		result := tx.Delete(&models.Course{}, id)
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected == 0 {
-			return gorm.ErrRecordNotFound
-		}
-		return nil
-	}) == nil
+// ActivePostingForCourse returns the current recruitment round for a course.
+func ActivePostingForCourse(courseID uint) (models.Posting, bool) {
+	var p models.Posting
+	err := DB.Where("course_id = ? AND is_active = true", courseID).First(&p).Error
+	return p, err == nil
 }
 
-// ResetCourseToDraft is what an instructor's "ลบประกาศ" actually does: wipe
-// every recruiting-specific field and drop all applications submitted
-// against it, but keep the row itself — code/title/section/schedule/
-// instructor/semester/year survive, so the same section can be picked from
-// the catalog and opened again later instead of needing a fresh Excel
-// re-import. (Admin's own delete, for genuinely bad import data, still
-// hard-deletes via DeleteCourse.)
+// deleteEmptyCourseTx rejects deletion of any course with submitted records.
+func deleteEmptyCourseTx(tx *gorm.DB, id uint) error {
+	var course models.Course
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&course, id).Error; err != nil {
+		return err
+	}
+	// Preserve every submitted application, review and issued document.
+	for _, table := range []string{"applications", "application_history", "form_reviews", "staff_documents"} {
+		var n int64
+		if err := tx.Table(table).Where("course_id = ? OR posting_id IN (SELECT id FROM postings WHERE course_id = ?)", id, id).Count(&n).Error; err != nil {
+			return err
+		}
+		if n > 0 {
+			return ErrConflict
+		}
+	}
+	if err := tx.Model(&models.Notification{}).Where("course_id = ?", id).Update("course_id", nil).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("course_id = ?", id).Delete(&models.Posting{}).Error; err != nil {
+		return err
+	}
+	return tx.Delete(&course).Error
+}
+
+func DeleteCourse(id uint) bool {
+	return DB.Transaction(func(tx *gorm.DB) error { return deleteEmptyCourseTx(tx, id) }) == nil
+}
+
+// ResetCourseToDraft is what an instructor's "ลบประกาศ" actually does:
+// archive the current active posting (preserving all application history,
+// form reviews, and staff documents that reference it) and open a blank draft
+// posting for the next recruitment round. The course catalog row — code,
+// title, section, schedule, instructor — is untouched. No applications are
+// deleted; they remain linked to the now-archived posting.
 func ResetCourseToDraft(id uint) (models.Course, bool) {
 	var c models.Course
 	if err := DB.First(&c, id).Error; err != nil {
 		return models.Course{}, false
 	}
-	c.Status = models.StatusDraft
-	c.LabBoySlots = 0
-	c.LabBoyAccepted = 0
-	c.Deadline = nil
-	c.Description = nil
-	c.Requirements = nil
-	c.RequireGradeProof = false
 	if err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Save(&c).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&c, id).Error; err != nil {
 			return err
 		}
-		return tx.Where("course_id = ?", id).Delete(&models.Application{}).Error
+		// Archive the current round — mark it inactive so history is preserved.
+		if err := tx.Model(&models.Posting{}).
+			Where("course_id = ? AND is_active = true", id).
+			Update("is_active", false).Error; err != nil {
+			return err
+		}
+		// Open a fresh draft posting for the new round.
+		return tx.Create(&models.Posting{
+			CourseID: id,
+			IsActive: true,
+			Status:   models.StatusDraft,
+		}).Error
 	}); err != nil {
 		return models.Course{}, false
 	}
@@ -345,15 +488,12 @@ func ResetCourseToDraft(id uint) (models.Course, bool) {
 
 // DeleteCoursesByTerm removes every course in the given semester/academic
 // year and any applications submitted for them, returning the count removed.
-// CourseExists returns true when a course row with the same instructor,
-// code, semester, academic year, and section already exists in the database.
-func CourseExists(instructorID uint, code, semester string, academicYear, section int) bool {
-	var n int64
-	DB.Model(&models.Course{}).
-		Where("instructor_id = ? AND code = ? AND semester = ? AND academic_year = ? AND section = ?",
-			instructorID, code, semester, academicYear, section).
-		Count(&n)
-	return n > 0
+// CourseExists reports whether a teaching slot (code + section + semester +
+// academic_year) is already occupied. The instructor is not part of the key:
+// the same section cannot exist twice regardless of who teaches it.
+func CourseExists(code, semester string, academicYear, section int) bool {
+	_, ok := FindCourseByKey(code, semester, academicYear, section)
+	return ok
 }
 
 // FindCourseByKey returns the existing course occupying the same slot
@@ -365,30 +505,29 @@ func FindCourseByKey(code, semester string, academicYear, section int) (models.C
 	return c, err == nil
 }
 
+// DeleteCoursesByTerm only deletes empty catalog entries; historical data stays.
 func DeleteCoursesByTerm(semester string, academicYear int) int {
-	var n int64
+	deleted := 0
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var ids []uint
-		if err := tx.Model(&models.Course{}).Where("semester = ? AND academic_year = ?", semester, academicYear).Pluck("id", &ids).Error; err != nil {
+		if err := tx.Model(&models.Course{}).Where("semester = ? AND academic_year = ?", semester, academicYear).Order("id").Pluck("id", &ids).Error; err != nil {
 			return err
 		}
-		if len(ids) == 0 {
-			return nil
+		for _, id := range ids {
+			if err := deleteEmptyCourseTx(tx, id); err != nil {
+				if errors.Is(err, ErrConflict) {
+					continue
+				}
+				return err
+			}
+			deleted++
 		}
-		if err := tx.Where("course_id IN ?", ids).Delete(&models.Application{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("course_id IN ?", ids).Delete(&models.FormReview{}).Error; err != nil {
-			return err
-		}
-		result := tx.Where("id IN ?", ids).Delete(&models.Course{})
-		n = result.RowsAffected
-		return result.Error
+		return nil
 	})
 	if err != nil {
 		return 0
 	}
-	return int(n)
+	return deleted
 }
 
 func CountCourses() int64 {
@@ -399,19 +538,21 @@ func CountCourses() int64 {
 
 func CountOpenCourses() int64 {
 	var n int64
-	DB.Model(&models.Course{}).
-		Where("status IN ?", []models.CourseStatus{models.StatusOpen, models.StatusClosingSoon}).
+	DB.Model(&models.Posting{}).
+		Where("status IN ? AND is_active = true", []models.CourseStatus{models.StatusOpen, models.StatusClosingSoon}).
 		Count(&n)
 	return n
 }
 
 func RecentOpenCourses(limit int) []models.Course {
-	var rows []models.Course
-	DB.Where("status IN ?", []models.CourseStatus{models.StatusOpen, models.StatusClosingSoon}).
-		Order("id DESC").Limit(limit).Find(&rows)
-	out := make([]models.Course, len(rows))
-	for i, c := range rows {
-		out[i] = courseWithInstructor(c)
+	var postings []models.Posting
+	DB.Where("status IN ? AND is_active = true", []models.CourseStatus{models.StatusOpen, models.StatusClosingSoon}).
+		Order("id DESC").Limit(limit).Find(&postings)
+	out := make([]models.Course, 0, len(postings))
+	for _, p := range postings {
+		if c, ok := CourseByID(p.CourseID); ok {
+			out = append(out, c)
+		}
 	}
 	return out
 }
@@ -445,9 +586,11 @@ func NormalizeInstructorName(s string) string {
 }
 
 // SplitInstructorNames splits a spreadsheet cell listing one or more
-// instructors (co-taught sections separate names with ";") into individual,
-// trimmed names.
+// instructors into individual, trimmed names.
+// Classlist cells use "\n" as separator; legacy imports may use ";".
 func SplitInstructorNames(s string) []string {
+	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.ReplaceAll(s, "\n", ";")
 	parts := strings.Split(s, ";")
 	names := make([]string, 0, len(parts))
 	for _, p := range parts {
@@ -459,10 +602,23 @@ func SplitInstructorNames(s string) []string {
 	return names
 }
 
-// InstructorOwnsCourse authorizes only the stored account ID or an admin.
-// Display names are user-editable and must never grant access.
+// InstructorOwnsCourse reports whether instructorID has management rights over
+// this course. Only 'imported' rows (sourced from the official classlist) grant
+// management rights. 'self_added' rows allow list visibility only and must never
+// be used to gate write operations — any instructor can create a self_added row,
+// so treating it as ownership would allow privilege escalation.
 func InstructorOwnsCourse(c models.Course, instructorID uint, _ string, isAdmin bool) bool {
-	return isAdmin || (instructorID != 0 && c.InstructorID == instructorID)
+	if isAdmin {
+		return true
+	}
+	if instructorID == 0 || DB == nil {
+		return false
+	}
+	var count int64
+	DB.Model(&models.CourseInstructor{}).
+		Where("course_id = ? AND instructor_id = ? AND source = 'imported' AND archived_at IS NULL", c.ID, instructorID).
+		Count(&count)
+	return count > 0
 }
 
 // InstructorsForCourse returns the instructor account linked to the course.
@@ -479,21 +635,126 @@ func InstructorsForCourse(c models.Course) []models.User {
 	return out
 }
 
-// CoursesTaughtBy returns authorized courses, deduplicated by course code.
-// Courses whose credits string explicitly shows 0 lab hours (e.g. "3 (3-0-6)")
-// are excluded — only lecture-only courses are eligible for Lab Boy hiring.
-func CoursesTaughtBy(instructorID uint, fullName string, isAdmin bool) []models.Course {
+// CourseRelation pairs a CourseInstructor junction row with its full Course
+// for the /instructor/my-courses endpoint.
+type CourseRelation struct {
+	ID        uint                          `json:"id"`
+	Course    models.Course                 `json:"course"`
+	Source    models.CourseInstructorSource `json:"source"`
+	CreatedAt time.Time                     `json:"created_at"`
+}
+
+// MyCourseRelations returns every active (non-archived) course-instructor link
+// for the given instructor, with the full Course embedded.
+func MyCourseRelations(instructorID uint) []CourseRelation {
+	var rows []models.CourseInstructor
+	DB.Where("instructor_id = ? AND archived_at IS NULL", instructorID).
+		Order("id DESC").Find(&rows)
+	out := make([]CourseRelation, 0, len(rows))
+	for _, r := range rows {
+		course, ok := CourseByID(r.CourseID)
+		if !ok {
+			continue
+		}
+		course.ApplicantCount = countNonWithdrawnApplications(r.CourseID)
+		out = append(out, CourseRelation{
+			ID:        r.ID,
+			Course:    course,
+			Source:    r.Source,
+			CreatedAt: r.CreatedAt,
+		})
+	}
+	return out
+}
+
+// CourseCandidates returns courses the instructor is not yet linked to,
+// optionally filtered by semester, academic_year, and a search string.
+// Courses without any instructor (nil InstructorID) are excluded — they are
+// catalog placeholders, not real class sections.
+func CourseCandidates(instructorID uint, semester string, academicYear int, search string) []models.Course {
+	query := DB.Table("courses").
+		Where("courses.instructor_id IS NOT NULL").
+		Where("courses.id NOT IN (SELECT course_id FROM course_instructors WHERE instructor_id = ? AND archived_at IS NULL)", instructorID).
+		Order("courses.code ASC, courses.section ASC")
+	if semester != "" {
+		query = query.Where("courses.semester = ?", semester)
+	}
+	if academicYear > 0 {
+		query = query.Where("courses.academic_year = ?", academicYear)
+	}
+	if search != "" {
+		like := "%" + search + "%"
+		query = query.Where("courses.code LIKE ? OR courses.title LIKE ?", like, like)
+	}
 	var rows []models.Course
-	DB.Order("id DESC").Find(&rows)
+	query.Find(&rows)
+	out := make([]models.Course, 0, len(rows))
+	for _, c := range rows {
+		out = append(out, courseWithInstructor(c))
+	}
+	return out
+}
+
+// AddCourseRelation creates or un-archives a self_added course-instructor link.
+func AddCourseRelation(courseID, instructorID uint) (models.CourseInstructor, bool) {
+	// Check if a soft-deleted row already exists.
+	var existing models.CourseInstructor
+	err := DB.Where("course_id = ? AND instructor_id = ?", courseID, instructorID).First(&existing).Error
+	if err == nil {
+		if existing.ArchivedAt != nil {
+			// Un-archive: flip it back to active.
+			if err := DB.Model(&existing).Updates(map[string]any{
+				"archived_at": nil,
+				"source":      models.CourseInstructorSelfAdded,
+			}).Error; err != nil {
+				return models.CourseInstructor{}, false
+			}
+			existing.ArchivedAt = nil
+			existing.Source = models.CourseInstructorSelfAdded
+		}
+		return existing, true
+	}
+	// Create new.
+	rel := models.CourseInstructor{
+		CourseID:     courseID,
+		InstructorID: instructorID,
+		Source:       models.CourseInstructorSelfAdded,
+	}
+	if err := DB.Create(&rel).Error; err != nil {
+		return models.CourseInstructor{}, false
+	}
+	return rel, true
+}
+
+// RemoveCourseRelation soft-deletes a self_added course-instructor link.
+// Imported links (source='imported') cannot be removed through this path.
+func RemoveCourseRelation(relationID, instructorID uint) bool {
+	var rel models.CourseInstructor
+	if err := DB.Where("id = ? AND instructor_id = ? AND source = 'self_added' AND archived_at IS NULL",
+		relationID, instructorID).First(&rel).Error; err != nil {
+		return false
+	}
+	now := time.Now()
+	return DB.Model(&rel).Update("archived_at", now).Error == nil
+}
+
+// CoursesTaughtBy returns the instructor's courses deduplicated by code,
+// excluding courses with zero lab hours. Backed by the M:N course_instructors
+// table so only explicitly linked courses appear (nil-instructor gap closed).
+func CoursesTaughtBy(instructorID uint, fullName string, isAdmin bool) []models.Course {
+	query := DB.Table("courses").Order("courses.id DESC")
+	if !isAdmin {
+		query = query.Joins(
+			"JOIN course_instructors ci ON ci.course_id = courses.id AND ci.instructor_id = ? AND ci.archived_at IS NULL",
+			instructorID,
+		)
+	}
+	var rows []models.Course
+	query.Find(&rows)
 
 	seenCode := make(map[string]bool, len(rows))
 	out := make([]models.Course, 0)
 	for _, c := range rows {
-		// Unmatched imports (InstructorID=0) are visible to any instructor
-		// in the autocomplete, same policy as TaughtCourseSections.
-		if c.InstructorID != 0 && !InstructorOwnsCourse(c, instructorID, fullName, isAdmin) {
-			continue
-		}
 		if seenCode[c.Code] {
 			continue
 		}
@@ -528,36 +789,27 @@ func CoreCourseCatalog() []models.CoreCourse {
 	return out
 }
 
-// TaughtCourseSections returns every imported class-section row (unlike
-// CoursesTaughtBy, not deduplicated by code) matching code+semester+year that
-// this instructor teaches, section number ascending. Backs the section
-// picker shown when opening a posting — section/schedule always come from
-// the spreadsheet import, never typed in by the instructor, so this is the
-// only source of truth for "which real sections exist for this code."
-//
-// The query also matches codes with a curriculum suffix (e.g. searching
-// "517122" also returns "517122-165") because the university classlist
-// appends a curriculum code to the subject code, and instructors typically
-// search by the bare subject code.
-//
-// Courses whose InstructorID was not matched during import (ID = 0) are
-// included so that the posting flow does not break when name-matching fails
-// at import time — the actual course link is recorded on the Course row
-// created when the posting is opened.
+// TaughtCourseSections returns all sections for a given code/semester/year
+// that the instructor teaches, section-number ascending. Used by the posting
+// section-picker — sections always come from the imported classlist. Backed by
+// the M:N table so unmatched-import nil-instructor rows are no longer exposed
+// to arbitrary instructors.
 func TaughtCourseSections(instructorID uint, fullName string, isAdmin bool, code, semester string, academicYear int) []models.Course {
+	query := DB.Table("courses").
+		Where("(courses.code = ? OR courses.code LIKE ?) AND courses.semester = ? AND courses.academic_year = ?",
+			code, code+"-%", semester, academicYear).
+		Order("courses.section ASC")
+	if !isAdmin {
+		query = query.Joins(
+			"JOIN course_instructors ci ON ci.course_id = courses.id AND ci.instructor_id = ? AND ci.archived_at IS NULL",
+			instructorID,
+		)
+	}
 	var rows []models.Course
-	DB.Where("(code = ? OR code LIKE ?) AND semester = ? AND academic_year = ?",
-		code, code+"-%", semester, academicYear).
-		Order("section ASC").Find(&rows)
+	query.Find(&rows)
 
-	out := make([]models.Course, 0)
+	out := make([]models.Course, 0, len(rows))
 	for _, c := range rows {
-		// Courses with a matched instructor must belong to this instructor.
-		// Courses with InstructorID=0 (unmatched import) are shown to any
-		// instructor so they can still open postings for their own sections.
-		if c.InstructorID != 0 && !InstructorOwnsCourse(c, instructorID, fullName, isAdmin) {
-			continue
-		}
 		cc := courseWithInstructor(c)
 		cc.ApplicantCount = countNonWithdrawnApplications(c.ID)
 		out = append(out, cc)
@@ -608,11 +860,12 @@ func TranscriptByUserID(userID uint) (models.Transcript, bool) {
 // --- Applications ---
 
 func ApplicantsForCourse(courseID uint, roleFilter, statusFilter, search string) []models.Application {
+	posting, ok := ActivePostingForCourse(courseID)
+	if !ok {
+		return []models.Application{}
+	}
 	out := make([]models.Application, 0)
-	for _, a := range applicationRows("course_id = ?", courseID) {
-		if a.CourseID != courseID {
-			continue
-		}
+	for _, a := range applicationRows("posting_id = ?", posting.ID) {
 		if roleFilter != "" && string(a.RoleApplied) != roleFilter {
 			continue
 		}
@@ -648,7 +901,7 @@ func RecentStudentApplications(studentID uint, limit int) []models.Application {
 	all := StudentApplications(studentID)
 	active := all[:0]
 	for _, a := range all {
-		if a.Status != models.AppWithdrawn {
+		if a.PostingActive && a.Status != models.AppWithdrawn {
 			active = append(active, a)
 		}
 	}
@@ -660,7 +913,9 @@ func RecentStudentApplications(studentID uint, limit int) []models.Application {
 
 func CountAppliedByStudent(studentID uint) int64 {
 	var n int64
-	DB.Model(&models.Application{}).Where("student_id = ? AND status <> ?", studentID, models.AppWithdrawn).Count(&n)
+	DB.Model(&models.Application{}).
+		Joins("JOIN postings ON postings.id = applications.posting_id AND postings.is_active = true").
+		Where("student_id = ? AND applications.status <> ?", studentID, models.AppWithdrawn).Count(&n)
 	return n
 }
 
@@ -683,10 +938,30 @@ func ApplicationByIDForStudent(id, studentID uint) (models.Application, bool) {
 func CreateApplication(a models.Application) (models.Application, error) {
 	a.ID = 0
 	a.AppliedAt = time.Now()
+
+	// Resolve the active posting for this course. CallerID passes CourseID;
+	// we set PostingID before persisting.
+	posting, ok := ActivePostingForCourse(a.CourseID)
+	if !ok {
+		return models.Application{}, fmt.Errorf("no active posting for course %d", a.CourseID)
+	}
+	a.PostingID = posting.ID
+
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		// Serialize with reset/delete so an in-flight request cannot attach
+		// itself to a recruitment round that was just archived.
+		var course models.Course
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&course, a.CourseID).Error; err != nil {
+			return err
+		}
+		var current models.Posting
+		if err := tx.Where("id = ? AND is_active = true", a.PostingID).First(&current).Error; err != nil {
+			return ErrConflict
+		}
+		// Check for an existing application for this student in this posting.
 		var existing models.Application
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("student_id = ? AND course_id = ?", a.StudentID, a.CourseID).
+			Where("student_id = ? AND posting_id = ?", a.StudentID, a.PostingID).
 			First(&existing).Error
 		if err == nil {
 			if existing.Status != models.AppWithdrawn && existing.Status != models.AppRejected {
@@ -697,6 +972,7 @@ func CreateApplication(a models.Application) (models.Application, error) {
 			snapshot := models.ApplicationHistory{
 				ApplicationID:      existing.ID,
 				StudentID:          existing.StudentID,
+				PostingID:          existing.PostingID,
 				CourseID:           existing.CourseID,
 				RoleApplied:        existing.RoleApplied,
 				Status:             existing.Status,
@@ -781,8 +1057,8 @@ func WithdrawApplication(id, studentID uint) (models.Application, error) {
 		// deliberately closed the posting; deadline-based auto-close alone
 		// does not block withdrawal (ClosedByInstructor stays false).
 		if a.Status == models.AppAccepted {
-			var course models.Course
-			if err := tx.First(&course, a.CourseID).Error; err == nil && course.ClosedByInstructor {
+			var posting models.Posting
+			if err := tx.First(&posting, a.PostingID).Error; err == nil && posting.ClosedByInstructor {
 				return ErrWithdrawalClosed
 			}
 		}
@@ -792,9 +1068,8 @@ func WithdrawApplication(id, studentID uint) (models.Application, error) {
 			return err
 		}
 		if prevStatus == models.AppAccepted {
-			return tx.Model(&models.Course{}).
-				Where("id = ?", a.CourseID).
-				UpdateColumn("lab_boy_accepted", gorm.Expr("lab_boy_accepted + ?", -1)).Error
+			return tx.Model(&models.Posting{}).Where("id = ?", a.PostingID).
+				UpdateColumn("lab_boy_accepted", gorm.Expr("GREATEST(0, lab_boy_accepted - 1)")).Error
 		}
 		return nil
 	})
@@ -806,6 +1081,7 @@ func WithdrawApplication(id, studentID uint) (models.Application, error) {
 
 // ReviewTxResult is returned by ReviewApplicationTx.
 type ReviewTxResult struct {
+	Archived     bool // archived rounds are read-only
 	Updated      models.Application
 	PrevStatus   models.AppStatus
 	SlotsFull    bool // true when skipped because the course had no remaining slots
@@ -827,9 +1103,13 @@ func ReviewApplicationTx(appID uint, newStatus models.AppStatus, applyFields fun
 			return err
 		}
 
-		var course models.Course
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&course, app.CourseID).Error; err != nil {
+		var posting models.Posting
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&posting, app.PostingID).Error; err != nil {
 			return err
+		}
+		if !posting.IsActive {
+			res.Archived = true
+			return nil
 		}
 
 		// Re-check after acquiring the lock: the student may have withdrawn
@@ -842,13 +1122,13 @@ func ReviewApplicationTx(appID uint, newStatus models.AppStatus, applyFields fun
 		prevStatus := app.Status
 
 		if newStatus == models.AppAccepted && prevStatus != models.AppAccepted {
-			if app.RoleApplied == models.RoleLabBoy && course.LabBoyAccepted >= course.LabBoySlots {
+			if app.RoleApplied == models.RoleLabBoy && posting.LabBoyAccepted >= posting.LabBoySlots {
 				res.SlotsFull = true
 				return nil
 			}
 			// Enforce grade-proof requirement inside the lock so a direct API
 			// call or a race between upload and review cannot bypass it.
-			if course.RequireGradeProof && len(app.GradeProofData) == 0 {
+			if posting.RequireGradeProof && len(app.GradeProofData) == 0 {
 				res.MissingProof = true
 				return nil
 			}
@@ -860,15 +1140,13 @@ func ReviewApplicationTx(appID uint, newStatus models.AppStatus, applyFields fun
 		}
 
 		if newStatus == models.AppAccepted && prevStatus != models.AppAccepted {
-			course.LabBoyAccepted++
-			if err := tx.Omit(clause.Associations).Save(&course).Error; err != nil {
+			if err := tx.Model(&posting).
+				UpdateColumn("lab_boy_accepted", gorm.Expr("lab_boy_accepted + 1")).Error; err != nil {
 				return err
 			}
 		} else if prevStatus == models.AppAccepted && newStatus != models.AppAccepted {
-			if course.LabBoyAccepted > 0 {
-				course.LabBoyAccepted--
-			}
-			if err := tx.Omit(clause.Associations).Save(&course).Error; err != nil {
+			if err := tx.Model(&posting).
+				UpdateColumn("lab_boy_accepted", gorm.Expr("GREATEST(0, lab_boy_accepted - 1)")).Error; err != nil {
 				return err
 			}
 		}
@@ -964,11 +1242,13 @@ func MarkAllNotifsRead(userID uint) {
 }
 
 func AcceptedStudentsForCourse(courseID uint) []models.Application {
+	posting, ok := ActivePostingForCourse(courseID)
+	if !ok {
+		return []models.Application{}
+	}
 	out := make([]models.Application, 0)
-	for _, a := range applicationRows("course_id = ? AND status = ?", courseID, models.AppAccepted) {
-		if a.CourseID == courseID && a.Status == models.AppAccepted {
-			out = append(out, enrichApplication(a))
-		}
+	for _, a := range applicationRows("posting_id = ? AND status = ?", posting.ID, models.AppAccepted) {
+		out = append(out, enrichApplication(a))
 	}
 	return out
 }
@@ -1012,6 +1292,13 @@ func ApplicationHistoryForApplication(applicationID uint) []models.ApplicationHi
 }
 
 func migrateApplicationData(db *gorm.DB) error {
+	// AutoMigrate may remove the legacy unique course_id index while altering
+	// FormReview. Create its replacement first so MySQL can retain the FK.
+	if db.Migrator().HasTable("form_reviews") && !db.Migrator().HasIndex("form_reviews", "idx_form_reviews_course_lookup") {
+		if err := db.Exec("CREATE INDEX idx_form_reviews_course_lookup ON form_reviews(course_id)").Error; err != nil {
+			return fmt.Errorf("prepare form review course FK index: %w", err)
+		}
+	}
 	return db.AutoMigrate(
 		&models.Application{},
 		&models.Notification{},
@@ -1021,5 +1308,45 @@ func migrateApplicationData(db *gorm.DB) error {
 		&models.ApplicationHistory{},
 		&models.ClassSchedule{},
 		&models.TermSchedule{},
+		&models.Posting{},
+		&models.StudentInfoDocument{},
 	)
+}
+
+// BackfillPostings creates one posting per course that does not yet have one.
+// Safe to call multiple times (idempotent). Called on startup after AutoMigrate
+// so every existing course gets a posting row before ensureForeignKeys runs.
+func BackfillPostings(db *gorm.DB) error {
+	var courses []models.Course
+	if err := db.Find(&courses).Error; err != nil {
+		return fmt.Errorf("load courses for posting backfill: %w", err)
+	}
+	for _, c := range courses {
+		var n int64
+		if err := db.Model(&models.Posting{}).Where("course_id = ?", c.ID).Count(&n).Error; err != nil {
+			return err
+		}
+		if n > 0 {
+			continue
+		}
+		p := postingFromCourse(c)
+		// Course's API fields are ignored by GORM. Read the legacy columns
+		// explicitly before creating the first posting; fresh databases have
+		// no such columns and start with a draft.
+		if db.Migrator().HasColumn("courses", "lab_boy_slots") {
+			var legacy models.Posting
+			if err := db.Table("courses").Select("lab_boy_slots", "lab_boy_accepted", "status", "deadline", "description", "requirements", "require_grade_proof", "closed_by_instructor", "lab_boy_schedule_confirmed").Where("id = ?", c.ID).Scan(&legacy).Error; err != nil {
+				return err
+			}
+			p = legacy
+			p.CourseID, p.IsActive = c.ID, true
+		}
+		if p.Status == "" {
+			p.Status = models.StatusDraft
+		}
+		if err := db.Create(&p).Error; err != nil {
+			return fmt.Errorf("backfill posting for course %d: %w", c.ID, err)
+		}
+	}
+	return nil
 }

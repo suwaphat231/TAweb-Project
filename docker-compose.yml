@@ -1,7 +1,9 @@
 services:
   mysql:
     image: mysql:8.4
-    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
+    # Allow the application migration account to create consistency triggers
+    # with binary logging enabled, without granting it SUPER privileges.
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci", "--log-bin-trust-function-creators=1"]
     container_name: labassist-mysql
     restart: unless-stopped
     environment:
@@ -38,7 +40,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-labassist123}
       DB_NAME: ${DB_NAME:-labassist}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET to a generated random secret of at least 32 bytes}
-      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       CLIENT_URL: ${CLIENT_URL:-http://localhost:3000}
       PORT: 8080
@@ -53,6 +55,7 @@ services:
       args:
         VITE_API_URL: /api/v1
         VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+        VITE_DEV_LOGIN: ${VITE_DEV_LOGIN:-true}
     container_name: labassist-frontend
     restart: unless-stopped
     depends_on:

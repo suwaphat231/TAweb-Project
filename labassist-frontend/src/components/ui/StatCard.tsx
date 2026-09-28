@@ -13,7 +13,7 @@ interface Props {
 export function StatCard({ label, value, icon, iconColor, delta, deltaType }: Props) {
   return (
     <Card style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 20 }}>
-      <div style={{ width: 44, height: 44, borderRadius: 10, background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: iconColor, fontSize: 20, flexShrink: 0 }}>
+      <div style={{ width: 44, height: 44, borderRadius: 10, background: 'var(--line-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: iconColor, fontSize: 20, flexShrink: 0 }}>
         {icon}
       </div>
       <div>

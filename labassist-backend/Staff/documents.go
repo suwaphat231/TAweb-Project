@@ -3,6 +3,7 @@ package staff
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -14,13 +15,22 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// roundSatang rounds a baht amount to the nearest satang (2 decimal places)
+// using half-away-from-zero rounding, which is the standard in Thai finance.
+// All monetary values in documents must pass through this function before
+// being stored so that roster amounts and TotalAmount are always consistent.
+func roundSatang(baht float64) float64 {
+	return math.Round(baht*100) / 100
+}
+
 type createDocumentRequest struct {
 	Type      models.DocType `json:"type"    binding:"required"`
 	CourseRef string         `json:"course_ref" binding:"required"`
 	Note      string         `json:"note"`
 
 	// Line-item fields — required when Type is payment_evidence,
-	// payment_request, or work_report.
+	// payment_request, or work_report. The frontend sends course_id; the
+	// handler resolves it to the active posting_id before persisting.
 	CourseID           *uint   `json:"course_id"`
 	Month              int     `json:"month"`
 	Year               int     `json:"year"`
@@ -139,12 +149,19 @@ func (h *Handler) CreateDocument(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "course not found"})
 			return
 		}
+		// Resolve to the active posting for this course.
+		posting, ok := database.ActivePostingForCourse(*body.CourseID)
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "no active recruitment posting for this course"})
+			return
+		}
 
 		excluded := make(map[uint]bool, len(body.ExcludedStudentIDs))
 		for _, id := range body.ExcludedStudentIDs {
 			excluded[id] = true
 		}
 
+		doc.PostingID = &posting.ID
 		doc.CourseID = body.CourseID
 
 		if needsRoster(body.Type) {
@@ -185,29 +202,36 @@ func (h *Handler) CreateDocument(c *gin.Context) {
 				seen[day] = true
 			}
 
-			hours := body.HoursPerSession * float64(len(body.SessionDates))
+			// Compute per-person hours and amount once, both rounded to the
+			// nearest satang so that summing the roster always equals TotalAmount
+			// with no floating-point drift.
+			hours := roundSatang(body.HoursPerSession * float64(len(body.SessionDates)))
+			perAmount := roundSatang(hours * body.Rate)
 			var roster []models.RosterEntry
-			var total float64
 			for _, app := range database.AcceptedStudentsForCourse(*body.CourseID) {
 				if excluded[app.StudentID] {
 					continue
 				}
-				amount := hours * body.Rate
 				roster = append(roster, models.RosterEntry{
 					StudentID:   app.StudentID,
 					StudentName: app.StudentName,
 					StudentCode: app.StudentCode,
 					Hours:       hours,
-					Amount:      amount,
+					Amount:      perAmount,
 				})
-				total += amount
+			}
+			// TotalAmount is the authoritative sum of individual amounts —
+			// never re-derived from formula so document columns always balance.
+			var total float64
+			for _, e := range roster {
+				total += e.Amount
 			}
 			doc.Period = &models.DocumentPeriod{Month: body.Month, Year: body.Year}
 			doc.SessionDates = body.SessionDates
 			doc.HoursPerSession = body.HoursPerSession
 			doc.Rate = body.Rate
 			doc.Roster = roster
-			doc.TotalAmount = total
+			doc.TotalAmount = roundSatang(total)
 		} else {
 			// hiring_notice: student list only, no financial fields.
 			var roster []models.RosterEntry

@@ -46,8 +46,26 @@ func LabBoyAssignmentsForStudent(studentUserID uint) []LabBoyAssignment {
 	DB.Where("student_id = ? AND status = ?", studentUserID, models.AppAccepted).Find(&apps)
 	out := make([]LabBoyAssignment, 0, len(apps))
 	for _, app := range apps {
-		course, ok := CourseByID(app.CourseID)
-		if !ok || !course.LabBoyScheduleConfirmed {
+		// Read schedule-confirmed flag from the posting.
+		p, ok := postingByID(app.PostingID)
+		if !ok {
+			// Fallback: check active posting for the course (legacy row).
+			if app.CourseID != 0 {
+				p, ok = ActivePostingForCourse(app.CourseID)
+			}
+			if !ok {
+				continue
+			}
+		}
+		if !p.IsActive || !p.LabBoyScheduleConfirmed {
+			continue
+		}
+		courseID := p.CourseID
+		if courseID == 0 {
+			courseID = app.CourseID
+		}
+		course, ok := CourseByID(courseID)
+		if !ok {
 			continue
 		}
 		out = append(out, LabBoyAssignment{
@@ -74,19 +92,34 @@ func WorkScheduleForStudent(studentUserID uint) []WorkSession {
 		return []WorkSession{}
 	}
 
-	courseIDs := make([]uint, 0, len(apps))
+	// Collect posting IDs from accepted applications (primary path).
+	postingIDs := make([]uint, 0, len(apps))
+	// Also collect legacy course IDs for apps without posting_id (backup).
+	legacyCourseIDs := make([]uint, 0)
 	for _, a := range apps {
-		courseIDs = append(courseIDs, a.CourseID)
+		if a.PostingID != 0 {
+			postingIDs = append(postingIDs, a.PostingID)
+		} else if a.CourseID != 0 {
+			legacyCourseIDs = append(legacyCourseIDs, a.CourseID)
+		}
 	}
 
 	var docs []models.StaffDocument
-	DB.Where("course_id IN ?", courseIDs).Find(&docs)
+	if len(postingIDs) > 0 {
+		DB.Where("posting_id IN ?", postingIDs).Find(&docs)
+	}
+	// Legacy fallback: also fetch docs linked by course_id for pre-migration rows.
+	if len(legacyCourseIDs) > 0 {
+		var legacyDocs []models.StaffDocument
+		DB.Where("course_id IN ? AND (posting_id IS NULL OR posting_id = 0)", legacyCourseIDs).Find(&legacyDocs)
+		docs = append(docs, legacyDocs...)
+	}
 
 	seen := make(map[string]bool)
 	out := make([]WorkSession, 0)
 
 	for _, doc := range docs {
-		if doc.Period == nil || len(doc.SessionDates) == 0 || doc.CourseID == nil {
+		if doc.Period == nil || len(doc.SessionDates) == 0 {
 			continue
 		}
 		inRoster := false
@@ -100,18 +133,32 @@ func WorkScheduleForStudent(studentUserID uint) []WorkSession {
 			continue
 		}
 
-		course, _ := CourseByID(*doc.CourseID)
+		// Resolve course: prefer posting chain, fall back to direct course_id.
+		var courseID uint
+		if doc.PostingID != nil && *doc.PostingID != 0 {
+			if p, ok := postingByID(*doc.PostingID); ok {
+				courseID = p.CourseID
+			}
+		}
+		if courseID == 0 && doc.CourseID != nil {
+			courseID = *doc.CourseID
+		}
+		if courseID == 0 {
+			continue
+		}
+
+		course, _ := CourseByID(courseID)
 		ceYear := doc.Period.Year - 543
 
 		for _, day := range doc.SessionDates {
 			dateStr := time.Date(ceYear, time.Month(doc.Period.Month), day, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
-			key := fmt.Sprintf("%d_%s", *doc.CourseID, dateStr)
+			key := fmt.Sprintf("%d_%s", courseID, dateStr)
 			if seen[key] {
 				continue
 			}
 			seen[key] = true
 			out = append(out, WorkSession{
-				CourseID:        *doc.CourseID,
+				CourseID:        courseID,
 				CourseCode:      course.Code,
 				CourseTitle:     course.Title,
 				CourseSection:   course.Section,

@@ -43,7 +43,7 @@ export default function StaffCourseDetail() {
   )
 
   const courseDocs = useMemo(
-    () => allDocs.filter((d) => d.course_id === review?.course_id),
+    () => allDocs.filter((d) => review?.posting_id ? d.posting_id === review.posting_id : d.course_id === review?.course_id),
     [allDocs, review],
   )
 

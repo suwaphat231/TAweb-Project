@@ -7,7 +7,7 @@ import type {
   CreateUserPayload, UpdateUserPayload, ImportCoursesResponse, ImportCourseFields,
   FormReview, StaffDocument, CreateStaffDocumentPayload, TranscriptOCRResult, CoreCourse,
   WorkSession, ClassSchedule, ClassScheduleImageResult, TermSchedule, TermOption, ScheduleSlot, TermScheduleStatus,
-  LabBoyAssignment,
+  LabBoyAssignment, CourseRelation, StudentInfoUploadResult,
 } from '../types'
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1'
@@ -53,6 +53,8 @@ export const authApi = {
     api.post<{ token: string; user: User }>('/auth/login', creds).then((r) => r.data),
   google: (payload: GoogleAuthPayload) =>
     api.post<{ token: string; user: User; is_new_user: boolean }>('/auth/google', payload).then((r) => r.data),
+  devLogin: (username: string) =>
+    api.post<{ token: string; user: User }>('/auth/dev-login', { username }).then((r) => r.data),
   me: () => api.get<{ user: User }>('/auth/me').then((r) => r.data.user),
   logout: () => api.post('/auth/logout'),
 }
@@ -208,10 +210,32 @@ export const studentApi = {
     api.put<TermSchedule>('/student/profile/term-schedule', data).then((r) => r.data),
   getAvailableTerms: () =>
     api.get<TermOption[]>('/student/available-terms').then((r) => r.data),
+  courses: (params?: { status?: string; q?: string }) =>
+    api.get<Course[]>('/student/courses', { params }).then((r) => r.data),
+  // Student info document (OCR)
+  uploadStudentInfo: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post<StudentInfoUploadResult>('/student/profile/student-info', formData).then((r) => r.data)
+  },
+  getStudentInfo: () =>
+    api.get<StudentInfoUploadResult>('/student/profile/student-info').then((r) => r.data),
+  confirmStudentInfo: (applyToProfile: boolean) =>
+    api.post<StudentInfoUploadResult>('/student/profile/student-info/confirm', { apply_to_profile: applyToProfile }).then((r) => r.data),
+  getStudentInfoFile: () =>
+    api.get('/student/profile/student-info/file', { responseType: 'blob' }).then((r) => r.data as Blob),
 }
 export const instructorApi = {
   courses: (params?: { has_lab?: boolean }) =>
     api.get<Course[]>('/instructor/courses', { params }).then((r) => r.data),
+  // M:N course relations — used by InstructorMyCourses page
+  myCourses: () => api.get<CourseRelation[]>('/instructor/my-courses').then((r) => r.data),
+  addMyCourse: (courseId: number) =>
+    api.post('/instructor/my-courses', { course_id: courseId }).then((r) => r.data),
+  removeMyCourse: (relationId: number) =>
+    api.delete(`/instructor/my-courses/${relationId}`).then((r) => r.data),
+  courseCandidates: (params?: { semester?: string; academic_year?: number; q?: string }) =>
+    api.get<Course[]>('/instructor/course-candidates', { params }).then((r) => r.data),
   courseCatalog: () => api.get<Course[]>('/instructor/course-catalog').then((r) => r.data),
   // Real sections (with their real Sec number + schedule, straight from the
   // admin's Excel import) available for a given code/semester/year — the

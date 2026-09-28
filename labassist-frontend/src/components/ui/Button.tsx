@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 
 type Variant = 'primary' | 'outline' | 'ghost' | 'success' | 'danger-ghost' | 'danger'
@@ -6,10 +7,19 @@ type Size = 'sm' | 'md'
 const variantStyles: Record<Variant, React.CSSProperties> = {
   primary:        { background: 'var(--primary)', color: '#fff', border: 'none' },
   outline:        { background: 'transparent', color: 'var(--ink-700)', border: '1px solid var(--line)' },
-  ghost:          { background: 'transparent', color: 'var(--ink-700)', border: 'none' },
+  ghost:          { background: 'transparent', color: 'var(--ink-600)', border: 'none' },
   success:        { background: 'var(--green)', color: '#fff', border: 'none' },
   'danger-ghost': { background: 'transparent', color: 'var(--red)', border: 'none' },
   danger:         { background: 'var(--red)', color: '#fff', border: 'none' },
+}
+
+const hoverStyles: Record<Variant, React.CSSProperties> = {
+  primary:        { background: 'var(--primary-700)' },
+  outline:        { background: 'var(--line-soft)', borderColor: 'var(--ink-300)' },
+  ghost:          { background: 'var(--line-soft)' },
+  success:        { background: '#15803D' },
+  'danger-ghost': { background: 'var(--red-bg)' },
+  danger:         { background: '#B91C1C' },
 }
 
 const sizeStyles: Record<Size, React.CSSProperties> = {
@@ -27,32 +37,37 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
 export function Button({
   children, variant = 'primary', size = 'md',
   loading, disabled, icon, style,
-  onMouseDown, onMouseUp, onMouseLeave,
+  onMouseDown, onMouseUp, onMouseEnter, onMouseLeave,
   ...rest
 }: Props) {
+  const [hovered, setHovered] = useState(false)
+  const isDisabled = disabled || loading
+
   return (
     <button
-      disabled={disabled || loading}
+      disabled={isDisabled}
       style={{
         ...variantStyles[variant],
+        ...(hovered && !isDisabled ? hoverStyles[variant] : {}),
         ...sizeStyles[size],
         fontWeight: 600,
         borderRadius: 'var(--radius-btn)',
-        cursor: disabled || loading ? 'not-allowed' : 'pointer',
-        opacity: disabled || loading ? 0.65 : 1,
-        transition: 'opacity .15s, transform .1s',
+        cursor: isDisabled ? 'not-allowed' : 'pointer',
+        opacity: isDisabled ? 0.6 : 1,
+        transition: 'background .15s, border-color .15s, opacity .15s, transform .1s',
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 6,
         ...style,
       }}
+      onMouseEnter={(e) => { setHovered(true); onMouseEnter?.(e) }}
       onMouseDown={(e) => {
-        if (!disabled && !loading) e.currentTarget.style.transform = 'translateY(1px)'
+        if (!isDisabled) e.currentTarget.style.transform = 'translateY(1px)'
         onMouseDown?.(e)
       }}
       onMouseUp={(e) => { e.currentTarget.style.transform = ''; onMouseUp?.(e) }}
-      onMouseLeave={(e) => { e.currentTarget.style.transform = ''; onMouseLeave?.(e) }}
+      onMouseLeave={(e) => { setHovered(false); e.currentTarget.style.transform = ''; onMouseLeave?.(e) }}
       {...rest}
     >
       {loading ? (

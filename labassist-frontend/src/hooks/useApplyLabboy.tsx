@@ -107,7 +107,7 @@ export function useApplyLabboy() {
     setFileError(null)
     pendingAppIdRef.current = null
     pendingCourseIdRef.current = null
-    const firstAvailable = group.sections.find((s) => !(s.labboy_slots > 0 && s.labboy_accepted >= s.labboy_slots))
+    const firstAvailable = group.sections.find((s) => !(s.labboy_slots > 0 && s.labboy_accepted >= s.labboy_slots) && !s.conflict_day)
     setSelectedSectionId((firstAvailable ?? group.sections[0])?.id ?? null)
     setApplyTarget(group)
   }
@@ -148,39 +148,57 @@ export function useApplyLabboy() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {applyTarget.sections.map((s) => {
                 const isFull = s.labboy_slots > 0 && s.labboy_accepted >= s.labboy_slots
+                const isConflict = !!s.conflict_day
+                const isDisabled = isFull || isConflict
                 const isSelected = selectedSectionId === s.id
                 return (
                   <button
                     key={s.id}
                     type="button"
-                    disabled={isFull}
-                    onClick={() => !isFull && setSelectedSectionId(s.id)}
+                    disabled={isDisabled}
+                    onClick={() => !isDisabled && setSelectedSectionId(s.id)}
                     style={{
                       padding: '10px 12px',
                       borderRadius: 10,
-                      border: isSelected ? '2px solid var(--primary)' : '1.5px solid var(--line)',
-                      background: isSelected ? 'var(--primary-50)' : isFull ? '#F5F5F5' : '#fff',
-                      cursor: isFull ? 'not-allowed' : 'pointer',
+                      border: isSelected ? '2px solid var(--primary)' : isConflict ? '1.5px solid var(--amber)' : '1.5px solid var(--line)',
+                      background: isSelected ? 'var(--primary-50)' : isConflict ? 'var(--amber-bg)' : isFull ? '#F5F5F5' : '#fff',
+                      cursor: isDisabled ? 'not-allowed' : 'pointer',
                       textAlign: 'left',
                       opacity: isFull ? 0.5 : 1,
                       transition: 'border .15s, background .15s',
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: isSelected ? 'var(--primary)' : 'var(--ink-900)' }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: isSelected ? 'var(--primary)' : isConflict ? 'var(--amber)' : 'var(--ink-900)' }}>
                         Sec {s.section}
                         {isFull && <span style={{ fontWeight: 400, fontSize: 11, marginLeft: 6, color: 'var(--red)' }}>เต็มแล้ว</span>}
+                        {isConflict && <span style={{ fontWeight: 400, fontSize: 11, marginLeft: 6, color: 'var(--amber)' }}>ชนตาราง</span>}
                       </span>
                       <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>{s.labboy_accepted} / {s.labboy_slots} คน</span>
                     </div>
-                    {s.schedule && <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2 }}>🕐 {s.schedule}</div>}
+                    {s.schedule && <div style={{ fontSize: 12, color: isConflict ? 'var(--amber)' : 'var(--ink-500)', marginTop: 2 }}>🕐 {s.schedule}</div>}
                   </button>
                 )
               })}
             </div>
           </div>
-        ) : selectedSection?.schedule ? (
-          <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>🕐 {selectedSection.schedule}</div>
+        ) : selectedSection ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {selectedSection.schedule && (
+              <div style={{ fontSize: 13, color: selectedSection.conflict_day ? 'var(--amber)' : 'var(--ink-500)' }}>
+                🕐 {selectedSection.schedule}
+              </div>
+            )}
+            {selectedSection.conflict_day && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--amber)', fontWeight: 600,
+                padding: '8px 12px', background: 'var(--amber-bg)', borderRadius: 8 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+                ชนกับช่วงเวลาที่ติดเรียน ไม่สามารถสมัครได้
+              </div>
+            )}
+          </div>
         ) : null}
 
         <Select
@@ -215,7 +233,7 @@ export function useApplyLabboy() {
           <Button
             onClick={confirmApply}
             loading={applyMutation.isPending}
-            disabled={!selectedSectionId || (requireGradeProof && !gradeProofFile) || !!fileError}
+            disabled={!selectedSectionId || !!selectedSection?.conflict_day || (requireGradeProof && !gradeProofFile) || !!fileError}
           >
             ยืนยันสมัคร
           </Button>

@@ -1,20 +1,21 @@
 package database
 
 import (
+	"fmt"
 	"labassist/models"
 	"time"
+
+	"gorm.io/gorm/clause"
 )
 
-// mockDemoInstructor reuses the existing seeded instructor account
-// (username "somchai" from database/Docker/user.sql, password123) rather than
-// a separate demo login. If that account isn't present yet (e.g. a fresh DB
-// that hasn't run user.sql), it's created here with the same identity so the
-// seed still works.
+// mockDemoInstructor uses the classlist instructor account "puriwat"
+// (อาจารย์ ดร.ภูริวัจน์ วรวิชัยพัฒน์) so the dev-login "อาจารย์" button
+// lands on the same account that owns the demo course.
 var mockDemoInstructor = struct {
 	Username string
 	FullName string
 	Email    string
-}{"somchai", "ผศ.ดร. ภูริวัจน์ วรวิชัยพัฒน์", "somchai@cp.su.ac.th"}
+}{"puriwat", "อาจารย์ ดร.ภูริวัจน์ วรวิชัยพัฒน์", "puriwat@cp.su.ac.th"}
 
 // mockDemoCourseBase is the primary debug course: open, 6 Lab Boy slots,
 // 5 pre-applied students — the 6th slot is left for a real student to fill.
@@ -77,35 +78,42 @@ func seedMockApplicants() error {
 		}
 	}
 
-	var course models.Course
-	err := DB.Where("code = ? AND instructor_id = ? AND semester = ? AND academic_year = ? AND section = ?",
-		mockDemoCourseBase.Code, instructor.ID, mockDemoCourseBase.Semester, mockDemoCourseBase.AcademicYear, mockDemoSection.Section).
-		First(&course).Error
-	if err != nil {
+	course, found := FindCourseByKey(mockDemoCourseBase.Code, mockDemoCourseBase.Semester, mockDemoCourseBase.AcademicYear, mockDemoSection.Section)
+	if !found {
 		deadline := time.Now().AddDate(0, 0, 21)
 		newCourse := mockDemoCourseBase
-		newCourse.InstructorID = instructor.ID
+		newCourse.InstructorID = &instructor.ID
 		newCourse.Section = mockDemoSection.Section
 		newCourse.Schedule = mockDemoSection.Schedule
 		newCourse.Deadline = &deadline
-		desc := "รับสมัครผู้ดูแลห้องปฏิบัติการ (Lab Boy) ประจำภาคการศึกษา"
-		newCourse.Description = &desc
 		course = CreateCourse(newCourse)
+		if course.ID == 0 {
+			return fmt.Errorf("create demo course")
+		}
 	} else {
-		// Upgrade existing course if it was previously created as draft or with wrong slots.
-		updates := map[string]interface{}{}
+		// Seed only an untouched draft; retain existing recruitment decisions.
+		course = courseWithInstructor(course)
 		if course.Status == models.StatusDraft {
-			updates["status"] = models.StatusOpen
-			course.Status = models.StatusOpen
-		}
-		if course.LabBoySlots != mockDemoCourseBase.LabBoySlots {
-			updates["lab_boy_slots"] = mockDemoCourseBase.LabBoySlots
-			course.LabBoySlots = mockDemoCourseBase.LabBoySlots
-		}
-		if len(updates) > 0 {
-			DB.Model(&course).Updates(updates)
+			var saved bool
+			course, saved = UpdateCourse(course.ID, func(c *models.Course) {
+				c.InstructorID = &instructor.ID
+				c.Status = models.StatusOpen
+				c.LabBoySlots = mockDemoCourseBase.LabBoySlots
+			})
+			if !saved {
+				return fmt.Errorf("initialize demo posting")
+			}
 		}
 	}
+
+	// Guarantee the instructor has a course_instructors row so InstructorCourses
+	// (which JOINs on that table) can find this course regardless of whether
+	// backfillCourseInstructors ran before or after the demo course was created.
+	DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.CourseInstructor{
+		CourseID:     course.ID,
+		InstructorID: instructor.ID,
+		Source:       models.CourseInstructorImported,
+	})
 
 	for _, s := range mockDemoStudents {
 		student, ok := UserByUsername(s.Username)

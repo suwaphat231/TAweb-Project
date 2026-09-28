@@ -90,8 +90,8 @@ export function Sidebar({ collapsed = false, onClose }: Props) {
       height: '100vh',
       overflowY: 'auto',
       overflowX: 'hidden',
-      background: 'var(--navy)',
-      borderRight: '1px solid var(--line)',
+      background: '#1E1B4B',
+      borderRight: '1px solid rgba(255,255,255,0.07)',
       display: 'flex',
       flexDirection: 'column',
       width: collapsed ? 64 : 248,
@@ -111,10 +111,10 @@ export function Sidebar({ collapsed = false, onClose }: Props) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
             width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-            background: 'var(--accent)',
+            background: 'linear-gradient(135deg, #6366F1, #4338CA)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: '#fff', fontSize: 17, fontWeight: 700,
-            boxShadow: 'none',
+            boxShadow: '0 2px 8px rgba(99,102,241,0.4)',
           }}>L</div>
           {!collapsed && (
             <div>
@@ -148,17 +148,17 @@ export function Sidebar({ collapsed = false, onClose }: Props) {
               display: 'flex',
               alignItems: 'center',
               gap: collapsed ? 0 : 10,
-              padding: collapsed ? '12px 0' : '11px 12px',
-              marginBottom: 4,
+              padding: collapsed ? '12px 0' : '10px 12px',
+              marginBottom: 2,
               borderRadius: 8,
               justifyContent: collapsed ? 'center' : 'flex-start',
-              fontSize: 14,
+              fontSize: 13.5,
               fontWeight: isActive ? 600 : 400,
-              color: isActive ? '#fff' : 'var(--ink-700)',
-              background: isActive ? 'var(--primary)' : 'transparent',
-
+              color: isActive ? '#FFFFFF' : 'var(--ink-400)',
+              background: isActive ? 'rgba(99,102,241,0.25)' : 'transparent',
+              boxShadow: isActive ? 'inset 3px 0 0 #818CF8' : 'none',
               textDecoration: 'none',
-              transition: 'background .1s, color .1s',
+              transition: 'background .15s, color .15s',
             })}
           >
             <span style={{ flexShrink: 0, display: 'flex' }}><Ico name={item.icon} /></span>
