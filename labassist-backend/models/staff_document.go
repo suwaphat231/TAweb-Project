@@ -12,9 +12,14 @@ const (
 	DocPaymentRequest  DocType = "payment_request"
 	DocWorkReport      DocType = "work_report"
 
-	DocDraft    DocStatus = "draft"
-	DocPending  DocStatus = "pending"
-	DocApproved DocStatus = "approved"
+	DocDraft             DocStatus = "draft"
+	DocPending           DocStatus = "pending"
+	DocApproved          DocStatus = "approved"
+	DocGenerated         DocStatus = "generated"
+	DocAwaitingSignature DocStatus = "awaiting_signature"
+	DocSigned            DocStatus = "signed"
+	DocCancelled         DocStatus = "cancelled"
+	DocSuperseded        DocStatus = "superseded"
 )
 
 // RosterEntry is a per-student line item, computed and frozen onto a
@@ -50,7 +55,7 @@ type StaffDocument struct {
 	PostingID *uint     `gorm:"index" json:"posting_id,omitempty"`
 	CourseID  *uint     `json:"course_id,omitempty"`
 	StaffID   uint      `gorm:"not null" json:"staff_id"`
-	Status    DocStatus `gorm:"type:enum('draft','pending','approved');not null;default:'draft'" json:"status"`
+	Status    DocStatus `gorm:"type:enum('draft','pending','approved','generated','awaiting_signature','signed','cancelled','superseded');not null;default:'draft'" json:"status"`
 	Note      string    `gorm:"type:text" json:"note,omitempty"`
 
 	// Line-item fields, populated only for the 3 document types that carry
@@ -78,6 +83,28 @@ type StaffDocument struct {
 	DeptHeadName     string `json:"dept_head_name,omitempty"`
 	DeanName         string `json:"dean_name,omitempty"`
 	StaffOfficerName string `json:"staff_officer_name,omitempty"`
+
+	// StaffCaseID links this document to the new staff case workflow. Nullable
+	// for backwards compatibility with documents created before StaffCase existed.
+	StaffCaseID     *uint `gorm:"index" json:"staff_case_id,omitempty"`
+	MonthlyPeriodID *uint `gorm:"index" json:"monthly_period_id,omitempty"`
+
+	// Versioning: each time a signed document is revised a new StaffDocument row
+	// is created with Version incremented and the old row's SupersededByID set.
+	Version        int   `gorm:"not null;default:1" json:"version"`
+	SupersededByID *uint `gorm:"index" json:"superseded_by_id,omitempty"`
+
+	// Signed document upload — separate from generated DOCX bytes.
+	SignedFileName string    `json:"signed_file_name,omitempty"`
+	SignedFileData []byte    `gorm:"type:longblob" json:"-"`
+	SignedAt       *time.Time `json:"signed_at,omitempty"`
+	SignedByID     *uint     `json:"signed_by_id,omitempty"`
+
+	// DataSnapshot is a JSON-encoded copy of all inputs used to generate this
+	// document, frozen at creation time so the document is reproducible even
+	// after source data changes.
+	DataSnapshot    string `gorm:"type:longtext" json:"-"`
+	SnapshotVersion int    `gorm:"default:1" json:"snapshot_version"`
 
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 }
