@@ -15,7 +15,7 @@ export const WORKFLOW_STEPS: { step: number; label: string; docType: DocType | n
 export const TOTAL_DOC_STEPS = WORKFLOW_STEPS.length
 
 export function buildCourseOffering(review: FormReview, allDocs: StaffDocument[]): CourseOffering {
-  const courseDocs = allDocs.filter((d) => d.course_id === review.course_id)
+  const courseDocs = allDocs.filter((d) => review.posting_id ? d.posting_id === review.posting_id : d.course_id === review.course_id)
   const approvedDocs = courseDocs.filter((d) => d.status === 'approved').length
 
   let docStatus: CourseDocStatus = 'waiting'

@@ -217,6 +217,34 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "ออกจากระบบแล้ว"})
 }
 
+// DevLogin signs a token for any active user by username without checking a
+// password. Only active when SeedDemoData=true — never register this route in
+// production.
+func (h *AuthHandler) DevLogin(c *gin.Context) {
+	if !h.cfg.SeedDemoData {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	var body struct {
+		Username string `json:"username" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "username required"})
+		return
+	}
+	user, ok := database.UserByUsername(body.Username)
+	if !ok || !user.IsActive {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+	token, err := middleware.SignToken(h.cfg, user.ID, string(user.Role), user.FullName)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot create token"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"token": token, "user": user})
+}
+
 // Only verified accounts managed by the university may use this sign-in flow.
 func isUniversityGoogleAccount(payload *idtoken.Payload) bool {
 	email, _ := payload.Claims["email"].(string)

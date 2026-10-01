@@ -33,9 +33,10 @@ export function Select({ label, hint, options, error, id, style, ...rest }: Prop
           fontSize: 14,
           color: 'var(--ink-900)',
           outline: 'none',
-          background: '#fff',
+          background: 'var(--bg-card)',
           width: '100%',
           cursor: 'pointer',
+          transition: 'border-color .15s, box-shadow .15s',
           ...style,
         }}
         {...rest}

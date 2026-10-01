@@ -10,11 +10,12 @@ const (
 	ReviewReturned ReviewStatus = "returned"
 )
 
-// FormReview tracks the staff's review decision for a single course posting.
-// CourseID is the unique key (one review per course).
+// FormReview tracks the staff's review decision for one recruitment posting.
+// One review per posting (unique constraint managed in migrateToPostingFKs).
 type FormReview struct {
 	ID         uint         `gorm:"primaryKey" json:"id"`
-	CourseID   uint         `gorm:"not null;uniqueIndex" json:"course_id"`
+	PostingID  uint         `gorm:"not null;default:0;index" json:"posting_id"`
+	CourseID   uint         `gorm:"not null;index:idx_form_reviews_course_lookup" json:"course_id"`
 	ReviewerID uint         `gorm:"not null" json:"reviewer_id"`
 	Status     ReviewStatus `gorm:"type:enum('pending','verified','returned');not null;default:'pending'" json:"status"`
 	Note       string       `gorm:"type:text" json:"note,omitempty"`

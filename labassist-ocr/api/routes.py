@@ -2,11 +2,12 @@ from pathlib import Path
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 import json
-from models.schemas import OCRResponse, SubjectCriteria, ScheduleOCRResponse
+from models.schemas import OCRResponse, SubjectCriteria, ScheduleOCRResponse, StudentInfoExtractResult
 from services.preprocessor import preprocess_image, preprocess_pages
 from services.ocr_engine import extract_text
 from services.processor import parse_transcript, evaluate_grades
 from services.schedule_parser import parse_schedule
+from services.student_info_parser import extract_student_info
 
 router = APIRouter()
 
@@ -128,5 +129,45 @@ async def process_schedule(file: UploadFile = File(...)):
             raw_text=raw_text,
             confidence=round(avg_confidence, 3),
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาดในการประมวลผล: {str(e)}")
+
+
+@router.post("/student-information/extract", response_model=StudentInfoExtractResult)
+async def extract_student_information(file: UploadFile = File(...)):
+    """
+    อ่านข้อมูลนักศึกษาจากรูปภาพเอกสาร (บัตรนักศึกษา / ใบแสดงข้อมูล)
+    ดึง: รหัสนักศึกษา, ชื่อ-นามสกุล, ภาควิชา, ชั้นปี, เกรดเฉลี่ยสะสม
+    รองรับ PNG / JPG เท่านั้น
+    """
+    extension = Path(file.filename or "").suffix.lower()
+    if extension not in {".png", ".jpg", ".jpeg"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"ไม่รองรับไฟล์นามสกุล '{extension}' กรุณาอัปโหลดไฟล์ PNG หรือ JPG เท่านั้น",
+        )
+
+    try:
+        file_bytes = await file.read()
+        if len(file_bytes) > MAX_FILE_BYTES:
+            raise HTTPException(status_code=413, detail=f"ไฟล์ใหญ่เกิน {MAX_FILE_BYTES // (1024 * 1024)} MB")
+
+        processed_image = preprocess_image(file_bytes)
+        ocr_results = extract_text(processed_image)
+
+        fields, confidence = extract_student_info(ocr_results)
+
+        return StudentInfoExtractResult(
+            student_id=fields.get("student_id"),
+            full_name_th=fields.get("full_name_th"),
+            full_name_en=fields.get("full_name_en"),
+            education_level=fields.get("education_level"),
+            curriculum=fields.get("curriculum"),
+            faculty=fields.get("faculty"),
+            campus=fields.get("campus"),
+            confidence=round(confidence, 3),
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาดในการประมวลผล: {str(e)}")

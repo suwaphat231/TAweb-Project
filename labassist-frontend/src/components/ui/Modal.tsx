@@ -74,9 +74,9 @@ export function Modal({ isOpen, onClose, title, children, footer, size = 'md' }:
         ref={dialogRef}
         tabIndex={-1}
         style={{
-          background: '#fff',
+          background: 'var(--bg-card)',
           borderRadius: 'var(--radius-card)',
-          boxShadow: '0 20px 60px rgba(0,0,0,0.15)',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.18)',
           width: '100%',
           maxWidth: sizeMap[size],
           maxHeight: '90vh',

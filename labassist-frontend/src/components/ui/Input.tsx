@@ -37,7 +37,7 @@ export function Input({ label, hint, icon, error, id, style, onFocus, onBlur, ..
             fontSize: 14,
             color: 'var(--ink-900)',
             outline: 'none',
-            background: '#fff',
+            background: 'var(--bg-card)',
             transition: 'border-color .15s, box-shadow .15s',
             width: '100%',
             ...style,

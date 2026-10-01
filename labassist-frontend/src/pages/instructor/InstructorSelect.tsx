@@ -51,6 +51,7 @@ export default function InstructorSelect() {
   })
 
   const [gradeProofUrl, setGradeProofUrl] = useState<string | null>(null)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
 
   useEffect(() => {
     if (!profileTarget?.has_grade_proof) return
@@ -207,6 +208,7 @@ export default function InstructorSelect() {
   function openProfile(app: Application) {
     setNoteText('')
     setGradeProofUrl(null)
+    setLightboxOpen(false)
     setProfileTarget(app)
   }
 
@@ -712,6 +714,51 @@ export default function InstructorSelect() {
         </div>
       </Modal>
 
+      {/* ── Grade Proof Lightbox ── */}
+      {lightboxOpen && gradeProofUrl && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="รูปภาพเกรดยืนยัน"
+          onClick={() => setLightboxOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 2000,
+            background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(6px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 24,
+          }}
+        >
+          <button
+            onClick={() => setLightboxOpen(false)}
+            aria-label="ปิด"
+            style={{
+              position: 'fixed', top: 20, right: 24,
+              background: 'rgba(255,255,255,0.15)', border: 'none',
+              borderRadius: '50%', width: 40, height: 40,
+              cursor: 'pointer', color: '#fff', fontSize: 22, lineHeight: 1,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              backdropFilter: 'blur(4px)',
+              transition: 'background .15s',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.28)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.15)')}
+          >
+            ×
+          </button>
+          <img
+            src={gradeProofUrl}
+            alt="รูปภาพเกรดยืนยัน"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: '90vw', maxHeight: '85vh',
+              objectFit: 'contain', borderRadius: 12,
+              boxShadow: '0 24px 80px rgba(0,0,0,0.5)',
+              animation: 'fadeIn .15s ease',
+            }}
+          />
+        </div>
+      )}
+
       {/* ── Applicant Detail Modal ── */}
       <Modal isOpen={!!profileTarget} onClose={() => setProfileTarget(null)} title="ตรวจสอบรายละเอียดผู้สมัคร" size="md">
         {profileTarget && (
@@ -752,11 +799,35 @@ export default function InstructorSelect() {
                 {!profileTarget.has_grade_proof ? (
                   <div style={{ fontSize: 13, color: 'var(--red)', fontWeight: 500 }}>ยังไม่ได้แนบรูปภาพ</div>
                 ) : gradeProofUrl ? (
-                  <img
-                    src={gradeProofUrl} alt="รูปภาพเกรดยืนยัน"
-                    onClick={() => window.open(gradeProofUrl, '_blank')}
-                    style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--line)', cursor: 'pointer' }}
-                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <img
+                      src={gradeProofUrl} alt="รูปภาพเกรดยืนยัน"
+                      onClick={() => setLightboxOpen(true)}
+                      style={{
+                        width: 72, height: 72, objectFit: 'cover', borderRadius: 8,
+                        border: '1.5px solid var(--line)', cursor: 'zoom-in',
+                        transition: 'border-color .15s, box-shadow .15s',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = 'var(--primary)'
+                        e.currentTarget.style.boxShadow = '0 0 0 3px var(--primary-100)'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = 'var(--line)'
+                        e.currentTarget.style.boxShadow = 'none'
+                      }}
+                    />
+                    <button
+                      onClick={() => setLightboxOpen(true)}
+                      style={{
+                        fontSize: 12, color: 'var(--primary)', background: 'none',
+                        border: 'none', cursor: 'pointer', padding: 0, fontWeight: 600,
+                        textDecoration: 'underline',
+                      }}
+                    >
+                      ดูรูปภาพ
+                    </button>
+                  </div>
                 ) : (
                   <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>กำลังโหลด...</div>
                 )}

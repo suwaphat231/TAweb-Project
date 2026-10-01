@@ -482,7 +482,7 @@ export default function AdminCourses() {
           style={{ display: 'flex', flexDirection: 'column', gap: 14 }}
         >
           <p style={{ fontSize: 13, color: 'var(--ink-500)' }}>
-            ลบวิชาทั้งหมดที่ตรงกับภาคการศึกษาและปีการศึกษาที่ระบุ พร้อมใบสมัครที่เกี่ยวข้อง — ใช้เพื่อล้างข้อมูลที่นำเข้าผิดพลาด
+            ลบเฉพาะวิชาที่ไม่มีใบสมัคร ผลตรวจ หรือเอกสาร ในภาคการศึกษาและปีการศึกษาที่ระบุ วิชาที่มีประวัติจะถูกข้าม
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Input label="ภาคการศึกษา *" value={bulkSemester} onChange={(e) => setBulkSemester(e.target.value)} required />

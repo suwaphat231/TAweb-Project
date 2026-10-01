@@ -20,3 +20,21 @@ class ScheduleOCRResponse(BaseModel):
     slots: List[ScheduleSlot]
     raw_text: str     # full OCR text dump for debugging
     confidence: float # average confidence of detected tokens
+
+class StudentInfoExtractResult(BaseModel):
+    """Fields extracted from a student information document.
+
+    Allowlist: student_id, full_name_th, full_name_en, education_level,
+               curriculum, faculty, campus.
+
+    Sensitive fields (national_id, birth_date, age, religion, nationality,
+    address, postal_code, phone, emergency_contact) are never returned.
+    """
+    student_id: Optional[str] = None
+    full_name_th: Optional[str] = None
+    full_name_en: Optional[str] = None
+    education_level: Optional[str] = None
+    curriculum: Optional[str] = None
+    faculty: Optional[str] = None
+    campus: Optional[str] = None
+    confidence: float

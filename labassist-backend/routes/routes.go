@@ -32,6 +32,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 	// Public
 	v1.POST("/auth/login", authH.Login)
 	v1.POST("/auth/google", authH.GoogleLogin)
+	v1.POST("/auth/dev-login", authH.DevLogin)
 	v1.GET("/courses", courseH.List)
 	v1.GET("/courses/:id", courseH.Get)
 
@@ -73,6 +74,12 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			studentGroup.GET("/student/profile/term-schedule", studentH.GetTermSchedule)
 			studentGroup.PUT("/student/profile/term-schedule", studentH.SaveTermSchedule)
 			studentGroup.GET("/student/available-terms", studentH.GetAvailableTerms)
+			studentGroup.GET("/student/courses", studentH.StudentCourses)
+			// OCR: อ่านข้อมูลนักศึกษาจากเอกสาร/บัตรนักศึกษา
+			studentGroup.POST("/student/profile/student-info", studentH.UploadStudentInfo)
+			studentGroup.GET("/student/profile/student-info", studentH.GetStudentInfo)
+			studentGroup.POST("/student/profile/student-info/confirm", studentH.ConfirmStudentInfo)
+			studentGroup.GET("/student/profile/student-info/file", studentH.GetStudentInfoFile)
 		}
 
 		// Instructor
@@ -80,6 +87,10 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 		instructor.Use(middleware.RequireRole("instructor", "admin"))
 		{
 			instructor.GET("/instructor/courses", teacherH.InstructorList)
+			instructor.GET("/instructor/my-courses", teacherH.MyCourses)
+			instructor.POST("/instructor/my-courses", teacherH.AddMyCourse)
+			instructor.DELETE("/instructor/my-courses/:id", teacherH.RemoveMyCourse)
+			instructor.GET("/instructor/course-candidates", teacherH.CourseCandidatesList)
 			instructor.GET("/instructor/course-catalog", teacherH.CourseCatalog)
 			instructor.GET("/instructor/course-catalog/sections", teacherH.CourseCatalogSections)
 			instructor.POST("/instructor/courses", teacherH.Create)

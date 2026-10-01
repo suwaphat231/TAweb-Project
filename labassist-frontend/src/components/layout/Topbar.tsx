@@ -121,16 +121,16 @@ function NotificationBell() {
         <div style={{
           position: 'absolute', top: 'calc(100% + 8px)', right: 0,
           width: 320, maxHeight: 420, overflowY: 'auto',
-          background: '#fff', borderRadius: 12,
+          background: 'var(--bg-card)', borderRadius: 12,
           border: '1px solid var(--line)',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+          boxShadow: 'var(--shadow-lg)',
           zIndex: 200,
         }}>
           {/* Header */}
           <div style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
             padding: '12px 16px', borderBottom: '1px solid var(--line-soft)',
-            position: 'sticky', top: 0, background: '#fff',
+            position: 'sticky', top: 0, background: 'var(--bg-card)',
           }}>
             <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-900)' }}>
               การแจ้งเตือน
@@ -175,7 +175,7 @@ function NotificationBell() {
                   style={{
                     padding: '12px 16px',
                     borderBottom: '1px solid var(--line-soft)',
-                    background: '#fff',
+                    background: 'var(--bg-card)',
                     borderLeft: '3px solid transparent',
                   }}
                 >
@@ -225,14 +225,14 @@ export function Topbar({ title, breadcrumb, actions, onHamburgerClick }: Props) 
       position: 'sticky',
       top: 0,
       height: 'var(--topbar-h)',
-      background: '#fff',
+      background: 'var(--bg-card)',
       borderBottom: '1px solid var(--line)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
       padding: '0 28px',
       zIndex: 50,
-      boxShadow: 'none',
+      boxShadow: '0 1px 3px rgba(15,23,42,0.05)',
       flexShrink: 0,
     }}>
       {/* Left: hamburger (mobile) + breadcrumb + title */}

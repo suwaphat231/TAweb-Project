@@ -43,7 +43,7 @@ func (h *Handler) StudentDashboard(c *gin.Context) {
 	sid := studentID.(uint)
 
 	recentApps := database.RecentStudentApplications(sid, 5)
-	recentCourses := database.RecentOpenCourses(3)
+	recentCourses := enrichConflicts(sid, database.RecentOpenCourses(3))
 	openCount := database.CountOpenCourses()
 	appliedCount := database.CountAppliedByStudent(sid)
 
@@ -98,8 +98,9 @@ func (h *Handler) Apply(c *gin.Context) {
 	}
 
 	// Block if the student's confirmed term schedule conflicts with this course.
-	// Only enforced when the student has status="set" — unset means no data.
-	ts := database.TermScheduleByUserTerm(studentID.(uint), course.Semester, course.AcademicYear)
+	// Falls back to any set TermSchedule when the course-specific term has no
+	// entry, catching the common case of a schedule saved under the wrong semester.
+	ts := database.BestTermSchedule(studentID.(uint), course.Semester, course.AcademicYear)
 	if day := database.ConflictingDay(course.Schedule, ts); day != "" {
 		c.JSON(http.StatusConflict, gin.H{
 			"error":             "ตารางเรียนของคุณมีวิชาที่เรียนใน" + day + " ซึ่งตรงกับเวลาของวิชานี้ กรุณาตรวจสอบตารางเรียนของคุณในหน้าโปรไฟล์",

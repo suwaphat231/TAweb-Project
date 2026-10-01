@@ -106,21 +106,22 @@ func seedCoursesFromClasslist() error {
 			title = strings.TrimSpace(strings.SplitN(title, "\n", 2)[0])
 		}
 
-		var instructorID uint
+		var instructorID *uint
 		for _, name := range SplitInstructorNames(r.Instructors) {
 			target := NormalizeInstructorName(name)
 			for _, u := range users {
 				if NormalizeInstructorName(u.FullName) == target {
-					instructorID = u.ID
+					id := u.ID
+					instructorID = &id
 					break
 				}
 			}
-			if instructorID != 0 {
+			if instructorID != nil {
 				break
 			}
 		}
 
-		CreateCourse(models.Course{
+		course := CreateCourse(models.Course{
 			Code:           r.SubjectCode,
 			Title:          title,
 			EnglishTitle:   r.TitleEN,
@@ -136,6 +137,9 @@ func seedCoursesFromClasslist() error {
 			Status:         models.StatusDraft,
 			HasLab:         LabHoursFromCredits(r.Credits) > 0,
 		})
+		if course.ID == 0 {
+			return fmt.Errorf("seed course %s section %d: cannot save course", r.SubjectCode, section)
+		}
 	}
 
 	log.Printf("Seeded %d courses from %d classlist rows", len(order), len(rows))
