@@ -13,14 +13,19 @@ const (
 )
 
 type Course struct {
-	ID             uint   `gorm:"primaryKey" json:"id"`
-	Code           string `gorm:"size:20;not null" json:"code"`
-	Title          string `gorm:"size:300;not null" json:"title"`
-	EnglishTitle   string `gorm:"size:300" json:"english_title,omitempty"`
-	GroupNote      string `gorm:"size:200" json:"group_note,omitempty"`
-	Credits        string `gorm:"size:20" json:"credits,omitempty"`
-	Section        int    `gorm:"default:0" json:"section"`
-	Schedule       string `gorm:"size:500" json:"schedule,omitempty"`
+	ID           uint   `gorm:"primaryKey" json:"id"`
+	Code         string `gorm:"size:20;not null" json:"code"`
+	Title        string `gorm:"size:300;not null" json:"title"`
+	EnglishTitle string `gorm:"size:300" json:"english_title,omitempty"`
+	GroupNote    string `gorm:"size:200" json:"group_note,omitempty"`
+	Credits      string `gorm:"size:20" json:"credits,omitempty"`
+	Section      int    `gorm:"default:0" json:"section"`
+	Schedule     string `gorm:"size:500" json:"schedule,omitempty"`
+	// Sections is set only on a time-slot posting (opened via OpenSlots):
+	// the imported Sec numbers that meet in this one slot, e.g. "1,2".
+	// Imported section rows leave it empty, which is how the two kinds of
+	// row are told apart.
+	Sections       string `gorm:"size:100" json:"sections,omitempty"`
 	Capacity       int    `gorm:"default:0" json:"capacity"`
 	Enrolled       int    `gorm:"default:0" json:"enrolled"`
 	InstructorID   uint   `gorm:"not null" json:"instructor_id"`

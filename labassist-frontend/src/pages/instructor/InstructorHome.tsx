@@ -14,8 +14,8 @@ import { useToast } from '../../hooks/useToast'
 import { Modal } from '../../components/ui/Modal'
 import { CourseFormModal } from './CourseFormModal'
 import { COURSE_FORM_EMPTY, splitRequirements, joinRequirements } from './_courseFormShared'
-import { displayCourseTitle } from '../../utils/courseDisplay'
-import type { CreateCoursePayload, Course } from '../../types'
+import { displayCourseTitle, secLabel } from '../../utils/courseDisplay'
+import type { CreateCoursePayload, SlotSelection, Course } from '../../types'
 
 interface Posting {
   course: Course
@@ -83,7 +83,7 @@ export default function InstructorHome() {
   const [showCourseModal, setShowCourseModal] = useState(false)
   const [form, setForm] = useState<CreateCoursePayload>(COURSE_FORM_EMPTY)
   const [minGrade, setMinGrade] = useState('')
-  const [sectionIds, setSectionIds] = useState<number[]>([])
+  const [slots, setSlots] = useState<SlotSelection[]>([])
   const [editId, setEditId] = useState<number | null>(null)
   const [showArchived, setShowArchived] = useState(false)
   const [archiveTarget, setArchiveTarget] = useState<Course | null>(null)
@@ -106,16 +106,14 @@ export default function InstructorHome() {
     })),
   })
 
-  // "Creating" a posting means opening one or more of the instructor's
-  // already-imported sections (picked via SectionCatalogPicker) — each is
-  // an existing Course row from the Excel import, so this is a batch of
-  // ordinary updates, not a brand-new row.
+  // "Creating" a posting means opening one or more time slots picked from
+  // the instructor's already-imported sections (via SectionCatalogPicker) —
+  // each slot becomes its own posting, with Secs sharing the slot merged.
   const openSectionsMut = useMutation({
-    mutationFn: async (vars: { ids: number[]; data: Partial<CreateCoursePayload> }) => {
-      await Promise.all(vars.ids.map((id) => instructorApi.updateCourse(id, vars.data)))
-    },
+    mutationFn: instructorApi.openSlots,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['instructor-courses'] })
+      qc.invalidateQueries({ queryKey: ['course-catalog-sections'] })
       closeModal()
       showToast('เปิดรับสมัครเรียบร้อยแล้ว', 'success')
     },
@@ -189,12 +187,12 @@ export default function InstructorHome() {
   function openCreate() {
     setForm(COURSE_FORM_EMPTY)
     setMinGrade('')
-    setSectionIds([])
+    setSlots([])
     setEditId(null)
     setShowCourseModal(true)
   }
 
-  function closeModal() { setShowCourseModal(false); setForm(COURSE_FORM_EMPTY); setMinGrade(''); setSectionIds([]); setEditId(null) }
+  function closeModal() { setShowCourseModal(false); setForm(COURSE_FORM_EMPTY); setMinGrade(''); setSlots([]); setEditId(null) }
 
   function openEdit(course: Course) {
     const { minGrade: grade, rest } = splitRequirements(course.requirements ?? '')
@@ -221,9 +219,9 @@ export default function InstructorHome() {
     if (editId) {
       updateMut.mutate({ id: editId, data })
     } else {
-      if (sectionIds.length === 0) return
+      if (slots.length === 0) return
       const { labboy_slots, status, deadline, description, requirements, require_grade_proof } = data
-      openSectionsMut.mutate({ ids: sectionIds, data: { labboy_slots, status, deadline, description, requirements, require_grade_proof } })
+      openSectionsMut.mutate({ slots, labboy_slots, status, deadline, description, requirements, require_grade_proof })
     }
   }
 
@@ -333,7 +331,7 @@ export default function InstructorHome() {
                             </span>
                             {!!c.section && (
                               <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-500)', background: 'var(--bg)', padding: '1px 7px', borderRadius: 'var(--radius-pill)' }}>
-                                Sec {c.section}
+                                Sec {secLabel(c)}
                               </span>
                             )}
                           </div>
@@ -430,8 +428,8 @@ export default function InstructorHome() {
         setForm={setForm}
         minGrade={minGrade}
         setMinGrade={setMinGrade}
-        sectionIds={sectionIds}
-        setSectionIds={setSectionIds}
+        slots={slots}
+        setSlots={setSlots}
         onSubmit={submit}
         loading={openSectionsMut.isPending || updateMut.isPending}
       />

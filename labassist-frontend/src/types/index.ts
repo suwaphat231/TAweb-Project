@@ -63,6 +63,9 @@ export interface Course {
   credits?: string
   section?: number
   schedule?: string
+  // Set only on a posting opened per time slot: the Sec numbers meeting in
+  // that slot, e.g. "1,2". Empty on rows straight from the Excel import.
+  sections?: string
   instructor_id: number
   instructor_name: string
   instructors_raw?: string
@@ -119,12 +122,34 @@ export interface Application {
   course_schedule?: string
   role_applied: 'labboy'
   status: ApplicationStatus
+  // Instructor cancelled a mistaken accept: the instructor's list shows no
+  // status for the row. Never sent to students — they see it as pending.
+  cancelled?: boolean
   grade?: string
   has_grade_proof?: boolean
   applied_at: string
   reviewed_at?: string
   reviewed_by_name?: string
   note?: string
+  // Active blacklist entries — only present on the instructor applicants list.
+  blacklists?: BlacklistEntry[]
+}
+
+export interface BlacklistEntry {
+  id: number
+  student_id: number
+  student_name: string
+  student_code: string
+  application_id?: number
+  course_id?: number
+  course_code?: string
+  course_title?: string
+  course_semester?: string
+  course_academic_year?: number
+  reported_by_id: number
+  reported_by_name: string
+  reason: string
+  created_at: string
 }
 
 export interface AuthState {
@@ -171,6 +196,23 @@ export interface CreateUserPayload {
 export interface UpdateUserPayload {
   full_name?: string
   role?: UserRole
+}
+
+/** One time slot picked in SectionCatalogPicker, with the imported Sec rows that meet in it. */
+export interface SlotSelection {
+  time: string
+  section_ids: number[]
+}
+
+/** Body of POST /instructor/courses/open-slots — one posting per slot. */
+export interface OpenSlotsPayload {
+  slots: SlotSelection[]
+  labboy_slots: number
+  status?: CourseStatus
+  deadline?: string
+  description?: string
+  requirements?: string
+  require_grade_proof?: boolean
 }
 
 export interface CreateCoursePayload {

@@ -356,6 +356,18 @@ func CourseExists(instructorID uint, code, semester string, academicYear, sectio
 	return n > 0
 }
 
+// SlotPostingExists reports whether a time-slot posting (a row with
+// Sections set) already covers this course's meeting time. Its schedule is
+// the time key, optionally followed by a space and the room.
+func SlotPostingExists(code, semester string, academicYear int, timeKey string) bool {
+	var n int64
+	DB.Model(&models.Course{}).
+		Where("code = ? AND semester = ? AND academic_year = ? AND sections <> '' AND (schedule = ? OR schedule LIKE ?)",
+			code, semester, academicYear, timeKey, timeKey+" %").
+		Count(&n)
+	return n > 0
+}
+
 // FindCourseByKey returns the existing course occupying the same slot
 // (code + section + semester + academic year), regardless of instructor.
 func FindCourseByKey(code, semester string, academicYear, section int) (models.Course, bool) {

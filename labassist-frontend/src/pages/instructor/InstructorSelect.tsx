@@ -10,8 +10,9 @@ import { Modal } from '../../components/ui/Modal'
 import { Avatar } from '../../components/ui/Avatar'
 import { getInitials } from '../../utils/initials'
 import { EmptyState } from '../../components/ui/EmptyState'
+import { BlacklistSection, BlacklistTag } from '../../components/labboy/Blacklist'
 import { useToast } from '../../hooks/useToast'
-import { displayCourseTitle } from '../../utils/courseDisplay'
+import { displayCourseTitle, secLabel } from '../../utils/courseDisplay'
 import type { Application } from '../../types'
 
 const statusOptions = [
@@ -33,6 +34,7 @@ export default function InstructorSelect() {
   const [profileTarget, setProfileTarget] = useState<Application | null>(null)
   const [showAcceptAll, setShowAcceptAll] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [undoTarget, setUndoTarget] = useState<Application | null>(null)
 
   const qc = useQueryClient()
   const showToast = useToast()
@@ -135,7 +137,20 @@ export default function InstructorSelect() {
       qc.invalidateQueries({ queryKey: ['instructor-courses'] })
       setProfileTarget(null)
       setNoteText('')
-      showToast(vars.status === 'accepted' ? 'รับผู้สมัครและแจ้งเตือนนักศึกษาเรียบร้อยแล้ว' : 'ปฏิเสธผู้สมัครเรียบร้อยแล้ว', 'success')
+      showToast(vars.status === 'accepted' ? 'ยืนยันการรับผู้สมัคร' : 'ปฏิเสธผู้สมัคร', 'success')
+    },
+    onError: (err: { response?: { data?: { error?: string } } }) =>
+      showToast(err?.response?.data?.error ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'),
+  })
+
+  const undoMut = useMutation({
+    mutationFn: (app: Application) => instructorApi.cancelAcceptance(app.id),
+    onSuccess: (_, app) => {
+      qc.invalidateQueries({ queryKey: ['applicants', courseId] })
+      qc.invalidateQueries({ queryKey: ['instructor-courses'] })
+      setUndoTarget(null)
+      setProfileTarget(null)
+      showToast(`ยกเลิกการรับ ${app.student_name} แล้ว`, 'success')
     },
     onError: (err: { response?: { data?: { error?: string } } }) =>
       showToast(err?.response?.data?.error ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'),
@@ -143,7 +158,7 @@ export default function InstructorSelect() {
 
   const filtered = useMemo(() => {
     let list = [...applicants].sort((a, b) => (b.student_gpa ?? 0) - (a.student_gpa ?? 0))
-    if (statusFilter) list = list.filter((a) => a.status === statusFilter)
+    if (statusFilter) list = list.filter((a) => a.status === statusFilter && !a.cancelled)
     if (search) {
       const q = search.toLowerCase()
       list = list.filter((a) =>
@@ -243,7 +258,7 @@ export default function InstructorSelect() {
               { value: '', label: 'เลือกรายวิชา...' },
               ...courses.map((c) => ({
                 value: String(c.id),
-                label: `[${c.code}${c.section ? ` sec ${c.section}` : ''}] ${displayCourseTitle(c.title, c.english_title)} — ${c.applicant_count ?? 0} ผู้สมัคร`,
+                label: `[${c.code}${c.section ? ` sec ${secLabel(c)}` : ''}] ${displayCourseTitle(c.title, c.english_title)} — ${c.applicant_count ?? 0} ผู้สมัคร`,
               })),
             ]}
             value={String(courseId)}
@@ -343,7 +358,7 @@ export default function InstructorSelect() {
                   <div>
                     <div style={{ fontSize: 11, color: 'var(--ink-400)', fontWeight: 600, marginBottom: 2 }}>กำลังดู</div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>
-                      Sec {selectedCourse.section}{selectedCourse.schedule ? ` · ${selectedCourse.schedule}` : ''}
+                      Sec {secLabel(selectedCourse)}{selectedCourse.schedule ? ` · ${selectedCourse.schedule}` : ''}
                     </div>
                   </div>
                 </>
@@ -462,7 +477,10 @@ export default function InstructorSelect() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           <Avatar initials={getInitials(row.student_name)} color="blue" size={34} />
                           <div>
-                            <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--ink-900)' }}>{row.student_name}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--ink-900)' }}>{row.student_name}</span>
+                              {!!row.blacklists?.length && <BlacklistTag count={row.blacklists.length} />}
+                            </div>
                             <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{row.student_code || '—'}</div>
                           </div>
                         </div>
@@ -493,7 +511,9 @@ export default function InstructorSelect() {
 
                       {/* Status */}
                       <td style={{ padding: '14px 16px' }}>
-                        <StatusBadge value={row.status} />
+                        {row.cancelled
+                          ? <span style={{ color: 'var(--ink-400)' }}>—</span>
+                          : <StatusBadge value={row.status} />}
                       </td>
 
                       {/* ── Actions ── */}
@@ -512,13 +532,24 @@ export default function InstructorSelect() {
                           )}
 
                           {/* Reject — red soft pill */}
-                          {(row.status === 'pending' || row.status === 'accepted') && (
+                          {(row.status === 'pending' || row.status === 'accepted' || row.cancelled) && (
                             <ActionBtn
                               color="red"
                               onClick={(e) => { e.stopPropagation(); reviewMut.mutate({ id: row.id, status: 'rejected' }) }}
                               disabled={reviewMut.isPending}
                               icon={<XIcon size={11} />}
                               label="ไม่รับ"
+                            />
+                          )}
+
+                          {/* Cancel a mistaken accept — like ไม่รับ, but no status shown */}
+                          {row.status === 'accepted' && (
+                            <ActionBtn
+                              color="gray"
+                              onClick={(e) => { e.stopPropagation(); setUndoTarget(row) }}
+                              disabled={undoMut.isPending}
+                              icon={<UndoIcon size={11} />}
+                              label="ยกเลิก"
                             />
                           )}
 
@@ -687,7 +718,7 @@ export default function InstructorSelect() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             {/* Status banner */}
             {profileTarget.status === 'accepted' && <StatusBanner color="#F0FDF4" border="#BBF7D0" icon="✅" text="ผ่านการคัดเลือก" textColor="#15803D" />}
-            {profileTarget.status === 'rejected' && <StatusBanner color="#FEF2F2" border="#FECACA" icon="❌" text="ไม่ผ่านการคัดเลือก" textColor="#DC2626" />}
+            {profileTarget.status === 'rejected' && !profileTarget.cancelled && <StatusBanner color="#FEF2F2" border="#FECACA" icon="❌" text="ไม่ผ่านการคัดเลือก" textColor="#DC2626" />}
             {profileTarget.status === 'pending'  && <StatusBanner color="#FFFBEB" border="#FDE68A" icon="⏳" text="รอการพิจารณา" textColor="#B45309" />}
             {profileTarget.status === 'withdrawn'&& <StatusBanner color="var(--bg)" border="var(--line)" icon="↩️" text="ถอนใบสมัครแล้ว" textColor="var(--ink-500)" />}
 
@@ -710,6 +741,9 @@ export default function InstructorSelect() {
               />
               <ProfileInfo label="วันที่สมัคร" value={new Date(profileTarget.applied_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })} />
             </div>
+
+            {/* Blacklist — read the live row so changes show without reopening */}
+            <BlacklistSection key={profileTarget.id} app={applicants.find((a) => a.id === profileTarget.id) ?? profileTarget} />
 
             {/* Grade proof */}
             {selectedCourse?.require_grade_proof && (
@@ -755,7 +789,12 @@ export default function InstructorSelect() {
             {/* Modal action buttons */}
             {profileTarget.status !== 'withdrawn' && (
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 4, borderTop: '1px solid var(--line-soft)' }}>
-                {(profileTarget.status === 'pending' || profileTarget.status === 'accepted') && (
+                {profileTarget.status === 'accepted' && (
+                  <Button variant="ghost" style={{ marginRight: 'auto' }} onClick={() => setUndoTarget(profileTarget)}>
+                    ยกเลิกการรับ (กดผิด)
+                  </Button>
+                )}
+                {(profileTarget.status === 'pending' || profileTarget.status === 'accepted' || profileTarget.cancelled) && (
                   <Button
                     variant="ghost"
                     style={{ color: 'var(--red)', border: '1px solid var(--red)' }}
@@ -779,6 +818,25 @@ export default function InstructorSelect() {
           </div>
         )}
       </Modal>
+
+      <Modal
+        isOpen={!!undoTarget}
+        onClose={() => setUndoTarget(null)}
+        title="ยกเลิกการรับผู้สมัคร"
+        size="sm"
+      >
+        {undoTarget && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ fontSize: 14, color: 'var(--ink-700)', lineHeight: 1.6 }}>
+              ยืนยันการยกเลิก <b>{undoTarget.student_name}</b> ({undoTarget.student_code}) จากการเป็น Lab Boy
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <Button variant="ghost" onClick={() => setUndoTarget(null)}>ปิด</Button>
+              <Button loading={undoMut.isPending} onClick={() => undoMut.mutate(undoTarget)}>ยืนยัน</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }
@@ -788,15 +846,15 @@ export default function InstructorSelect() {
 function ActionBtn({
   color, onClick, disabled, icon, label,
 }: {
-  color: 'green' | 'red'
+  color: 'green' | 'red' | 'gray'
   onClick: React.MouseEventHandler<HTMLButtonElement>
   disabled: boolean
   icon: React.ReactNode
   label: string
 }) {
-  const bg     = color === 'green' ? 'var(--green-bg)' : 'var(--red-bg)'
-  const bgHov  = color === 'green' ? '#d1fae5' : '#fee2e2'
-  const text   = color === 'green' ? 'var(--green)' : 'var(--red)'
+  const bg     = color === 'green' ? 'var(--green-bg)' : color === 'red' ? 'var(--red-bg)' : 'var(--bg)'
+  const bgHov  = color === 'green' ? '#d1fae5' : color === 'red' ? '#fee2e2' : 'var(--line-soft)'
+  const text   = color === 'green' ? 'var(--green)' : color === 'red' ? 'var(--red)' : 'var(--ink-600)'
 
   return (
     <button
@@ -841,6 +899,14 @@ function CheckIcon({ size = 14 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M20 6 9 17l-5-5"/>
+    </svg>
+  )
+}
+
+function UndoIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>
     </svg>
   )
 }

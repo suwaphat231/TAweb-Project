@@ -7,7 +7,7 @@ import type {
   CreateUserPayload, UpdateUserPayload, ImportCoursesResponse, ImportCourseFields,
   FormReview, StaffDocument, CreateStaffDocumentPayload, TranscriptOCRResult, CoreCourse,
   WorkSession, ClassSchedule, ClassScheduleImageResult, TermSchedule, TermOption, ScheduleSlot, TermScheduleStatus,
-  LabBoyAssignment,
+  LabBoyAssignment, BlacklistEntry, OpenSlotsPayload,
 } from '../types'
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1'
@@ -76,6 +76,10 @@ export const applicationsAPI = {
     api.get<Application[]>(`/instructor/courses/${courseId}/applicants`).then((r) => r.data),
   review: (id: number, data: ReviewPayload) =>
     api.put<Application>(`/instructor/applications/${id}/review`, data).then((r) => r.data),
+  // Cancel an accept clicked by mistake — acts like a rejection, but the
+  // instructor's list shows no status for it.
+  cancelAcceptance: (id: number) =>
+    api.put<Application>(`/instructor/applications/${id}/cancel`).then((r) => r.data),
   bulkReview: (data: BulkReviewPayload) =>
     api.put<BulkReviewResult>('/instructor/applications/bulk-review', data).then((r) => r.data),
   uploadGradeProof: (applicationId: number, file: File) => {
@@ -223,11 +227,16 @@ export const instructorApi = {
   // it directly instead of picking from SectionCatalogPicker.
   createCourse: (data: CreateCoursePayload) =>
     api.post<Course[]>('/instructor/courses', data).then((r) => r.data),
+  // Opens one posting per picked time slot (Secs sharing a slot become one
+  // posting); the imported section rows themselves stay as they are.
+  openSlots: (data: OpenSlotsPayload) =>
+    api.post<Course[]>('/instructor/courses/open-slots', data).then((r) => r.data),
   updateCourse: coursesAPI.update,
   updateCourseStatus: coursesAPI.updateStatus,
   deleteCourse: coursesAPI.remove,
   applicants: applicationsAPI.getCourseApplicants,
   review: applicationsAPI.review,
+  cancelAcceptance: applicationsAPI.cancelAcceptance,
   bulkReview: applicationsAPI.bulkReview,
   gradeProof: applicationsAPI.instructorGradeProof,
   notifyCourse: notificationApi.notifyCourse,
@@ -242,6 +251,12 @@ export const instructorApi = {
   profile: () => api.get<User>('/instructor/profile').then((r) => r.data),
   updateProfile: (data: { full_name?: string; email?: string; faculty?: string }) =>
     api.put<User>('/instructor/profile', data).then((r) => r.data),
+  // Shared across every instructor. Blacklisting never blocks a student from
+  // applying — it only flags them on future applicant lists.
+  blacklist: () => api.get<BlacklistEntry[]>('/instructor/blacklist').then((r) => r.data),
+  addBlacklist: (data: { application_id: number; reason: string }) =>
+    api.post<BlacklistEntry>('/instructor/blacklist', data).then((r) => r.data),
+  revokeBlacklist: (id: number) => api.delete(`/instructor/blacklist/${id}`).then(() => undefined),
 }
 export const staffApi = {
   profile: () => api.get<User>('/staff/profile').then((r) => r.data),

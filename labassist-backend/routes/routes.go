@@ -83,6 +83,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			instructor.GET("/instructor/course-catalog", teacherH.CourseCatalog)
 			instructor.GET("/instructor/course-catalog/sections", teacherH.CourseCatalogSections)
 			instructor.POST("/instructor/courses", teacherH.Create)
+			instructor.POST("/instructor/courses/open-slots", teacherH.OpenSlots)
 			instructor.PUT("/instructor/courses/:id", teacherH.Update)
 			instructor.PUT("/instructor/courses/:id/status", teacherH.UpdateStatus)
 			instructor.DELETE("/instructor/courses/:id", teacherH.Delete)

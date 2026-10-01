@@ -29,6 +29,7 @@ function Ico({ name }: { name: string }): ReactNode {
     case 'book':      return <svg {...s}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
     case 'log-out':   return <svg {...s}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
     case 'x':         return <svg {...s}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    case 'slash':     return <svg {...s}><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
     case 'calendar':  return <svg {...s}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
     default: return null
   }
@@ -49,18 +50,21 @@ const navMap: Record<UserRole, NavItem[]> = {
     { to: '/instructor/home',     label: 'หน้าหลัก',           icon: 'home' },
     { to: '/instructor/courses',  label: 'วิชาของฉัน',       icon: 'book' },
     { to: '/instructor/announce', label: 'จัดการประกาศ',     icon: 'megaphone' },
+    { to: '/instructor/blacklist', label: 'รายชื่อ Blacklist', icon: 'slash' },
     { to: '/instructor/profile',  label: 'ข้อมูลส่วนตัว',    icon: 'user' },
   ],
   staff: [
     { to: '/staff/home',    label: 'หน้าหลัก',          icon: 'home' },
     { to: '/staff/docs',    label: 'เอกสารทั้งหมด',     icon: 'file-text' },
     { to: '/staff/review',  label: 'ตรวจสอบแบบฟอร์ม',  icon: 'check-square' },
+    { to: '/instructor/blacklist', label: 'รายชื่อ Blacklist', icon: 'slash' },
     { to: '/staff/profile', label: 'ข้อมูลส่วนตัว',     icon: 'user' },
   ],
   admin: [
     { to: '/admin/overview',     label: 'ภาพรวม',         icon: 'layout' },
     { to: '/admin/courses',      label: 'จัดการรายวิชา',  icon: 'book' },
     { to: '/admin/users',        label: 'จัดการผู้ใช้งาน', icon: 'users' },
+    { to: '/instructor/blacklist', label: 'รายชื่อ Blacklist', icon: 'slash' },
     { to: '/instructor/profile', label: 'ข้อมูลส่วนตัว',   icon: 'user' },
   ],
 }

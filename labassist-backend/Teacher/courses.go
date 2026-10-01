@@ -487,7 +487,9 @@ func (h *Handler) Delete(c *gin.Context) {
 	}
 
 	role, _ := c.Get("role")
-	if role.(string) == "admin" {
+	// A time-slot posting is its own row built from the imported sections
+	// (which stay untouched), so taking it down removes it outright.
+	if role.(string) == "admin" || course.Sections != "" {
 		database.DeleteCourse(uint(id))
 	} else {
 		database.ResetCourseToDraft(uint(id))

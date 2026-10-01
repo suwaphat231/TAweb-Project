@@ -11,8 +11,8 @@ import { useToast } from '../../hooks/useToast'
 import { Link } from 'react-router-dom'
 import { CourseFormModal } from './CourseFormModal'
 import { COURSE_FORM_EMPTY, splitRequirements, joinRequirements } from './_courseFormShared'
-import { displayCourseTitle } from '../../utils/courseDisplay'
-import type { CreateCoursePayload, CourseStatus, Course } from '../../types'
+import { displayCourseTitle, splitSchedule, secLabel } from '../../utils/courseDisplay'
+import type { CreateCoursePayload, SlotSelection, CourseStatus, Course } from '../../types'
 
 const STATUS_OPTIONS = [
   { value: 'open',         label: 'เปิดรับสมัคร' },
@@ -25,7 +25,7 @@ export default function InstructorAnnounce() {
   const [showCourseModal, setShowCourseModal] = useState(false)
   const [form, setForm] = useState<CreateCoursePayload>(COURSE_FORM_EMPTY)
   const [minGrade, setMinGrade] = useState('')
-  const [sectionIds, setSectionIds] = useState<number[]>([])
+  const [slots, setSlots] = useState<SlotSelection[]>([])
   const [editId, setEditId] = useState<number | null>(null)
   const [statusTarget, setStatusTarget] = useState<Course | null>(null)
   const [pendingStatus, setPendingStatus] = useState<CourseStatus>('open')
@@ -39,16 +39,14 @@ export default function InstructorAnnounce() {
     queryFn: () => instructorApi.courses(),
   })
 
-  // "Creating" a posting means opening one or more of the instructor's
-  // already-imported sections (picked via SectionCatalogPicker) — each is
-  // an existing Course row from the Excel import, so this is a batch of
-  // ordinary updates, not a brand-new row.
+  // "Creating" a posting means opening one or more time slots picked from
+  // the instructor's already-imported sections (via SectionCatalogPicker) —
+  // each slot becomes its own posting, with Secs sharing the slot merged.
   const openSectionsMut = useMutation({
-    mutationFn: async (vars: { ids: number[]; data: Partial<CreateCoursePayload> }) => {
-      await Promise.all(vars.ids.map((id) => instructorApi.updateCourse(id, vars.data)))
-    },
+    mutationFn: instructorApi.openSlots,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['instructor-courses'] })
+      qc.invalidateQueries({ queryKey: ['course-catalog-sections'] })
       closeModal()
       showToast('เปิดรับสมัครเรียบร้อยแล้ว', 'success')
     },
@@ -104,12 +102,12 @@ export default function InstructorAnnounce() {
   function openCreate() {
     setForm(COURSE_FORM_EMPTY)
     setMinGrade('')
-    setSectionIds([])
+    setSlots([])
     setEditId(null)
     setShowCourseModal(true)
   }
 
-  function closeModal() { setShowCourseModal(false); setForm(COURSE_FORM_EMPTY); setMinGrade(''); setSectionIds([]); setEditId(null) }
+  function closeModal() { setShowCourseModal(false); setForm(COURSE_FORM_EMPTY); setMinGrade(''); setSlots([]); setEditId(null) }
 
   function openEdit(course: Course) {
     const { minGrade: grade, rest } = splitRequirements(course.requirements ?? '')
@@ -141,9 +139,9 @@ export default function InstructorAnnounce() {
     if (editId) {
       updateMut.mutate({ id: editId, data })
     } else {
-      if (sectionIds.length === 0) return
+      if (slots.length === 0) return
       const { labboy_slots, status, deadline, description, requirements, require_grade_proof } = data
-      openSectionsMut.mutate({ ids: sectionIds, data: { labboy_slots, status, deadline, description, requirements, require_grade_proof } })
+      openSectionsMut.mutate({ slots, labboy_slots, status, deadline, description, requirements, require_grade_proof })
     }
   }
 
@@ -186,7 +184,7 @@ export default function InstructorAnnounce() {
                     }}>{c.code}</span>
                     {!!c.section && (
                       <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-500)', background: 'var(--bg)', padding: '2px 8px', borderRadius: 'var(--radius-pill)' }}>
-                        Sec {c.section}
+                        Sec {secLabel(c)}
                       </span>
                     )}
                     <StatusBadge value={c.status} />
@@ -198,7 +196,10 @@ export default function InstructorAnnounce() {
                   </div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 4 }}>{displayCourseTitle(c.title, c.english_title)}</div>
                   {c.schedule && (
-                    <div style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 2 }}>🕐 {c.schedule}</div>
+                    <div style={{ display: 'flex', gap: 4, fontSize: 13, color: 'var(--ink-500)', marginBottom: 2 }}>
+                      <span>🕐</span>
+                      <div>{splitSchedule(c.schedule).map((line, i) => <div key={i}>{line}</div>)}</div>
+                    </div>
                   )}
                   <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>
                     ภาค {c.semester}/{c.academic_year}
@@ -247,8 +248,8 @@ export default function InstructorAnnounce() {
         setForm={setForm}
         minGrade={minGrade}
         setMinGrade={setMinGrade}
-        sectionIds={sectionIds}
-        setSectionIds={setSectionIds}
+        slots={slots}
+        setSlots={setSlots}
         onSubmit={submit}
         loading={openSectionsMut.isPending || updateMut.isPending}
       />

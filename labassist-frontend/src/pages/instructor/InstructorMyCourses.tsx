@@ -13,7 +13,8 @@ import { getInitials } from '../../utils/initials'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { useToast } from '../../hooks/useToast'
-import { displayCourseTitle } from '../../utils/courseDisplay'
+import { displayCourseTitle, secLabel } from '../../utils/courseDisplay'
+import { BlacklistSection, BlacklistTag } from '../../components/labboy/Blacklist'
 import type { Course } from '../../types'
 
 function DeleteIcon() {
@@ -45,6 +46,7 @@ export default function InstructorMyCourses() {
   const [showAddCourse, setShowAddCourse] = useState(false)
   const [addCourseForm, setAddCourseForm] = useState(ADD_COURSE_FORM_EMPTY)
   const [deleteTarget, setDeleteTarget] = useState<Course | null>(null)
+  const [detailAppId, setDetailAppId] = useState<number | null>(null)
   const qc = useQueryClient()
   const showToast = useToast()
 
@@ -66,6 +68,23 @@ export default function InstructorMyCourses() {
       queryFn: () => instructorApi.applicants(c.id),
     })),
   })
+
+  const courseById = new Map(courses.map((c) => [c.id, c]))
+  const allApplicants = applicantQueries.flatMap((q) => q.data ?? [])
+
+  const detailApp = detailAppId != null ? allApplicants.find((a) => a.id === detailAppId) ?? null : null
+  // Every course of mine this student was accepted into, newest first
+  const detailJobs = detailApp
+    ? allApplicants
+        .filter((a) => a.student_id === detailApp.student_id && a.status === 'accepted')
+        .sort((x, y) => y.applied_at.localeCompare(x.applied_at))
+    : []
+
+  function courseLabel(courseId: number) {
+    const c = courseById.get(courseId)
+    if (!c) return ''
+    return `${c.code}${c.section ? ` sec ${secLabel(c)}` : ''} · ${c.semester}/${c.academic_year}`
+  }
 
   const createCourseMut = useMutation({
     mutationFn: () => instructorApi.createCourse({
@@ -130,7 +149,7 @@ export default function InstructorMyCourses() {
                       </span>
                       {!!c.section && (
                         <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-500)', background: 'var(--bg)', padding: '1px 7px', borderRadius: 'var(--radius-pill)' }}>
-                          Sec {c.section}
+                          Sec {secLabel(c)}
                         </span>
                       )}
                       <StatusBadge value={c.status} />
@@ -160,15 +179,28 @@ export default function InstructorMyCourses() {
                   ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))', gap: 10 }}>
                       {accepted.map((a) => (
-                        <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid var(--line-soft)', borderRadius: 10 }}>
+                        <button
+                          key={a.id}
+                          type="button"
+                          onClick={() => setDetailAppId(a.id)}
+                          title="ดูข้อมูลนักศึกษา"
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', textAlign: 'left',
+                            border: '1px solid var(--line-soft)', borderRadius: 10, background: 'transparent', cursor: 'pointer',
+                            transition: 'border-color .15s',
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--primary)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--line-soft)')}
+                        >
                           <Avatar initials={getInitials(a.student_name)} color="purple" size={32} />
-                          <div style={{ minWidth: 0 }}>
+                          <div style={{ minWidth: 0, flex: 1 }}>
                             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {a.student_name}
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>{a.student_code || '—'}</div>
                           </div>
-                        </div>
+                          {!!a.blacklists?.length && <BlacklistTag count={a.blacklists.length} />}
+                        </button>
                       ))}
                     </div>
                   )}
@@ -178,6 +210,62 @@ export default function InstructorMyCourses() {
           })}
         </div>
       )}
+
+      {/* Lab Boy detail */}
+      <Modal isOpen={!!detailApp} onClose={() => setDetailAppId(null)} title="ข้อมูล Lab Boy" size="md">
+        {detailApp && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <Avatar initials={getInitials(detailApp.student_name)} color="purple" size={56} />
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink-900)' }}>{detailApp.student_name}</div>
+                <div style={{ fontSize: 13, color: 'var(--ink-500)', marginTop: 2 }}>{detailApp.student_code || '—'}</div>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+              <ProfileInfo label="อีเมล" value={detailApp.student_email || '—'} />
+              <ProfileInfo label="ชั้นปี" value={detailApp.student_year ? `ปีที่ ${detailApp.student_year}` : '—'} />
+              <ProfileInfo label="ภาควิชา" value={detailApp.student_faculty || '—'} />
+              <ProfileInfo label="GPA" value={detailApp.student_gpa ? detailApp.student_gpa.toFixed(2) : '—'} />
+            </div>
+
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-400)', marginBottom: 6 }}>เป็น Lab Boy ในวิชาของท่าน</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {detailJobs.map((a) => {
+                  const c = courseById.get(a.course_id)
+                  const active = a.id === detailApp.id
+                  return (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => setDetailAppId(a.id)}
+                      style={{
+                        display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', textAlign: 'left',
+                        padding: '8px 12px', borderRadius: 8, cursor: detailJobs.length > 1 ? 'pointer' : 'default',
+                        border: `1.5px solid ${active && detailJobs.length > 1 ? 'var(--primary)' : 'var(--line-soft)'}`,
+                        background: active && detailJobs.length > 1 ? 'var(--primary-50)' : 'transparent',
+                      }}
+                    >
+                      <span style={{ fontSize: 13, color: 'var(--ink-800)' }}>
+                        <strong>{courseLabel(a.course_id)}</strong>
+                        {c && <span style={{ color: 'var(--ink-500)' }}> · {displayCourseTitle(c.title, c.english_title)}</span>}
+                      </span>
+                      <span style={{ fontSize: 12, color: 'var(--ink-500)', whiteSpace: 'nowrap' }}>เกรดวิชานี้ {a.grade || '—'}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              {detailJobs.length > 1 && (
+                <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 6 }}>เลือกวิชาที่ต้องการ blacklist ก่อนกดปุ่มด้านล่าง</div>
+              )}
+            </div>
+
+            <BlacklistSection key={detailApp.id} app={detailApp} />
+          </div>
+        )}
+      </Modal>
 
       {/* Add Own Course Modal — for a course that never made it into the
           admin's Excel import (or doesn't exist in the catalog at all) */}
@@ -256,6 +344,15 @@ export default function InstructorMyCourses() {
           </div>
         </div>
       </Modal>
+    </div>
+  )
+}
+
+function ProfileInfo({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-400)', marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 14, color: 'var(--ink-900)', fontWeight: 500, overflowWrap: 'anywhere' }}>{value}</div>
     </div>
   )
 }

@@ -5,7 +5,7 @@ import { Select } from '../../components/ui/Select'
 import { CourseCodeAutocomplete } from '../../components/course/CourseCodeAutocomplete'
 import { SectionCatalogPicker } from '../../components/course/SectionCatalogPicker'
 import { GRADE_OPTIONS } from './_courseFormShared'
-import type { CreateCoursePayload } from '../../types'
+import type { CreateCoursePayload, SlotSelection } from '../../types'
 
 interface Props {
   isOpen: boolean
@@ -15,14 +15,14 @@ interface Props {
   setForm: (fn: (f: CreateCoursePayload) => CreateCoursePayload) => void
   minGrade: string
   setMinGrade: (v: string) => void
-  sectionIds: number[]
-  setSectionIds: (ids: number[]) => void
+  slots: SlotSelection[]
+  setSlots: (slots: SlotSelection[]) => void
   onSubmit: (e: React.FormEvent) => void
   loading: boolean
 }
 
 export function CourseFormModal({
-  isOpen, onClose, editId, form, setForm, minGrade, setMinGrade, sectionIds, setSectionIds, onSubmit, loading,
+  isOpen, onClose, editId, form, setForm, minGrade, setMinGrade, slots, setSlots, onSubmit, loading,
 }: Props) {
   function set(k: keyof CreateCoursePayload) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -42,7 +42,7 @@ export function CourseFormModal({
         <div style={{ display: 'grid', gridTemplateColumns: editId ? '1fr 1fr' : '1fr', gap: 14 }}>
           <CourseCodeAutocomplete
             value={form.code}
-            onChange={(v) => { setForm(f => ({ ...f, code: v })); setSectionIds([]) }}
+            onChange={(v) => { setForm(f => ({ ...f, code: v })); setSlots([]) }}
             onSelect={(c) => {
               setForm(f => ({
                 ...f,
@@ -51,7 +51,7 @@ export function CourseFormModal({
                 semester: c.semester,
                 academic_year: c.academic_year,
               }))
-              setSectionIds([])
+              setSlots([])
             }}
             disabled={!!editId}
           />
@@ -68,14 +68,14 @@ export function CourseFormModal({
             <Select
               label="ภาคเรียน *"
               value={form.semester}
-              onChange={(e) => { set('semester')(e); setSectionIds([]) }}
+              onChange={(e) => { set('semester')(e); setSlots([]) }}
               options={[{ value: '1', label: '1' }, { value: '2', label: '2' }, { value: '3', label: '3' }]}
             />
             <Input
               label="ปีการศึกษา *"
               type="number"
               value={form.academic_year}
-              onChange={(e) => { set('academic_year')(e); setSectionIds([]) }}
+              onChange={(e) => { set('academic_year')(e); setSlots([]) }}
               required
             />
           </div>
@@ -103,8 +103,8 @@ export function CourseFormModal({
             code={form.code}
             semester={form.semester}
             academicYear={form.academic_year}
-            selectedIds={sectionIds}
-            onChange={setSectionIds}
+            selected={slots}
+            onChange={setSlots}
           />
         )}
 
@@ -143,7 +143,7 @@ export function CourseFormModal({
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
           <Button type="button" variant="ghost" onClick={onClose}>ยกเลิก</Button>
-          <Button type="submit" loading={loading} disabled={!editId && sectionIds.length === 0}>
+          <Button type="submit" loading={loading} disabled={!editId && slots.length === 0}>
             {editId ? 'บันทึก' : 'เปิดรับสมัคร'}
           </Button>
         </div>

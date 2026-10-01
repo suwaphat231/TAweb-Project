@@ -43,3 +43,37 @@ export function displayCourseTitle(title: string, englishTitle?: string): string
   if (!match) return withoutTrailingNote
   return stripTrailingParens(match[0].trim()) || withoutTrailingNote
 }
+
+// Imported schedules pack every meeting into one line, e.g.
+// "Mo 10:20 - 12:05 ร.วท.2 Tu 13:00 - 16:35 1227/1,1227/2 ว.1". Split before
+// each day abbreviation that is followed by a time so each meeting reads on
+// its own line. Must stay in step with splitSchedule in the backend's
+// Teacher/slots.go, which checks picked slots against the same split.
+export function splitSchedule(schedule: string): string[] {
+  return schedule
+    .trim()
+    .split(/\s+(?=(?:Mo|Tu|We|Th|Fr|Sa|Su)\s+\d)/)
+    .filter(Boolean)
+}
+
+const MEETING_TIME = /^(Mo|Tu|We|Th|Fr|Sa|Su)\s+\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}/
+
+// Splits one meeting into its time ("Tu 13:00 - 16:35", spacing normalised —
+// the key Secs are matched on) and its room. Mirrors splitMeeting in the
+// backend's Teacher/slots.go.
+export function splitMeeting(meeting: string): { time: string; room: string } {
+  const m = meeting.match(MEETING_TIME)
+  if (!m) return { time: meeting.trim().split(/\s+/).join(' '), room: '' }
+  return {
+    time: m[0].replace(/-/g, ' - ').trim().split(/\s+/).join(' '),
+    room: meeting.slice(m[0].length).trim(),
+  }
+}
+
+export const DAY_ORDER = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
+
+// The Sec label for a course row: a time-slot posting covers every Sec that
+// meets in that slot ("1, 2"); an imported row is just its own Sec number.
+export function secLabel(c: { section?: number; sections?: string }): string {
+  return c.sections ? c.sections.split(',').join(', ') : String(c.section ?? '')
+}

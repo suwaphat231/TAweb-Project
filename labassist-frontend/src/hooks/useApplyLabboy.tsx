@@ -8,6 +8,7 @@ import { useToast } from '../hooks/useToast'
 import { GRADE_OPTIONS } from '../utils/grades'
 import { cleanCourseTitle } from '../utils/courseTitle'
 import type { CourseGroup } from '../utils/courseGrouping'
+import { secLabel } from '../utils/courseDisplay'
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024
 const ALLOWED_TYPES = ['image/jpeg', 'image/png']
@@ -168,7 +169,7 @@ export function useApplyLabboy() {
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontSize: 13, fontWeight: 700, color: isSelected ? 'var(--primary)' : 'var(--ink-900)' }}>
-                        Sec {s.section}
+                        Sec {secLabel(s)}
                         {isFull && <span style={{ fontWeight: 400, fontSize: 11, marginLeft: 6, color: 'var(--red)' }}>เต็มแล้ว</span>}
                       </span>
                       <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>{s.labboy_accepted} / {s.labboy_slots} คน</span>

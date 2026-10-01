@@ -4,6 +4,7 @@ import { cleanCourseTitle } from '../../utils/courseTitle'
 import { Card } from '../ui/Card'
 import { StatusBadge, Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
+import { secLabel } from '../../utils/courseDisplay'
 
 interface Props {
   group: CourseGroup
@@ -49,7 +50,7 @@ export function CourseCard({ group, onApply, appliedSection }: Props) {
               color: 'var(--ink-500)', background: 'var(--bg)',
               padding: '2px 9px', borderRadius: 'var(--radius-pill)',
             }}>
-              Sec {group.sections[0].section}
+              Sec {secLabel(group.sections[0])}
             </span>
           )}
         </div>
@@ -88,7 +89,7 @@ export function CourseCard({ group, onApply, appliedSection }: Props) {
           <div style={{ fontSize: 12, color: 'var(--ink-500)', marginBottom: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
             {group.sections.map((s) => (
               <div key={s.id} style={{ display: 'flex', gap: 5 }}>
-                <span style={{ fontWeight: 600 }}>Sec {s.section}</span>
+                <span style={{ fontWeight: 600 }}>Sec {secLabel(s)}</span>
                 {s.schedule && <span>· {s.schedule}</span>}
               </div>
             ))}
@@ -118,7 +119,7 @@ export function CourseCard({ group, onApply, appliedSection }: Props) {
         {group.status === 'closed' || group.status === 'draft' ? (
           <Badge variant="gray">ปิดรับ</Badge>
         ) : appliedSection ? (
-          <Badge variant="green">สมัครแล้ว{appliedSection.section ? ` (Sec ${appliedSection.section})` : ''}</Badge>
+          <Badge variant="green">สมัครแล้ว{appliedSection.section ? ` (Sec ${secLabel(appliedSection)})` : ''}</Badge>
         ) : allFull ? (
           <Button size="sm" variant="outline" disabled style={{ cursor: 'not-allowed' }}>เต็มแล้ว</Button>
         ) : (
