@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // unlimitedCapacity is the capacity the classlist export uses for sections
@@ -121,24 +122,28 @@ func seedCoursesFromClasslist() error {
 			}
 		}
 
-		course := CreateCourse(models.Course{
-			Code:           r.SubjectCode,
-			Title:          title,
-			EnglishTitle:   r.TitleEN,
-			Credits:        r.Credits,
-			Schedule:       r.Schedule,
-			Section:        section,
-			Capacity:       r.Capacity,
-			Enrolled:       r.Enrolled,
-			InstructorID:   instructorID,
-			InstructorsRaw: r.Instructors,
-			Semester:       strconv.Itoa(r.Semester),
-			AcademicYear:   r.AcademicYear,
-			Status:         models.StatusDraft,
-			HasLab:         LabHoursFromCredits(r.Credits) > 0,
-		})
-		if course.ID == 0 {
-			return fmt.Errorf("seed course %s section %d: cannot save course", r.SubjectCode, section)
+		// One row per meeting time so each time is opened/applied to on its own.
+		for slot, line := range SplitScheduleDays(r.Schedule) {
+			course := CreateCourse(models.Course{
+				Code:           r.SubjectCode,
+				Title:          title,
+				EnglishTitle:   r.TitleEN,
+				Credits:        r.Credits,
+				Schedule:       line,
+				Section:        section,
+				Slot:           slot,
+				Capacity:       r.Capacity,
+				Enrolled:       r.Enrolled,
+				InstructorID:   instructorID,
+				InstructorsRaw: r.Instructors,
+				Semester:       strconv.Itoa(r.Semester),
+				AcademicYear:   r.AcademicYear,
+				Status:         models.StatusDraft,
+				HasLab:         LabHoursFromCredits(r.Credits) > 0,
+			})
+			if course.ID == 0 {
+				return fmt.Errorf("seed course %s section %d slot %d: cannot save course", r.SubjectCode, section, slot)
+			}
 		}
 	}
 
@@ -167,12 +172,12 @@ func mergeDuplicateCourses() error {
 
 	type classKey struct {
 		code, semester, schedule string
-		section, year            int
+		section, slot, year      int
 	}
 	groups := map[classKey][]models.Course{}
 	var order []classKey
 	for _, c := range courses {
-		k := classKey{c.Code, c.Semester, strings.TrimSpace(c.Schedule), c.Section, c.AcademicYear}
+		k := classKey{c.Code, c.Semester, strings.TrimSpace(c.Schedule), c.Section, c.Slot, c.AcademicYear}
 		if _, ok := groups[k]; !ok {
 			order = append(order, k)
 		}
@@ -230,6 +235,182 @@ func mergeDuplicateCourses() error {
 	}
 	if removed > 0 {
 		log.Printf("Merged %d duplicate courses (same code, section, term and time)", removed)
+	}
+	return nil
+}
+
+// splitMultiTimeCourses turns each course whose schedule meets on several
+// days into one row per day (slot 0 keeps the original row). Databases
+// seeded before courses were split per day hold a whole section in one row,
+// so instructors could only open "Sec 1" instead of picking the days. Only untouched rows are split — anything already recruiting or
+// referenced keeps its row so existing applications stay valid.
+func splitMultiTimeCourses() error {
+	var courses []models.Course
+	if err := DB.Where("slot = 0 AND schedule LIKE ?", "%\n%").Order("id ASC").Find(&courses).Error; err != nil {
+		return fmt.Errorf("load courses: %w", err)
+	}
+
+	split := 0
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		for _, c := range courses {
+			lines := SplitScheduleDays(c.Schedule)
+			if len(lines) < 2 || courseReferenced(tx, c.ID) {
+				continue
+			}
+			var recruiting int64
+			if err := tx.Model(&models.Posting{}).Where("course_id = ? AND status <> ?", c.ID, models.StatusDraft).Count(&recruiting).Error; err != nil {
+				return err
+			}
+			if recruiting > 0 {
+				continue
+			}
+
+			var links []models.CourseInstructor
+			if err := tx.Where("course_id = ?", c.ID).Find(&links).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&models.Course{}).Where("id = ?", c.ID).Update("schedule", lines[0]).Error; err != nil {
+				return err
+			}
+			for slot, line := range lines[1:] {
+				nc := c
+				nc.ID = 0
+				nc.Slot = slot + 1
+				nc.Schedule = line
+				nc.Status = models.StatusDraft
+				if err := tx.Omit(clause.Associations).Create(&nc).Error; err != nil {
+					return err
+				}
+				for _, l := range links {
+					l.ID = 0
+					l.CourseID = nc.ID
+					if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&l).Error; err != nil {
+						return err
+					}
+				}
+				if err := syncPostingTx(tx, nc); err != nil {
+					return err
+				}
+			}
+			split++
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if split > 0 {
+		log.Printf("Split %d multi-time courses into one course per meeting time", split)
+	}
+	return nil
+}
+
+// mergeSameDaySlots folds slots of one section that meet on the same day back
+// into a single row. Sections were briefly split one row per schedule line,
+// which turned "We 08:30 - 10:15" and "We 10:20 - 12:05" into two options;
+// they are one day's class and are opened/applied to together. Slots are
+// renumbered 0..n-1 afterwards so they line up with SplitScheduleDays again.
+// A section is left alone if any of its rows is recruiting or referenced.
+func mergeSameDaySlots() error {
+	var courses []models.Course
+	if err := DB.Order("code, semester, academic_year, section, slot").Find(&courses).Error; err != nil {
+		return fmt.Errorf("load courses: %w", err)
+	}
+
+	type sectionKey struct {
+		code, semester string
+		year, section  int
+	}
+	var order []sectionKey
+	sections := map[sectionKey][]models.Course{}
+	for _, c := range courses {
+		k := sectionKey{c.Code, c.Semester, c.AcademicYear, c.Section}
+		if _, ok := sections[k]; !ok {
+			order = append(order, k)
+		}
+		sections[k] = append(sections[k], c)
+	}
+
+	merged := 0
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		for _, k := range order {
+			rows := sections[k]
+			if len(rows) < 2 {
+				continue
+			}
+			var dayOrder []string
+			byDay := map[string][]models.Course{}
+			for _, c := range rows {
+				day := strings.TrimSpace(c.Schedule)
+				if m := enLineRe.FindStringSubmatch(day); m != nil {
+					day = m[1]
+				}
+				if _, ok := byDay[day]; !ok {
+					dayOrder = append(dayOrder, day)
+				}
+				byDay[day] = append(byDay[day], c)
+			}
+			if len(dayOrder) == len(rows) {
+				continue
+			}
+
+			untouched := true
+			for _, c := range rows {
+				var recruiting int64
+				if err := tx.Model(&models.Posting{}).Where("course_id = ? AND status <> ?", c.ID, models.StatusDraft).Count(&recruiting).Error; err != nil {
+					return err
+				}
+				if recruiting > 0 || courseReferenced(tx, c.ID) {
+					untouched = false
+					break
+				}
+			}
+			if !untouched {
+				continue
+			}
+
+			for slot, day := range dayOrder {
+				group := byDay[day]
+				keep := group[0]
+				if len(group) > 1 {
+					var lines []string
+					var drop []uint
+					for _, c := range group {
+						lines = append(lines, strings.TrimSpace(c.Schedule))
+						if c.ID != keep.ID {
+							drop = append(drop, c.ID)
+						}
+					}
+					if err := tx.Where("course_id IN ?", drop).Delete(&models.Posting{}).Error; err != nil {
+						return err
+					}
+					if err := tx.Where("course_id IN ?", drop).Delete(&models.CourseInstructor{}).Error; err != nil {
+						return err
+					}
+					if err := tx.Delete(&models.Course{}, drop).Error; err != nil {
+						return err
+					}
+					if err := tx.Model(&models.Course{}).Where("id = ?", keep.ID).Update("schedule", strings.Join(lines, "\n")).Error; err != nil {
+						return err
+					}
+					merged += len(drop)
+				}
+				// Ascending order only ever moves a row down into a slot that
+				// was its own or already vacated, so the unique key holds.
+				if keep.Slot != slot {
+					if err := tx.Model(&models.Course{}).Where("id = ?", keep.ID).Update("slot", slot).Error; err != nil {
+						return err
+					}
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if merged > 0 {
+		log.Printf("Merged %d same-day course slots into their day's row", merged)
 	}
 	return nil
 }

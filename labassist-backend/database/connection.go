@@ -462,6 +462,28 @@ END`,
 	return nil
 }
 
+// promoteOwnerCourseLinks marks the link between a course and its own
+// instructor (courses.instructor_id) as imported. CreateCourse used to
+// record that link as self_added, and backfillCourseInstructors can't add
+// the imported one beside it (one link per course/instructor), so the
+// instructor failed InstructorOwnsCourse and got "forbidden" opening their
+// own course. Links added through AddCourseRelation never touch
+// courses.instructor_id, so they stay self_added.
+func promoteOwnerCourseLinks(db *gorm.DB) error {
+	res := db.Exec(`UPDATE course_instructors SET source = ?
+		WHERE source = ? AND archived_at IS NULL AND EXISTS (
+			SELECT 1 FROM courses c
+			WHERE c.id = course_instructors.course_id AND c.instructor_id = course_instructors.instructor_id)`,
+		models.CourseInstructorImported, models.CourseInstructorSelfAdded)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected > 0 {
+		log.Printf("Marked %d course owner links as imported", res.RowsAffected)
+	}
+	return nil
+}
+
 // backfillCourseInstructors populates course_instructors from the legacy
 // single-FK (courses.instructor_id) and from co-instructor names stored in
 // courses.instructors_raw. The function is idempotent — it uses INSERT IGNORE
@@ -606,6 +628,15 @@ func Connect(cfg *config.Config) error {
 	if err := db.AutoMigrate(&models.User{}); err != nil {
 		return fmt.Errorf("migrate users table: %w", err)
 	}
+	// The course key used to be (code, section, semester, year). A section
+	// that meets at several times is now one row per time, so the key gained
+	// slot under a new index name — drop the old one or AutoMigrate keeps it
+	// and the second time of a section fails to insert.
+	if db.Migrator().HasTable(&models.Course{}) && db.Migrator().HasIndex(&models.Course{}, "idx_course_slot") {
+		if err := db.Migrator().DropIndex(&models.Course{}, "idx_course_slot"); err != nil {
+			return fmt.Errorf("drop legacy courses slot index: %w", err)
+		}
+	}
 	if err := db.AutoMigrate(&models.Course{}); err != nil {
 		return fmt.Errorf("migrate courses table: %w", err)
 	}
@@ -673,9 +704,18 @@ func Connect(cfg *config.Config) error {
 	if err := backfillCourseInstructors(db); err != nil {
 		return fmt.Errorf("backfill course instructors: %w", err)
 	}
+	if err := promoteOwnerCourseLinks(db); err != nil {
+		return fmt.Errorf("promote owner course links: %w", err)
+	}
 
 	if err := mergeDuplicateCourses(); err != nil {
 		return fmt.Errorf("merge duplicate courses: %w", err)
+	}
+	if err := splitMultiTimeCourses(); err != nil {
+		return fmt.Errorf("split multi-time courses: %w", err)
+	}
+	if err := mergeSameDaySlots(); err != nil {
+		return fmt.Errorf("merge same-day course slots: %w", err)
 	}
 
 	if err := seedAdminAccount(); err != nil {

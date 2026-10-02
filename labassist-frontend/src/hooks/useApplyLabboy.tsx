@@ -7,7 +7,7 @@ import { Button } from '../components/ui/Button'
 import { useToast } from '../hooks/useToast'
 import { GRADE_OPTIONS } from '../utils/grades'
 import { cleanCourseTitle } from '../utils/courseTitle'
-import type { CourseGroup } from '../utils/courseGrouping'
+import { groupSectionsByTime, timeOptionSecLabel, type CourseGroup } from '../utils/courseGrouping'
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024
 const ALLOWED_TYPES = ['image/jpeg', 'image/png']
@@ -120,6 +120,7 @@ export function useApplyLabboy() {
   }
 
   const selectedSection = applyTarget?.sections.find((s) => s.id === selectedSectionId) ?? null
+  const timeOptions = applyTarget ? groupSectionsByTime(applyTarget.sections) : []
   const requireGradeProof = !!selectedSection?.require_grade_proof
 
   const modal = (
@@ -142,21 +143,28 @@ export function useApplyLabboy() {
           </div>
         )}
 
-        {applyTarget && applyTarget.sections.length > 1 ? (
+        {timeOptions.length > 1 ? (
           <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 8 }}>เลือก Sec ตามเวลาที่ว่าง</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 8 }}>เลือกช่วงเวลาที่ว่าง</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {applyTarget.sections.map((s) => {
-                const isFull = s.labboy_slots > 0 && s.labboy_accepted >= s.labboy_slots
-                const isConflict = !!s.conflict_day
-                const isDisabled = isFull || isConflict
-                const isSelected = selectedSectionId === s.id
+              {timeOptions.map((opt) => {
+                // Secs merged into one time keep their own slot counts; the
+                // application goes to the first sec at this time with room.
+                const sectionFull = (s: (typeof opt.sections)[number]) => s.labboy_slots > 0 && s.labboy_accepted >= s.labboy_slots
+                const target = opt.sections.find((s) => !sectionFull(s) && !s.conflict_day)
+                const isFull = opt.sections.every(sectionFull)
+                const isConflict = !isFull && !target && opt.sections.some((s) => !!s.conflict_day)
+                const isDisabled = !target
+                const isSelected = opt.sections.some((s) => s.id === selectedSectionId)
+                const accepted = opt.sections.reduce((n, s) => n + s.labboy_accepted, 0)
+                const slots = opt.sections.reduce((n, s) => n + s.labboy_slots, 0)
+                const secLabel = timeOptionSecLabel(opt)
                 return (
                   <button
-                    key={s.id}
+                    key={opt.key}
                     type="button"
                     disabled={isDisabled}
-                    onClick={() => !isDisabled && setSelectedSectionId(s.id)}
+                    onClick={() => target && setSelectedSectionId(target.id)}
                     style={{
                       padding: '10px 12px',
                       borderRadius: 10,
@@ -168,15 +176,17 @@ export function useApplyLabboy() {
                       transition: 'border .15s, background .15s',
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: isSelected ? 'var(--primary)' : isConflict ? 'var(--amber)' : 'var(--ink-900)' }}>
-                        Sec {s.section}
-                        {isFull && <span style={{ fontWeight: 400, fontSize: 11, marginLeft: 6, color: 'var(--red)' }}>เต็มแล้ว</span>}
-                        {isConflict && <span style={{ fontWeight: 400, fontSize: 11, marginLeft: 6, color: 'var(--amber)' }}>ชนตาราง</span>}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: isSelected ? 'var(--primary)' : isConflict ? 'var(--amber)' : 'var(--ink-900)', whiteSpace: 'pre-line' }}>
+                        {opt.schedule || secLabel}
                       </span>
-                      <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>{s.labboy_accepted} / {s.labboy_slots} คน</span>
+                      <span style={{ fontSize: 11, color: 'var(--ink-500)', flexShrink: 0 }}>{accepted} / {slots} คน</span>
                     </div>
-                    {s.schedule && <div style={{ fontSize: 12, color: isConflict ? 'var(--amber)' : 'var(--ink-500)', marginTop: 2 }}>🕐 {s.schedule}</div>}
+                    <div style={{ fontSize: 12, color: isConflict ? 'var(--amber)' : 'var(--ink-500)', marginTop: 2 }}>
+                      {!!opt.schedule && secLabel}
+                      {isFull && <span style={{ marginLeft: 6, color: 'var(--red)' }}>เต็มแล้ว</span>}
+                      {isConflict && <span style={{ marginLeft: 6 }}>ชนตาราง</span>}
+                    </div>
                   </button>
                 )
               })}
@@ -185,8 +195,8 @@ export function useApplyLabboy() {
         ) : selectedSection ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {selectedSection.schedule && (
-              <div style={{ fontSize: 13, color: selectedSection.conflict_day ? 'var(--amber)' : 'var(--ink-500)' }}>
-                🕐 {selectedSection.schedule}
+              <div style={{ fontSize: 13, color: selectedSection.conflict_day ? 'var(--amber)' : 'var(--ink-500)', whiteSpace: 'pre-line' }}>
+                {selectedSection.schedule}
               </div>
             )}
             {selectedSection.conflict_day && (

@@ -111,3 +111,38 @@ func ConflictingDay(courseSchedule string, ts models.TermSchedule) string {
 	}
 	return ""
 }
+
+// SplitScheduleDays breaks a section's schedule into its separate meeting
+// days. Each line of the classlist format is one meeting time; lines on the
+// same day stay together as one entry ("We 08:30 - 10:15 ...\nWe 10:20 -
+// 12:05 ..." is one entry, "Tu 13:00 - 16:35 ...\nFr 16:40 - 18:25 ..." is
+// two). Blank and repeated lines are dropped; an empty schedule yields one
+// empty entry so the section still gets a row.
+func SplitScheduleDays(schedule string) []string {
+	var days []string
+	byDay := map[string][]string{}
+	seen := map[string]bool{}
+	for _, line := range strings.Split(schedule, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || seen[line] {
+			continue
+		}
+		seen[line] = true
+		day := line
+		if m := enLineRe.FindStringSubmatch(line); m != nil {
+			day = m[1]
+		}
+		if _, ok := byDay[day]; !ok {
+			days = append(days, day)
+		}
+		byDay[day] = append(byDay[day], line)
+	}
+	if len(days) == 0 {
+		return []string{strings.TrimSpace(schedule)}
+	}
+	out := make([]string, len(days))
+	for i, d := range days {
+		out[i] = strings.Join(byDay[d], "\n")
+	}
+	return out
+}

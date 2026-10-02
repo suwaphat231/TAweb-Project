@@ -63,6 +63,8 @@ export interface Course {
   english_title?: string
   credits?: string
   section?: number
+  /** Index of this row's meeting time within its section — each time is its own row. */
+  slot?: number
   schedule?: string
   instructor_id: number | null
   instructor_name: string

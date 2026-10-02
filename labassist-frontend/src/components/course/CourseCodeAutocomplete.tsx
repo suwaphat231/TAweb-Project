@@ -20,6 +20,10 @@ interface Props {
 export function CourseCodeAutocomplete({ value, onChange, onSelect, disabled }: Props) {
   const [inputValue, setInputValue] = useState(value)
   const [open, setOpen] = useState(false)
+  // true until the user types: lets the dropdown list every course even though
+  // the input already holds the selected code, so a wrong pick can be swapped
+  // without clearing the field first.
+  const [showAll, setShowAll] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -35,9 +39,15 @@ export function CourseCodeAutocomplete({ value, onChange, onSelect, disabled }: 
   }, [value])
 
   const q = inputValue.trim().toLowerCase()
-  const suggestions = catalog.filter((c) =>
+  const selectedCode = catalog.some((c) => c.code === inputValue.trim()) ? inputValue.trim() : ''
+  const suggestions = showAll ? catalog : catalog.filter((c) =>
     !q || c.code.toLowerCase().includes(q) || c.title.toLowerCase().includes(q)
   )
+
+  function openList() {
+    setShowAll(!!selectedCode)
+    setOpen(true)
+  }
 
   function handleSelect(c: { code: string; title: string; english_title?: string; semester: string; academic_year: number }) {
     const title = displayCourseTitle(c.title, c.english_title)
@@ -45,11 +55,13 @@ export function CourseCodeAutocomplete({ value, onChange, onSelect, disabled }: 
     onChange(c.code)
     onSelect({ code: c.code, title, semester: c.semester, academic_year: c.academic_year })
     setOpen(false)
+    setShowAll(false)
   }
 
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     setInputValue(e.target.value)
     onChange(e.target.value)
+    setShowAll(false)
     setOpen(true)
   }
 
@@ -80,19 +92,21 @@ export function CourseCodeAutocomplete({ value, onChange, onSelect, disabled }: 
   return (
     <div ref={containerRef} style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 5 }}>
       <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>รหัสวิชา *</label>
+      <div style={{ position: 'relative' }}>
       <input
         ref={inputRef}
         type="text"
         value={inputValue}
         onChange={handleInputChange}
-        onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--primary)'; setOpen(true) }}
+        onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--primary)'; openList() }}
+        onClick={() => { if (!open) openList() }}
         onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--line)' }}
         placeholder={isLoading ? 'กำลังโหลด...' : 'พิมพ์รหัสวิชา เช่น 517, 520...'}
         disabled={disabled}
         required
         autoComplete="off"
         style={{
-          padding: '9px 12px',
+          padding: '9px 34px 9px 12px',
           border: '1.5px solid var(--line)',
           borderRadius: 'var(--radius-input)',
           fontSize: 14,
@@ -105,6 +119,25 @@ export function CourseCodeAutocomplete({ value, onChange, onSelect, disabled }: 
           opacity: disabled ? 0.6 : 1,
         }}
       />
+      {!disabled && (
+        <button
+          type="button"
+          aria-label="แสดงรายวิชาทั้งหมด"
+          tabIndex={-1}
+          onMouseDown={(e) => {
+            e.preventDefault()
+            if (open) { setOpen(false) } else { openList(); inputRef.current?.focus() }
+          }}
+          style={{
+            position: 'absolute', top: 0, right: 0, bottom: 0, width: 32,
+            border: 'none', background: 'none', cursor: 'pointer',
+            color: 'var(--ink-500)', fontSize: 11,
+          }}
+        >
+          {open ? '▲' : '▼'}
+        </button>
+      )}
+      </div>
 
       {open && !disabled && suggestions.length > 0 && (
         <div style={{
@@ -120,7 +153,7 @@ export function CourseCodeAutocomplete({ value, onChange, onSelect, disabled }: 
           maxHeight: 240,
           overflowY: 'auto',
         }}>
-          {suggestions.slice(0, 20).map((c, i) => (
+          {suggestions.slice(0, showAll ? suggestions.length : 20).map((c, i) => (
             <button
               key={c.code}
               type="button"
@@ -132,12 +165,12 @@ export function CourseCodeAutocomplete({ value, onChange, onSelect, disabled }: 
                 padding: '9px 14px',
                 border: 'none',
                 borderBottom: i < suggestions.length - 1 ? '1px solid var(--line-soft)' : 'none',
-                background: 'none',
+                background: c.code === selectedCode ? 'var(--primary-50)' : 'none',
                 cursor: 'pointer',
                 transition: 'background .1s',
               }}
               onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = c.code === selectedCode ? 'var(--primary-50)' : 'none')}
             >
               <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--primary)' }}>{c.code}</span>
               <span style={{ fontSize: 12, color: 'var(--ink-600)', marginLeft: 8 }}>

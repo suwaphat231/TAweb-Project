@@ -338,55 +338,60 @@ func (h *Handler) ImportCourses(c *gin.Context) {
 		}
 
 		// A code legitimately repeats across sections, so a course is only
-		// "already in the system" when code + section + term all match.
+		// "already in the system" when code + section + time + term all match.
+		// Each meeting time of a section is its own course (slot), so a row
+		// listing several times is compared/created one time at a time.
 		// Identical -> report as duplicate; different -> let the admin choose.
 		section := getInt(row, "section")
-		if existing, found := database.FindCourseByKey(code, semester, academicYear, section); found {
-			newFields := ImportCourseFields{
-				Title: title, EnglishTitle: get(row, "english_title"), Credits: credits,
-				Schedule: get(row, "schedule"), Capacity: getInt(row, "capacity"),
-				Enrolled: getInt(row, "enrolled"), InstructorsRaw: instructorsRaw,
+		for slot, schedule := range database.SplitScheduleDays(get(row, "schedule")) {
+			if existing, found := database.FindCourseSlot(code, semester, academicYear, section, slot); found {
+				newFields := ImportCourseFields{
+					Title: title, EnglishTitle: get(row, "english_title"), Credits: credits,
+					Schedule: schedule, Capacity: getInt(row, "capacity"),
+					Enrolled: getInt(row, "enrolled"), InstructorsRaw: instructorsRaw,
+				}
+				oldFields := courseImportFields(existing)
+				if diff := diffImportFields(oldFields, newFields); len(diff) > 0 {
+					resp.Conflicts = append(resp.Conflicts, ImportConflict{
+						Row: rowNum, CourseID: existing.ID, Code: code, Section: section,
+						Old: oldFields, New: newFields, Different: diff,
+					})
+				} else {
+					resp.Duplicates = append(resp.Duplicates, ImportDuplicate{
+						Row: rowNum, Code: code, Section: section, Title: title,
+					})
+				}
+				continue
 			}
-			oldFields := courseImportFields(existing)
-			if diff := diffImportFields(oldFields, newFields); len(diff) > 0 {
-				resp.Conflicts = append(resp.Conflicts, ImportConflict{
-					Row: rowNum, CourseID: existing.ID, Code: code, Section: section,
-					Old: oldFields, New: newFields, Different: diff,
-				})
-			} else {
-				resp.Duplicates = append(resp.Duplicates, ImportDuplicate{
-					Row: rowNum, Code: code, Section: section, Title: title,
-				})
-			}
-			continue
-		}
 
-		// Course codes intentionally aren't required to be unique here: a
-		// real classlist export legitimately repeats one code across
-		// several rows, one per section/group.
-		course := database.CreateCourse(models.Course{
-			Code:           code,
-			Title:          title,
-			EnglishTitle:   get(row, "english_title"),
-			Credits:        credits,
-			Schedule:       get(row, "schedule"),
-			Section:        section,
-			Capacity:       getInt(row, "capacity"),
-			Enrolled:       getInt(row, "enrolled"),
-			InstructorID:   instructorID,
-			InstructorsRaw: instructorsRaw,
-			Semester:       semester,
-			AcademicYear:   academicYear,
-			Status:         models.StatusDraft,
-			HasLab:         labHours > 0,
-		})
-		if course.ID == 0 {
-			resp.Skipped = append(resp.Skipped, ImportSkippedRow{Row: rowNum, Reason: "cannot save course; check duplicate section or instructor"})
-			continue
+			// Course codes intentionally aren't required to be unique here: a
+			// real classlist export legitimately repeats one code across
+			// several rows, one per section/group.
+			course := database.CreateCourse(models.Course{
+				Code:           code,
+				Title:          title,
+				EnglishTitle:   get(row, "english_title"),
+				Credits:        credits,
+				Schedule:       schedule,
+				Section:        section,
+				Slot:           slot,
+				Capacity:       getInt(row, "capacity"),
+				Enrolled:       getInt(row, "enrolled"),
+				InstructorID:   instructorID,
+				InstructorsRaw: instructorsRaw,
+				Semester:       semester,
+				AcademicYear:   academicYear,
+				Status:         models.StatusDraft,
+				HasLab:         labHours > 0,
+			})
+			if course.ID == 0 {
+				resp.Skipped = append(resp.Skipped, ImportSkippedRow{Row: rowNum, Reason: "cannot save course; check duplicate section or instructor"})
+				continue
+			}
+			resp.Created = append(resp.Created, ImportCourseResult{
+				Row: rowNum, Code: course.Code, Title: course.Title, Instructor: instructorsRaw,
+			})
 		}
-		resp.Created = append(resp.Created, ImportCourseResult{
-			Row: rowNum, Code: course.Code, Title: course.Title, Instructor: instructorsRaw,
-		})
 	}
 
 	c.JSON(http.StatusOK, resp)

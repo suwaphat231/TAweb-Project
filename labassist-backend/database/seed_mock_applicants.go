@@ -17,6 +17,15 @@ var mockDemoInstructor = struct {
 	Email    string
 }{"puriwat", "อาจารย์ ดร.ภูริวัจน์ วรวิชัยพัฒน์", "puriwat@cp.su.ac.th"}
 
+// mockDemoStaff is the เจ้าหน้าที่ account behind the dev-login staff button.
+// user.sql also defines it, but that file only runs on an empty users table,
+// which never happens because classlist instructors are seeded first.
+var mockDemoStaff = struct {
+	Username string
+	FullName string
+	Email    string
+}{"parinya", "ปริญญา สุภาวดี", "parinya@cp.su.ac.th"}
+
 // mockDemoCourseBase is the primary debug course: open, 6 Lab Boy slots,
 // 5 pre-applied students — the 6th slot is left for a real student to fill.
 var mockDemoCourseBase = models.Course{
@@ -61,6 +70,21 @@ var mockDemoStudents = []mockDemoStudent{
 // 5 pre-applied students — leaving the 6th slot open for manual testing.
 // Duplicate accounts/applications are skipped so restarting is safe.
 func seedMockApplicants() error {
+	if _, ok := UserByUsername(mockDemoStaff.Username); !ok {
+		staff, err := CreateUser(models.User{
+			Username: &mockDemoStaff.Username,
+			FullName: mockDemoStaff.FullName,
+			Email:    mockDemoStaff.Email,
+			Role:     models.RoleStaff,
+		})
+		if err != nil {
+			return err
+		}
+		if err := setPassword(staff.ID); err != nil {
+			return err
+		}
+	}
+
 	instructor, ok := UserByUsername(mockDemoInstructor.Username)
 	if !ok {
 		created, err := CreateUser(models.User{

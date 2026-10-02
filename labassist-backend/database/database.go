@@ -327,11 +327,15 @@ func CreateCourse(c models.Course) models.Course {
 		if err := tx.Omit(clause.Associations).Create(&c).Error; err != nil {
 			return err
 		}
+		// The course's own instructor (matched from the import file, or the
+		// instructor creating it) owns it — an imported link is what
+		// InstructorOwnsCourse checks. self_added is only for courses an
+		// instructor links themselves to via AddCourseRelation.
 		if c.InstructorID != nil && *c.InstructorID != 0 {
 			ci := models.CourseInstructor{
 				CourseID:     c.ID,
 				InstructorID: *c.InstructorID,
-				Source:       models.CourseInstructorSelfAdded,
+				Source:       models.CourseInstructorImported,
 			}
 			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&ci).Error; err != nil {
 				return err
@@ -502,6 +506,14 @@ func FindCourseByKey(code, semester string, academicYear, section int) (models.C
 	var c models.Course
 	err := DB.Where("code = ? AND semester = ? AND academic_year = ? AND section = ?",
 		code, semester, academicYear, section).First(&c).Error
+	return c, err == nil
+}
+
+// FindCourseSlot returns the course for one meeting time (slot) of a section.
+func FindCourseSlot(code, semester string, academicYear, section, slot int) (models.Course, bool) {
+	var c models.Course
+	err := DB.Where("code = ? AND semester = ? AND academic_year = ? AND section = ? AND slot = ?",
+		code, semester, academicYear, section, slot).First(&c).Error
 	return c, err == nil
 }
 
@@ -798,7 +810,7 @@ func TaughtCourseSections(instructorID uint, fullName string, isAdmin bool, code
 	query := DB.Table("courses").
 		Where("(courses.code = ? OR courses.code LIKE ?) AND courses.semester = ? AND courses.academic_year = ?",
 			code, code+"-%", semester, academicYear).
-		Order("courses.section ASC")
+		Order("courses.section ASC, courses.slot ASC")
 	if !isAdmin {
 		query = query.Joins(
 			"JOIN course_instructors ci ON ci.course_id = courses.id AND ci.instructor_id = ? AND ci.archived_at IS NULL",

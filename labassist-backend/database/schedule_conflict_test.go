@@ -1,6 +1,7 @@
 package database
 
 import (
+	"strings"
 	"testing"
 
 	"labassist/models"
@@ -144,5 +145,29 @@ func TestConflictingDay_EnglishFormat(t *testing.T) {
 	schedule := "We 14:50 - 16:35 1239 ว.1"
 	if day := ConflictingDay(schedule, ts); day != "วันพุธ" {
 		t.Errorf("expected วันพุธ, got %q", day)
+	}
+}
+
+func TestSplitScheduleDays(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []string
+	}{
+		{
+			"Mo 10:20 - 12:05 ร.วท.2\nTu 13:00 - 16:35 1227/1,1227/2 ว.1\nFr 16:40 - 18:25 1227/1,1227/2 ว.1",
+			[]string{"Mo 10:20 - 12:05 ร.วท.2", "Tu 13:00 - 16:35 1227/1,1227/2 ว.1", "Fr 16:40 - 18:25 1227/1,1227/2 ว.1"},
+		},
+		{
+			"We 08:30 - 10:15 1227/1,1227/2 ว.1\nWe 10:20 - 12:05 1227/1,1227/2 ว.1\n\nWe 08:30 - 10:15 1227/1,1227/2 ว.1",
+			[]string{"We 08:30 - 10:15 1227/1,1227/2 ว.1\nWe 10:20 - 12:05 1227/1,1227/2 ว.1"},
+		},
+		{"จ,พ,ศ 09:00-12:00", []string{"จ,พ,ศ 09:00-12:00"}},
+		{"", []string{""}},
+	}
+	for _, tc := range cases {
+		got := SplitScheduleDays(tc.in)
+		if strings.Join(got, "|") != strings.Join(tc.want, "|") || len(got) != len(tc.want) {
+			t.Errorf("SplitScheduleDays(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }

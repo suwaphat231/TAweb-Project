@@ -80,3 +80,65 @@ export function getAppliedSection(group: CourseGroup, apps: Application[]): Cour
   if (!app) return undefined
   return group.sections.find((s) => s.id === app.course_id)
 }
+
+// A "time option" is every section of a posting that meets at the same
+// time — e.g. Sec 1 and Sec 2 both "Mo 10:20 - 12:05" share one lecture, so
+// instructors open and students pick them as a single choice. Rows stay
+// separate underneath (own slot count/applications); only the choice merges.
+export interface TimeOption {
+  key: string
+  /** Distinct schedule texts of the merged sections, one per line. */
+  schedule: string
+  sections: Course[]
+}
+
+const TIME_LINE_RE = /^(Mo|Tu|We|Th|Fr|Sa|Su)\s+(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/
+
+// Day + start-end of every meeting line, ignoring the room, so the same
+// period in different rooms still counts as the same time.
+function scheduleTimeKey(schedule?: string): string {
+  const lines = (schedule ?? '').split('\n').map((l) => l.trim()).filter(Boolean)
+  return lines
+    .map((l) => {
+      const m = TIME_LINE_RE.exec(l)
+      return m ? `${m[1]} ${m[2].padStart(5, '0')}-${m[3].padStart(5, '0')}` : l
+    })
+    .sort()
+    .join('|')
+}
+
+export function groupSectionsByTime(sections: Course[]): TimeOption[] {
+  const map = new Map<string, Course[]>()
+  for (const s of sections) {
+    // No schedule means nothing to match on — keep the section on its own.
+    const key = scheduleTimeKey(s.schedule) || `id:${s.id}`
+    const arr = map.get(key)
+    if (arr) arr.push(s)
+    else map.set(key, [s])
+  }
+  return Array.from(map.entries())
+    .map(([key, secs]) => ({
+      key,
+      schedule: Array.from(new Set(secs.map((s) => s.schedule?.trim() ?? '').filter(Boolean))).join('\n'),
+      sections: secs,
+    }))
+    .sort((a, b) => timeSortKey(a.schedule).localeCompare(timeSortKey(b.schedule)))
+}
+
+const DAY_ORDER = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
+
+// Earliest meeting as "<day index> <start>" so options list Mo → Su, then by
+// start time; schedules without a recognisable day sort after the rest.
+function timeSortKey(schedule: string): string {
+  const keys = schedule.split('\n').flatMap((l) => {
+    const m = TIME_LINE_RE.exec(l.trim())
+    return m ? [`${DAY_ORDER.indexOf(m[1])} ${m[2].padStart(5, '0')}`] : []
+  })
+  return keys.length ? keys.sort()[0] : '9'
+}
+
+/** "Sec 1" / "Sec 1, 2" for the sections merged into one time option. */
+export function timeOptionSecLabel(option: TimeOption): string {
+  const secs = Array.from(new Set(option.sections.map((s) => s.section).filter((n): n is number => !!n))).sort((a, b) => a - b)
+  return secs.length ? `Sec ${secs.join(', ')}` : ''
+}

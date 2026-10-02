@@ -15,15 +15,20 @@ const (
 type Course struct {
 	PostingID uint `gorm:"-" json:"posting_id"`
 	ID        uint `gorm:"primaryKey" json:"id"`
-	// (code, section, semester, academic_year) is the natural key for a
+	// (code, section, slot, semester, academic_year) is the natural key for a
 	// teaching slot — exactly one row may exist per combination regardless
 	// of which instructor account is linked.
-	Code           string `gorm:"size:20;not null;uniqueIndex:idx_course_slot" json:"code"`
+	Code           string `gorm:"size:20;not null;uniqueIndex:idx_course_time_slot" json:"code"`
 	Title          string `gorm:"size:300;not null" json:"title"`
 	EnglishTitle   string `gorm:"size:300" json:"english_title,omitempty"`
 	GroupNote      string `gorm:"size:200" json:"group_note,omitempty"`
 	Credits        string `gorm:"size:20" json:"credits,omitempty"`
-	Section        int    `gorm:"default:0;uniqueIndex:idx_course_slot" json:"section"`
+	Section        int    `gorm:"default:0;uniqueIndex:idx_course_time_slot" json:"section"`
+	// Slot is the index of this row's meeting time within its section. A
+	// section that meets at several times (e.g. "Tu 13:00 - 16:35" and
+	// "Fr 16:40 - 18:25") is stored as one row per time so instructors open
+	// and students apply to each time separately.
+	Slot           int    `gorm:"default:0;uniqueIndex:idx_course_time_slot" json:"slot"`
 	Schedule       string `gorm:"size:500" json:"schedule,omitempty"`
 	Capacity       int    `gorm:"default:0" json:"capacity"`
 	Enrolled       int    `gorm:"default:0" json:"enrolled"`
@@ -36,8 +41,8 @@ type Course struct {
 	// ever points to a real, matched user account.
 	InstructorsRaw string `gorm:"size:500" json:"instructors_raw,omitempty"`
 	ApplicantCount int    `gorm:"-" json:"applicant_count"`
-	Semester       string `gorm:"size:10;not null;uniqueIndex:idx_course_slot" json:"semester"`
-	AcademicYear   int    `gorm:"not null;uniqueIndex:idx_course_slot" json:"academic_year"`
+	Semester       string `gorm:"size:10;not null;uniqueIndex:idx_course_time_slot" json:"semester"`
+	AcademicYear   int    `gorm:"not null;uniqueIndex:idx_course_time_slot" json:"academic_year"`
 	HasLab         bool   `gorm:"default:false" json:"has_lab"`
 
 	// Recruitment-round fields are stored on the Posting model, not here.

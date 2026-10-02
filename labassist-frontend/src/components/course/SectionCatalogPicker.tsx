@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { instructorApi } from '../../services/api'
+import { groupSectionsByTime, timeOptionSecLabel } from '../../utils/courseGrouping'
 
 interface Props {
   code: string
@@ -9,6 +10,9 @@ interface Props {
   onChange: (ids: number[]) => void
 }
 
+// Each option is one meeting time — a section that meets on several days is
+// imported as one row per day, and secs that meet at the same time share one
+// option, so the instructor opens each time separately.
 // Sec number + schedule always come from the admin's Excel import, never
 // typed in by the instructor (a free-text field was too easy to fat-finger
 // against the real timetable) — this is the only place they get picked from.
@@ -21,8 +25,10 @@ export function SectionCatalogPicker({ code, semester, academicYear, selectedIds
     enabled,
   })
 
-  function toggle(id: number) {
-    onChange(selectedIds.includes(id) ? selectedIds.filter((x) => x !== id) : [...selectedIds, id])
+  // One checkbox per time; secs meeting at the same time are opened together.
+  function toggle(ids: number[], on: boolean) {
+    const rest = selectedIds.filter((x) => !ids.includes(x))
+    onChange(on ? [...rest, ...ids] : rest)
   }
 
   if (!enabled) return null
@@ -45,12 +51,14 @@ export function SectionCatalogPicker({ code, semester, academicYear, selectedIds
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {sections.map((s) => {
-            const alreadyOpen = s.status !== 'draft'
-            const isSelected = selectedIds.includes(s.id)
+          {groupSectionsByTime(sections).map((opt) => {
+            const draftIds = opt.sections.filter((s) => s.status === 'draft').map((s) => s.id)
+            const alreadyOpen = draftIds.length === 0
+            const isSelected = draftIds.length > 0 && draftIds.every((id) => selectedIds.includes(id))
+            const secLabel = timeOptionSecLabel(opt)
             return (
               <label
-                key={s.id}
+                key={opt.key}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 10,
                   padding: '9px 12px', borderRadius: 10,
@@ -60,17 +68,15 @@ export function SectionCatalogPicker({ code, semester, academicYear, selectedIds
                   opacity: alreadyOpen ? 0.6 : 1,
                 }}
               >
-                <input type="checkbox" checked={isSelected} disabled={alreadyOpen} onChange={() => toggle(s.id)} />
+                <input type="checkbox" checked={isSelected} disabled={alreadyOpen} onChange={() => toggle(draftIds, !isSelected)} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-900)' }}>
-                    Sec {s.section}
-                    {alreadyOpen && (
-                      <span style={{ fontWeight: 400, fontSize: 11, marginLeft: 6, color: 'var(--ink-400)' }}>
-                        เปิดรับสมัครแล้ว
-                      </span>
-                    )}
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-900)', whiteSpace: 'pre-line' }}>
+                    {opt.schedule || secLabel}
                   </div>
-                  {s.schedule && <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>🕐 {s.schedule}</div>}
+                  <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>
+                 
+                    {alreadyOpen && <span style={{ marginLeft: opt.schedule && secLabel ? 6 : 0 }}>เปิดรับสมัครแล้ว</span>}
+                  </div>
                 </div>
               </label>
             )

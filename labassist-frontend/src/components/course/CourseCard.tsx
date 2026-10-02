@@ -1,5 +1,5 @@
 import type { Course } from '../../types'
-import type { CourseGroup } from '../../utils/courseGrouping'
+import { groupSectionsByTime, timeOptionSecLabel, type CourseGroup } from '../../utils/courseGrouping'
 import { cleanCourseTitle } from '../../utils/courseTitle'
 import { Card } from '../ui/Card'
 import { StatusBadge, Badge } from '../ui/Badge'
@@ -22,6 +22,7 @@ export function CourseCard({ group, onApply, appliedSection }: Props) {
   const deadline = group.deadline
     ? new Date(group.deadline).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
     : null
+  const timeOptions = groupSectionsByTime(group.sections)
 
   function handleApply() {
     onApply?.(group)
@@ -81,20 +82,19 @@ export function CourseCard({ group, onApply, appliedSection }: Props) {
         </div>
 
         {/* Schedule(s) */}
-        {group.sections.length === 1 && group.sections[0].schedule && (
+        {timeOptions.length === 1 && timeOptions[0].schedule && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, color: 'var(--ink-500)', marginBottom: 4 }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
             </svg>
-            {group.sections[0].schedule}
+            <span style={{ whiteSpace: 'pre-line' }}>{timeOptions[0].schedule}</span>
           </div>
         )}
-        {group.sections.length > 1 && (
+        {timeOptions.length > 1 && (
           <div style={{ fontSize: 12, color: 'var(--ink-500)', marginBottom: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {group.sections.map((s) => (
-              <div key={s.id} style={{ display: 'flex', gap: 5 }}>
-                <span style={{ fontWeight: 600 }}>Sec {s.section}</span>
-                {s.schedule && <span>· {s.schedule}</span>}
+            {timeOptions.map((opt) => (
+              <div key={opt.key} style={{ display: 'flex', gap: 5 }}>
+                {opt.schedule ? <span style={{ whiteSpace: 'pre-line' }}>{opt.schedule}</span> : <span style={{ fontWeight: 600 }}>{timeOptionSecLabel(opt)}</span>}
               </div>
             ))}
           </div>

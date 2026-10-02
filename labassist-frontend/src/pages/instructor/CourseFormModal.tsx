@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Modal } from '../../components/ui/Modal'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
@@ -7,10 +8,17 @@ import { SectionCatalogPicker } from '../../components/course/SectionCatalogPick
 import { GRADE_OPTIONS } from './_courseFormShared'
 import type { CreateCoursePayload } from '../../types'
 
+/** Today's date (YYYY-MM-DD) in Bangkok time — matches the backend's deadlinePassed check. */
+function todayBangkok(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date())
+}
+
 interface Props {
   isOpen: boolean
   onClose: () => void
   editId: number | null
+  /** Sections covered by this edit ("Sec 1, 2") when it spans several times. */
+  editSectionLabel?: string
   form: CreateCoursePayload
   setForm: (fn: (f: CreateCoursePayload) => CreateCoursePayload) => void
   minGrade: string
@@ -22,7 +30,7 @@ interface Props {
 }
 
 export function CourseFormModal({
-  isOpen, onClose, editId, form, setForm, minGrade, setMinGrade, sectionIds, setSectionIds, onSubmit, loading,
+  isOpen, onClose, editId, editSectionLabel, form, setForm, minGrade, setMinGrade, sectionIds, setSectionIds, onSubmit, loading,
 }: Props) {
   function set(k: keyof CreateCoursePayload) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -30,6 +38,16 @@ export function CourseFormModal({
       setForm(f => ({ ...f, [k]: value }))
     }
   }
+
+  // ห้ามเลือกวันปิดรับสมัครที่ผ่านมาแล้ว — แต่ตอนแก้ไขวิชาที่ deadline เดิมผ่านไปแล้ว
+  // ยังคงค่าเดิมไว้ได้ เพื่อไม่ให้ฟอร์มส่งไม่ได้เพียงเพราะไม่ได้แตะช่องวันที่
+  const [initialDeadline, setInitialDeadline] = useState('')
+  useEffect(() => {
+    if (isOpen) setInitialDeadline(editId ? form.deadline ?? '' : '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, editId])
+  const today = todayBangkok()
+  const minDeadline = initialDeadline && initialDeadline < today ? initialDeadline : today
 
   return (
     <Modal
@@ -88,12 +106,12 @@ export function CourseFormModal({
             <div>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 5 }}>Sec</div>
               <div style={{ fontSize: 14, color: 'var(--ink-900)', padding: '9px 12px', background: 'var(--bg)', borderRadius: 'var(--radius-input)' }}>
-                {form.section || '—'}
+                {editSectionLabel?.replace(/^Sec /, '') || form.section || '—'}
               </div>
             </div>
             <div>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 5 }}>เวลาเรียน</div>
-              <div style={{ fontSize: 14, color: 'var(--ink-900)', padding: '9px 12px', background: 'var(--bg)', borderRadius: 'var(--radius-input)' }}>
+              <div style={{ fontSize: 14, color: 'var(--ink-900)', padding: '9px 12px', background: 'var(--bg)', borderRadius: 'var(--radius-input)', whiteSpace: 'pre-line' }}>
                 {form.schedule || '—'}
               </div>
             </div>
@@ -113,7 +131,7 @@ export function CourseFormModal({
             label="Lab Boy Slots *" type="number" min="0" 
             value={form.labboy_slots || ''} onChange={set('labboy_slots')} required
           />
-          <Input label="วันปิดรับสมัคร" type="date" value={form.deadline ?? ''} onChange={set('deadline')} />
+          <Input label="วันปิดรับสมัคร" type="date" min={minDeadline} value={form.deadline ?? ''} onChange={set('deadline')} />
         </div>
         {editId && (
           <Select label="สถานะ" value={form.status ?? 'draft'} onChange={set('status')}

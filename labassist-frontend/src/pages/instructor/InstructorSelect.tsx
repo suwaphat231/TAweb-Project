@@ -12,6 +12,7 @@ import { getInitials } from '../../utils/initials'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { useToast } from '../../hooks/useToast'
 import { displayCourseTitle } from '../../utils/courseDisplay'
+import { groupCourseSections, groupSectionsByTime } from '../../utils/courseGrouping'
 import type { Application } from '../../types'
 
 const statusOptions = [
@@ -156,6 +157,15 @@ export default function InstructorSelect() {
   }, [applicants, statusFilter, search])
 
   const selectedCourse = courses.find((c) => c.id === courseId)
+
+  // The dropdown lists each course once; its opened times (one Course row
+  // each) are picked with the tabs under the header instead.
+  const courseGroups = useMemo(
+    () => groupCourseSections(courses.filter((c) => c.status !== 'draft'))
+      .map((g) => ({ ...g, sections: groupSectionsByTime(g.sections).flatMap((o) => o.sections) })),
+    [courses],
+  )
+  const currentGroup = courseGroups.find((g) => g.sections.some((s) => s.id === courseId))
   const pendingCount = applicants.filter((a) => a.status === 'pending').length
   const acceptedCount = applicants.filter((a) => a.status === 'accepted').length
   const remainingSlots = selectedCourse ? Math.max(0, selectedCourse.labboy_slots - selectedCourse.labboy_accepted) : 0
@@ -243,12 +253,12 @@ export default function InstructorSelect() {
           <Select
             options={[
               { value: '', label: 'เลือกรายวิชา...' },
-              ...courses.map((c) => ({
-                value: String(c.id),
-                label: `[${c.code}${c.section ? ` sec ${c.section}` : ''}] ${displayCourseTitle(c.title, c.english_title)} — ${c.applicant_count ?? 0} ผู้สมัคร`,
+              ...courseGroups.map((g) => ({
+                value: String(g === currentGroup ? courseId : g.sections[0].id),
+                label: `[${g.code}] ${displayCourseTitle(g.title, g.english_title)} — ${g.sections.reduce((n, s) => n + (s.applicant_count ?? 0), 0)} ผู้สมัคร`,
               })),
             ]}
-            value={String(courseId)}
+            value={courseId ? String(courseId) : ''}
             onChange={(e) => {
               setParams({ course: e.target.value })
               setStatusFilter('')
@@ -264,6 +274,39 @@ export default function InstructorSelect() {
         <EmptyState title="เลือกรายวิชา" description="กรุณาเลือกวิชาจาก dropdown ด้านบนเพื่อดูผู้สมัคร" icon="👆" />
       ) : (
         <>
+          {/* ── Time tabs: one per opened time of this course ── */}
+          {currentGroup && currentGroup.sections.length > 1 && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+              {currentGroup.sections.map((s) => {
+                const active = s.id === courseId
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => {
+                      setParams({ course: String(s.id) })
+                      setStatusFilter('')
+                      setSearch('')
+                      setSelectedIds(new Set())
+                    }}
+                    style={{
+                      padding: '8px 12px', borderRadius: 10, textAlign: 'left', cursor: 'pointer',
+                      border: active ? '2px solid var(--primary)' : '1.5px solid var(--line)',
+                      background: active ? 'var(--primary-50)' : '#fff',
+                    }}
+                  >
+                    <div style={{ fontSize: 13, fontWeight: 600, color: active ? 'var(--primary)' : 'var(--ink-900)', whiteSpace: 'pre-line' }}>
+                      {s.schedule || `Sec ${s.section}`}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 2 }}>
+                      {s.schedule && s.section ? `Sec ${s.section} · ` : ''}{s.applicant_count ?? 0} ผู้สมัคร · รับ {s.labboy_accepted}/{s.labboy_slots}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
           {/* ── Summary bar ── */}
           {selectedCourse && (
             <div style={{

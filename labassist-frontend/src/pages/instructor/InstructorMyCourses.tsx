@@ -85,9 +85,10 @@ export default function InstructorMyCourses() {
     queryFn: () => instructorApi.myCourses(),
   })
 
-  // Show all linked courses (including draft) — instructor may want to see
-  // courses that haven't opened recruitment yet.
-  const displayRelations = relations
+  // Only courses that have opened recruitment — a draft has never been opened
+  // so there are no Lab Boys to show yet. Closed rounds stay listed because
+  // their accepted Lab Boys are what this page is for.
+  const displayRelations = relations.filter((r) => r.course.status !== 'draft')
 
   // Only fetch applicants for 'imported' courses — self_added rows do not grant
   // management rights so the endpoint will 403 for those.
@@ -145,7 +146,7 @@ export default function InstructorMyCourses() {
         </div>
       ) : displayRelations.length === 0 ? (
         <EmptyState
-          title="ยังไม่มีวิชาที่สอน"
+          title="ยังไม่มีวิชาที่เปิดรับสมัคร"
           icon="📚"
           action={{ label: 'เพิ่มวิชาเอง', onClick: () => setShowPicker(true) }}
         />
