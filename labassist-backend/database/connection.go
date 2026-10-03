@@ -60,6 +60,27 @@ func migrateDecimalColumns(db *gorm.DB) error {
 	return nil
 }
 
+// migrateDocTypeEnum extends the staff_documents.type enum with new values
+// added after initial schema creation. Idempotent: skipped when the column
+// already contains every required value.
+func migrateDocTypeEnum(db *gorm.DB) error {
+	const want = "enum('hiring_notice','approval_memo','lab_notice','payment_evidence','payment_request','work_report')"
+	var columnType string
+	if err := db.Raw(`SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'staff_documents' AND COLUMN_NAME = 'type'`,
+	).Scan(&columnType).Error; err != nil {
+		return fmt.Errorf("check staff_documents.type column: %w", err)
+	}
+	if columnType == "" || columnType == want {
+		return nil
+	}
+	if err := db.Exec(`ALTER TABLE staff_documents MODIFY COLUMN ` + "`type`" + ` ` + want + ` NOT NULL`).Error; err != nil {
+		return fmt.Errorf("alter staff_documents.type enum: %w", err)
+	}
+	log.Println("migrated staff_documents.type enum to include lab_notice")
+	return nil
+}
+
 // migrateToPostingFKs is the Round 2 step of the course/posting separation.
 // It backfills posting_id on the four child tables and adjusts indexes so
 // applications, history, form reviews, and staff documents reference the
@@ -673,6 +694,9 @@ func Connect(cfg *config.Config) error {
 	}
 	if err := migrateDecimalColumns(db); err != nil {
 		return fmt.Errorf("migrate decimal columns: %w", err)
+	}
+	if err := migrateDocTypeEnum(db); err != nil {
+		return fmt.Errorf("migrate doc type enum: %w", err)
 	}
 	if err := BackfillPostings(db); err != nil {
 		return fmt.Errorf("backfill postings: %w", err)

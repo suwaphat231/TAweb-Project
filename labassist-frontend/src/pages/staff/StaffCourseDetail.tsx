@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { staffApi, applicationsAPI, coursesAPI } from '../../services/api'
 import { buildCourseOffering, buildWorkflowItems } from './staffCourseUtils'
 import { DocumentWorkflow } from './components/DocumentWorkflow'
 import { SelectedStudentsPanel } from './components/SelectedStudentsPanel'
+import WorkPlanTab from './components/WorkPlanTab'
+import MonthlyOpsTab from './components/MonthlyOpsTab'
 
-type Tab = 'documents' | 'info' | 'students' | 'history'
+type Tab = 'documents' | 'info' | 'students' | 'workplan' | 'monthly' | 'history'
 
 export default function StaffCourseDetail() {
   const { year, semester, code, section } = useParams<{
@@ -68,6 +70,32 @@ export default function StaffCourseDetail() {
     enabled: !!review?.course_id,
   })
 
+  // Load staff case linked to this offering's posting
+  const { data: allCases = [] } = useQuery({
+    queryKey: ['staff-cases'],
+    queryFn: () => staffApi.listCases(),
+    enabled: !!review,
+  })
+  const staffCase = useMemo(() =>
+    allCases.find((sc) => review?.posting_id ? sc.posting_id === review.posting_id : sc.course_id === review?.course_id),
+    [allCases, review],
+  )
+
+  const qc = useQueryClient()
+
+  const verifyMut = useMutation({
+    mutationFn: () => staffApi.verifyReview(review!.course_id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['staff-reviews'] })
+      qc.invalidateQueries({ queryKey: ['staff-documents'] })
+    },
+  })
+
+  const initCaseMut = useMutation({
+    mutationFn: () => staffApi.initCase(review!.course_id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['staff-cases'] }),
+  })
+
   const loading = reviewsLoading || docsLoading
 
   if (loading) {
@@ -108,9 +136,11 @@ export default function StaffCourseDetail() {
   }[offering.docStatus]
 
   const TABS: { id: Tab; label: string }[] = [
-    { id: 'documents', label: 'งานเอกสาร' },
+    { id: 'documents', label: 'เอกสารต้นภาคเรียน' },
     { id: 'info',      label: 'ข้อมูลรายวิชา' },
-    { id: 'students',  label: 'รายชื่อนักศึกษา' },
+    { id: 'students',  label: 'รายชื่อ Lab Boy' },
+    { id: 'workplan',  label: 'แผนการปฏิบัติงาน' },
+    { id: 'monthly',   label: 'การปฏิบัติงานรายเดือน' },
     { id: 'history',   label: 'ประวัติการดำเนินงาน' },
   ]
 
@@ -244,6 +274,33 @@ export default function StaffCourseDetail() {
           <div style={{ display: 'flex', gap: 0, flexWrap: 'wrap' }}>
             {/* Workflow main area */}
             <div style={{ flex: '1 1 480px', padding: '20px 24px' }}>
+              {/* Inline verify banner — shown when review is still pending */}
+              {review.status === 'pending' && (
+                <div style={{
+                  marginBottom: 16, padding: '12px 16px',
+                  background: 'var(--amber-bg)', border: '1px solid #FCD34D',
+                  borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--amber)' }}>แบบฟอร์มยังไม่ได้รับการยืนยัน</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-600)', marginTop: 2 }}>
+                      ยืนยันแบบฟอร์มก่อนเพื่อเริ่มสร้างเอกสาร
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => verifyMut.mutate()}
+                    disabled={verifyMut.isPending}
+                    style={{
+                      padding: '7px 16px', fontSize: 13, fontWeight: 600,
+                      background: 'var(--amber)', color: '#fff', border: 'none',
+                      borderRadius: 'var(--radius-btn)', cursor: 'pointer',
+                      opacity: verifyMut.isPending ? 0.6 : 1, whiteSpace: 'nowrap', flexShrink: 0,
+                    }}
+                  >
+                    {verifyMut.isPending ? 'กำลังยืนยัน...' : 'ยืนยันแบบฟอร์ม'}
+                  </button>
+                </div>
+              )}
               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-400)', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 16 }}>
                 ขั้นตอนการดำเนินงาน
               </div>
@@ -354,6 +411,58 @@ export default function StaffCourseDetail() {
               </span>
             </div>
             <SelectedStudentsPanel applicants={applicants} loading={applicantsLoading} />
+          </div>
+        )}
+
+        {activeTab === 'workplan' && (
+          <div style={{ padding: '24px' }}>
+            {staffCase ? (
+              <WorkPlanTab staffCase={staffCase} />
+            ) : (
+              <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                <div style={{ color: 'var(--ink-400)', fontSize: 14, marginBottom: 16 }}>
+                  ยังไม่มี Staff Case สำหรับรายวิชานี้
+                </div>
+                {initCaseMut.isError && (
+                  <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>
+                    {(initCaseMut.error as Error).message}
+                  </div>
+                )}
+                <button
+                  onClick={() => initCaseMut.mutate()}
+                  disabled={initCaseMut.isPending}
+                  style={{
+                    padding: '9px 22px', fontSize: 13, fontWeight: 600,
+                    background: 'var(--primary)', color: '#fff', border: 'none',
+                    borderRadius: 'var(--radius-btn)', cursor: 'pointer',
+                    opacity: initCaseMut.isPending ? 0.6 : 1,
+                  }}
+                >
+                  {initCaseMut.isPending ? 'กำลังสร้าง...' : 'เริ่มต้น Staff Case'}
+                </button>
+                <div style={{ color: 'var(--ink-400)', fontSize: 12, marginTop: 8 }}>
+                  ใช้ได้เมื่อมีนักศึกษา Lab Boy ที่ได้รับเลือกแล้ว
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'monthly' && (
+          <div style={{ padding: '24px' }}>
+            {staffCase ? (
+              staffCase.status === 'open' ? (
+                <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--ink-400)', fontSize: 14 }}>
+                  ล็อกแผนการทำงานก่อนเพื่อเปิดรอบเดือน
+                </div>
+              ) : (
+                <MonthlyOpsTab staffCase={staffCase} />
+              )
+            ) : (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--ink-400)', fontSize: 14 }}>
+                รอให้อาจารย์ยืนยันการจ้าง Lab Boy
+              </div>
+            )}
           </div>
         )}
 

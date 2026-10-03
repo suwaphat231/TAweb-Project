@@ -65,6 +65,15 @@ func renderHiringNotice(doc models.StaffDocument, course models.Course) ([]byte,
 	now := time.Now()
 	formDate := fmt.Sprintf("%d %s %d", now.Day(), thaiMonthName(int(now.Month())), now.Year()+543)
 
+	workSchedule := make([]WorkDayEntry, 0, len(doc.WorkSchedule))
+	for _, s := range doc.WorkSchedule {
+		workSchedule = append(workSchedule, WorkDayEntry{
+			Day:       s.Day,
+			TimeStart: s.TimeStart,
+			TimeEnd:   s.TimeEnd,
+		})
+	}
+
 	return RenderLabBoyHiringNotice(LabBoyHiringNoticeInput{
 		FormDate:       formDate,
 		CourseCode:     course.Code,
@@ -73,6 +82,7 @@ func renderHiringNotice(doc models.StaffDocument, course models.Course) ([]byte,
 		Semester:       semNum,
 		AcademicYear:   strconv.Itoa(course.AcademicYear),
 		Students:       students,
+		WorkSchedule:   workSchedule,
 	})
 }
 

@@ -8,6 +8,14 @@ import (
 	"strings"
 )
 
+// WorkDayEntry holds one weekly recurring work slot for rendering into the
+// "วันปฏิบัติงานในแต่ละสัปดาห์" table rows of the hiring notice.
+type WorkDayEntry struct {
+	Day       string // e.g. "วันพุธ"
+	TimeStart string // e.g. "10:00"
+	TimeEnd   string // e.g. "12:00"
+}
+
 // LabBoyHiringNoticeInput holds all data needed to render the hiring intent form.
 type LabBoyHiringNoticeInput struct {
 	FormDate       string // e.g. "13 กันยายน 2569"
@@ -17,6 +25,7 @@ type LabBoyHiringNoticeInput struct {
 	Semester       int    // 1=ต้น, 2=ปลาย, 3=ฤดูร้อน
 	AcademicYear   string // BE year e.g. "2568"
 	Students       []HiringNoticeStudent
+	WorkSchedule   []WorkDayEntry // up to 3 weekly slots
 }
 
 // HiringNoticeStudent represents one accepted student in the form.
@@ -62,6 +71,8 @@ func RenderLabBoyHiringNotice(in LabBoyHiringNoticeInput) ([]byte, error) {
 
 	// Inject {{TOKEN}} placeholders into the raw template XML.
 	docXML = prepareHiringNoticeTemplate(docXML)
+	// Fill the 3 work-day rows directly (no token needed — values are ready).
+	docXML = injectWorkSchedule(docXML, in.WorkSchedule)
 
 	checkChar := func(selected bool) string {
 		if selected {
@@ -231,4 +242,59 @@ func prepareHiringNoticeTemplate(docXML string) string {
 	}
 
 	return docXML
+}
+
+// injectWorkSchedule fills up to 3 work-day rows in the template's
+// "วันปฏิบัติงานในแต่ละสัปดาห์" table. Each row has 3 input cells:
+//   - day name  (w:w="1536")
+//   - time start (w:w="993")
+//   - time end   (w:w="1068")
+//
+// The cells each contain a <w:tab/> placeholder that gets replaced with the
+// actual text. Sequential calls to injectFirstTabCell skip already-filled
+// cells, so rows are filled in document order.
+func injectWorkSchedule(docXML string, schedule []WorkDayEntry) string {
+	for i, entry := range schedule {
+		if i >= 3 {
+			break
+		}
+		if entry.Day != "" {
+			docXML = injectFirstTabCell(docXML, "1536", escapeXML(entry.Day))
+		}
+		if entry.TimeStart != "" {
+			docXML = injectFirstTabCell(docXML, "993", escapeXML(entry.TimeStart))
+		}
+		if entry.TimeEnd != "" {
+			docXML = injectFirstTabCell(docXML, "1068", escapeXML(entry.TimeEnd))
+		}
+	}
+	return docXML
+}
+
+// injectFirstTabCell finds the first table cell with the given tcW width
+// that still contains a run-level <w:tab/> and replaces that tab with
+// a text run containing text. If no such cell exists the string is unchanged.
+func injectFirstTabCell(docXML, width, text string) string {
+	anchor := `<w:tcW w:w="` + width + `" w:type="dxa"/>`
+	searchFrom := 0
+	for {
+		rel := strings.Index(docXML[searchFrom:], anchor)
+		if rel < 0 {
+			return docXML
+		}
+		abs := searchFrom + rel
+		// Locate the end of this specific <w:tc> element.
+		tcEndRel := strings.Index(docXML[abs:], `</w:tc>`)
+		if tcEndRel < 0 {
+			return docXML
+		}
+		cell := docXML[abs : abs+tcEndRel]
+		tabRel := strings.Index(cell, `<w:tab/>`)
+		if tabRel >= 0 {
+			// Replace the tab with a plain text run.
+			return docXML[:abs+tabRel] + `<w:t>` + text + `</w:t>` + docXML[abs+tabRel+len(`<w:tab/>`):]
+		}
+		// This cell has no tab (already filled); try the next one.
+		searchFrom = abs + 1
+	}
 }

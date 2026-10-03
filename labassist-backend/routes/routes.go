@@ -133,8 +133,50 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			staffGroup.GET("/staff/documents",                staffH.ListDocuments)
 			staffGroup.POST("/staff/documents",               staffH.CreateDocument)
 			staffGroup.PUT("/staff/documents/:id/status",     staffH.UpdateDocumentStatus)
+			staffGroup.PUT("/staff/documents/:id/schedule",   staffH.UpdateDocumentSchedule)
 			staffGroup.GET("/staff/documents/:id/file",       staffH.DownloadDocument)
 			staffGroup.PUT("/staff/documents/:id/reg-verify", staffH.RegVerifyRosterEntry)
+
+			// Staff Case management
+			staffGroup.POST("/staff/cases/init",                           staffH.InitCase)
+			staffGroup.GET("/staff/cases",                                 staffH.ListCases)
+			staffGroup.GET("/staff/cases/:id",                             staffH.GetCase)
+			staffGroup.PUT("/staff/cases/:id",                             staffH.UpdateCase)
+			staffGroup.POST("/staff/cases/:id/lock-plan",                  staffH.LockPlan)
+			staffGroup.GET("/staff/cases/:id/audit",                       staffH.GetCaseAuditLog)
+			staffGroup.GET("/staff/cases/:id/schedule-groups",             staffH.GetCaseScheduleGroups)
+			staffGroup.POST("/staff/cases/:id/schedule-groups",            staffH.AddScheduleGroup)
+			staffGroup.PUT("/staff/cases/:id/schedule-groups/:groupId",                       staffH.UpdateScheduleGroup)
+			staffGroup.DELETE("/staff/cases/:id/schedule-groups/:groupId", staffH.DeleteScheduleGroup)
+			staffGroup.POST("/staff/cases/:id/schedule-groups/:groupId/lock",                 staffH.LockScheduleGroup)
+			staffGroup.PUT("/staff/cases/:id/schedule-groups/:groupId/students",             staffH.AssignGroupStudents)
+			staffGroup.GET("/staff/cases/:id/schedule-groups/:groupId/occurrences",          staffH.ListGroupOccurrences)
+			staffGroup.POST("/staff/cases/:id/schedule-groups/:groupId/generate-occurrences", staffH.GenerateGroupOccurrences)
+
+			// Schedule group months
+			staffGroup.GET("/staff/cases/:id/schedule-groups/:groupId/months",                         staffH.ListGroupMonths)
+			staffGroup.POST("/staff/cases/:id/schedule-groups/:groupId/months",                        staffH.AddGroupMonth)
+			staffGroup.DELETE("/staff/cases/:id/schedule-groups/:groupId/months/:year/:month",         staffH.DeleteGroupMonth)
+			staffGroup.POST("/staff/cases/:id/schedule-groups/:groupId/months/:year/:month/generate",  staffH.GenerateGroupMonthOccurrences)
+			staffGroup.GET("/staff/cases/:id/schedule-groups/:groupId/months/:year/:month/summary",    staffH.GetGroupMonthSummary)
+
+			// Calendar dates (holidays / no-class days)
+			staffGroup.GET("/staff/cases/:id/calendar-dates", staffH.ListCalendarDates)
+			staffGroup.POST("/staff/calendar-dates",          staffH.CreateCalendarDate)
+			staffGroup.DELETE("/staff/calendar-dates/:id",    staffH.DeleteCalendarDate)
+
+			// Work occurrences
+			staffGroup.GET("/staff/cases/:id/occurrences",           staffH.ListOccurrences)
+			staffGroup.POST("/staff/cases/:id/generate-occurrences", staffH.GenerateOccurrences)
+			staffGroup.PUT("/staff/occurrences/:id",                 staffH.UpdateOccurrence)
+			staffGroup.POST("/staff/occurrences/:id/reschedule",     staffH.RescheduleOccurrence)
+
+			// Monthly periods
+			staffGroup.GET("/staff/cases/:id/monthly-periods",       staffH.ListMonthlyPeriods)
+			staffGroup.POST("/staff/cases/:id/monthly-periods",      staffH.OpenMonthlyPeriod)
+			staffGroup.POST("/staff/monthly-periods/:id/close",      staffH.CloseMonthlyPeriod)
+			staffGroup.GET("/staff/monthly-periods/:id/occurrences", staffH.GetMonthlyOccurrences)
+			staffGroup.POST("/staff/monthly-periods/:id/documents",   staffH.GenerateMonthlyDocument)
 		}
 
 		// Admin

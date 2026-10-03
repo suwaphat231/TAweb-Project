@@ -5,9 +5,12 @@ import type {
   CreateCoursePayload, ApplyPayload, ReviewPayload, BulkReviewPayload, BulkReviewResult,
   AdminStats, CourseStatus, Transcript, Notification,
   CreateUserPayload, UpdateUserPayload, ImportCoursesResponse, ImportCourseFields,
-  FormReview, StaffDocument, CreateStaffDocumentPayload, TranscriptOCRResult, CoreCourse,
+  FormReview, StaffDocument, CreateStaffDocumentPayload, TranscriptOCRResult, CoreCourse, WorkDaySlot,
   WorkSession, ClassSchedule, ClassScheduleImageResult, TermSchedule, TermOption, ScheduleSlot, TermScheduleStatus,
   LabBoyAssignment, CourseRelation, StudentInfoUploadResult,
+  StaffCaseResponse, ScheduleGroup, CalendarDate, WorkOccurrence, MonthlyPeriodResponse, StaffAuditLog,
+  UpdateCasePayload, AddScheduleGroupPayload, UpdateScheduleGroupPayload, CreateCalendarDatePayload, GenerateOccurrencesPayload,
+  ScheduleGroupMonth, AddGroupMonthPayload, MonthOccurrenceSummary,
 } from '../types'
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1'
@@ -287,9 +290,102 @@ export const staffApi = {
     api.post<StaffDocument>('/staff/documents', data).then((r) => r.data),
   updateDocumentStatus: (id: number, status: string) =>
     api.put<StaffDocument>(`/staff/documents/${id}/status`, { status }).then((r) => r.data),
-  // The download route needs the Bearer token like any other request, so a
-  // plain <a href> can't hit it directly — fetch the .docx as a blob through
-  // the authenticated axios instance and let the caller trigger the save.
+  updateDocumentSchedule: (id: number, data: { work_schedule?: WorkDaySlot[]; sessions_per_month?: number }) =>
+    api.put<StaffDocument>(`/staff/documents/${id}/schedule`, data).then((r) => r.data),
+  // Review verification (inline from course detail page)
+  verifyReview: (courseId: number) =>
+    api.put(`/staff/reviews/${courseId}/verify`).then((r) => r.data),
+
+  // Staff Cases
+  initCase: (courseId: number) =>
+    api.post<StaffCaseResponse>('/staff/cases/init', { course_id: courseId }).then((r) => r.data),
+  listCases: (params?: { status?: string }) =>
+    api.get<StaffCaseResponse[]>('/staff/cases', { params }).then((r) => r.data),
+  getCase: (id: number) =>
+    api.get<StaffCaseResponse>(`/staff/cases/${id}`).then((r) => r.data),
+  updateCase: (id: number, data: UpdateCasePayload) =>
+    api.put<StaffCaseResponse>(`/staff/cases/${id}`, data).then((r) => r.data),
+  lockPlan: (id: number) =>
+    api.post<StaffCaseResponse>(`/staff/cases/${id}/lock-plan`).then((r) => r.data),
+  getCaseAuditLog: (id: number) =>
+    api.get<StaffAuditLog[]>(`/staff/cases/${id}/audit`).then((r) => r.data),
+
+  // Schedule groups
+  getCaseScheduleGroups: (caseId: number) =>
+    api.get<ScheduleGroup[]>(`/staff/cases/${caseId}/schedule-groups`).then((r) => r.data),
+  addScheduleGroup: (caseId: number, data: AddScheduleGroupPayload) =>
+    api.post<ScheduleGroup>(`/staff/cases/${caseId}/schedule-groups`, data).then((r) => r.data),
+  updateScheduleGroup: (caseId: number, groupId: number, data: UpdateScheduleGroupPayload) =>
+    api.put<ScheduleGroup>(`/staff/cases/${caseId}/schedule-groups/${groupId}`, data).then((r) => r.data),
+  deleteScheduleGroup: (caseId: number, groupId: number) =>
+    api.delete(`/staff/cases/${caseId}/schedule-groups/${groupId}`).then((r) => r.data),
+  lockScheduleGroup: (caseId: number, groupId: number) =>
+    api.post<import('../types').ScheduleGroup>(`/staff/cases/${caseId}/schedule-groups/${groupId}/lock`).then((r) => r.data),
+  assignGroupStudents: (caseId: number, groupId: number, studentIds: number[]) =>
+    api.put<import('../types').ScheduleGroup>(`/staff/cases/${caseId}/schedule-groups/${groupId}/students`, { student_ids: studentIds }).then((r) => r.data),
+  listGroupOccurrences: (caseId: number, groupId: number) =>
+    api.get<WorkOccurrence[]>(`/staff/cases/${caseId}/schedule-groups/${groupId}/occurrences`).then((r) => r.data),
+  generateGroupOccurrences: (caseId: number, groupId: number, data: { start_date: string; end_date: string }) =>
+    api.post<WorkOccurrence[]>(`/staff/cases/${caseId}/schedule-groups/${groupId}/generate-occurrences`, data).then((r) => r.data),
+
+  // Schedule group months
+  listGroupMonths: (caseId: number, groupId: number) =>
+    api.get<ScheduleGroupMonth[]>(`/staff/cases/${caseId}/schedule-groups/${groupId}/months`).then((r) => r.data),
+  addGroupMonth: (caseId: number, groupId: number, data: AddGroupMonthPayload) =>
+    api.post<ScheduleGroupMonth>(`/staff/cases/${caseId}/schedule-groups/${groupId}/months`, data).then((r) => r.data),
+  deleteGroupMonth: (caseId: number, groupId: number, year: number, month: number) =>
+    api.delete(`/staff/cases/${caseId}/schedule-groups/${groupId}/months/${year}/${month}`).then((r) => r.data),
+  generateMonthOccurrences: (caseId: number, groupId: number, year: number, month: number) =>
+    api.post<WorkOccurrence[]>(`/staff/cases/${caseId}/schedule-groups/${groupId}/months/${year}/${month}/generate`).then((r) => r.data),
+  getGroupMonthSummary: (caseId: number, groupId: number, year: number, month: number) =>
+    api.get<MonthOccurrenceSummary>(`/staff/cases/${caseId}/schedule-groups/${groupId}/months/${year}/${month}/summary`).then((r) => r.data),
+
+  // Calendar dates
+  listCalendarDates: (caseId: number) =>
+    api.get<CalendarDate[]>(`/staff/cases/${caseId}/calendar-dates`).then((r) => r.data),
+  createCalendarDate: (data: CreateCalendarDatePayload) =>
+    api.post<CalendarDate>('/staff/calendar-dates', data).then((r) => r.data),
+  deleteCalendarDate: (id: number) =>
+    api.delete(`/staff/calendar-dates/${id}`).then((r) => r.data),
+
+  // Work occurrences
+  listOccurrences: (caseId: number) =>
+    api.get<WorkOccurrence[]>(`/staff/cases/${caseId}/occurrences`).then((r) => r.data),
+  generateOccurrences: (caseId: number, data: GenerateOccurrencesPayload) =>
+    api.post<WorkOccurrence[]>(`/staff/cases/${caseId}/generate-occurrences`, data).then((r) => r.data),
+  updateOccurrence: (id: number, status: string, reason?: string) =>
+    api.put<WorkOccurrence>(`/staff/occurrences/${id}`, { status, reason }).then((r) => r.data),
+  rescheduleOccurrence: (id: number, new_date: string, new_start: string, new_end: string, reason?: string) =>
+    api.post<WorkOccurrence>(`/staff/occurrences/${id}/reschedule`, { new_date, new_start, new_end, reason }).then((r) => r.data),
+
+  // Monthly periods
+  listMonthlyPeriods: (caseId: number) =>
+    api.get<MonthlyPeriodResponse[]>(`/staff/cases/${caseId}/monthly-periods`).then((r) => r.data),
+  openMonthlyPeriod: (caseId: number, month: number, year: number) =>
+    api.post<MonthlyPeriodResponse>(`/staff/cases/${caseId}/monthly-periods`, { month, year }).then((r) => r.data),
+  closeMonthlyPeriod: (periodId: number) =>
+    api.post<MonthlyPeriodResponse>(`/staff/monthly-periods/${periodId}/close`).then((r) => r.data),
+  getMonthlyOccurrences: (periodId: number) =>
+    api.get<WorkOccurrence[]>(`/staff/monthly-periods/${periodId}/occurrences`).then((r) => r.data),
+
+  generateMonthlyDocument: (
+    periodId: number,
+    type: 'work_report' | 'payment_request',
+    extras?: {
+      schedule_group_id?: number
+      ref_number?: string
+      prior_memo_ref?: string
+      prior_memo_date?: string
+      dept_head_name?: string
+      dean_name?: string
+      staff_officer_name?: string
+    },
+  ) =>
+    api.post<import('../types').StaffDocument>(`/staff/monthly-periods/${periodId}/documents`, {
+      type,
+      ...extras,
+    }).then((r) => r.data),
+
   downloadDocument: (id: number) =>
     api.get(`/staff/documents/${id}/file`, { responseType: 'blob' }).then((r) => r.data as Blob),
 }

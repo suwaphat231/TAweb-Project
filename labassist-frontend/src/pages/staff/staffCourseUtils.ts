@@ -3,26 +3,44 @@ import type {
   CourseDocStatus, DocumentWorkflowItem, DocStepStatus, DocType,
 } from '../../types'
 
-export const WORKFLOW_STEPS: { step: number; label: string; docType: DocType | null }[] = [
+// Pre-work documents: created once per posting before work begins.
+export const PRE_WORK_STEPS: { step: number; label: string; docType: DocType }[] = [
   { step: 1, label: 'แบบฟอร์มแจ้งความประสงค์ในการจ้างนักศึกษาช่วยสอนและช่วยคุมปฏิบัติการ', docType: 'hiring_notice' },
   { step: 2, label: 'บันทึกขออนุมัติจ้างนักศึกษาช่วยสอน', docType: 'approval_memo' },
-  // TODO: Backend needs new doc type 'lab_notice' — endpoint: POST /staff/documents with type 'lab_notice'
-  { step: 3, label: 'แบบแจ้งนักศึกษาช่วยคุมรายวิชาปฏิบัติการ', docType: null },
+  { step: 3, label: 'แบบแจ้งนักศึกษาช่วยคุมรายวิชาปฏิบัติการ', docType: 'lab_notice' },
+]
+
+// Monthly documents: created once per billing period.
+export const MONTHLY_STEPS: { step: number; label: string; docType: DocType }[] = [
   { step: 4, label: 'รายงานผลการปฏิบัติงานนอกเวลาราชการ', docType: 'work_report' },
   { step: 5, label: 'บันทึกขออนุมัติเบิกจ่ายเงิน', docType: 'payment_request' },
 ]
 
+export const WORKFLOW_STEPS = [...PRE_WORK_STEPS, ...MONTHLY_STEPS]
 export const TOTAL_DOC_STEPS = WORKFLOW_STEPS.length
 
+const PRE_WORK_DOC_TYPES = new Set<DocType>(PRE_WORK_STEPS.map((s) => s.docType))
+
+/** A doc counts as "done" once it has been signed (or at minimum approved). */
+function isDocDone(doc: StaffDocument): boolean {
+  return doc.status === 'signed' || doc.status === 'approved'
+}
+
 export function buildCourseOffering(review: FormReview, allDocs: StaffDocument[]): CourseOffering {
-  const courseDocs = allDocs.filter((d) => review.posting_id ? d.posting_id === review.posting_id : d.course_id === review.course_id)
-  const approvedDocs = courseDocs.filter((d) => d.status === 'approved').length
+  const courseDocs = allDocs.filter((d) =>
+    review.posting_id ? d.posting_id === review.posting_id : d.course_id === review.course_id,
+  )
+
+  const preWorkDocs = courseDocs.filter((d) => PRE_WORK_DOC_TYPES.has(d.type))
+  const preWorkCompleted = preWorkDocs.filter(isDocDone).length
+  const preWorkTotal = PRE_WORK_STEPS.length
+
+  const completedDocs = courseDocs.filter(isDocDone).length
 
   let docStatus: CourseDocStatus = 'waiting'
   if (review.status === 'verified') {
-    if (approvedDocs >= TOTAL_DOC_STEPS) docStatus = 'completed'
+    if (preWorkCompleted >= preWorkTotal) docStatus = 'completed'
     else if (courseDocs.length > 0) docStatus = 'in_progress'
-    // else stays 'waiting' — verified but no docs created yet
   }
 
   return {
@@ -37,24 +55,37 @@ export function buildCourseOffering(review: FormReview, allDocs: StaffDocument[]
     labboySlots: review.labboy_slots,
     labboyAccepted: review.labboy_accepted,
     docStatus,
-    completedDocs: approvedDocs,
+    preWorkCompleted,
+    preWorkTotal,
+    completedDocs,
     totalDocs: TOTAL_DOC_STEPS,
     reviewStatus: review.status,
   }
 }
 
+function docStatusToStepStatus(doc: StaffDocument, reviewVerified: boolean): DocStepStatus {
+  if (!reviewVerified) return 'not_reached'
+  switch (doc.status) {
+    case 'signed':     return 'signed'
+    case 'awaiting_signature': return 'awaiting_signature'
+    case 'approved':   return 'approved'
+    case 'generated':  return 'created'
+    case 'pending':    return 'in_review'
+    case 'draft':      return 'created'
+    default:           return 'created'
+  }
+}
+
 export function buildWorkflowItems(courseDocs: StaffDocument[], reviewVerified: boolean): DocumentWorkflowItem[] {
   return WORKFLOW_STEPS.map(({ step, label, docType }) => {
-    if (docType === null) {
-      return { step, label, docType, status: 'not_reached' as DocStepStatus }
-    }
-    const doc = courseDocs.find((d) => d.type === docType)
-    let status: DocStepStatus = reviewVerified ? 'waiting' : 'not_reached'
-    if (doc) {
-      if (doc.status === 'approved') status = 'completed'
-      else if (doc.status === 'pending') status = 'in_review'
-      else status = 'created'
-    }
+    const doc = courseDocs
+      .filter((d) => d.type === docType && d.status !== 'superseded' && d.status !== 'cancelled')
+      .sort((a, b) => (b.version ?? 1) - (a.version ?? 1))[0]
+
+    const status: DocStepStatus = doc
+      ? docStatusToStepStatus(doc, reviewVerified)
+      : reviewVerified ? 'waiting' : 'not_reached'
+
     return {
       step,
       label,

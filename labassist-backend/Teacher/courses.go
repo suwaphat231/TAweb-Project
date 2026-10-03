@@ -635,12 +635,23 @@ func (h *Handler) ConfirmSchedule(c *gin.Context) {
 		return
 	}
 
+	instructorIDRaw, _ := c.Get("user_id")
+	instructorID, _ := instructorIDRaw.(uint)
+
 	updated, saved := database.UpdateCourse(uint(courseID), func(cs *models.Course) {
 		cs.LabBoyScheduleConfirmed = true
 	})
 	if !saved {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save course"})
 		return
+	}
+
+	// Ensure a StaffCase exists for this posting so the staff workflow can begin.
+	if posting, ok := database.ActivePostingForCourse(uint(courseID)); ok {
+		accepted := database.AcceptedStudentsForPosting(posting.ID)
+		if len(accepted) > 0 {
+			database.EnsureStaffCase(posting.ID, uint(courseID), updated.Semester, updated.AcademicYear, instructorID)
+		}
 	}
 
 	accepted := database.AcceptedStudentsForCourse(uint(courseID))
