@@ -13,6 +13,7 @@ type Config struct {
 	ClientURL      string
 	OCRServiceURL  string
 	SeedDemoData   bool
+	DevLogin       bool
 
 	DBHost     string
 	DBPort     string
@@ -34,8 +35,17 @@ func Load() (*Config, error) {
 	default:
 		return nil, errors.New("SEED_DEMO_DATA must be true or false")
 	}
+	devLogin := false
+	switch os.Getenv("DEV_LOGIN") {
+	case "", "false":
+	case "true":
+		devLogin = true
+	default:
+		return nil, errors.New("DEV_LOGIN must be true or false")
+	}
 	return &Config{
 		SeedDemoData:   seedDemo,
+		DevLogin:       devLogin,
 		JWTSecret:      secret,
 		Port:           getEnv("PORT", "8080"),
 		GoogleClientID: getEnv("GOOGLE_CLIENT_ID", ""),

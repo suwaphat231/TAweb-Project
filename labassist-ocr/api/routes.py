@@ -12,15 +12,32 @@ from services.student_info_parser import extract_student_info
 router = APIRouter()
 
 ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".pdf"}
-MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB — defense-in-depth when Content-Length is absent
+MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+async def read_limited(file: UploadFile, limit: int = MAX_FILE_BYTES) -> bytes:
+    """Read an upload in 64 KB chunks and raise 413 before exceeding the limit,
+    preventing a large file from fully landing in memory."""
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(65536)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > limit:
+            raise HTTPException(
+                status_code=413,
+                detail=f"ไฟล์ใหญ่เกิน {limit // (1024 * 1024)} MB",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 @router.post("/debug-ocr")
 async def debug_ocr(file: UploadFile = File(...)):
     """Debug endpoint: คืนค่า raw OCR output เพื่อดูว่า EasyOCR อ่านเห็นอะไร"""
-    file_bytes = await file.read()
-    if len(file_bytes) > MAX_FILE_BYTES:
-        raise HTTPException(status_code=413, detail=f"ไฟล์ใหญ่เกิน {MAX_FILE_BYTES // (1024 * 1024)} MB")
+    file_bytes = await read_limited(file)
     processed_image = preprocess_image(file_bytes)
     ocr_results = extract_text(processed_image)
     return {
@@ -58,9 +75,7 @@ async def process_transcript(
             known_codes = None
 
         # 1. อ่านไฟล์และ Preprocess (รองรับทั้งรูปภาพและ PDF ทุกหน้า เพราะทรานสคริปต์จริงมักมีหลายหน้า)
-        file_bytes = await file.read()
-        if len(file_bytes) > MAX_FILE_BYTES:
-            raise HTTPException(status_code=413, detail=f"ไฟล์ใหญ่เกิน {MAX_FILE_BYTES // (1024 * 1024)} MB")
+        file_bytes = await read_limited(file)
         page_images = preprocess_pages(file_bytes)
 
         # 2-5. ทำ OCR แต่ละหน้า แล้วสกัดรหัสวิชา/เกรด รวมผลทุกหน้าเข้าด้วยกัน
@@ -110,9 +125,7 @@ async def process_schedule(file: UploadFile = File(...)):
         )
 
     try:
-        file_bytes = await file.read()
-        if len(file_bytes) > MAX_FILE_BYTES:
-            raise HTTPException(status_code=413, detail=f"ไฟล์ใหญ่เกิน {MAX_FILE_BYTES // (1024 * 1024)} MB")
+        file_bytes = await read_limited(file)
         processed_image = preprocess_image(file_bytes)
         ocr_results = extract_text(processed_image)
 
@@ -148,10 +161,7 @@ async def extract_student_information(file: UploadFile = File(...)):
         )
 
     try:
-        file_bytes = await file.read()
-        if len(file_bytes) > MAX_FILE_BYTES:
-            raise HTTPException(status_code=413, detail=f"ไฟล์ใหญ่เกิน {MAX_FILE_BYTES // (1024 * 1024)} MB")
-
+        file_bytes = await read_limited(file)
         processed_image = preprocess_image(file_bytes)
         ocr_results = extract_text(processed_image)
 

@@ -8,15 +8,21 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
 class _UploadSizeLimit(BaseHTTPMiddleware):
-    """Reject requests whose Content-Length header exceeds the limit before
-    the body is streamed into memory."""
+    """Reject requests that exceed the size limit or omit Content-Length.
+    Requests without Content-Length are rejected to prevent unbounded reads."""
     async def dispatch(self, request: StarletteRequest, call_next):
-        cl = request.headers.get("content-length")
-        if cl is not None and int(cl) > MAX_UPLOAD_BYTES:
-            return JSONResponse(
-                status_code=413,
-                content={"detail": f"ไฟล์ใหญ่เกิน {MAX_UPLOAD_BYTES // (1024 * 1024)} MB"},
-            )
+        if request.method in ("POST", "PUT", "PATCH"):
+            cl = request.headers.get("content-length")
+            if cl is None:
+                return JSONResponse(
+                    status_code=411,
+                    content={"detail": "Content-Length จำเป็นต้องระบุ"},
+                )
+            if int(cl) > MAX_UPLOAD_BYTES:
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": f"ไฟล์ใหญ่เกิน {MAX_UPLOAD_BYTES // (1024 * 1024)} MB"},
+                )
         return await call_next(request)
 
 

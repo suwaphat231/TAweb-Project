@@ -218,10 +218,10 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 }
 
 // DevLogin signs a token for any active user by username without checking a
-// password. Only active when SeedDemoData=true — never register this route in
+// password. Only active when DEV_LOGIN=true — never register this route in
 // production.
 func (h *AuthHandler) DevLogin(c *gin.Context) {
-	if !h.cfg.SeedDemoData {
+	if !h.cfg.DevLogin {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}

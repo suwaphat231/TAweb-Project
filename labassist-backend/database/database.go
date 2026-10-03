@@ -1322,6 +1322,14 @@ func migrateApplicationData(db *gorm.DB) error {
 		&models.Blacklist{},
 		&models.Posting{},
 		&models.StudentInfoDocument{},
+		&models.StaffCase{},
+		&models.ScheduleGroup{},
+		&models.ScheduleGroupAssignment{},
+		&models.CalendarDate{},
+		&models.WorkOccurrence{},
+		&models.MonthlyPeriod{},
+		&models.StaffAuditLog{},
+		&models.ScheduleGroupMonth{},
 	)
 }
 

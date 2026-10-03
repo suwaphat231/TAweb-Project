@@ -43,6 +43,9 @@ type createDocumentRequest struct {
 	WorkTimeStart string `json:"work_time_start"`
 	WorkTimeEnd   string `json:"work_time_end"`
 
+	WorkSchedule    []models.WorkDaySlot `json:"work_schedule"`
+	SessionsPerMonth int                 `json:"sessions_per_month"`
+
 	RefNumber        string `json:"ref_number"`
 	PriorMemoRef     string `json:"prior_memo_ref"`
 	PriorMemoDate    string `json:"prior_memo_date"`
@@ -53,6 +56,11 @@ type createDocumentRequest struct {
 
 type updateDocStatusRequest struct {
 	Status models.DocStatus `json:"status" binding:"required"`
+}
+
+type updateDocScheduleRequest struct {
+	WorkSchedule    []models.WorkDaySlot `json:"work_schedule"`
+	SessionsPerMonth int                 `json:"sessions_per_month"`
 }
 
 type regVerifyRequest struct {
@@ -132,6 +140,8 @@ func (h *Handler) CreateDocument(c *gin.Context) {
 		WorkDay:          body.WorkDay,
 		WorkTimeStart:    body.WorkTimeStart,
 		WorkTimeEnd:      body.WorkTimeEnd,
+		WorkSchedule:     body.WorkSchedule,
+		SessionsPerMonth: body.SessionsPerMonth,
 		RefNumber:        body.RefNumber,
 		PriorMemoRef:     body.PriorMemoRef,
 		PriorMemoDate:    body.PriorMemoDate,
@@ -287,6 +297,37 @@ func (h *Handler) UpdateDocumentStatus(c *gin.Context) {
 		return
 	}
 	doc, ok := database.UpdateStaffDocumentStatus(uint(id), body.Status)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+		return
+	}
+	c.JSON(http.StatusOK, doc)
+}
+
+// UpdateDocumentSchedule godoc
+// @Summary      อัปเดตตารางปฏิบัติงานและจำนวนครั้งต่อเดือนของเอกสาร hiring_notice
+// @Tags         staff
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path  int                        true  "Document ID"
+// @Param        body  body  updateDocScheduleRequest   true  "ตารางงาน"
+// @Success      200  {object}  models.StaffDocument
+// @Failure      400  {object}  handlers.ErrorResponse
+// @Failure      404  {object}  handlers.ErrorResponse
+// @Router       /staff/documents/{id}/schedule [put]
+func (h *Handler) UpdateDocumentSchedule(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	var body updateDocScheduleRequest
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	doc, ok := database.UpdateStaffDocumentSchedule(uint(id), body.WorkSchedule, body.SessionsPerMonth)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
 		return

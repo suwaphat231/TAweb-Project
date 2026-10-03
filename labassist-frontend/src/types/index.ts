@@ -272,8 +272,8 @@ export interface ImportCoursesResponse {
 }
 
 export type ReviewStatus = 'pending' | 'verified' | 'returned'
-export type DocType = 'hiring_notice' | 'approval_memo' | 'payment_evidence' | 'payment_request' | 'work_report'
-export type DocStatus = 'draft' | 'pending' | 'approved'
+export type DocType = 'hiring_notice' | 'approval_memo' | 'lab_notice' | 'payment_evidence' | 'payment_request' | 'work_report'
+export type DocStatus = 'draft' | 'pending' | 'approved' | 'generated' | 'awaiting_signature' | 'signed' | 'cancelled' | 'superseded'
 
 export interface FormReview {
 	posting_id?: number
@@ -292,6 +292,12 @@ export interface FormReview {
   labboy_slots: number
   labboy_accepted: number
   submitted_at: string
+}
+
+export interface WorkDaySlot {
+  day: string
+  time_start: string
+  time_end: string
 }
 
 export interface RosterEntry {
@@ -326,12 +332,15 @@ export interface StaffDocument {
   work_day?: string
   work_time_start?: string
   work_time_end?: string
+  work_schedule?: WorkDaySlot[]
+  sessions_per_month?: number
   ref_number?: string
   prior_memo_ref?: string
   prior_memo_date?: string
   dept_head_name?: string
   dean_name?: string
   staff_officer_name?: string
+  version?: number
   created_at: string
 }
 
@@ -349,6 +358,8 @@ export interface CreateStaffDocumentPayload {
   work_day?: string
   work_time_start?: string
   work_time_end?: string
+  work_schedule?: WorkDaySlot[]
+  sessions_per_month?: number
   ref_number?: string
   prior_memo_ref?: string
   prior_memo_date?: string
@@ -370,7 +381,7 @@ export interface AdminStats {
 
 // ─── Staff course management ──────────────────────────────────────────────────
 export type CourseDocStatus = 'waiting' | 'in_progress' | 'completed'
-export type DocStepStatus = 'not_reached' | 'waiting' | 'in_review' | 'created' | 'approved' | 'completed'
+export type DocStepStatus = 'not_reached' | 'waiting' | 'created' | 'in_review' | 'approved' | 'awaiting_signature' | 'signed' | 'completed'
 
 export interface Instructor {
   id?: number
@@ -401,6 +412,10 @@ export interface CourseOffering {
   labboySlots: number
   labboyAccepted: number
   docStatus: CourseDocStatus
+  /** Pre-work docs (hiring_notice, approval_memo, lab_notice) signed/completed */
+  preWorkCompleted: number
+  preWorkTotal: number
+  /** Legacy total — kept for progress bar in StaffCourseDetail header */
   completedDocs: number
   totalDocs: number
   reviewStatus: ReviewStatus
@@ -499,6 +514,248 @@ export interface TermOption {
   semester: string
   academic_year: number
 }
+
+// ─── Staff Case workflow ──────────────────────────────────────────────────────
+
+export type StaffCaseStatus = 'open' | 'plan_locked' | 'done'
+
+export interface StaffCase {
+  id: number
+  posting_id: number
+  course_id: number
+  semester: string
+  academic_year: number
+  status: StaffCaseStatus
+  labboy_count: number
+  hours_per_session: number
+  rate_per_hour_satang: number
+  work_start_date?: string
+  work_end_date?: string
+  confirmed_by_instructor_at?: string
+  plan_locked_at?: string
+  created_by_id: number
+  created_at: string
+  updated_at: string
+}
+
+export interface LabBoyInfo {
+  student_id: number
+  student_code: string
+  student_name: string
+}
+
+export interface StaffCaseResponse extends StaffCase {
+  course_code: string
+  course_title: string
+  section: number
+  schedule: string
+  instructor_name: string
+  lab_boys: LabBoyInfo[]
+  next_task: string
+  instructor_confirmed: boolean
+}
+
+// GroupWeekDaySlot is one day-time working slot within a ScheduleGroup.
+// Multiple slots are serialised as a JSON array in ScheduleGroup.week_days_json.
+export interface GroupWeekDaySlot {
+  day: string        // MON TUE WED THU FRI SAT SUN
+  start_time: string // HH:MM
+  end_time: string   // HH:MM
+}
+
+export interface ScheduleGroup {
+  id: number
+  staff_case_id: number
+  group_name?: string
+  week_day: string
+  start_time: string
+  end_time: string
+  // week_days_json: JSON string containing GroupWeekDaySlot[].
+  // When present, use this for multi-day display; otherwise fall back to week_day/start_time/end_time.
+  week_days_json?: string
+  hours_per_session: number
+  rate_per_hour_satang: number
+  work_start_date?: string
+  work_end_date?: string
+  note?: string
+  locked_at?: string
+  locked_by_id?: number
+  assigned_students: LabBoyInfo[]
+  created_at: string
+}
+
+// ScheduleGroupMonth records one calendar month that a schedule group is active in.
+export interface ScheduleGroupMonth {
+  id: number
+  schedule_group_id: number
+  year: number   // CE year
+  month: number  // 1–12
+  month_start_date?: string // YYYY-MM-DD, overrides first day of month
+  month_end_date?: string   // YYYY-MM-DD, overrides last day of month
+  created_at: string
+}
+
+// MonthOccurrenceSummary is the server-computed summary for one month.
+export interface MonthOccurrenceSummary {
+  year: number
+  month: number
+  total: number
+  cancelled_holiday: number
+  cancelled_other: number
+  rescheduled: number
+  valid: number
+  valid_minutes: number
+  valid_hours: number
+  pay_per_person_baht: number
+  total_pay_baht: number
+}
+
+export type CalendarDateType = 'public_holiday' | 'university_holiday' | 'no_class' | 'case_exception' | 'makeup'
+export type CalendarDateScope = 'global' | 'semester' | 'case'
+
+export interface CalendarDate {
+  id: number
+  date: string
+  name: string
+  date_type: CalendarDateType
+  scope: CalendarDateScope
+  semester?: string
+  academic_year?: number
+  staff_case_id?: number
+  affects_work: boolean
+  original_date_id?: number
+  created_by_id: number
+  edit_reason?: string
+  created_at: string
+  updated_at: string
+}
+
+export type OccurrenceStatus = 'scheduled' | 'cancelled_holiday' | 'rescheduled' | 'completed' | 'absent' | 'cancelled_other'
+
+export interface WorkOccurrence {
+  id: number
+  staff_case_id: number
+  schedule_group_id?: number
+  scheduled_date: string
+  start_time: string
+  end_time: string
+  status: OccurrenceStatus
+  calendar_date_id?: number
+  rescheduled_to_date?: string
+  rescheduled_to_start?: string
+  rescheduled_to_end?: string
+  rescheduled_from_occurrence_id?: number
+  reason?: string
+  actual_hours?: number
+  updated_by_id?: number
+  updated_at: string
+  created_at: string
+}
+
+export type MonthlyPeriodStatus = 'open' | 'closed'
+
+export interface MonthlyPeriod {
+  id: number
+  staff_case_id: number
+  month: number
+  year: number
+  status: MonthlyPeriodStatus
+  closed_at?: string
+  closed_by_id?: number
+  created_at: string
+  updated_at: string
+}
+
+export interface MonthlyPeriodResponse extends MonthlyPeriod {
+  total_sessions: number
+  completed_sessions: number
+  absent_sessions: number
+  cancelled_sessions: number
+  total_hours: number
+  total_amount_satang: number
+}
+
+export interface StaffAuditLog {
+  id: number
+  staff_case_id?: number
+  entity_type: string
+  entity_id: number
+  action: string
+  actor_id: number
+  actor_name?: string
+  old_value?: string
+  new_value?: string
+  reason?: string
+  created_at: string
+}
+
+export interface UpdateCasePayload {
+  hours_per_session?: number
+  rate_per_hour?: number
+  work_start_date?: string
+  work_end_date?: string
+}
+
+export interface AddScheduleGroupPayload {
+  group_name?: string
+  week_day?: string
+  start_time?: string
+  end_time?: string
+  week_day_slots?: GroupWeekDaySlot[]
+  hours_per_session?: number
+  rate_per_hour_satang?: number
+  work_start_date?: string
+  work_end_date?: string
+  note?: string
+}
+
+export interface UpdateScheduleGroupPayload {
+  group_name?: string
+  week_day?: string
+  start_time?: string
+  end_time?: string
+  week_day_slots?: GroupWeekDaySlot[]
+  hours_per_session?: number
+  rate_per_hour_satang?: number
+  work_start_date?: string
+  work_end_date?: string
+  note?: string
+}
+
+export interface AddGroupMonthPayload {
+  year: number
+  month: number
+  month_start_date?: string
+  month_end_date?: string
+}
+
+export interface CreateCalendarDatePayload {
+  date: string
+  name: string
+  date_type: CalendarDateType
+  scope: CalendarDateScope
+  semester?: string
+  academic_year?: number
+  staff_case_id?: number
+  affects_work: boolean
+  original_date_id?: number
+  reason?: string
+}
+
+export interface GenerateOccurrencesPayload {
+  week_day: string
+  start_time: string
+  end_time: string
+  start_date: string
+  end_date: string
+}
+
+export interface GenerateGroupOccurrencesPayload {
+  start_date: string
+  end_date: string
+}
+
+// ─── (legacy) One lab-assistant work session derived from a StaffDocument. ───
 
 /** One lab-assistant work session derived from a StaffDocument. */
 export interface WorkSession {

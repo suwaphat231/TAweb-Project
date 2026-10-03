@@ -170,6 +170,21 @@ func UpdateStaffDocumentStatus(id uint, status models.DocStatus) (models.StaffDo
 	return result, true
 }
 
+// UpdateStaffDocumentSchedule replaces the work_schedule and sessions_per_month
+// fields on a document (hiring_notice) without touching any other columns.
+func UpdateStaffDocumentSchedule(id uint, schedule []models.WorkDaySlot, sessionsPerMonth int) (models.StaffDocument, bool) {
+	var doc models.StaffDocument
+	if err := DB.First(&doc, id).Error; err != nil {
+		return models.StaffDocument{}, false
+	}
+	doc.WorkSchedule = schedule
+	doc.SessionsPerMonth = sessionsPerMonth
+	if err := DB.Model(&doc).Select("work_schedule", "sessions_per_month").Updates(&doc).Error; err != nil {
+		return models.StaffDocument{}, false
+	}
+	return doc, true
+}
+
 // UpdateRosterRegEntry sets the RegVerified flag and RegNote for one roster
 // entry identified by StudentCode.
 //

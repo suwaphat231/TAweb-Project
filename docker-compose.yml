@@ -41,6 +41,7 @@ services:
       DB_NAME: ${DB_NAME:-labassist}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET to a generated random secret of at least 32 bytes}
       SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+      DEV_LOGIN: ${DEV_LOGIN:-true}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       CLIENT_URL: ${CLIENT_URL:-http://localhost:3000}
       PORT: 8080

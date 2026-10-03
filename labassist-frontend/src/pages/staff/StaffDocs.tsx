@@ -14,13 +14,15 @@ import type { DocType, DocStatus, StaffDocument, CreateStaffDocumentPayload } fr
 const TYPE_LABELS: Record<DocType, string> = {
   hiring_notice:    'แบบฟอร์มแจ้งความประสงค์',
   approval_memo:    'บันทึกขออนุมัติจ้าง',
+  lab_notice:       'แบบแจ้งนักศึกษาช่วยคุมรายวิชา',
   work_report:      'รายงานผลการปฏิบัติงาน',
   payment_evidence: 'หลักฐานการจ่ายเงิน',
   payment_request:  'บันทึกขอเบิกจ่าย',
 }
 const TYPE_STEP: Record<DocType, string> = {
   hiring_notice:    'ขั้นตอนที่ 1',
-  approval_memo:    'ขั้นตอนที่ 3',
+  approval_memo:    'ขั้นตอนที่ 2',
+  lab_notice:       'ขั้นตอนที่ 3',
   work_report:      'ขั้นตอนที่ 4',
   payment_evidence: 'ขั้นตอนที่ 5',
   payment_request:  'ขั้นตอนที่ 6',
@@ -28,16 +30,31 @@ const TYPE_STEP: Record<DocType, string> = {
 const TYPE_COLOR: Record<DocType, string> = {
   hiring_notice:    '#7C3AED',
   approval_memo:    'var(--primary)',
+  lab_notice:       '#0891B2',
   work_report:      '#059669',
   payment_evidence: 'var(--primary-700)',
   payment_request:  'var(--primary-700)',
 }
 const STATUS_BADGE: Record<DocStatus, React.CSSProperties> = {
-  draft:    { background: '#F3F4F6', color: 'var(--ink-500)', border: '1px solid var(--line)' },
-  pending:  { background: '#FEF9C3', color: '#92400E',        border: '1px solid #FDE68A' },
-  approved: { background: '#DCFCE7', color: '#166534',        border: '1px solid #86EFAC' },
+  draft:              { background: '#F3F4F6', color: 'var(--ink-500)', border: '1px solid var(--line)' },
+  pending:            { background: '#FEF9C3', color: '#92400E',        border: '1px solid #FDE68A' },
+  approved:           { background: '#DCFCE7', color: '#166534',        border: '1px solid #86EFAC' },
+  generated:          { background: '#EFF6FF', color: '#1D4ED8',        border: '1px solid #BFDBFE' },
+  awaiting_signature: { background: '#FFF7ED', color: '#C2410C',        border: '1px solid #FED7AA' },
+  signed:             { background: '#F0FDF4', color: '#15803D',        border: '1px solid #86EFAC' },
+  cancelled:          { background: '#FEF2F2', color: '#991B1B',        border: '1px solid #FECACA' },
+  superseded:         { background: '#F9FAFB', color: '#6B7280',        border: '1px solid #E5E7EB' },
 }
-const STATUS_LABEL: Record<DocStatus, string> = { draft: 'ร่าง', pending: 'รออนุมัติ', approved: 'อนุมัติแล้ว' }
+const STATUS_LABEL: Record<DocStatus, string> = {
+  draft:              'ร่าง',
+  pending:            'รออนุมัติ',
+  approved:           'อนุมัติแล้ว',
+  generated:          'สร้างแล้ว',
+  awaiting_signature: 'รอลงนาม',
+  signed:             'ลงนามแล้ว',
+  cancelled:          'ยกเลิก',
+  superseded:         'แทนที่แล้ว',
+}
 
 const THAI_MONTHS = [
   'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
