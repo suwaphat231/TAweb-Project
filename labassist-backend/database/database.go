@@ -81,6 +81,7 @@ func courseWithInstructor(c models.Course) models.Course {
 	if p, ok := ActivePostingForCourse(c.ID); ok {
 		applyPostingToCourse(p, &c)
 	}
+	c.ApplicantCount = countNonWithdrawnApplications(c.ID)
 	c = closeIfPastDeadline(c)
 	if c.InstructorID != nil {
 		if u, ok := UserByID(*c.InstructorID); ok {
@@ -1311,6 +1312,33 @@ func ApplicationHistoryForApplication(applicationID uint) []models.ApplicationHi
 	return rows
 }
 
+// migrateWorkOccurrenceDedup removes duplicate (schedule_group_id, scheduled_date)
+// rows from work_occurrences before AutoMigrate adds the unique index
+// idx_wo_group_date. Keeps the occurrence with the lowest ID in each duplicate
+// set. Idempotent: skipped when the table is absent (first run) or the index
+// already exists.
+func migrateWorkOccurrenceDedup(db *gorm.DB) error {
+	if !db.Migrator().HasTable("work_occurrences") {
+		return nil
+	}
+	if db.Migrator().HasIndex("work_occurrences", "idx_wo_group_date") {
+		return nil
+	}
+	return db.Exec(`
+		DELETE wo FROM work_occurrences wo
+		INNER JOIN (
+			SELECT MIN(id) AS keep_id, schedule_group_id, scheduled_date
+			FROM work_occurrences
+			WHERE schedule_group_id IS NOT NULL
+			GROUP BY schedule_group_id, scheduled_date
+			HAVING COUNT(*) > 1
+		) dups
+		ON  wo.schedule_group_id = dups.schedule_group_id
+		AND wo.scheduled_date    = dups.scheduled_date
+		AND wo.id               != dups.keep_id
+	`).Error
+}
+
 func migrateApplicationData(db *gorm.DB) error {
 	// AutoMigrate may remove the legacy unique course_id index while altering
 	// FormReview. Create its replacement first so MySQL can retain the FK.
@@ -1318,6 +1346,9 @@ func migrateApplicationData(db *gorm.DB) error {
 		if err := db.Exec("CREATE INDEX idx_form_reviews_course_lookup ON form_reviews(course_id)").Error; err != nil {
 			return fmt.Errorf("prepare form review course FK index: %w", err)
 		}
+	}
+	if err := migrateWorkOccurrenceDedup(db); err != nil {
+		return fmt.Errorf("dedup work_occurrences before unique index: %w", err)
 	}
 	return db.AutoMigrate(
 		&models.Application{},

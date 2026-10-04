@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"labassist/models"
@@ -178,11 +179,26 @@ func UpsertScheduleGroup(sg models.ScheduleGroup) (models.ScheduleGroup, error) 
 	return sg, nil
 }
 
-// DeleteScheduleGroup removes a schedule group from a staff case.
-// Returns false if no matching row was found.
+// DeleteScheduleGroup removes a schedule group and all its months/occurrences.
+// Returns false if no matching row was found or the transaction fails.
 func DeleteScheduleGroup(id, staffCaseID uint) bool {
-	result := DB.Where("id = ? AND staff_case_id = ?", id, staffCaseID).Delete(&models.ScheduleGroup{})
-	return result.Error == nil && result.RowsAffected > 0
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("schedule_group_id = ?", id).Delete(&models.WorkOccurrence{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("schedule_group_id = ?", id).Delete(&models.ScheduleGroupMonth{}).Error; err != nil {
+			return err
+		}
+		result := tx.Where("id = ? AND staff_case_id = ?", id, staffCaseID).Delete(&models.ScheduleGroup{})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return errors.New("schedule group not found")
+		}
+		return nil
+	})
+	return err == nil
 }
 
 // UpdateScheduleGroupByID applies fn to a draft schedule group inside a transaction.
@@ -708,10 +724,387 @@ func ComputeMonthOccurrenceSummary(
 			}
 		}
 	}
+	s.LabBoyCount = labBoyCount
+	s.RatePerHourBaht = float64(effectiveRateSatang) / 100.0
 	if s.ValidMinutes > 0 {
 		s.ValidHours = float64(s.ValidMinutes) / 60.0
 		s.PayPerPersonBaht = float64(s.ValidMinutes) * float64(effectiveRateSatang) / 100.0 / 60.0
 		s.TotalPayBaht = s.PayPerPersonBaht * float64(labBoyCount)
 	}
 	return s
+}
+
+// ErrDuplicateOccurrence is returned when an occurrence already exists on a
+// given date within the same schedule group.
+var ErrDuplicateOccurrence = errors.New("occurrence already exists on this date for the group")
+
+// ErrTerminalOccurrence is returned when a caller tries to delete or patch
+// date/time on a completed, absent, or rescheduled occurrence.
+var ErrTerminalOccurrence = errors.New("cannot modify a completed, absent, or rescheduled occurrence")
+
+// AddSingleGroupOccurrence inserts one occurrence for a specific date, setting
+// status=cancelled_holiday if the date appears in cancelledDates.
+// Returns ErrDuplicateOccurrence if a non-rescheduled occurrence already exists
+// for the same group/date (enforced by the unique index idx_wo_group_date).
+func AddSingleGroupOccurrence(
+	staffCaseID, groupID uint,
+	date time.Time,
+	startTime, endTime string,
+	cancelledDates map[string]uint,
+) (models.WorkOccurrence, error) {
+	gid := groupID
+	dateStr := date.Format("2006-01-02")
+	status := models.OccurrenceScheduled
+	var calDateID *uint
+	if cdID, cancelled := cancelledDates[dateStr]; cancelled {
+		status = models.OccurrenceCancelledHoliday
+		calDateID = &cdID
+	}
+	occ := models.WorkOccurrence{
+		StaffCaseID:     staffCaseID,
+		ScheduleGroupID: &gid,
+		ScheduledDate:   time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC),
+		StartTime:       startTime,
+		EndTime:         endTime,
+		Status:          status,
+		CalendarDateID:  calDateID,
+	}
+	if err := DB.Create(&occ).Error; err != nil {
+		if isDuplicateErr(err) {
+			return models.WorkOccurrence{}, ErrDuplicateOccurrence
+		}
+		return models.WorkOccurrence{}, err
+	}
+	return occ, nil
+}
+
+// OccurrencePatch carries the fields that may be updated via PatchOccurrenceFields.
+// Nil fields are left unchanged.
+type OccurrencePatch struct {
+	Date      *time.Time
+	StartTime *string
+	EndTime   *string
+	Status    *models.OccurrenceStatus
+	Reason    *string
+}
+
+// PatchOccurrenceFields applies a partial update to a work occurrence inside a
+// transaction. Rules:
+//   - Patching date/time on a completed, absent, or rescheduled occurrence returns ErrTerminalOccurrence.
+//   - Setting status to rescheduled returns an error (use RescheduleOccurrence instead).
+func PatchOccurrenceFields(id uint, patch OccurrencePatch, updatedByID uint) (models.WorkOccurrence, error) {
+	var occ models.WorkOccurrence
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&occ, id).Error; err != nil {
+			return err
+		}
+		// Terminal statuses block date/time moves and all further edits.
+		if occ.Status == models.OccurrenceRescheduled ||
+			occ.Status == models.OccurrenceCompleted ||
+			occ.Status == models.OccurrenceAbsent {
+			if patch.Date != nil || patch.StartTime != nil || patch.EndTime != nil {
+				return ErrTerminalOccurrence
+			}
+		}
+		if patch.Status != nil && *patch.Status == models.OccurrenceRescheduled {
+			return errors.New("use the reschedule endpoint to set rescheduled status")
+		}
+		if patch.Date != nil {
+			d := *patch.Date
+			occ.ScheduledDate = time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.UTC)
+		}
+		if patch.StartTime != nil {
+			occ.StartTime = *patch.StartTime
+		}
+		if patch.EndTime != nil {
+			occ.EndTime = *patch.EndTime
+		}
+		if patch.Status != nil {
+			occ.Status = *patch.Status
+		}
+		if patch.Reason != nil {
+			occ.Reason = *patch.Reason
+		}
+		occ.UpdatedByID = &updatedByID
+		return tx.Save(&occ).Error
+	})
+	if err != nil {
+		return models.WorkOccurrence{}, err
+	}
+	return occ, nil
+}
+
+// DeleteOccurrence removes a non-terminal occurrence by ID.
+// Returns (true, nil) on success.
+// Returns (false, ErrTerminalOccurrence) if the occurrence is completed or absent.
+// Returns (false, nil) if the occurrence was not found.
+func DeleteOccurrence(id uint) (bool, error) {
+	var occ models.WorkOccurrence
+	if err := DB.First(&occ, id).Error; err != nil {
+		return false, nil // not found
+	}
+	if occ.Status == models.OccurrenceCompleted || occ.Status == models.OccurrenceAbsent {
+		return false, ErrTerminalOccurrence
+	}
+	result := DB.Delete(&models.WorkOccurrence{}, id)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
+
+// --- Manual date-picking ---
+
+// validateAndNormaliseDates returns dates that fall within year/month, sorted
+// ascending and deduplicated (same calendar day counted once). Returns an error
+// if any date is outside the requested month.
+func validateAndNormaliseDates(year, month int, dates []time.Time) ([]time.Time, error) {
+	seen := make(map[string]struct{}, len(dates))
+	out := make([]time.Time, 0, len(dates))
+	for _, d := range dates {
+		if d.Year() != year || int(d.Month()) != month {
+			return nil, fmt.Errorf("วันที่ %s ไม่อยู่ในเดือน %d/%d",
+				d.Format("2006-01-02"), month, year)
+		}
+		key := d.Format("2006-01-02")
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		// Normalise to midnight UTC so date comparisons are unambiguous.
+		out = append(out, time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.UTC))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Before(out[j]) })
+	return out, nil
+}
+
+// resolveSlotForDate picks the start/end time for a single occurrence date.
+// When WeekDaysJSON is set, the slot whose Day matches the date's weekday is
+// used; if no slot matches, the first slot is the fallback. When WeekDaysJSON
+// is empty the group's primary StartTime/EndTime is returned.
+func resolveSlotForDate(sg models.ScheduleGroup, date time.Time) (startTime, endTime string) {
+	if sg.WeekDaysJSON == "" {
+		return sg.StartTime, sg.EndTime
+	}
+	slots, err := ParseGroupWeekDaySlots(sg.WeekDaysJSON)
+	if err != nil || len(slots) == 0 {
+		return sg.StartTime, sg.EndTime
+	}
+	dayNames := map[time.Weekday]string{
+		time.Monday: "MON", time.Tuesday: "TUE", time.Wednesday: "WED",
+		time.Thursday: "THU", time.Friday: "FRI", time.Saturday: "SAT", time.Sunday: "SUN",
+	}
+	target := dayNames[date.Weekday()]
+	for _, s := range slots {
+		if s.Day == target {
+			return s.StartTime, s.EndTime
+		}
+	}
+	return slots[0].StartTime, slots[0].EndTime
+}
+
+// SetGroupMonthDates replaces the draft occurrences for a schedule group in one
+// calendar month with occurrences at exactly the staff-picked dates. Terminal
+// occurrences (completed, absent, cancelled_other) and replacement rows
+// (rescheduled_from_occurrence_id IS NOT NULL) are never deleted.
+//
+// Idempotent: calling again with a new list safely replaces the previous set.
+// After a successful call ScheduleGroupMonth.IsManual is set to true.
+func SetGroupMonthDates(
+	staffCaseID uint,
+	groupID uint,
+	sg models.ScheduleGroup,
+	sgMonth models.ScheduleGroupMonth,
+	pickedDates []time.Time,
+	cancelledDates map[string]uint,
+) ([]models.WorkOccurrence, error) {
+	normalised, err := validateAndNormaliseDates(sgMonth.Year, sgMonth.Month, pickedDates)
+	if err != nil {
+		return nil, err
+	}
+
+	// Effective month boundaries (respect partial-month overrides on sgMonth).
+	firstDay := time.Date(sgMonth.Year, time.Month(sgMonth.Month), 1, 0, 0, 0, 0, time.UTC)
+	lastDay := firstDay.AddDate(0, 1, -1)
+	startBound, endBound := firstDay, lastDay
+	if sgMonth.MonthStartDate != nil {
+		startBound = time.Date(sgMonth.MonthStartDate.Year(), sgMonth.MonthStartDate.Month(),
+			sgMonth.MonthStartDate.Day(), 0, 0, 0, 0, time.UTC)
+	}
+	if sgMonth.MonthEndDate != nil {
+		endBound = time.Date(sgMonth.MonthEndDate.Year(), sgMonth.MonthEndDate.Month(),
+			sgMonth.MonthEndDate.Day(), 0, 0, 0, 0, time.UTC)
+	}
+
+	// Drop dates outside the effective boundaries (e.g. partial-month start/end).
+	clamped := normalised[:0]
+	for _, d := range normalised {
+		if !d.Before(startBound) && !d.After(endBound) {
+			clamped = append(clamped, d)
+		}
+	}
+	normalised = clamped
+
+	gid := groupID
+	var result []models.WorkOccurrence
+
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		// Remove only draft occurrences; never touch terminal or replacement rows.
+		draftStatuses := []string{
+			string(models.OccurrenceScheduled),
+			string(models.OccurrenceCancelledHoliday),
+		}
+		if err := tx.Where(
+			"schedule_group_id = ? AND scheduled_date >= ? AND scheduled_date <= ?"+
+				" AND status IN ? AND rescheduled_from_occurrence_id IS NULL",
+			groupID,
+			startBound.Format("2006-01-02"),
+			endBound.Format("2006-01-02"),
+			draftStatuses,
+		).Delete(&models.WorkOccurrence{}).Error; err != nil {
+			return err
+		}
+
+		// Build one occurrence per picked date.
+		occs := make([]models.WorkOccurrence, 0, len(normalised))
+		for _, d := range normalised {
+			start, end := resolveSlotForDate(sg, d)
+			dateStr := d.Format("2006-01-02")
+			status := models.OccurrenceScheduled
+			var calDateID *uint
+			if cdID, cancelled := cancelledDates[dateStr]; cancelled {
+				status = models.OccurrenceCancelledHoliday
+				calDateID = &cdID
+			}
+			occs = append(occs, models.WorkOccurrence{
+				StaffCaseID:     staffCaseID,
+				ScheduleGroupID: &gid,
+				ScheduledDate:   d,
+				StartTime:       start,
+				EndTime:         end,
+				Status:          status,
+				CalendarDateID:  calDateID,
+			})
+		}
+		if len(occs) > 0 {
+			if err := tx.Create(&occs).Error; err != nil {
+				return err
+			}
+		}
+		result = occs
+
+		// Mark this month as staff-managed (manual dates).
+		return tx.Model(&models.ScheduleGroupMonth{}).
+			Where("schedule_group_id = ? AND year = ? AND month = ?",
+				groupID, sgMonth.Year, sgMonth.Month).
+			Update("is_manual", true).Error
+	})
+	return result, err
+}
+
+// weekDayThai maps short day codes to Thai day names for WorkDaySlot.Day.
+var weekDayThai = map[string]string{
+	"MON": "วันจันทร์",
+	"TUE": "วันอังคาร",
+	"WED": "วันพุธ",
+	"THU": "วันพฤหัสบดี",
+	"FRI": "วันศุกร์",
+	"SAT": "วันเสาร์",
+	"SUN": "วันอาทิตย์",
+}
+
+// groupWeekSlots returns the effective weekly slots for a schedule group.
+// Prefers WeekDaysJSON when non-empty; falls back to WeekDay/StartTime/EndTime.
+func groupWeekSlots(sg models.ScheduleGroup) []models.GroupWeekDaySlot {
+	if sg.WeekDaysJSON != "" {
+		var slots []models.GroupWeekDaySlot
+		if err := json.Unmarshal([]byte(sg.WeekDaysJSON), &slots); err == nil && len(slots) > 0 {
+			return slots
+		}
+	}
+	if sg.WeekDay == "" {
+		return nil
+	}
+	return []models.GroupWeekDaySlot{{Day: sg.WeekDay, StartTime: sg.StartTime, EndTime: sg.EndTime}}
+}
+
+// HiringNoticePlanSnapshot is a read-only view derived from WorkOccurrence data.
+// The backend uses it to auto-populate hiring_notice documents so that
+// sessions_per_month and work_schedule are always sourced from the confirmed plan.
+type HiringNoticePlanSnapshot struct {
+	WorkSchedule     []models.WorkDaySlot `json:"work_schedule"`
+	SessionsPerMonth int                  `json:"sessions_per_month"`
+	RatePerHourBaht  float64              `json:"rate_per_hour_baht"`
+	TotalValidDays   int                  `json:"total_valid_days"`
+	CanCreate        bool                 `json:"can_create"`
+	BlockingReasons  []string             `json:"blocking_reasons"`
+}
+
+// BuildHiringNoticeSnapshot derives the hiring notice fields from confirmed
+// WorkOccurrence data. BlockingReasons is non-empty and CanCreate is false
+// when the plan is incomplete.
+func BuildHiringNoticeSnapshot(caseID uint) HiringNoticePlanSnapshot {
+	snap := HiringNoticePlanSnapshot{BlockingReasons: []string{}}
+
+	sc, ok := StaffCaseByID(caseID)
+	if !ok {
+		snap.BlockingReasons = append(snap.BlockingReasons, "ไม่พบ Staff Case")
+		return snap
+	}
+
+	effectiveRate := sc.RatePerHour
+	if effectiveRate == 0 {
+		effectiveRate = DefaultHourlyRateSatang
+	}
+	snap.RatePerHourBaht = float64(effectiveRate) / 100.0
+
+	groups := ScheduleGroupsForCase(caseID)
+	if len(groups) == 0 {
+		snap.BlockingReasons = append(snap.BlockingReasons, "ยังไม่มีกลุ่มตารางทำงาน")
+		return snap
+	}
+
+	// Build work schedule from all groups' weekly patterns.
+	var workSchedule []models.WorkDaySlot
+	for _, sg := range groups {
+		for _, slot := range groupWeekSlots(sg) {
+			th := weekDayThai[slot.Day]
+			if th == "" {
+				th = slot.Day
+			}
+			workSchedule = append(workSchedule, models.WorkDaySlot{
+				Day:       th,
+				TimeStart: slot.StartTime,
+				TimeEnd:   slot.EndTime,
+			})
+		}
+	}
+	snap.WorkSchedule = workSchedule
+
+	// Count valid occurrences and distinct active months across all groups.
+	totalValid := 0
+	monthKeys := make(map[string]struct{})
+	for _, sg := range groups {
+		for _, m := range ListScheduleGroupMonths(sg.ID) {
+			for _, o := range WorkOccurrencesForGroupInMonth(sg.ID, m.Year, m.Month) {
+				if o.Status == models.OccurrenceScheduled || o.Status == models.OccurrenceCompleted {
+					totalValid++
+					monthKeys[fmt.Sprintf("%d-%02d", m.Year, m.Month)] = struct{}{}
+				}
+			}
+		}
+	}
+
+	snap.TotalValidDays = totalValid
+	if totalValid == 0 {
+		snap.BlockingReasons = append(snap.BlockingReasons, "ยังไม่มีวันทำงานที่นับได้ในแผน")
+	}
+
+	numMonths := len(monthKeys)
+	if numMonths > 0 {
+		snap.SessionsPerMonth = (totalValid + numMonths - 1) / numMonths // ceiling division
+	}
+
+	snap.CanCreate = len(snap.BlockingReasons) == 0
+	return snap
 }

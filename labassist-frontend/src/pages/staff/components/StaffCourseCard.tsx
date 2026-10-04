@@ -1,9 +1,14 @@
 import type { CourseOffering, CourseDocStatus } from '../../../types'
 
-const STATUS_CONFIG: Record<CourseDocStatus, { label: string; color: string; bg: string; border: string }> = {
-  waiting:     { label: 'รอจัดทำเอกสาร', color: 'var(--amber)',   bg: 'var(--amber-bg)',   border: '#FCD34D' },
-  in_progress: { label: 'กำลังดำเนินการ', color: 'var(--primary)', bg: 'var(--primary-50)', border: 'var(--primary-100)' },
-  completed:   { label: 'เสร็จสิ้นแล้ว',  color: 'var(--green)',   bg: 'var(--green-bg)',   border: '#86EFAC' },
+const STATUS_BADGE: Record<CourseDocStatus, string> = {
+  waiting:     'badge badge-amber',
+  in_progress: 'badge badge-primary',
+  completed:   'badge badge-green',
+}
+const STATUS_LABEL: Record<CourseDocStatus, string> = {
+  waiting:     'รอจัดทำเอกสาร',
+  in_progress: 'กำลังดำเนินการ',
+  completed:   'เสร็จสิ้นแล้ว',
 }
 
 interface Props {
@@ -21,12 +26,11 @@ function PersonIcon() {
 }
 
 export function StaffCourseCard({ offering, onAction }: Props) {
-  const status = STATUS_CONFIG[offering.docStatus]
   const progress = offering.totalDocs > 0 ? (offering.completedDocs / offering.totalDocs) * 100 : 0
   const progressColor = {
-    waiting: 'var(--amber)',
+    waiting:     'var(--amber)',
     in_progress: 'var(--primary)',
-    completed: 'var(--green)',
+    completed:   'var(--green)',
   }[offering.docStatus]
 
   const actionLabel = offering.docStatus === 'waiting' ? 'เริ่มดำเนินการ'
@@ -37,7 +41,7 @@ export function StaffCourseCard({ offering, onAction }: Props) {
     <div
       role="button"
       tabIndex={0}
-      aria-label={`${offering.courseCode} ${offering.courseTitle} กลุ่ม ${offering.sectionNo} — ${status.label}`}
+      aria-label={`${offering.courseCode} ${offering.courseTitle} กลุ่ม ${offering.sectionNo} — ${STATUS_LABEL[offering.docStatus]}`}
       onClick={() => onAction(offering)}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAction(offering) } }}
       style={{
@@ -47,7 +51,7 @@ export function StaffCourseCard({ offering, onAction }: Props) {
         outline: 'none',
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.boxShadow = '0 4px 16px rgba(42,34,98,0.1)'
+        e.currentTarget.style.boxShadow = '0 4px 16px rgba(42,34,98,0.10)'
         e.currentTarget.style.borderColor = 'var(--primary-100)'
       }}
       onMouseLeave={(e) => {
@@ -64,24 +68,13 @@ export function StaffCourseCard({ offering, onAction }: Props) {
             <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)' }}>
               {offering.courseCode}
             </span>
-            <span style={{
-              fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--radius-pill)',
-              background: 'var(--primary-50)', color: 'var(--primary)', border: '1px solid var(--primary-100)',
-            }}>
-              กลุ่ม {offering.sectionNo}
-            </span>
+            <span className="badge badge-primary">กลุ่ม {offering.sectionNo}</span>
           </div>
           <div style={{ fontSize: 13, color: 'var(--ink-600)', marginTop: 4, lineHeight: 1.5 }}>
             {offering.courseTitle}
           </div>
         </div>
-        <span style={{
-          flexShrink: 0, fontSize: 11, fontWeight: 600, padding: '3px 10px',
-          borderRadius: 'var(--radius-pill)', whiteSpace: 'nowrap',
-          background: status.bg, color: status.color, border: `1px solid ${status.border}`,
-        }}>
-          {status.label}
-        </span>
+        <span className={STATUS_BADGE[offering.docStatus]}>{STATUS_LABEL[offering.docStatus]}</span>
       </div>
 
       {/* Meta */}
@@ -142,16 +135,7 @@ export function StaffCourseCard({ offering, onAction }: Props) {
         <button
           onClick={(e) => { e.stopPropagation(); onAction(offering) }}
           aria-label={`${actionLabel} — ${offering.courseCode} กลุ่ม ${offering.sectionNo}`}
-          style={{
-            padding: '7px 18px', fontSize: 13, fontWeight: 600,
-            borderRadius: 'var(--radius-btn)', cursor: 'pointer',
-            transition: 'opacity .15s',
-            ...(offering.docStatus === 'completed'
-              ? { background: 'transparent', color: 'var(--primary)', border: '1.5px solid var(--primary)' }
-              : { background: 'var(--accent)', color: '#fff', border: 'none' }),
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+          className={offering.docStatus === 'completed' ? 'btn btn-outline' : 'btn btn-primary'}
         >
           {actionLabel}
         </button>

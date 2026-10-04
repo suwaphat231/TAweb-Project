@@ -11,6 +11,7 @@ import type {
   StaffCaseResponse, ScheduleGroup, CalendarDate, WorkOccurrence, MonthlyPeriodResponse, StaffAuditLog,
   UpdateCasePayload, AddScheduleGroupPayload, UpdateScheduleGroupPayload, CreateCalendarDatePayload, GenerateOccurrencesPayload,
   ScheduleGroupMonth, AddGroupMonthPayload, MonthOccurrenceSummary,
+  GroupMonthPlan, AddGroupMonthOccurrencePayload, PatchOccurrencePayload, HiringNoticePlanSnapshot,
 } from '../types'
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1'
@@ -388,5 +389,19 @@ export const staffApi = {
 
   downloadDocument: (id: number) =>
     api.get(`/staff/documents/${id}/file`, { responseType: 'blob' }).then((r) => r.data as Blob),
+
+  // Monthly plan aggregate
+  getMonthlyPlan: (caseId: number) =>
+    api.get<GroupMonthPlan[]>(`/staff/cases/${caseId}/monthly-plan`).then((r) => r.data),
+  getHiringNoticeSnapshot: (caseId: number) =>
+    api.get<HiringNoticePlanSnapshot>(`/staff/cases/${caseId}/hiring-notice-snapshot`).then((r) => r.data),
+  setGroupMonthDates: (caseId: number, groupId: number, year: number, month: number, dates: string[]) =>
+    api.post<WorkOccurrence[]>(`/staff/cases/${caseId}/schedule-groups/${groupId}/months/${year}/${month}/set-dates`, { dates }).then((r) => r.data),
+  addGroupMonthOccurrence: (caseId: number, groupId: number, year: number, month: number, data: AddGroupMonthOccurrencePayload) =>
+    api.post<WorkOccurrence>(`/staff/cases/${caseId}/schedule-groups/${groupId}/months/${year}/${month}/occurrences`, data).then((r) => r.data),
+  patchOccurrence: (id: number, data: PatchOccurrencePayload) =>
+    api.patch<WorkOccurrence>(`/staff/occurrences/${id}`, data).then((r) => r.data),
+  deleteOccurrence: (id: number) =>
+    api.delete(`/staff/occurrences/${id}`),
 }
 export const adminApi = adminAPI

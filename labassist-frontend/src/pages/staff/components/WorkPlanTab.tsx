@@ -3,13 +3,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { staffApi } from '../../../services/api'
 import type {
   StaffCaseResponse, OccurrenceStatus, WorkOccurrence,
-  CalendarDateType, ScheduleGroup, LabBoyInfo,
+  CalendarDateType, ScheduleGroup, LabBoyInfo, GroupMonthPlan,
 } from '../../../types'
+import MonthlyPlanSection from './MonthlyPlanSection'
+import PlanSummaryPanel from './PlanSummaryPanel'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DAY_OPTIONS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
-const DAY_LABELS: Record<string, string> = {
+export const DAY_LABELS: Record<string, string> = {
   MON: 'จันทร์', TUE: 'อังคาร', WED: 'พุธ', THU: 'พฤหัสบดี',
   FRI: 'ศุกร์', SAT: 'เสาร์', SUN: 'อาทิตย์',
 }
@@ -17,31 +19,8 @@ const MONTHS_TH = [
   'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
   'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
 ]
-const DAY_SHORT = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.']
-
-const STATUS_LABELS: Record<OccurrenceStatus, string> = {
-  scheduled: 'กำหนดการ',
-  cancelled_holiday: 'วันหยุด',
-  rescheduled: 'เลื่อน',
-  completed: 'เสร็จสิ้น',
-  absent: 'ขาด',
-  cancelled_other: 'ยกเลิก',
-}
-const STATUS_COLORS: Record<OccurrenceStatus, string> = {
-  scheduled: 'bg-blue-100 text-blue-800',
-  cancelled_holiday: 'bg-gray-100 text-gray-500 line-through',
-  rescheduled: 'bg-yellow-100 text-yellow-800 line-through',
-  completed: 'bg-green-100 text-green-800',
-  absent: 'bg-red-100 text-red-800',
-  cancelled_other: 'bg-gray-100 text-gray-500',
-}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatThaiDate(dateStr: string) {
-  const d = new Date(dateStr)
-  return `${DAY_SHORT[d.getDay()]} ${d.getDate()} ${MONTHS_TH[d.getMonth()]} ${d.getFullYear() + 543}`
-}
 
 function formatThaiMonthYear(year: number, month: number) {
   return `${MONTHS_TH[month - 1]} ${year + 543}`
@@ -117,7 +96,6 @@ function computeSummary(
   const counted = occs.filter((o) => isCountedStatus(o.status))
   const totalSessions = counted.length
 
-  // totalValidMinutes × rate / 60
   const totalValidMins = totalSessions * durationMins
   const payPerPersonBaht = (totalValidMins * effectiveRateSatang) / 100 / 60
 
@@ -181,7 +159,6 @@ export default function WorkPlanTab({ staffCase }: Props) {
   const caseId = staffCase.id
   const planLocked = staffCase.status === 'plan_locked' || staffCase.status === 'done'
 
-  // --- UI State ---
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null)
   const [showAddGroupForm, setShowAddGroupForm] = useState(false)
   const [addForm, setAddForm] = useState<GroupFormState>(() => defaultGroupForm())
@@ -191,7 +168,6 @@ export default function WorkPlanTab({ staffCase }: Props) {
   const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([])
   const [showGenForm, setShowGenForm] = useState(false)
   const [genDates, setGenDates] = useState({ start_date: '', end_date: '' })
-  const [reschedulingId, setReschedulingId] = useState<number | null>(null)
   const [showHolidayForm, setShowHolidayForm] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showPreviewModal, setShowPreviewModal] = useState(false)
@@ -206,14 +182,13 @@ export default function WorkPlanTab({ staffCase }: Props) {
     scope: 'global' as 'global' | 'semester' | 'case', affects_work: true,
   })
 
-  // --- Queries ---
   const { data: scheduleGroups = [], isLoading: groupsLoading } = useQuery({
     queryKey: ['staff-schedule-groups', caseId],
     queryFn: () => staffApi.getCaseScheduleGroups(caseId),
   })
   const selectedGroup = scheduleGroups.find((g) => g.id === selectedGroupId) ?? null
 
-  const { data: groupOccs = [], isLoading: occsLoading } = useQuery({
+  const { data: groupOccs = [] } = useQuery({
     queryKey: ['staff-group-occurrences', selectedGroupId],
     queryFn: () => staffApi.listGroupOccurrences(caseId, selectedGroupId!),
     enabled: !!selectedGroupId,
@@ -224,41 +199,36 @@ export default function WorkPlanTab({ staffCase }: Props) {
     queryFn: () => staffApi.listCalendarDates(caseId),
   })
 
-  // --- Derived ---
-  const monthGroups = useMemo(() => groupByMonth(groupOccs), [groupOccs])
+  const { data: monthlyPlanData = [], isLoading: monthlyPlanLoading } = useQuery<GroupMonthPlan[]>({
+    queryKey: ['monthly-plan', caseId],
+    queryFn: () => staffApi.getMonthlyPlan(caseId),
+  })
+
   const summary = useMemo(
     () => selectedGroup ? computeSummary(selectedGroup, groupOccs, staffCase.rate_per_hour_satang) : null,
     [selectedGroup, groupOccs, staffCase.rate_per_hour_satang],
+  )
+
+  const monthlyPlanEntries = useMemo(
+    () => monthlyPlanData.find((p) => p.group.id === selectedGroupId)?.months ?? [],
+    [monthlyPlanData, selectedGroupId],
   )
 
   const validationErrors = useMemo((): string[] => {
     if (!selectedGroup) return []
     if (selectedGroup.locked_at) return []
     const errs: string[] = []
-    if (!staffCase.instructor_confirmed) {
-      errs.push('อาจารย์ยังไม่ได้ยืนยันรายชื่อ Lab Boy')
-    }
-    if (!selectedGroup.assigned_students?.length) {
-      errs.push('ยังไม่มี Lab Boy ในกลุ่มนี้')
-    }
-    if (!selectedGroup.week_day) {
-      errs.push('ยังไม่ได้กำหนดวันประจำสัปดาห์')
-    }
-    if (selectedGroup.start_time >= selectedGroup.end_time) {
-      errs.push('เวลาเริ่มต้องก่อนเวลาสิ้นสุด')
-    }
+    if (!staffCase.instructor_confirmed) errs.push('อาจารย์ยังไม่ได้ยืนยันรายชื่อ Lab Boy')
+    if (!selectedGroup.assigned_students?.length) errs.push('ยังไม่มี Lab Boy ในกลุ่มนี้')
+    if (!selectedGroup.week_day) errs.push('ยังไม่ได้กำหนดวันประจำสัปดาห์')
+    if (selectedGroup.start_time >= selectedGroup.end_time) errs.push('เวลาเริ่มต้องก่อนเวลาสิ้นสุด')
     const rateSatang = selectedGroup.rate_per_hour_satang || staffCase.rate_per_hour_satang
-    if (rateSatang === 0) {
-      errs.push('ยังไม่กำหนดอัตราค่าตอบแทน')
-    }
+    if (rateSatang === 0) errs.push('ยังไม่กำหนดอัตราค่าตอบแทน')
     const countedOccs = groupOccs.filter((o) => isCountedStatus(o.status))
-    if (countedOccs.length === 0) {
-      errs.push('ไม่มีวันทำงานที่นับได้ กรุณาสร้างรายการวันทำงานก่อน')
-    }
+    if (countedOccs.length === 0) errs.push('ไม่มีวันทำงานที่นับได้ กรุณาสร้างรายการวันทำงานก่อน')
     return errs
   }, [selectedGroup, groupOccs, staffCase])
 
-  // --- Mutations ---
   const addGroupMut = useMutation({
     mutationFn: () => {
       const hours = parseFloat(addForm.hours_per_session)
@@ -337,23 +307,8 @@ export default function WorkPlanTab({ staffCase }: Props) {
     mutationFn: () => staffApi.generateGroupOccurrences(caseId, selectedGroupId!, genDates),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['staff-group-occurrences', selectedGroupId] })
+      qc.invalidateQueries({ queryKey: ['monthly-plan', caseId] })
       setShowGenForm(false)
-    },
-  })
-
-  const updateOccMut = useMutation({
-    mutationFn: ({ id, status }: { id: number; status: string }) =>
-      staffApi.updateOccurrence(id, status),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['staff-group-occurrences', selectedGroupId] }),
-  })
-
-  const rescheduleMut = useMutation({
-    mutationFn: ({ id, newDate, newStart, newEnd, reason }: {
-      id: number; newDate: string; newStart: string; newEnd: string; reason: string
-    }) => staffApi.rescheduleOccurrence(id, newDate, newStart, newEnd, reason),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['staff-group-occurrences', selectedGroupId] })
-      setReschedulingId(null)
     },
   })
 
@@ -393,8 +348,6 @@ export default function WorkPlanTab({ staffCase }: Props) {
     },
   })
 
-  // ─── Helpers for handlers ────
-
   function startEditing(group: ScheduleGroup) {
     setEditForm({
       group_name: group.group_name || '',
@@ -430,225 +383,290 @@ export default function WorkPlanTab({ staffCase }: Props) {
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
+  const steps = [
+    { n: 1, label: 'ตั้งค่าอัตราค่าตอบแทน', done: staffCase.rate_per_hour_satang > 0 },
+    { n: 2, label: 'สร้างกลุ่มตาราง', done: scheduleGroups.length > 0 },
+    { n: 3, label: 'กำหนด Lab Boy', done: scheduleGroups.some(g => (g.assigned_students?.length ?? 0) > 0) },
+    { n: 4, label: 'กรอกวันปฏิบัติงาน', done: monthlyPlanData.some(p => p.months.some(m => m.occurrences.length > 0)) },
+    { n: 5, label: 'ล็อกแผน', done: planLocked },
+  ]
+
   return (
     <div className="space-y-5">
-      {/* ── Settings bar ── */}
-      <div className="border rounded-lg p-3 bg-gray-50 flex items-center justify-between flex-wrap gap-3">
-        <div className="flex gap-5 text-sm flex-wrap">
-          <span>
-            <span className="text-gray-500">อัตราค่าตอบแทน:</span>{' '}
-            <strong className="text-blue-700">{rateDisplay}</strong>
-            <span className="ml-1 text-xs text-gray-400">(ค่าเริ่มต้นของ Case)</span>
-          </span>
-          {staffCase.hours_per_session > 0 && (
-            <span>
-              <span className="text-gray-500">ชั่วโมง/ครั้ง:</span>{' '}
-              <strong>{staffCase.hours_per_session} ชม.</strong>
+
+      {/* ━━━ Step Progress Indicator ━━━ */}
+      {!planLocked ? (
+        <div className="rounded-xl p-4" style={{ background: 'var(--primary-50)', border: '1.5px solid var(--primary-100)' }}>
+          <p className="text-xs font-bold mb-3 uppercase tracking-wider" style={{ color: 'var(--primary)' }}>
+            ขั้นตอนการตั้งค่าแผนปฏิบัติงาน
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {steps.map((step, idx, arr) => (
+              <div key={step.n} className="flex items-center gap-1.5">
+                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
+                  step.done
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-white text-gray-600'
+                }`} style={{ border: step.done ? '1px solid #86EFAC' : '1px solid var(--line)' }}>
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                    step.done ? 'bg-green-500 text-white' : ''
+                  }`} style={!step.done ? { background: 'var(--line)', color: 'var(--ink-600)' } : {}}>
+                    {step.done ? '✓' : step.n}
+                  </span>
+                  {step.label}
+                </div>
+                {idx < arr.length - 1 && (
+                  <span style={{ color: 'var(--line)', fontSize: 16, lineHeight: 1 }}>›</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-xl p-4 flex items-center justify-between gap-3 flex-wrap"
+          style={{ background: 'var(--green-bg)', border: '1.5px solid #86EFAC' }}>
+          <div className="flex items-center gap-3">
+            <span className="w-9 h-9 rounded-full bg-green-500 text-white flex items-center justify-center text-base font-bold flex-shrink-0">✓</span>
+            <div>
+              <p className="font-bold text-sm text-green-800">แผนการทำงานถูกล็อกแล้ว</p>
+              <p className="text-xs text-green-700">ทุกกลุ่มถูกยืนยัน — พร้อมสร้างเอกสาร</p>
+            </div>
+          </div>
+          <button onClick={() => setShowPreviewModal(true)} className="btn btn-sm btn-outline"
+            style={{ color: 'var(--green)', borderColor: 'var(--green)' }}>
+            ดูตัวอย่างเอกสาร
+          </button>
+        </div>
+      )}
+
+      {/* ━━━ Settings Bar ━━━ */}
+      <div className="rounded-xl flex items-center justify-between flex-wrap gap-3 px-4 py-3"
+        style={{ background: 'var(--line-soft)', border: '1.5px solid var(--line)' }}>
+        <div className="flex gap-5 flex-wrap items-center">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium" style={{ color: 'var(--ink-500)' }}>อัตราค่าตอบแทน</span>
+            <span className="font-bold text-sm" style={{ color: staffCase.rate_per_hour_satang > 0 ? 'var(--primary)' : 'var(--amber)' }}>
+              {rateDisplay}
             </span>
+            {staffCase.rate_per_hour_satang === 0 && (
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                style={{ background: 'var(--amber-bg)', color: 'var(--amber)', border: '1px solid #FCD34D' }}>
+                ⚠ ยังไม่ได้ตั้งค่า
+              </span>
+            )}
+          </div>
+          {staffCase.hours_per_session > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium" style={{ color: 'var(--ink-500)' }}>ชั่วโมง/ครั้ง</span>
+              <span className="font-bold text-sm" style={{ color: 'var(--ink-700)' }}>{staffCase.hours_per_session} ชม.</span>
+            </div>
           )}
         </div>
         {!planLocked && (
-          <button
-            onClick={() => setShowSettings(!showSettings)}
-            className="px-3 py-1 border border-gray-300 rounded text-xs hover:bg-white"
-          >
-            ตั้งค่า Case
+          <button onClick={() => setShowSettings(!showSettings)} className="btn btn-ghost btn-xs">
+            ⚙ ตั้งค่า {showSettings ? '▲' : '▼'}
           </button>
         )}
       </div>
 
-      {/* Settings form */}
       {showSettings && (
-        <div className="border rounded-lg p-4 bg-white space-y-3">
-          <h4 className="font-medium text-sm text-gray-800">ตั้งค่า Staff Case (ค่าเริ่มต้น)</h4>
+        <div className="rounded-xl p-4 space-y-3" style={{ background: '#fff', border: '1.5px solid var(--line)' }}>
+          <h4 className="font-bold text-sm" style={{ color: 'var(--ink-900)' }}>ตั้งค่า Staff Case (ค่าเริ่มต้น)</h4>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <div>
-              <label className="block text-xs text-gray-600 mb-1">ชั่วโมง/ครั้ง</label>
+              <label className="block text-xs mb-1" style={{ color: 'var(--ink-500)' }}>ชั่วโมง/ครั้ง</label>
               <input type="number" step="0.5" min="0" value={settingsForm.hours_per_session}
                 onChange={(e) => setSettingsForm({ ...settingsForm, hours_per_session: e.target.value })}
-                className="w-full border rounded px-2 py-1 text-sm" placeholder="2.0" />
+                className="form-input w-full" placeholder="2.0" />
             </div>
             <div>
-              <label className="block text-xs text-gray-600 mb-1">อัตรา (บาท/ชม.)</label>
+              <label className="block text-xs mb-1" style={{ color: 'var(--ink-500)' }}>อัตรา (บาท/ชม.)</label>
               <input type="number" step="0.01" min="0" value={settingsForm.rate_per_hour_baht}
                 onChange={(e) => setSettingsForm({ ...settingsForm, rate_per_hour_baht: e.target.value })}
-                className="w-full border rounded px-2 py-1 text-sm" placeholder="50.00" />
+                className="form-input w-full" placeholder="50.00" />
             </div>
             <div>
-              <label className="block text-xs text-gray-600 mb-1">วันที่เริ่ม</label>
+              <label className="block text-xs mb-1" style={{ color: 'var(--ink-500)' }}>วันที่เริ่ม</label>
               <input type="date" value={settingsForm.work_start_date}
                 onChange={(e) => setSettingsForm({ ...settingsForm, work_start_date: e.target.value })}
-                className="w-full border rounded px-2 py-1 text-sm" />
+                className="form-input w-full" />
             </div>
             <div>
-              <label className="block text-xs text-gray-600 mb-1">วันที่สิ้นสุด</label>
+              <label className="block text-xs mb-1" style={{ color: 'var(--ink-500)' }}>วันที่สิ้นสุด</label>
               <input type="date" value={settingsForm.work_end_date}
                 onChange={(e) => setSettingsForm({ ...settingsForm, work_end_date: e.target.value })}
-                className="w-full border rounded px-2 py-1 text-sm" />
+                className="form-input w-full" />
             </div>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => saveSettingsMut.mutate()} disabled={saveSettingsMut.isPending}
-              className="px-4 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50">
+            <button onClick={() => saveSettingsMut.mutate()} disabled={saveSettingsMut.isPending} className="btn btn-primary btn-sm">
               {saveSettingsMut.isPending ? 'กำลังบันทึก...' : 'บันทึก'}
             </button>
-            <button onClick={() => setShowSettings(false)} className="px-4 py-1.5 border rounded text-sm">ยกเลิก</button>
+            <button onClick={() => setShowSettings(false)} className="btn btn-ghost btn-sm">ยกเลิก</button>
           </div>
           {saveSettingsMut.isError && (
-            <p className="text-red-600 text-xs">{String((saveSettingsMut.error as Error).message)}</p>
+            <p className="text-xs" style={{ color: 'var(--red)' }}>{String((saveSettingsMut.error as Error).message)}</p>
           )}
         </div>
       )}
 
-      {/* ── Two-column main layout ── */}
-      <div className="flex flex-col lg:flex-row gap-6">
+      {/* ━━━ Main Two-Column Layout ━━━ */}
+      <div className="flex flex-col lg:flex-row gap-5">
 
-        {/* ── Left column ── */}
+        {/* ── Left Column ── */}
         <div className="flex-1 min-w-0 space-y-4">
 
-          {/* Group selector */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold text-gray-800 text-sm">กลุ่มตารางทำงาน</h3>
+          {/* ─ Section: กลุ่มตารางทำงาน ─ */}
+          <div className="rounded-xl overflow-hidden" style={{ border: '1.5px solid var(--line)' }}>
+            <div className="flex items-center justify-between px-4 py-3"
+              style={{ background: 'var(--line-soft)', borderBottom: '1px solid var(--line)' }}>
+              <div className="flex items-center gap-2.5">
+                <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+                  style={{ background: 'var(--primary)' }}>2</span>
+                <span className="font-bold text-sm" style={{ color: 'var(--ink-900)' }}>กลุ่มตารางทำงาน</span>
+                {scheduleGroups.length > 0 && (
+                  <span className="badge badge-primary">{scheduleGroups.length} กลุ่ม</span>
+                )}
+              </div>
               {!planLocked && (
                 <button
-                  onClick={() => {
-                    setAddForm(defaultGroupForm(nextGroupName(scheduleGroups)))
-                    setShowAddGroupForm(true)
-                  }}
-                  className="text-xs text-blue-600 hover:underline font-medium"
-                >
+                  onClick={() => { setAddForm(defaultGroupForm(nextGroupName(scheduleGroups))); setShowAddGroupForm(true) }}
+                  className="btn btn-primary btn-xs">
                   + เพิ่มกลุ่ม
                 </button>
               )}
             </div>
 
-            {groupsLoading ? (
-              <div className="h-12 bg-gray-100 rounded animate-pulse" />
-            ) : scheduleGroups.length === 0 ? (
-              <div className="border-2 border-dashed border-gray-200 rounded-lg p-6 text-center text-gray-400 text-sm">
-                ยังไม่มีกลุ่มตาราง กดปุ่ม &quot;เพิ่มกลุ่ม&quot; เพื่อเริ่ม
-              </div>
-            ) : (
-              <div className="flex gap-2 flex-wrap">
-                {scheduleGroups.map((sg) => (
-                  <button
-                    key={sg.id}
-                    onClick={() => selectGroup(sg)}
-                    className={[
-                      'px-3 py-2 rounded-lg border text-left text-sm transition-all',
-                      selectedGroupId === sg.id
-                        ? 'border-blue-500 bg-blue-50 shadow-sm'
-                        : 'border-gray-200 bg-white hover:border-blue-300',
-                    ].join(' ')}
-                  >
-                    <div className="font-semibold text-gray-800 text-xs">
-                      {sg.group_name || `กลุ่ม ${sg.id}`}
-                    </div>
-                    <div className="text-xs text-gray-500 mt-0.5">
-                      {DAY_LABELS[sg.week_day]} {sg.start_time}–{sg.end_time}
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <span className="text-xs text-indigo-600">
-                        {sg.assigned_students?.length ?? 0} คน
-                      </span>
-                      {sg.locked_at ? (
-                        <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">ล็อก</span>
-                      ) : (
-                        <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">draft</span>
-                      )}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+            <div className="p-4 space-y-3">
+              {showAddGroupForm && (
+                <div className="rounded-xl p-4 space-y-3" style={{ background: 'var(--primary-50)', border: '1.5px solid var(--primary-100)' }}>
+                  <h4 className="font-bold text-sm" style={{ color: 'var(--primary)' }}>สร้างกลุ่มตารางใหม่</h4>
+                  <GroupFormFields form={addForm} onChange={setAddForm} caseRateSatang={staffCase.rate_per_hour_satang} />
+                  <div className="flex gap-2">
+                    <button onClick={() => addGroupMut.mutate()} disabled={addGroupMut.isPending || !addForm.week_day}
+                      className="btn btn-primary btn-sm">
+                      {addGroupMut.isPending ? 'กำลังสร้าง...' : 'สร้างกลุ่ม'}
+                    </button>
+                    <button onClick={() => setShowAddGroupForm(false)} className="btn btn-ghost btn-sm">ยกเลิก</button>
+                  </div>
+                  {addGroupMut.isError && (
+                    <p className="text-xs" style={{ color: 'var(--red)' }}>{String((addGroupMut.error as Error).message)}</p>
+                  )}
+                </div>
+              )}
 
-          {/* Add group form */}
-          {showAddGroupForm && (
-            <div className="border rounded-lg p-4 bg-blue-50 space-y-3">
-              <h4 className="font-medium text-sm text-blue-900">สร้างกลุ่มตารางใหม่</h4>
-              <GroupFormFields form={addForm} onChange={setAddForm} caseRateSatang={staffCase.rate_per_hour_satang} />
-              <div className="flex gap-2">
-                <button onClick={() => addGroupMut.mutate()} disabled={addGroupMut.isPending || !addForm.week_day}
-                  className="px-4 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50">
-                  {addGroupMut.isPending ? 'กำลังสร้าง...' : 'สร้างกลุ่ม'}
-                </button>
-                <button onClick={() => setShowAddGroupForm(false)} className="px-4 py-1.5 border rounded text-sm">ยกเลิก</button>
-              </div>
-              {addGroupMut.isError && (
-                <p className="text-red-600 text-xs">{String((addGroupMut.error as Error).message)}</p>
+              {groupsLoading ? (
+                <div className="h-16 rounded-lg animate-pulse" style={{ background: 'var(--line-soft)' }} />
+              ) : scheduleGroups.length === 0 ? (
+                <div className="py-10 text-center rounded-xl" style={{ border: '2px dashed var(--line)' }}>
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--ink-700)' }}>ยังไม่มีกลุ่มตาราง</p>
+                  <p className="text-xs mt-1" style={{ color: 'var(--ink-400)' }}>กดปุ่ม "+ เพิ่มกลุ่ม" ด้านบนเพื่อเริ่ม</p>
+                </div>
+              ) : (
+                <div className="flex gap-2.5 flex-wrap">
+                  {scheduleGroups.map((sg) => (
+                    <button key={sg.id} onClick={() => selectGroup(sg)}
+                      className="text-left rounded-xl transition-all"
+                      style={{
+                        padding: '10px 14px', minWidth: 140,
+                        border: selectedGroupId === sg.id ? '2px solid var(--primary)' : '1.5px solid var(--line)',
+                        background: selectedGroupId === sg.id ? 'var(--primary-50)' : '#fff',
+                        boxShadow: selectedGroupId === sg.id ? '0 2px 10px rgba(56,65,157,0.14)' : 'none',
+                      }}>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span className="font-bold text-sm" style={{ color: selectedGroupId === sg.id ? 'var(--primary)' : 'var(--ink-900)' }}>
+                          {sg.group_name || `กลุ่ม ${sg.id}`}
+                        </span>
+                        {sg.locked_at
+                          ? <span className="badge badge-green">ล็อก</span>
+                          : <span className="badge badge-amber">draft</span>}
+                      </div>
+                      <div className="text-xs" style={{ color: 'var(--ink-500)' }}>
+                        {DAY_LABELS[sg.week_day]} {sg.start_time}–{sg.end_time}
+                      </div>
+                      <div className="text-xs mt-0.5 font-medium" style={{ color: 'var(--primary)' }}>
+                        Lab Boy {sg.assigned_students?.length ?? 0} คน
+                      </div>
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
-          )}
+          </div>
 
-          {/* Selected group detail */}
+          {/* ─ Selected Group Detail ─ */}
           {selectedGroup ? (
-            <div className="border rounded-lg overflow-hidden">
-              <div className="px-4 py-3 bg-gray-50 border-b flex items-center justify-between">
-                <div>
-                  <span className="font-semibold text-gray-800 text-sm">
-                    {selectedGroup.group_name || `กลุ่ม ${selectedGroup.id}`}
-                  </span>
-                  <span className="ml-2 text-xs text-gray-500">
-                    {DAY_LABELS[selectedGroup.week_day]} {selectedGroup.start_time}–{selectedGroup.end_time}
-                  </span>
+            <div className="rounded-xl overflow-hidden" style={{ border: '1.5px solid var(--line)' }}>
+
+              {/* Group Header */}
+              <div className="flex items-center justify-between px-4 py-3 flex-wrap gap-2"
+                style={{ background: 'var(--primary)', borderBottom: '1px solid var(--primary-700)' }}>
+                <div className="flex items-center gap-2.5">
+                  <span className="font-bold text-white">{selectedGroup.group_name || `กลุ่ม ${selectedGroup.id}`}</span>
+                  <span className="text-white/70 text-xs">{DAY_LABELS[selectedGroup.week_day]} {selectedGroup.start_time}–{selectedGroup.end_time}</span>
                   {selectedGroup.locked_at && (
-                    <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                      ล็อกแล้ว
-                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-bold"
+                      style={{ background: 'rgba(22,163,74,0.3)', color: '#86EFAC' }}>✓ ล็อกแล้ว</span>
                   )}
                 </div>
                 {!planLocked && !selectedGroup.locked_at && (
                   <div className="flex gap-2">
                     {!isEditing && (
-                      <button onClick={() => startEditing(selectedGroup)}
-                        className="text-xs text-blue-600 hover:underline">แก้ไข</button>
+                      <button onClick={() => startEditing(selectedGroup)} className="btn btn-white-outline btn-xs">แก้ไข</button>
                     )}
-                    <button onClick={() => deleteGroupMut.mutate(selectedGroup.id)}
-                      disabled={deleteGroupMut.isPending}
-                      className="text-xs text-red-500 hover:underline disabled:opacity-50">ลบ</button>
+                    <button onClick={() => deleteGroupMut.mutate(selectedGroup.id)} disabled={deleteGroupMut.isPending}
+                      className="btn btn-xs" style={{ color: '#FCA5A5', borderColor: 'rgba(252,165,165,0.35)', background: 'transparent' }}>
+                      ลบกลุ่ม
+                    </button>
                   </div>
                 )}
               </div>
 
-              <div className="p-4 space-y-4">
-                {/* Edit form */}
-                {isEditing && editForm ? (
-                  <div className="space-y-3 bg-blue-50 rounded-lg p-3">
-                    <GroupFormFields form={editForm} onChange={setEditForm} caseRateSatang={staffCase.rate_per_hour_satang} />
-                    <div className="flex gap-2">
-                      <button onClick={() => updateGroupMut.mutate()} disabled={updateGroupMut.isPending}
-                        className="px-4 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50">
-                        {updateGroupMut.isPending ? 'กำลังบันทึก...' : 'บันทึก'}
-                      </button>
-                      <button onClick={() => { setIsEditing(false); setEditForm(null) }}
-                        className="px-4 py-1.5 border rounded text-sm">ยกเลิก</button>
-                    </div>
-                    {updateGroupMut.isError && (
-                      <p className="text-red-600 text-xs">{String((updateGroupMut.error as Error).message)}</p>
-                    )}
-                  </div>
-                ) : (
-                  /* Read-only group info */
-                  <GroupInfoDisplay group={selectedGroup} caseRateSatang={staffCase.rate_per_hour_satang} />
-                )}
+              <div style={{ borderTop: 'none' }}>
 
-                {/* Lab Boy assignment */}
+                {/* Sub-section: ข้อมูลตาราง */}
+                <div className="p-4" style={{ borderBottom: '1px solid var(--line-soft)' }}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-base">📅</span>
+                    <span className="font-bold text-xs uppercase tracking-wide" style={{ color: 'var(--ink-500)' }}>ข้อมูลตารางทำงาน</span>
+                  </div>
+                  {isEditing && editForm ? (
+                    <div className="space-y-3 rounded-xl p-3" style={{ background: 'var(--primary-50)', border: '1.5px solid var(--primary-100)' }}>
+                      <GroupFormFields form={editForm} onChange={setEditForm} caseRateSatang={staffCase.rate_per_hour_satang} />
+                      <div className="flex gap-2">
+                        <button onClick={() => updateGroupMut.mutate()} disabled={updateGroupMut.isPending} className="btn btn-primary btn-sm">
+                          {updateGroupMut.isPending ? 'กำลังบันทึก...' : 'บันทึก'}
+                        </button>
+                        <button onClick={() => { setIsEditing(false); setEditForm(null) }} className="btn btn-ghost btn-sm">ยกเลิก</button>
+                      </div>
+                      {updateGroupMut.isError && (
+                        <p className="text-xs" style={{ color: 'var(--red)' }}>{String((updateGroupMut.error as Error).message)}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <GroupInfoDisplay group={selectedGroup} caseRateSatang={staffCase.rate_per_hour_satang} />
+                  )}
+                </div>
+
+                {/* Sub-section: Lab Boy */}
                 {!planLocked && (
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-semibold text-gray-700">
-                        Lab Boy ในกลุ่มนี้ ({selectedGroup.assigned_students?.length ?? 0} คน)
-                      </span>
+                  <div className="p-4" style={{ borderBottom: '1px solid var(--line-soft)' }}>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">👥</span>
+                        <span className="font-bold text-xs uppercase tracking-wide" style={{ color: 'var(--ink-500)' }}>Lab Boy ในกลุ่มนี้</span>
+                        {(selectedGroup.assigned_students?.length ?? 0) > 0
+                          ? <span className="badge badge-primary">{selectedGroup.assigned_students?.length} คน</span>
+                          : <span className="badge badge-amber">ยังไม่กำหนด</span>}
+                      </div>
                       {!selectedGroup.locked_at && (
                         <button
                           onClick={() => {
-                            setSelectedStudentIds(selectedGroup.assigned_students?.map((s) => s.student_id) ?? [])
+                            setSelectedStudentIds(selectedGroup.assigned_students?.map(s => s.student_id) ?? [])
                             setShowStudents(!showStudents)
                           }}
-                          className="text-xs text-indigo-600 hover:underline"
-                        >
+                          className="btn btn-outline btn-xs">
                           {showStudents ? 'ซ่อน' : 'กำหนด Lab Boy'}
                         </button>
                       )}
@@ -656,8 +674,8 @@ export default function WorkPlanTab({ staffCase }: Props) {
                     {selectedGroup.assigned_students?.length > 0 && (
                       <div className="flex flex-wrap gap-1.5 mb-2">
                         {selectedGroup.assigned_students.map((s) => (
-                          <span key={s.student_id}
-                            className="text-xs bg-indigo-50 border border-indigo-200 text-indigo-800 px-2 py-0.5 rounded-full">
+                          <span key={s.student_id} className="text-xs px-2.5 py-1 rounded-full font-medium"
+                            style={{ background: '#EEF2FF', color: '#4338CA', border: '1px solid #C7D2FE' }}>
                             {s.student_name}
                           </span>
                         ))}
@@ -679,128 +697,111 @@ export default function WorkPlanTab({ staffCase }: Props) {
                   </div>
                 )}
 
-                {/* Generate occurrences */}
+                {/* Sub-section: สร้างวันทำงานอัตโนมัติ */}
                 {!planLocked && !selectedGroup.locked_at && (
-                  <div>
-                    <button
-                      onClick={() => setShowGenForm(!showGenForm)}
-                      className="text-xs text-blue-600 hover:underline font-medium"
-                    >
-                      {showGenForm ? '▲ ซ่อน' : '▼ สร้างรายการวันทำงาน'}
-                    </button>
+                  <div className="p-4" style={{ borderBottom: '1px solid var(--line-soft)' }}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">⚡</span>
+                        <span className="font-bold text-xs uppercase tracking-wide" style={{ color: 'var(--ink-500)' }}>
+                          สร้างรายการวันทำงานอัตโนมัติ
+                        </span>
+                      </div>
+                      <button onClick={() => setShowGenForm(!showGenForm)} className="btn btn-ghost btn-xs">
+                        {showGenForm ? 'ซ่อน ▲' : 'แสดง ▼'}
+                      </button>
+                    </div>
                     {showGenForm && (
-                      <div className="mt-2 p-3 bg-blue-50 rounded-lg space-y-2">
-                        <p className="text-xs text-blue-800 font-medium">
-                          สร้างวันทำงานสำหรับ {DAY_LABELS[selectedGroup.week_day]} {selectedGroup.start_time}–{selectedGroup.end_time}
+                      <div className="mt-2 p-3 rounded-xl" style={{ background: 'var(--green-bg)', border: '1px solid #86EFAC' }}>
+                        <p className="text-xs font-semibold mb-2" style={{ color: '#166534' }}>
+                          สร้างวันทำงานทุกวัน{DAY_LABELS[selectedGroup.week_day]} เวลา {selectedGroup.start_time}–{selectedGroup.end_time} ในช่วงที่กำหนด
                         </p>
                         <div className="flex gap-3 flex-wrap items-end">
                           <div>
-                            <label className="block text-xs text-gray-600 mb-1">วันที่เริ่ม</label>
+                            <label className="block text-xs mb-1" style={{ color: 'var(--ink-600)' }}>วันที่เริ่ม</label>
                             <input type="date" value={genDates.start_date}
                               onChange={(e) => setGenDates({ ...genDates, start_date: e.target.value })}
-                              className="border rounded px-2 py-1 text-xs" />
+                              className="form-input" />
                           </div>
                           <div>
-                            <label className="block text-xs text-gray-600 mb-1">วันที่สิ้นสุด</label>
+                            <label className="block text-xs mb-1" style={{ color: 'var(--ink-600)' }}>วันที่สิ้นสุด</label>
                             <input type="date" value={genDates.end_date}
                               onChange={(e) => setGenDates({ ...genDates, end_date: e.target.value })}
-                              className="border rounded px-2 py-1 text-xs" />
+                              className="form-input" />
                           </div>
-                          <button
-                            onClick={() => genOccsMut.mutate()}
+                          <button onClick={() => genOccsMut.mutate()}
                             disabled={genOccsMut.isPending || !genDates.start_date || !genDates.end_date}
-                            className="px-3 py-1.5 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50"
-                          >
-                            {genOccsMut.isPending ? 'กำลังสร้าง...' : 'สร้างวันที่ปฏิบัติงาน'}
+                            className="btn btn-green btn-sm">
+                            {genOccsMut.isPending ? 'กำลังสร้าง...' : '⚡ สร้างวันปฏิบัติงาน'}
                           </button>
                         </div>
                         {genOccsMut.isError && (
-                          <p className="text-red-600 text-xs">{String((genOccsMut.error as Error).message)}</p>
+                          <p className="text-xs mt-2" style={{ color: 'var(--red)' }}>{String((genOccsMut.error as Error).message)}</p>
                         )}
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* Monthly occurrence list */}
-                <div>
-                  <h4 className="text-xs font-semibold text-gray-700 mb-2">
-                    รายการวันทำงาน ({groupOccs.length} รายการ)
-                  </h4>
-                  {occsLoading ? (
-                    <div className="h-16 bg-gray-100 rounded animate-pulse" />
-                  ) : groupOccs.length === 0 ? (
-                    <p className="text-gray-400 text-xs py-4 text-center">
-                      ยังไม่มีวันทำงาน กดสร้างรายการวันทำงานด้านบน
-                    </p>
-                  ) : (
-                    <div className="space-y-3">
-                      {monthGroups.map((mg) => (
-                        <div key={mg.key}>
-                          <div className="flex items-center justify-between mb-1 sticky top-0 bg-white py-1">
-                            <span className="text-xs font-bold text-gray-700">{mg.label}</span>
-                            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-                              {mg.countedSessions} ครั้ง
-                            </span>
-                          </div>
-                          <div className="space-y-1">
-                            {mg.occurrences.map((occ) => (
-                              <OccurrenceRow
-                                key={occ.id}
-                                occ={occ}
-                                planLocked={planLocked}
-                                groupLocked={!!selectedGroup.locked_at}
-                                isRescheduling={reschedulingId === occ.id}
-                                onUpdate={(status) => updateOccMut.mutate({ id: occ.id, status })}
-                                onStartReschedule={() => setReschedulingId(occ.id)}
-                                onCancelReschedule={() => setReschedulingId(null)}
-                                onReschedule={(nd, ns, ne, r) =>
-                                  rescheduleMut.mutate({ id: occ.id, newDate: nd, newStart: ns, newEnd: ne, reason: r })
-                                }
-                                reschedulePending={rescheduleMut.isPending && reschedulingId === occ.id}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      ))}
+                {/* Sub-section: แผนปฏิบัติงานรายเดือน ← หัวใจหลัก */}
+                <div className="p-4" style={{ borderBottom: '1px solid var(--line-soft)' }}>
+                  <div className="flex items-center gap-2.5 mb-4">
+                    <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+                      style={{ background: 'var(--primary)' }}>4</span>
+                    <div>
+                      <span className="font-bold text-sm" style={{ color: 'var(--ink-900)' }}>แผนปฏิบัติงานรายเดือน</span>
+                      <span className="text-xs ml-2" style={{ color: 'var(--ink-400)' }}>กรอกวันที่ Lab Boy ต้องมาปฏิบัติงานในแต่ละเดือน</span>
                     </div>
-                  )}
+                  </div>
+                  <MonthlyPlanSection
+                    caseId={caseId}
+                    group={selectedGroup}
+                    planLocked={planLocked}
+                    entries={monthlyPlanEntries}
+                    isLoading={monthlyPlanLoading}
+                    calDates={calDates}
+                  />
                 </div>
 
-                {/* Validation errors + Lock button for group */}
+                {/* Sub-section: Lock Group */}
                 {!planLocked && !selectedGroup.locked_at && (
-                  <div className="pt-2 border-t space-y-2">
+                  <div className="p-4" style={{ background: 'var(--line-soft)' }}>
                     {validationErrors.length > 0 && (
-                      <ul className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 space-y-1">
-                        {validationErrors.map((err, i) => (
-                          <li key={i}>• {err}</li>
-                        ))}
-                      </ul>
+                      <div className="rounded-xl p-3 mb-3" style={{ background: 'var(--amber-bg)', border: '1px solid #FCD34D' }}>
+                        <p className="text-xs font-bold mb-1.5" style={{ color: 'var(--amber)' }}>⚠ ยังดำเนินการไม่ครบ</p>
+                        <ul className="space-y-0.5">
+                          {validationErrors.map((err, i) => (
+                            <li key={i} className="text-xs" style={{ color: '#92400E' }}>• {err}</li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
                     <button
                       onClick={() => lockGroupMut.mutate()}
                       disabled={lockGroupMut.isPending || validationErrors.length > 0}
                       title={validationErrors.length > 0 ? validationErrors.join('\n') : undefined}
-                      className="w-full px-4 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:opacity-50 font-medium"
-                    >
-                      {lockGroupMut.isPending ? 'กำลังล็อก...' : 'ตรวจสอบและล็อกแผนกลุ่มนี้'}
+                      className="btn btn-green"
+                      style={{ display: 'flex', width: '100%', justifyContent: 'center' }}>
+                      {lockGroupMut.isPending ? 'กำลังล็อก...' : '✓ ตรวจสอบและล็อกแผนกลุ่มนี้'}
                     </button>
                     {lockGroupMut.isError && (
-                      <p className="text-red-600 text-xs">{String((lockGroupMut.error as Error).message)}</p>
+                      <p className="text-xs mt-2" style={{ color: 'var(--red)' }}>{String((lockGroupMut.error as Error).message)}</p>
                     )}
                   </div>
                 )}
               </div>
             </div>
           ) : scheduleGroups.length > 0 ? (
-            <div className="border-2 border-dashed border-gray-200 rounded-lg p-6 text-center text-gray-400 text-sm">
-              เลือกกลุ่มตารางด้านบนเพื่อดูรายละเอียด
+            <div className="py-12 text-center rounded-xl" style={{ border: '2px dashed var(--line)' }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>👆</div>
+              <p className="text-sm font-semibold" style={{ color: 'var(--ink-700)' }}>เลือกกลุ่มตารางด้านบน</p>
+              <p className="text-xs mt-1" style={{ color: 'var(--ink-400)' }}>เพื่อจัดการวันปฏิบัติงาน</p>
             </div>
           ) : null}
 
-        </div>{/* end left column */}
+        </div>
 
-        {/* ── Right column: Summary panel ── */}
+        {/* ── Right Column: Summary ── */}
         <div className="lg:w-72 shrink-0">
           <WorkPlanSummary
             group={selectedGroup}
@@ -811,129 +812,129 @@ export default function WorkPlanTab({ staffCase }: Props) {
         </div>
       </div>
 
-      {/* ── Holiday section ── */}
-      <div>
-        {calDates.length > 0 && (
-          <div className="mb-2">
-            <h4 className="text-xs font-semibold text-gray-600 mb-1">วันหยุด/วันงดที่บันทึกไว้</h4>
-            <div className="space-y-1">
-              {calDates.map((cd) => (
-                <div key={cd.id}
-                  className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded px-3 py-1.5 text-xs">
-                  <span className="font-medium">{cd.date.slice(0, 10)}</span>
-                  <span className="text-gray-700 flex-1 px-2">{cd.name}</span>
-                  <span className="text-gray-400 mr-2">{cd.scope}</span>
-                  {!planLocked && (
-                    <button onClick={() => deleteHolidayMut.mutate(cd.id)}
-                      className="text-red-500 hover:text-red-700">ลบ</button>
-                  )}
+      {/* ━━━ Holidays Section ━━━ */}
+      <div className="rounded-xl overflow-hidden" style={{ border: '1.5px solid #FCD34D' }}>
+        <div className="flex items-center justify-between px-4 py-3"
+          style={{ background: 'var(--amber-bg)', borderBottom: '1px solid #FCD34D' }}>
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-sm" style={{ color: '#92400E' }}>📅 วันหยุด / วันงด</span>
+            {calDates.length > 0 && <span className="badge badge-amber">{calDates.length} รายการ</span>}
+          </div>
+          {!planLocked && (
+            <button onClick={() => setShowHolidayForm(!showHolidayForm)} className="btn btn-amber btn-xs">
+              + เพิ่มวันหยุด
+            </button>
+          )}
+        </div>
+        <div className="p-4 space-y-2">
+          {calDates.length === 0 && !showHolidayForm && (
+            <p className="text-xs text-center py-3" style={{ color: 'var(--ink-400)' }}>ยังไม่มีวันหยุด/วันงดที่บันทึกไว้</p>
+          )}
+          {calDates.map((cd) => (
+            <div key={cd.id} className="flex items-center justify-between rounded-xl px-3 py-2"
+              style={{ background: 'var(--amber-bg)', border: '1px solid #FCD34D' }}>
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="font-mono text-xs font-bold" style={{ color: '#92400E' }}>{cd.date.slice(0, 10)}</span>
+                <span className="text-sm" style={{ color: 'var(--ink-700)' }}>{cd.name}</span>
+                <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'rgba(255,255,255,0.5)', color: 'var(--ink-500)' }}>{cd.scope}</span>
+              </div>
+              {!planLocked && (
+                <button onClick={() => deleteHolidayMut.mutate(cd.id)} className="btn btn-xs btn-danger">ลบ</button>
+              )}
+            </div>
+          ))}
+          {showHolidayForm && !planLocked && (
+            <div className="rounded-xl p-3 space-y-2 mt-2" style={{ background: '#fff', border: '1.5px solid #FCD34D' }}>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs mb-0.5" style={{ color: 'var(--ink-600)' }}>วันที่</label>
+                  <input type="date" value={holidayForm.date}
+                    onChange={(e) => setHolidayForm({ ...holidayForm, date: e.target.value })}
+                    className="form-input w-full" />
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-        {!planLocked && (
-          <button
-            onClick={() => setShowHolidayForm(!showHolidayForm)}
-            className="text-xs text-amber-600 hover:underline"
-          >
-            + เพิ่มวันหยุด/วันงด
-          </button>
-        )}
-        {showHolidayForm && !planLocked && (
-          <div className="mt-2 border rounded-lg p-3 bg-amber-50 space-y-2">
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-xs text-gray-600 mb-0.5">วันที่</label>
-                <input type="date" value={holidayForm.date}
-                  onChange={(e) => setHolidayForm({ ...holidayForm, date: e.target.value })}
-                  className="w-full border rounded px-2 py-1 text-xs" />
+                <div>
+                  <label className="block text-xs mb-0.5" style={{ color: 'var(--ink-600)' }}>ชื่อ/เหตุผล</label>
+                  <input type="text" value={holidayForm.name} placeholder="เช่น วันชาติ"
+                    onChange={(e) => setHolidayForm({ ...holidayForm, name: e.target.value })}
+                    className="form-input w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs mb-0.5" style={{ color: 'var(--ink-600)' }}>ประเภท</label>
+                  <select value={holidayForm.date_type}
+                    onChange={(e) => setHolidayForm({ ...holidayForm, date_type: e.target.value as CalendarDateType })}
+                    className="form-input w-full">
+                    <option value="public_holiday">วันหยุดราชการ</option>
+                    <option value="university_holiday">วันหยุดมหาวิทยาลัย</option>
+                    <option value="no_class">งดการเรียนการสอน</option>
+                    <option value="case_exception">ข้อยกเว้นเฉพาะ case</option>
+                    <option value="makeup">วันชดเชย</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs mb-0.5" style={{ color: 'var(--ink-600)' }}>ขอบเขต</label>
+                  <select value={holidayForm.scope}
+                    onChange={(e) => setHolidayForm({ ...holidayForm, scope: e.target.value as 'global' | 'semester' | 'case' })}
+                    className="form-input w-full">
+                    <option value="global">ทุกรายวิชา</option>
+                    <option value="semester">ภาคการศึกษานี้</option>
+                    <option value="case">เฉพาะ case นี้</option>
+                  </select>
+                </div>
               </div>
-              <div>
-                <label className="block text-xs text-gray-600 mb-0.5">ชื่อ/เหตุผล</label>
-                <input type="text" value={holidayForm.name} placeholder="เช่น วันชาติ"
-                  onChange={(e) => setHolidayForm({ ...holidayForm, name: e.target.value })}
-                  className="w-full border rounded px-2 py-1 text-xs" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-600 mb-0.5">ประเภท</label>
-                <select value={holidayForm.date_type}
-                  onChange={(e) => setHolidayForm({ ...holidayForm, date_type: e.target.value as CalendarDateType })}
-                  className="w-full border rounded px-2 py-1 text-xs">
-                  <option value="public_holiday">วันหยุดราชการ</option>
-                  <option value="university_holiday">วันหยุดมหาวิทยาลัย</option>
-                  <option value="no_class">งดการเรียนการสอน</option>
-                  <option value="case_exception">ข้อยกเว้นเฉพาะ case</option>
-                  <option value="makeup">วันชดเชย</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-600 mb-0.5">ขอบเขต</label>
-                <select value={holidayForm.scope}
-                  onChange={(e) => setHolidayForm({ ...holidayForm, scope: e.target.value as 'global' | 'semester' | 'case' })}
-                  className="w-full border rounded px-2 py-1 text-xs">
-                  <option value="global">ทุกรายวิชา</option>
-                  <option value="semester">ภาคการศึกษานี้</option>
-                  <option value="case">เฉพาะ case นี้</option>
-                </select>
+              <label className="flex items-center gap-1.5 text-xs cursor-pointer" style={{ color: 'var(--ink-700)' }}>
+                <input type="checkbox" checked={holidayForm.affects_work}
+                  onChange={(e) => setHolidayForm({ ...holidayForm, affects_work: e.target.checked })} />
+                ยกเลิกวันทำงานในวันนี้
+              </label>
+              <div className="flex gap-2">
+                <button onClick={() => addHolidayMut.mutate()}
+                  disabled={addHolidayMut.isPending || !holidayForm.date || !holidayForm.name}
+                  className="btn btn-amber btn-sm">
+                  {addHolidayMut.isPending ? 'กำลังบันทึก...' : 'บันทึก'}
+                </button>
+                <button onClick={() => setShowHolidayForm(false)} className="btn btn-ghost btn-sm">ยกเลิก</button>
               </div>
             </div>
-            <label className="flex items-center gap-1.5 text-xs">
-              <input type="checkbox" checked={holidayForm.affects_work}
-                onChange={(e) => setHolidayForm({ ...holidayForm, affects_work: e.target.checked })} />
-              ยกเลิกวันทำงานในวันนี้
-            </label>
-            <div className="flex gap-2">
-              <button onClick={() => addHolidayMut.mutate()}
-                disabled={addHolidayMut.isPending || !holidayForm.date || !holidayForm.name}
-                className="px-3 py-1 bg-amber-500 text-white rounded text-xs hover:bg-amber-600 disabled:opacity-50">
-                {addHolidayMut.isPending ? 'กำลังบันทึก...' : 'บันทึก'}
-              </button>
-              <button onClick={() => setShowHolidayForm(false)} className="px-3 py-1 border rounded text-xs">ยกเลิก</button>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* ── Plan lock section (Case level) ── */}
+      {/* ━━━ Cross-Group Plan Summary ━━━ */}
+      {monthlyPlanData.length > 0 && <PlanSummaryPanel data={monthlyPlanData} />}
+
+      {/* ━━━ Case-Level Lock ━━━ */}
       {!planLocked && scheduleGroups.length > 0 && (
-        <div className="border-t pt-4">
+        <div className="rounded-xl p-4" style={{ background: '#fff', border: '1.5px solid var(--line)' }}>
           {scheduleGroups.some((g) => !g.locked_at) ? (
-            <div className="text-xs text-gray-500 bg-gray-50 border rounded p-3">
-              ล็อกทุกกลุ่มก่อนเพื่อเปิดปุ่มล็อกแผนงาน
-              ({scheduleGroups.filter((g) => g.locked_at).length}/{scheduleGroups.length} กลุ่มถูกล็อกแล้ว)
+            <div className="flex items-center gap-3">
+              <span className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
+                style={{ background: 'var(--line-soft)', color: 'var(--ink-400)' }}>5</span>
+              <div>
+                <p className="font-semibold text-sm" style={{ color: 'var(--ink-700)' }}>ล็อกแผนงานทั้งหมด</p>
+                <p className="text-xs" style={{ color: 'var(--ink-400)' }}>
+                  ต้องล็อกทุกกลุ่มก่อน ({scheduleGroups.filter(g => g.locked_at).length}/{scheduleGroups.length} กลุ่มถูกล็อกแล้ว)
+                </p>
+              </div>
             </div>
           ) : (
-            <div className="space-y-2">
-              <p className="text-xs text-green-700 font-medium">ทุกกลุ่มถูกล็อกแล้ว พร้อมล็อกแผนงาน</p>
-              <button
-                onClick={() => lockPlanMut.mutate()}
-                disabled={lockPlanMut.isPending}
-                className="px-6 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50 font-semibold"
-              >
-                {lockPlanMut.isPending ? 'กำลังล็อก...' : 'ล็อกแผนงานทั้งหมด'}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center text-sm font-bold flex-shrink-0">5</span>
+                <p className="text-sm font-semibold" style={{ color: 'var(--green)' }}>✓ ทุกกลุ่มถูกล็อกแล้ว — พร้อมล็อกแผนงาน</p>
+              </div>
+              <button onClick={() => lockPlanMut.mutate()} disabled={lockPlanMut.isPending}
+                className="btn btn-green"
+                style={{ display: 'flex', width: '100%', justifyContent: 'center' }}>
+                {lockPlanMut.isPending ? 'กำลังล็อก...' : '🔒 ล็อกแผนงานทั้งหมด'}
               </button>
               {lockPlanMut.isError && (
-                <p className="text-red-600 text-xs">{String((lockPlanMut.error as Error).message)}</p>
+                <p className="text-xs" style={{ color: 'var(--red)' }}>{String((lockPlanMut.error as Error).message)}</p>
               )}
             </div>
           )}
         </div>
       )}
 
-      {planLocked && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center justify-between">
-          <span className="text-green-800 text-sm font-medium">แผนการทำงานถูกล็อกแล้ว</span>
-          <button
-            onClick={() => setShowPreviewModal(true)}
-            className="px-4 py-1.5 border border-green-500 text-green-700 rounded text-xs hover:bg-green-100"
-          >
-            ดูตัวอย่างเอกสาร
-          </button>
-        </div>
-      )}
-
-      {/* Preview modal */}
       {showPreviewModal && (
         <HiringPreviewModal
           staffCase={staffCase}
@@ -950,82 +951,72 @@ export default function WorkPlanTab({ staffCase }: Props) {
 function GroupFormFields({
   form, onChange, caseRateSatang,
 }: {
-  form: {
-    group_name: string
-    week_day: string
-    start_time: string
-    end_time: string
-    hours_per_session: string
-    rate_per_hour_baht: string
-    work_start_date: string
-    work_end_date: string
-    note: string
-  }
-  onChange: (f: typeof form) => void
+  form: GroupFormState
+  onChange: (f: GroupFormState) => void
   caseRateSatang: number
 }) {
   return (
     <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
       <div className="col-span-2 md:col-span-3">
-        <label className="block text-xs text-gray-600 mb-1">ชื่อกลุ่ม</label>
+        <label className="block text-xs mb-1" style={{ color: 'var(--ink-500)' }}>ชื่อกลุ่ม</label>
         <input type="text" value={form.group_name} placeholder="เช่น กลุ่ม A"
           onChange={(e) => onChange({ ...form, group_name: e.target.value })}
-          className="w-full border rounded px-2 py-1 text-sm" />
+          className="form-input w-full" />
       </div>
       <div>
-        <label className="block text-xs text-gray-600 mb-1">วันประจำสัปดาห์</label>
+        <label className="block text-xs mb-1" style={{ color: 'var(--ink-500)' }}>วันประจำสัปดาห์</label>
         <select value={form.week_day} onChange={(e) => onChange({ ...form, week_day: e.target.value })}
-          className="w-full border rounded px-2 py-1 text-sm">
+          className="form-input w-full">
           {DAY_OPTIONS.map((d) => <option key={d} value={d}>{DAY_LABELS[d]}</option>)}
         </select>
       </div>
       <div>
-        <label className="block text-xs text-gray-600 mb-1">เวลาเริ่ม</label>
+        <label className="block text-xs mb-1" style={{ color: 'var(--ink-500)' }}>เวลาเริ่ม</label>
         <input type="time" value={form.start_time}
           onChange={(e) => onChange({ ...form, start_time: e.target.value })}
-          className="w-full border rounded px-2 py-1 text-sm" />
+          className="form-input w-full" />
       </div>
       <div>
-        <label className="block text-xs text-gray-600 mb-1">เวลาสิ้นสุด</label>
+        <label className="block text-xs mb-1" style={{ color: 'var(--ink-500)' }}>เวลาสิ้นสุด</label>
         <input type="time" value={form.end_time}
           onChange={(e) => onChange({ ...form, end_time: e.target.value })}
-          className="w-full border rounded px-2 py-1 text-sm" />
+          className="form-input w-full" />
       </div>
       <div>
-        <label className="block text-xs text-gray-600 mb-1">วันที่เริ่ม</label>
+        <label className="block text-xs mb-1" style={{ color: 'var(--ink-500)' }}>วันที่เริ่ม</label>
         <input type="date" value={form.work_start_date}
           onChange={(e) => onChange({ ...form, work_start_date: e.target.value })}
-          className="w-full border rounded px-2 py-1 text-sm" />
+          className="form-input w-full" />
       </div>
       <div>
-        <label className="block text-xs text-gray-600 mb-1">วันที่สิ้นสุด</label>
+        <label className="block text-xs mb-1" style={{ color: 'var(--ink-500)' }}>วันที่สิ้นสุด</label>
         <input type="date" value={form.work_end_date}
           onChange={(e) => onChange({ ...form, work_end_date: e.target.value })}
-          className="w-full border rounded px-2 py-1 text-sm" />
+          className="form-input w-full" />
       </div>
       <div>
-        <label className="block text-xs text-gray-600 mb-1">
-          อัตราค่าตอบแทน (บาท/ชม.)
+        <label className="block text-xs mb-1" style={{ color: 'var(--ink-500)' }}>
+          อัตรา (บาท/ชม.)
           {caseRateSatang > 0 && (
-            <span className="ml-1 text-gray-400">(ค่าเริ่มต้น {(caseRateSatang / 100).toFixed(2)})</span>
+            <span className="ml-1" style={{ color: 'var(--ink-400)' }}>ค่าเริ่มต้น {(caseRateSatang / 100).toFixed(2)}</span>
           )}
         </label>
         <input type="number" step="0.01" min="0" value={form.rate_per_hour_baht}
           placeholder={caseRateSatang > 0 ? String(caseRateSatang / 100) : '50.00'}
           onChange={(e) => onChange({ ...form, rate_per_hour_baht: e.target.value })}
-          className="w-full border rounded px-2 py-1 text-sm" />
+          className="form-input w-full" />
       </div>
       <div>
-        <label className="block text-xs text-gray-600 mb-1">ชั่วโมง/ครั้ง (ถ้าแตกต่างจากช่วงเวลา)</label>
+        <label className="block text-xs mb-1" style={{ color: 'var(--ink-500)' }}>ชม./ครั้ง (ถ้าต่างจากช่วงเวลา)</label>
         <input type="number" step="0.5" min="0" value={form.hours_per_session}
           onChange={(e) => onChange({ ...form, hours_per_session: e.target.value })}
-          className="w-full border rounded px-2 py-1 text-sm" placeholder="ว่าง = คำนวณจากเวลา" />
+          className="form-input w-full" placeholder="ว่าง = คำนวณจากเวลา" />
       </div>
       <div className="col-span-2 md:col-span-3">
-        <label className="block text-xs text-gray-600 mb-1">หมายเหตุ</label>
+        <label className="block text-xs mb-1" style={{ color: 'var(--ink-500)' }}>หมายเหตุ</label>
         <input type="text" value={form.note}
           onChange={(e) => onChange({ ...form, note: e.target.value })}
-          className="w-full border rounded px-2 py-1 text-sm" />
+          className="form-input w-full" />
       </div>
     </div>
   )
@@ -1034,21 +1025,42 @@ function GroupFormFields({
 function GroupInfoDisplay({ group, caseRateSatang }: { group: ScheduleGroup; caseRateSatang: number }) {
   const effectiveRate = group.rate_per_hour_satang > 0 ? group.rate_per_hour_satang : caseRateSatang
   return (
-    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-      <div><span className="text-gray-500 text-xs">วัน:</span> {DAY_LABELS[group.week_day]}</div>
-      <div><span className="text-gray-500 text-xs">เวลา:</span> {group.start_time}–{group.end_time}</div>
-      {group.work_start_date && (
-        <div><span className="text-gray-500 text-xs">ช่วงวันที่:</span> {group.work_start_date.slice(0, 10)} – {group.work_end_date?.slice(0, 10) ?? '?'}</div>
-      )}
+    <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 text-sm">
       <div>
-        <span className="text-gray-500 text-xs">อัตรา:</span>{' '}
-        <strong className="text-blue-700">{(effectiveRate / 100).toFixed(2)} บาท/ชม.</strong>
-        {group.rate_per_hour_satang > 0 && <span className="text-xs text-blue-500 ml-1">(เฉพาะกลุ่ม)</span>}
+        <span className="block text-xs mb-0.5" style={{ color: 'var(--ink-400)' }}>วัน</span>
+        <span className="font-semibold" style={{ color: 'var(--ink-900)' }}>{DAY_LABELS[group.week_day]}</span>
+      </div>
+      <div>
+        <span className="block text-xs mb-0.5" style={{ color: 'var(--ink-400)' }}>เวลา</span>
+        <span className="font-semibold" style={{ color: 'var(--ink-900)' }}>{group.start_time}–{group.end_time}</span>
+      </div>
+      <div>
+        <span className="block text-xs mb-0.5" style={{ color: 'var(--ink-400)' }}>อัตราค่าตอบแทน</span>
+        <span className="font-bold" style={{ color: 'var(--primary)' }}>{(effectiveRate / 100).toFixed(2)} บาท/ชม.</span>
+        {group.rate_per_hour_satang > 0 && (
+          <span className="text-xs ml-1" style={{ color: 'var(--primary)' }}>(เฉพาะกลุ่ม)</span>
+        )}
       </div>
       {group.hours_per_session > 0 && (
-        <div><span className="text-gray-500 text-xs">ชม./ครั้ง:</span> {group.hours_per_session}</div>
+        <div>
+          <span className="block text-xs mb-0.5" style={{ color: 'var(--ink-400)' }}>ชม./ครั้ง</span>
+          <span className="font-semibold" style={{ color: 'var(--ink-900)' }}>{group.hours_per_session}</span>
+        </div>
       )}
-      {group.note && <div className="col-span-2"><span className="text-gray-500 text-xs">หมายเหตุ:</span> {group.note}</div>}
+      {group.work_start_date && (
+        <div className="col-span-2">
+          <span className="block text-xs mb-0.5" style={{ color: 'var(--ink-400)' }}>ช่วงเวลา</span>
+          <span className="font-semibold" style={{ color: 'var(--ink-900)' }}>
+            {group.work_start_date.slice(0, 10)} ถึง {group.work_end_date?.slice(0, 10) ?? '?'}
+          </span>
+        </div>
+      )}
+      {group.note && (
+        <div className="col-span-2">
+          <span className="block text-xs mb-0.5" style={{ color: 'var(--ink-400)' }}>หมายเหตุ</span>
+          <span style={{ color: 'var(--ink-700)' }}>{group.note}</span>
+        </div>
+      )}
     </div>
   )
 }
@@ -1069,7 +1081,6 @@ function LabBoySelector({
   function toggle(id: number) {
     onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id])
   }
-
   function groupOfStudent(studentId: number): string | null {
     for (const g of existingGroups) {
       if (g.id === currentGroupId) continue
@@ -1079,23 +1090,23 @@ function LabBoySelector({
     }
     return null
   }
-
   return (
-    <div className="border rounded-lg p-3 bg-indigo-50 space-y-2">
+    <div className="rounded-xl p-3 space-y-2 mt-2"
+      style={{ background: '#EEF2FF', border: '1.5px solid #C7D2FE' }}>
       {allLabBoys.length === 0 ? (
-        <p className="text-xs text-gray-500">ยังไม่มี Lab Boy ที่ได้รับเลือก</p>
+        <p className="text-xs" style={{ color: 'var(--ink-500)' }}>ยังไม่มี Lab Boy ที่ได้รับเลือก</p>
       ) : (
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           {allLabBoys.map((lb) => {
             const otherGroup = groupOfStudent(lb.student_id)
             return (
               <label key={lb.student_id} className="flex items-center gap-2 text-xs cursor-pointer">
                 <input type="checkbox" checked={selected.includes(lb.student_id)}
                   onChange={() => toggle(lb.student_id)} />
-                <span className="text-gray-800">{lb.student_name}</span>
-                <span className="text-gray-400 font-mono">{lb.student_code}</span>
+                <span className="font-medium" style={{ color: 'var(--ink-800)' }}>{lb.student_name}</span>
+                <span className="font-mono" style={{ color: 'var(--ink-400)' }}>{lb.student_code}</span>
                 {otherGroup && (
-                  <span className="text-amber-600 text-xs">(อยู่ใน{otherGroup})</span>
+                  <span className="text-xs" style={{ color: 'var(--amber)' }}>(อยู่ใน{otherGroup})</span>
                 )}
               </label>
             )
@@ -1103,13 +1114,12 @@ function LabBoySelector({
         </div>
       )}
       <div className="flex gap-2 pt-1">
-        <button onClick={onSave} disabled={isSaving}
-          className="px-3 py-1 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700 disabled:opacity-50">
+        <button onClick={onSave} disabled={isSaving} className="btn btn-primary btn-xs">
           {isSaving ? 'กำลังบันทึก...' : 'บันทึก'}
         </button>
-        <button onClick={onCancel} className="px-3 py-1 border rounded text-xs">ยกเลิก</button>
+        <button onClick={onCancel} className="btn btn-ghost btn-xs">ยกเลิก</button>
       </div>
-      {error && <p className="text-red-600 text-xs">{error}</p>}
+      {error && <p className="text-xs" style={{ color: 'var(--red)' }}>{error}</p>}
     </div>
   )
 }
@@ -1118,15 +1128,16 @@ function WorkPlanSummary({
   group, summary, planLocked, caseRateSatang,
 }: {
   group: ScheduleGroup | null
-  summary: GroupSummary | null
+  summary: ReturnType<typeof computeSummary> | null
   planLocked: boolean
   caseRateSatang: number
 }) {
   if (!group) {
     return (
-      <div className="border rounded-lg p-4 bg-gray-50 text-center text-gray-400 text-sm">
-        <div className="text-2xl mb-2">📊</div>
-        <p>เลือกกลุ่มตารางเพื่อดูสรุปค่าตอบแทน</p>
+      <div className="rounded-xl p-6 text-center" style={{ border: '2px dashed var(--line)', background: 'var(--line-soft)' }}>
+        <div style={{ fontSize: 32, marginBottom: 8 }}>📊</div>
+        <p className="text-sm font-semibold" style={{ color: 'var(--ink-600)' }}>สรุปค่าตอบแทน</p>
+        <p className="text-xs mt-1" style={{ color: 'var(--ink-400)' }}>เลือกกลุ่มตารางเพื่อดูสรุป</p>
       </div>
     )
   }
@@ -1136,166 +1147,79 @@ function WorkPlanSummary({
   const durationHrs = durationMins / 60
 
   return (
-    <div className="border rounded-lg p-4 space-y-4 bg-white sticky top-4">
-      <h3 className="font-semibold text-gray-800 text-sm border-b pb-2">
-        สรุปค่าตอบแทน — {group.group_name || `กลุ่ม ${group.id}`}
-      </h3>
+    <div className="rounded-xl overflow-hidden" style={{ border: '1.5px solid var(--line)', position: 'sticky', top: 16 }}>
+      <div className="px-4 py-3" style={{ background: 'var(--primary)', borderBottom: '1px solid var(--primary-700)' }}>
+        <p className="font-bold text-sm text-white">สรุปค่าตอบแทน</p>
+        <p className="text-xs text-white/70">{group.group_name || `กลุ่ม ${group.id}`}</p>
+      </div>
+      <div className="p-4 space-y-4" style={{ background: '#fff' }}>
+        {summary ? (
+          <>
+            <div className="space-y-2">
+              <SummaryRow label="จำนวน Lab Boy" value={`${summary.labBoyCount} คน`} />
+              <SummaryRow label="ชั่วโมงต่อครั้ง" value={`${durationHrs.toFixed(2)} ชม.`} />
+              <SummaryRow label="จำนวนครั้งทั้งหมด" value={`${summary.totalSessions} ครั้ง`} highlight />
+              {summary.monthBreakdown.length > 1 && (
+                <div style={{ paddingLeft: 12 }}>
+                  {summary.monthBreakdown.map((mb) => (
+                    <div key={mb.label} className="flex justify-between text-xs" style={{ color: 'var(--ink-500)' }}>
+                      <span>{mb.label}</span>
+                      <span>{mb.count} ครั้ง</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <SummaryRow label="อัตราค่าตอบแทน" value={`${(effectiveRate / 100).toFixed(2)} บ./ชม.`} />
+            </div>
 
-      {summary && (
-        <>
-          {/* Key metrics */}
-          <div className="space-y-2 text-sm">
-            <Row label="จำนวน Lab Boy" value={`${summary.labBoyCount} คน`} />
-            <Row label="ชั่วโมงต่อครั้ง" value={`${durationHrs.toFixed(2)} ชม. (${durationMins} นาที)`} />
-            <Row label="จำนวนครั้งทั้งหมด" value={`${summary.totalSessions} ครั้ง`} highlight />
-            {summary.monthBreakdown.length > 1 && (
-              <div className="pl-2">
-                {summary.monthBreakdown.map((mb) => (
-                  <div key={mb.label} className="flex justify-between text-xs text-gray-500">
-                    <span>{mb.label}</span>
-                    <span>{mb.count} ครั้ง</span>
-                  </div>
-                ))}
+            <div className="pt-3 space-y-2" style={{ borderTop: '1px solid var(--line-soft)' }}>
+              <div className="text-xs font-mono px-2 py-1.5 rounded-lg" style={{ background: 'var(--line-soft)', color: 'var(--ink-600)' }}>
+                {summary.labBoyCount} คน × {summary.totalSessions} ครั้ง × {durationHrs.toFixed(2)} ชม. × {(effectiveRate / 100).toFixed(0)} บ.
               </div>
-            )}
-            <Row label="อัตราค่าตอบแทน" value={`${(effectiveRate / 100).toFixed(2)} บาท/ชม.`} />
-          </div>
-
-          <div className="border-t pt-3 space-y-1">
-            {/* Formula display */}
-            <div className="text-xs text-gray-500 bg-gray-50 rounded p-2 font-mono">
-              {summary.labBoyCount} คน × {summary.totalSessions} ครั้ง × {durationHrs.toFixed(2)} ชม. × {(effectiveRate / 100).toFixed(0)} บาท
+              <div className="flex justify-between items-center">
+                <span className="text-sm" style={{ color: 'var(--ink-500)' }}>ต่อคน</span>
+                <span className="font-bold text-sm" style={{ color: 'var(--primary)' }}>
+                  {summary.payPerPersonBaht.toFixed(2)} บาท
+                </span>
+              </div>
+              <div className="flex justify-between items-center px-3 py-2 rounded-xl"
+                style={{ background: 'var(--primary-50)', border: '1px solid var(--primary-100)' }}>
+                <span className="text-sm font-semibold" style={{ color: 'var(--ink-700)' }}>รวมกลุ่ม</span>
+                <span className="font-bold text-lg" style={{ color: 'var(--primary)' }}>
+                  {summary.totalPayBaht.toFixed(2)} บ.
+                </span>
+              </div>
             </div>
-            <div className="flex justify-between items-center text-sm">
-              <span className="text-gray-600">ต่อคน</span>
-              <span className="font-bold text-blue-700">
-                {summary.payPerPersonBaht.toFixed(2)} บาท
-              </span>
-            </div>
-            <div className="flex justify-between items-center text-sm">
-              <span className="text-gray-600">รวมกลุ่ม</span>
-              <span className="font-bold text-green-700 text-base">
-                {summary.totalPayBaht.toFixed(2)} บาท
-              </span>
-            </div>
-          </div>
-
-          <p className="text-xs text-gray-400">
-            * ค่าแสดงเป็น preview จาก Backend (authoritative คำนวณตอนสร้างเอกสาร)
+            <p className="text-xs" style={{ color: 'var(--ink-400)' }}>
+              * ค่าแสดงเป็น preview จาก Backend
+            </p>
+          </>
+        ) : (
+          <p className="text-xs text-center py-4" style={{ color: 'var(--ink-400)' }}>
+            สร้างรายการวันทำงานเพื่อดูสรุป
           </p>
-        </>
-      )}
-
-      {!summary && (
-        <p className="text-xs text-gray-400">สร้างรายการวันทำงานเพื่อดูสรุป</p>
-      )}
-
-      {planLocked && (
-        <div className="border-t pt-2">
-          <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">แผนถูกล็อกแล้ว</span>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function Row({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
-  return (
-    <div className="flex justify-between items-center">
-      <span className="text-gray-500 text-xs">{label}</span>
-      <span className={highlight ? 'font-bold text-indigo-700' : 'text-gray-800 text-xs'}>{value}</span>
-    </div>
-  )
-}
-
-function OccurrenceRow({
-  occ, planLocked, groupLocked, isRescheduling, onUpdate, onStartReschedule, onCancelReschedule, onReschedule, reschedulePending,
-}: {
-  occ: WorkOccurrence
-  planLocked: boolean
-  groupLocked: boolean
-  isRescheduling: boolean
-  onUpdate: (status: string) => void
-  onStartReschedule: () => void
-  onCancelReschedule: () => void
-  onReschedule: (newDate: string, newStart: string, newEnd: string, reason: string) => void
-  reschedulePending: boolean
-}) {
-  const [rescheduleForm, setRescheduleForm] = useState({
-    new_date: '', new_start: occ.start_time, new_end: occ.end_time, reason: '',
-  })
-
-  const isEditable = !planLocked && !groupLocked
-  const isCancelled = occ.status === 'cancelled_holiday' || occ.status === 'cancelled_other' || occ.status === 'rescheduled'
-
-  return (
-    <>
-      <div className={[
-        'flex items-center gap-2 py-1.5 px-2 rounded text-xs',
-        isCancelled ? 'opacity-60' : '',
-        isRescheduling ? 'bg-yellow-50 border border-yellow-200' : 'hover:bg-gray-50',
-      ].join(' ')}>
-        <span className={`w-36 font-medium ${isCancelled ? 'line-through text-gray-400' : 'text-gray-700'}`}>
-          {formatThaiDate(occ.scheduled_date)}
-        </span>
-        <span className="text-gray-500 w-20 text-center">{occ.start_time}–{occ.end_time}</span>
-        <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[occ.status]}`}>
-          {STATUS_LABELS[occ.status]}
-        </span>
-        {occ.reason && <span className="text-gray-400 text-xs flex-1 truncate">({occ.reason})</span>}
-        {occ.rescheduled_to_date && (
-          <span className="text-yellow-600 text-xs">→ {occ.rescheduled_to_date.slice(0, 10)}</span>
         )}
-        {isEditable && (occ.status === 'scheduled' || occ.status === 'cancelled_holiday') && (
-          <div className="flex gap-1 ml-auto shrink-0">
-            <button onClick={() => onUpdate('completed')} className="text-green-700 hover:underline">เสร็จ</button>
-            <button onClick={() => onUpdate('absent')} className="text-red-600 hover:underline">ขาด</button>
-            <button onClick={() => onUpdate('cancelled_other')} className="text-gray-500 hover:underline">ยกเลิก</button>
-            {occ.status === 'scheduled' && (
-              <button onClick={onStartReschedule} className="text-yellow-700 hover:underline">เลื่อน</button>
-            )}
+
+        {planLocked && (
+          <div className="pt-2" style={{ borderTop: '1px solid var(--line-soft)' }}>
+            <span className="text-xs px-2 py-1 rounded-full font-semibold"
+              style={{ background: 'var(--green-bg)', color: 'var(--green)' }}>✓ แผนถูกล็อกแล้ว</span>
           </div>
         )}
       </div>
-      {isRescheduling && (
-        <div className="ml-2 p-2 bg-yellow-50 border border-yellow-200 rounded space-y-2 mb-1">
-          <div className="flex gap-2 flex-wrap items-end">
-            <div>
-              <label className="block text-xs text-gray-600 mb-0.5">วันที่ใหม่</label>
-              <input type="date" value={rescheduleForm.new_date}
-                onChange={(e) => setRescheduleForm({ ...rescheduleForm, new_date: e.target.value })}
-                className="border rounded px-2 py-1 text-xs" />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-600 mb-0.5">เวลาเริ่ม</label>
-              <input type="time" value={rescheduleForm.new_start}
-                onChange={(e) => setRescheduleForm({ ...rescheduleForm, new_start: e.target.value })}
-                className="border rounded px-2 py-1 text-xs" />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-600 mb-0.5">เวลาสิ้นสุด</label>
-              <input type="time" value={rescheduleForm.new_end}
-                onChange={(e) => setRescheduleForm({ ...rescheduleForm, new_end: e.target.value })}
-                className="border rounded px-2 py-1 text-xs" />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-600 mb-0.5">เหตุผล</label>
-              <input type="text" value={rescheduleForm.reason} placeholder="ระบุเหตุผล"
-                onChange={(e) => setRescheduleForm({ ...rescheduleForm, reason: e.target.value })}
-                className="border rounded px-2 py-1 text-xs w-32" />
-            </div>
-            <button
-              onClick={() => onReschedule(rescheduleForm.new_date, rescheduleForm.new_start, rescheduleForm.new_end, rescheduleForm.reason)}
-              disabled={reschedulePending || !rescheduleForm.new_date}
-              className="px-2 py-1 bg-yellow-600 text-white rounded text-xs disabled:opacity-50"
-            >
-              {reschedulePending ? '...' : 'ยืนยัน'}
-            </button>
-            <button onClick={onCancelReschedule} className="px-2 py-1 border rounded text-xs">ยกเลิก</button>
-          </div>
-        </div>
-      )}
-    </>
+    </div>
+  )
+}
+
+function SummaryRow({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div className="flex justify-between items-center">
+      <span className="text-xs" style={{ color: 'var(--ink-500)' }}>{label}</span>
+      <span className={highlight ? 'font-bold text-sm' : 'text-sm'}
+        style={{ color: highlight ? 'var(--primary)' : 'var(--ink-800)', fontWeight: highlight ? 700 : 400 }}>
+        {value}
+      </span>
+    </div>
   )
 }
 
@@ -1308,19 +1232,15 @@ function HiringPreviewModal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ background: 'rgba(0,0,0,0.4)' }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
       onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
-      role="dialog"
-      aria-modal
-      aria-label="ตัวอย่างข้อมูลเอกสารต้นภาคเรียน"
-      tabIndex={-1}
-    >
-      <div className="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b">
-          <h2 className="font-semibold text-gray-900">ตัวอย่างข้อมูลสำหรับเอกสารต้นภาคเรียน</h2>
-          <button onClick={onClose} aria-label="ปิด"
-            className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+      role="dialog" aria-modal aria-label="ตัวอย่างข้อมูลเอกสารต้นภาคเรียน" tabIndex={-1}>
+      <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full mx-4 max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between p-4" style={{ borderBottom: '1px solid var(--line)' }}>
+          <h2 className="font-bold" style={{ color: 'var(--ink-900)' }}>ตัวอย่างข้อมูลสำหรับเอกสาร</h2>
+          <button onClick={onClose} aria-label="ปิด" className="btn btn-ghost btn-xs">✕</button>
         </div>
         <div className="overflow-y-auto p-4 space-y-3 text-sm">
           <div className="grid grid-cols-2 gap-2">
@@ -1331,33 +1251,26 @@ function HiringPreviewModal({
             <PreviewRow label="ภาคเรียน" value={`${staffCase.semester} / ${staffCase.academic_year}`} />
             <PreviewRow label="Lab Boy" value={`${staffCase.lab_boys?.length ?? 0} คน`} />
           </div>
-
           {scheduleGroups.map((g) => (
-            <div key={g.id} className="border rounded p-3 space-y-1">
-              <div className="font-medium text-gray-800">{g.group_name || `กลุ่ม ${g.id}`}</div>
-              <div className="text-gray-600 text-xs">
-                {DAY_LABELS[g.week_day]} {g.start_time}–{g.end_time}
-              </div>
-              <div className="text-gray-600 text-xs">
+            <div key={g.id} className="rounded-xl p-3 space-y-1" style={{ border: '1.5px solid var(--line)' }}>
+              <div className="font-bold" style={{ color: 'var(--ink-900)' }}>{g.group_name || `กลุ่ม ${g.id}`}</div>
+              <div className="text-xs" style={{ color: 'var(--ink-600)' }}>{DAY_LABELS[g.week_day]} {g.start_time}–{g.end_time}</div>
+              <div className="text-xs" style={{ color: 'var(--ink-600)' }}>
                 {g.assigned_students?.map((s) => s.student_name).join(', ') || '(ยังไม่กำหนด Lab Boy)'}
               </div>
-              <div className="text-blue-700 text-xs font-medium">
+              <div className="text-xs font-bold" style={{ color: 'var(--primary)' }}>
                 อัตรา {((g.rate_per_hour_satang || staffCase.rate_per_hour_satang) / 100).toFixed(2)} บาท/ชม.
               </div>
             </div>
           ))}
-
-          <div className="bg-amber-50 border border-amber-200 rounded p-2 text-xs text-amber-700">
+          <div className="rounded-xl p-2 text-xs" style={{ background: 'var(--amber-bg)', color: '#92400E' }}>
             เอกสารจะถูกสร้างจากข้อมูล snapshot ณ เวลาล็อกแผน
           </div>
         </div>
-        <div className="p-4 border-t flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 border rounded text-sm">ปิด</button>
-          <button
-            disabled
-            title="ระบบ generate เอกสารต้นภาคเรียนกำลังพัฒนา"
-            className="px-4 py-2 bg-blue-600 text-white rounded text-sm opacity-50 cursor-not-allowed"
-          >
+        <div className="p-4 flex justify-end gap-2" style={{ borderTop: '1px solid var(--line)' }}>
+          <button onClick={onClose} className="btn btn-ghost btn-sm">ปิด</button>
+          <button disabled title="ระบบ generate เอกสารต้นภาคเรียนกำลังพัฒนา"
+            className="btn btn-primary btn-sm" style={{ opacity: 0.4, cursor: 'not-allowed' }}>
             สร้างเอกสาร (ยังไม่พร้อม)
           </button>
         </div>
@@ -1369,8 +1282,8 @@ function HiringPreviewModal({
 function PreviewRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-xs text-gray-500">{label}</div>
-      <div className="text-gray-800 font-medium">{value || '—'}</div>
+      <div className="text-xs" style={{ color: 'var(--ink-400)' }}>{label}</div>
+      <div className="font-semibold" style={{ color: 'var(--ink-900)' }}>{value || '—'}</div>
     </div>
   )
 }

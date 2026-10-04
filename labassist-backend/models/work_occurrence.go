@@ -19,8 +19,11 @@ const (
 type WorkOccurrence struct {
 	ID              uint             `gorm:"primaryKey" json:"id"`
 	StaffCaseID     uint             `gorm:"not null;index" json:"staff_case_id"`
-	ScheduleGroupID *uint            `gorm:"index" json:"schedule_group_id,omitempty"`
-	ScheduledDate   time.Time        `gorm:"type:date;not null;index" json:"scheduled_date"`
+	// idx_wo_group_date prevents two occurrences on the same date within the
+	// same schedule group. MySQL treats NULL schedule_group_id as distinct, so
+	// this index only enforces uniqueness for group-level (non-nil) occurrences.
+	ScheduleGroupID *uint            `gorm:"index;uniqueIndex:idx_wo_group_date" json:"schedule_group_id,omitempty"`
+	ScheduledDate   time.Time        `gorm:"type:date;not null;index;uniqueIndex:idx_wo_group_date" json:"scheduled_date"`
 	StartTime       string           `gorm:"size:10;not null" json:"start_time"`
 	EndTime         string           `gorm:"size:10;not null" json:"end_time"`
 	Status          OccurrenceStatus `gorm:"type:enum('scheduled','cancelled_holiday','rescheduled','completed','absent','cancelled_other');not null;default:'scheduled'" json:"status"`

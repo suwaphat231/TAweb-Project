@@ -54,15 +54,15 @@ type mockDemoStudent struct {
 	Grade     string
 }
 
-// mockDemoStudents are 5 pre-seeded applicants (pending) — the 6th slot is
-// intentionally left open for a real student to fill during manual testing.
-// Flow: real student applies → instructor (somchai) accepts all 6.
+// demo_std01 is the student dev-login account and applies manually.
+// The other five accounts are pre-seeded applicants for instructor puriwat.
 var mockDemoStudents = []mockDemoStudent{
 	{"demo_std01", "ธนภัทร ศรีวิไล", "demo_std01@example.com", "6410123456", 3.85, "เทคโนโลยีสารสนเทศ", 3, "A"},
 	{"demo_std02", "ปวีณ์นุช อินทรสุวรรณ", "demo_std02@example.com", "6410123457", 3.42, "วิทยาการคอมพิวเตอร์", 3, "B+"},
 	{"demo_std03", "กิตติภูมิ ทองสุข", "demo_std03@example.com", "6410123458", 3.15, "วิทยาการคอมพิวเตอร์", 2, "B"},
 	{"demo_std04", "ศศิวิมล บุญมาก", "demo_std04@example.com", "6410123459", 3.67, "เทคโนโลยีสารสนเทศ", 3, "A"},
 	{"demo_std05", "อดิศร แก้วมณี", "demo_std05@example.com", "6410123460", 2.89, "วิทยาการคอมพิวเตอร์", 3, "B+"},
+	{"demo_std06", "ณัฐพล ทดสอบระบบ", "demo_std06@example.com", "6410123461", 3.50, "วิทยาการคอมพิวเตอร์", 3, "A"},
 }
 
 // seedMockApplicants sets up the debug demo:
@@ -161,6 +161,10 @@ func seedMockApplicants() error {
 			if err := setPassword(student.ID); err != nil {
 				return err
 			}
+		}
+
+		if s.Username == "demo_std01" {
+			continue
 		}
 
 		grade := s.Grade

@@ -346,11 +346,21 @@ export interface StaffDocument {
   created_at: string
 }
 
+export interface HiringNoticePlanSnapshot {
+  work_schedule: WorkDaySlot[]
+  sessions_per_month: number
+  rate_per_hour_baht: number
+  total_valid_days: number
+  can_create: boolean
+  blocking_reasons: string[]
+}
+
 export interface CreateStaffDocumentPayload {
   type: DocType
   course_ref: string
   note?: string
   course_id?: number
+  staff_case_id?: number
   month?: number
   year?: number
   session_dates?: number[]
@@ -594,6 +604,7 @@ export interface ScheduleGroupMonth {
   month: number  // 1–12
   month_start_date?: string // YYYY-MM-DD, overrides first day of month
   month_end_date?: string   // YYYY-MM-DD, overrides last day of month
+  is_manual?: boolean
   created_at: string
 }
 
@@ -608,6 +619,8 @@ export interface MonthOccurrenceSummary {
   valid: number
   valid_minutes: number
   valid_hours: number
+  lab_boy_count: number
+  rate_per_hour_baht: number
   pay_per_person_baht: number
   total_pay_baht: number
 }
@@ -755,6 +768,31 @@ export interface GenerateOccurrencesPayload {
 export interface GenerateGroupOccurrencesPayload {
   start_date: string
   end_date: string
+}
+
+export interface AddGroupMonthOccurrencePayload {
+  date: string
+  start_time: string
+  end_time: string
+}
+
+export interface PatchOccurrencePayload {
+  date?: string
+  start_time?: string
+  end_time?: string
+  status?: OccurrenceStatus
+  reason?: string
+}
+
+export interface GroupMonthPlanEntry {
+  month: ScheduleGroupMonth
+  occurrences: WorkOccurrence[]
+  summary: MonthOccurrenceSummary
+}
+
+export interface GroupMonthPlan {
+  group: ScheduleGroup
+  months: GroupMonthPlanEntry[]
 }
 
 // ─── (legacy) One lab-assistant work session derived from a StaffDocument. ───

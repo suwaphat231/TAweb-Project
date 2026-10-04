@@ -5,10 +5,7 @@ import { staffApi, applicationsAPI, coursesAPI } from '../../services/api'
 import { buildCourseOffering, buildWorkflowItems } from './staffCourseUtils'
 import { DocumentWorkflow } from './components/DocumentWorkflow'
 import { SelectedStudentsPanel } from './components/SelectedStudentsPanel'
-import WorkPlanTab from './components/WorkPlanTab'
-import MonthlyOpsTab from './components/MonthlyOpsTab'
-
-type Tab = 'documents' | 'info' | 'students' | 'workplan' | 'monthly' | 'history'
+type Tab = 'documents' | 'info' | 'students' | 'history'
 
 export default function StaffCourseDetail() {
   const { year, semester, code, section } = useParams<{
@@ -91,11 +88,6 @@ export default function StaffCourseDetail() {
     },
   })
 
-  const initCaseMut = useMutation({
-    mutationFn: () => staffApi.initCase(review!.course_id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['staff-cases'] }),
-  })
-
   const loading = reviewsLoading || docsLoading
 
   if (loading) {
@@ -114,14 +106,7 @@ export default function StaffCourseDetail() {
         <div style={{ fontSize: 13, color: 'var(--ink-400)', marginBottom: 20 }}>
           รายวิชา {code} กลุ่ม {section} ปี {year} ภาค {semester} ไม่มีข้อมูลในระบบ
         </div>
-        <button
-          onClick={() => navigate('/staff/home')}
-          style={{
-            padding: '8px 20px', fontSize: 13, fontWeight: 600,
-            borderRadius: 'var(--radius-btn)', cursor: 'pointer',
-            background: 'var(--primary)', color: '#fff', border: 'none',
-          }}
-        >
+        <button onClick={() => navigate('/staff/home')} className="btn btn-primary">
           กลับหน้าหลัก
         </button>
       </div>
@@ -129,18 +114,17 @@ export default function StaffCourseDetail() {
   }
 
   const docProgress = offering.totalDocs > 0 ? (offering.completedDocs / offering.totalDocs) * 100 : 0
-  const statusConfig = {
-    waiting:     { label: 'รอจัดทำเอกสาร', color: 'var(--amber)',   bg: 'var(--amber-bg)',   border: '#FCD34D' },
-    in_progress: { label: 'กำลังดำเนินการ', color: 'var(--primary)', bg: 'var(--primary-50)', border: 'var(--primary-100)' },
-    completed:   { label: 'เสร็จสิ้นแล้ว',  color: 'var(--green)',   bg: 'var(--green-bg)',   border: '#86EFAC' },
-  }[offering.docStatus]
+  const STATUS_BADGE: Record<string, string> = {
+    waiting: 'badge badge-amber', in_progress: 'badge badge-primary', completed: 'badge badge-green',
+  }
+  const STATUS_LABEL: Record<string, string> = {
+    waiting: 'รอจัดทำเอกสาร', in_progress: 'กำลังดำเนินการ', completed: 'เสร็จสิ้นแล้ว',
+  }
 
   const TABS: { id: Tab; label: string }[] = [
     { id: 'documents', label: 'เอกสารต้นภาคเรียน' },
     { id: 'info',      label: 'ข้อมูลรายวิชา' },
     { id: 'students',  label: 'รายชื่อ Lab Boy' },
-    { id: 'workplan',  label: 'แผนการปฏิบัติงาน' },
-    { id: 'monthly',   label: 'การปฏิบัติงานรายเดือน' },
     { id: 'history',   label: 'ประวัติการดำเนินงาน' },
   ]
 
@@ -149,16 +133,7 @@ export default function StaffCourseDetail() {
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto' }}>
       {/* Back button */}
-      <button
-        onClick={() => navigate('/staff/home')}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          marginBottom: 16, padding: '5px 12px', fontSize: 13,
-          borderRadius: 'var(--radius-btn)', cursor: 'pointer',
-          background: 'none', border: '1px solid var(--line)', color: 'var(--ink-600)',
-        }}
-        aria-label="กลับหน้าหลัก"
-      >
+      <button onClick={() => navigate('/staff/home')} className="btn btn-ghost btn-sm" style={{ marginBottom: 16 }} aria-label="กลับหน้าหลัก">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="15 18 9 12 15 6"/>
         </svg>
@@ -176,21 +151,8 @@ export default function StaffCourseDetail() {
               <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink-900)' }}>
                 {offering.courseCode}
               </span>
-              <span style={{
-                fontSize: 12, fontWeight: 600, padding: '3px 10px',
-                borderRadius: 'var(--radius-pill)', background: 'var(--primary-50)',
-                color: 'var(--primary)', border: '1px solid var(--primary-100)',
-              }}>
-                กลุ่ม {offering.sectionNo}
-              </span>
-              <span style={{
-                fontSize: 11, fontWeight: 600, padding: '3px 10px',
-                borderRadius: 'var(--radius-pill)',
-                background: statusConfig.bg, color: statusConfig.color,
-                border: `1px solid ${statusConfig.border}`,
-              }}>
-                {statusConfig.label}
-              </span>
+              <span className="badge badge-primary">กลุ่ม {offering.sectionNo}</span>
+              <span className={STATUS_BADGE[offering.docStatus]}>{STATUS_LABEL[offering.docStatus]}</span>
             </div>
             <div style={{ fontSize: 15, color: 'var(--ink-700)', marginBottom: 10 }}>
               {offering.courseTitle}
@@ -230,33 +192,17 @@ export default function StaffCourseDetail() {
       </div>
 
       {/* Tab navigation */}
-      <div style={{
-        display: 'flex', gap: 0, marginBottom: 0,
-        background: '#fff', border: '1.5px solid var(--line)',
-        borderRadius: 'var(--radius-card) var(--radius-card) 0 0',
-        borderBottom: 'none', overflow: 'hidden',
-      }}>
+      <div className="tab-bar">
         {TABS.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             aria-selected={activeTab === tab.id}
-            style={{
-              flex: 1, padding: '12px 8px', fontSize: 13, fontWeight: activeTab === tab.id ? 700 : 400,
-              cursor: 'pointer', border: 'none',
-              background: activeTab === tab.id ? 'var(--primary-50)' : 'transparent',
-              color: activeTab === tab.id ? 'var(--primary)' : 'var(--ink-600)',
-              borderBottom: activeTab === tab.id ? `3px solid var(--primary)` : '3px solid transparent',
-              transition: 'all .12s',
-              whiteSpace: 'nowrap',
-            }}
+            className={`tab-btn${activeTab === tab.id ? ' active' : ''}`}
           >
             {tab.label}
             {tab.id === 'students' && accepted.length > 0 && (
-              <span style={{
-                marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '1px 6px',
-                borderRadius: 'var(--radius-pill)', background: 'var(--green-bg)', color: 'var(--green)',
-              }}>
+              <span className="badge badge-green" style={{ marginLeft: 6, fontSize: 10, padding: '1px 6px' }}>
                 {accepted.length}
               </span>
             )}
@@ -265,11 +211,7 @@ export default function StaffCourseDetail() {
       </div>
 
       {/* Tab content */}
-      <div style={{
-        background: '#fff', border: '1.5px solid var(--line)',
-        borderRadius: '0 0 var(--radius-card) var(--radius-card)',
-        overflow: 'hidden',
-      }}>
+      <div className="tab-content">
         {activeTab === 'documents' && (
           <div style={{ display: 'flex', gap: 0, flexWrap: 'wrap' }}>
             {/* Workflow main area */}
@@ -290,12 +232,8 @@ export default function StaffCourseDetail() {
                   <button
                     onClick={() => verifyMut.mutate()}
                     disabled={verifyMut.isPending}
-                    style={{
-                      padding: '7px 16px', fontSize: 13, fontWeight: 600,
-                      background: 'var(--amber)', color: '#fff', border: 'none',
-                      borderRadius: 'var(--radius-btn)', cursor: 'pointer',
-                      opacity: verifyMut.isPending ? 0.6 : 1, whiteSpace: 'nowrap', flexShrink: 0,
-                    }}
+                    className="btn btn-amber"
+                    style={{ flexShrink: 0 }}
                   >
                     {verifyMut.isPending ? 'กำลังยืนยัน...' : 'ยืนยันแบบฟอร์ม'}
                   </button>
@@ -309,6 +247,14 @@ export default function StaffCourseDetail() {
                 courseId={offering.courseId}
                 courseRef={courseRef}
                 onDocumentCreated={() => setDocRefreshKey((k) => k + 1)}
+                staffCase={staffCase}
+                courseCode={offering.courseCode}
+                courseTitle={offering.courseTitle}
+                sectionNo={offering.sectionNo}
+                semester={offering.semester}
+                academicYear={offering.academicYear}
+                labBoyCount={accepted.length}
+                courseSchedule={courseDetail?.schedule ?? offering.schedule}
               />
             </div>
 
@@ -403,66 +349,9 @@ export default function StaffCourseDetail() {
               <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)' }}>
                 รายชื่อนักศึกษาที่ได้รับเลือกเป็น Lab Boy
               </div>
-              <span style={{
-                fontSize: 12, fontWeight: 700, padding: '2px 10px',
-                borderRadius: 'var(--radius-pill)', background: 'var(--green-bg)', color: 'var(--green)',
-              }}>
-                {accepted.length} คน
-              </span>
+              <span className="badge badge-green">{accepted.length} คน</span>
             </div>
             <SelectedStudentsPanel applicants={applicants} loading={applicantsLoading} />
-          </div>
-        )}
-
-        {activeTab === 'workplan' && (
-          <div style={{ padding: '24px' }}>
-            {staffCase ? (
-              <WorkPlanTab staffCase={staffCase} />
-            ) : (
-              <div style={{ textAlign: 'center', padding: '40px 0' }}>
-                <div style={{ color: 'var(--ink-400)', fontSize: 14, marginBottom: 16 }}>
-                  ยังไม่มี Staff Case สำหรับรายวิชานี้
-                </div>
-                {initCaseMut.isError && (
-                  <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>
-                    {(initCaseMut.error as Error).message}
-                  </div>
-                )}
-                <button
-                  onClick={() => initCaseMut.mutate()}
-                  disabled={initCaseMut.isPending}
-                  style={{
-                    padding: '9px 22px', fontSize: 13, fontWeight: 600,
-                    background: 'var(--primary)', color: '#fff', border: 'none',
-                    borderRadius: 'var(--radius-btn)', cursor: 'pointer',
-                    opacity: initCaseMut.isPending ? 0.6 : 1,
-                  }}
-                >
-                  {initCaseMut.isPending ? 'กำลังสร้าง...' : 'เริ่มต้น Staff Case'}
-                </button>
-                <div style={{ color: 'var(--ink-400)', fontSize: 12, marginTop: 8 }}>
-                  ใช้ได้เมื่อมีนักศึกษา Lab Boy ที่ได้รับเลือกแล้ว
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'monthly' && (
-          <div style={{ padding: '24px' }}>
-            {staffCase ? (
-              staffCase.status === 'open' ? (
-                <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--ink-400)', fontSize: 14 }}>
-                  ล็อกแผนการทำงานก่อนเพื่อเปิดรอบเดือน
-                </div>
-              ) : (
-                <MonthlyOpsTab staffCase={staffCase} />
-              )
-            ) : (
-              <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--ink-400)', fontSize: 14 }}>
-                รอให้อาจารย์ยืนยันการจ้าง Lab Boy
-              </div>
-            )}
           </div>
         )}
 

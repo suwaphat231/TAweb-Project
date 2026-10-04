@@ -77,30 +77,8 @@ export default function StaffHome() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <a
-              href="/staff/docs"
-              style={{
-                padding: '7px 16px', fontSize: 13, fontWeight: 600,
-                borderRadius: 'var(--radius-btn)', cursor: 'pointer',
-                background: 'rgba(255,255,255,0.15)', color: '#fff',
-                border: '1px solid rgba(255,255,255,0.3)', textDecoration: 'none',
-                display: 'inline-flex', alignItems: 'center',
-              }}
-            >
-              เอกสารทั้งหมด
-            </a>
-            <a
-              href="/staff/review"
-              style={{
-                padding: '7px 16px', fontSize: 13, fontWeight: 600,
-                borderRadius: 'var(--radius-btn)', cursor: 'pointer',
-                background: '#fff', color: 'var(--primary)',
-                border: 'none', textDecoration: 'none',
-                display: 'inline-flex', alignItems: 'center',
-              }}
-            >
-              ตรวจสอบแบบฟอร์ม
-            </a>
+            <a href="/staff/docs" className="btn btn-white-outline">เอกสารทั้งหมด</a>
+            <a href="/staff/review" className="btn btn-white">ตรวจสอบแบบฟอร์ม</a>
           </div>
         </div>
       </div>

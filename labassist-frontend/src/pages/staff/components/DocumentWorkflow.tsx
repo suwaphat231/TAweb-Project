@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { DocumentWorkflowItem, DocType, DocStepStatus, WorkDaySlot } from '../../../types'
+import type { DocumentWorkflowItem, DocType, DocStepStatus, StaffCaseResponse } from '../../../types'
 import { staffApi } from '../../../services/api'
 import { useToast } from '../../../hooks/useToast'
 import { triggerBrowserDownload } from '../../../utils/download'
 import { DocumentPreviewModal } from './DocumentPreviewModal'
+import { WorkScheduleModal } from './WorkScheduleModal'
 
 const STEP_STATUS_CONFIG: Record<DocStepStatus, { label: string; color: string; bg: string }> = {
   not_reached:         { label: 'ยังไม่ถึงขั้นตอน', color: 'var(--ink-400)',  bg: 'var(--line-soft)' },
@@ -17,68 +18,63 @@ const STEP_STATUS_CONFIG: Record<DocStepStatus, { label: string; color: string; 
   completed:           { label: 'เสร็จสิ้น',         color: 'var(--green)',   bg: 'var(--green-bg)' },
 }
 
-const DAY_OPTIONS = [
-  'วันจันทร์', 'วันอังคาร', 'วันพุธ', 'วันพฤหัสบดี',
-  'วันศุกร์', 'วันเสาร์', 'วันอาทิตย์',
+const MONTHS_SHORT = [
+  'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+  'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.',
 ]
 
-const EMPTY_SLOT: WorkDaySlot = { day: '', time_start: '', time_end: '' }
+function fmtDate(s: string) {
+  const d = new Date(s + 'T00:00:00')
+  return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear() + 543}`
+}
 
 interface Props {
   items: DocumentWorkflowItem[]
   courseId: number
   courseRef: string
   onDocumentCreated: () => void
+  staffCase?: StaffCaseResponse
+  courseCode?: string
+  courseTitle?: string
+  sectionNo?: number
+  semester?: string
+  academicYear?: number
+  labBoyCount?: number
+  courseSchedule?: string
 }
 
-export function DocumentWorkflow({ items, courseId, courseRef, onDocumentCreated }: Props) {
+export function DocumentWorkflow({
+  items, courseId, courseRef, onDocumentCreated,
+  staffCase, courseCode, courseTitle, sectionNo,
+  semester, academicYear, labBoyCount, courseSchedule,
+}: Props) {
   const qc = useQueryClient()
   const showToast = useToast()
   const [previewStep, setPreviewStep] = useState<DocumentWorkflowItem | null>(null)
   const [downloadingId, setDownloadingId] = useState<number | null>(null)
   const [creatingStep, setCreatingStep] = useState<number | null>(null)
+  const [showScheduleModal, setShowScheduleModal] = useState(false)
 
-  // Hiring notice form modal state (used for both create and edit)
-  const [hiringModalItem, setHiringModalItem] = useState<DocumentWorkflowItem | null>(null)
-  const [hiringModalMode, setHiringModalMode] = useState<'create' | 'edit'>('create')
-  const [workSlots, setWorkSlots] = useState<WorkDaySlot[]>([{ ...EMPTY_SLOT }])
-  const [sessionsPerMonth, setSessionsPerMonth] = useState<number>(0)
+  const planLocked = staffCase?.status === 'plan_locked' || staffCase?.status === 'done'
 
   const createMut = useMutation({
-    mutationFn: ({ docType, workSchedule, sessionsPerMonth: spm }: {
-      docType: DocType; step: number;
-      workSchedule?: WorkDaySlot[]; sessionsPerMonth?: number
-    }) =>
+    mutationFn: ({ docType }: { docType: DocType; step: number }) =>
       staffApi.createDocument({
         type: docType,
         course_ref: courseRef,
         course_id: courseId,
-        work_schedule: workSchedule,
-        sessions_per_month: spm,
+        staff_case_id: staffCase?.id,
       }),
     onSuccess: (_doc, { step }) => {
       qc.invalidateQueries({ queryKey: ['staff-documents'] })
       showToast(`สร้างเอกสารขั้นตอนที่ ${step} สำเร็จ`, 'success')
       setCreatingStep(null)
-      setHiringModalItem(null)
       onDocumentCreated()
     },
     onError: () => {
       showToast('เกิดข้อผิดพลาด กรุณาลองใหม่', 'error')
       setCreatingStep(null)
     },
-  })
-
-  const updateScheduleMut = useMutation({
-    mutationFn: ({ id, workSchedule, spm }: { id: number; workSchedule: WorkDaySlot[]; spm: number }) =>
-      staffApi.updateDocumentSchedule(id, { work_schedule: workSchedule, sessions_per_month: spm }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['staff-documents'] })
-      showToast('บันทึกตารางปฏิบัติงานเรียบร้อย', 'success')
-      setHiringModalItem(null)
-      onDocumentCreated()
-    },
-    onError: () => showToast('เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'),
   })
 
   const confirmMut = useMutation({
@@ -118,54 +114,8 @@ export function DocumentWorkflow({ items, courseId, courseRef, onDocumentCreated
 
   function handleCreate(item: DocumentWorkflowItem) {
     if (!item.docType) return
-    if (item.docType === 'hiring_notice') {
-      setWorkSlots([{ ...EMPTY_SLOT }])
-      setSessionsPerMonth(0)
-      setHiringModalMode('create')
-      setHiringModalItem(item)
-    } else {
-      setCreatingStep(item.step)
-      createMut.mutate({ docType: item.docType, step: item.step })
-    }
-  }
-
-  function handleHiringSubmit() {
-    if (!hiringModalItem) return
-    const validSlots = workSlots.filter((s) => s.day || s.time_start || s.time_end)
-    if (hiringModalMode === 'edit' && hiringModalItem.documentId) {
-      updateScheduleMut.mutate({
-        id: hiringModalItem.documentId,
-        workSchedule: validSlots,
-        spm: sessionsPerMonth,
-      })
-    } else if (hiringModalItem.docType) {
-      setCreatingStep(hiringModalItem.step)
-      createMut.mutate({
-        docType: hiringModalItem.docType,
-        step: hiringModalItem.step,
-        workSchedule: validSlots.length > 0 ? validSlots : undefined,
-        sessionsPerMonth: sessionsPerMonth > 0 ? sessionsPerMonth : undefined,
-      })
-    }
-  }
-
-  function openEditSchedule(item: DocumentWorkflowItem) {
-    setWorkSlots([{ ...EMPTY_SLOT }])
-    setSessionsPerMonth(0)
-    setHiringModalMode('edit')
-    setHiringModalItem(item)
-  }
-
-  function updateSlot(idx: number, field: keyof WorkDaySlot, value: string) {
-    setWorkSlots((prev) => prev.map((s, i) => i === idx ? { ...s, [field]: value } : s))
-  }
-
-  function addSlot() {
-    if (workSlots.length < 3) setWorkSlots((prev) => [...prev, { ...EMPTY_SLOT }])
-  }
-
-  function removeSlot(idx: number) {
-    setWorkSlots((prev) => prev.filter((_, i) => i !== idx))
+    setCreatingStep(item.step)
+    createMut.mutate({ docType: item.docType, step: item.step })
   }
 
   return (
@@ -175,11 +125,11 @@ export function DocumentWorkflow({ items, courseId, courseRef, onDocumentCreated
         const isLast = idx === items.length - 1
         const isNotSupported = item.docType === null
         const isLoading = creatingStep === item.step && createMut.isPending
+        const isHiringNotice = item.docType === 'hiring_notice'
+        const scheduleBlocked = isHiringNotice && !planLocked
 
         return (
-          <div key={item.step} style={{
-            display: 'flex', gap: 0, position: 'relative',
-          }}>
+          <div key={item.step} style={{ display: 'flex', gap: 0, position: 'relative' }}>
             {/* Connector line */}
             {!isLast && (
               <div style={{
@@ -241,39 +191,75 @@ export function DocumentWorkflow({ items, courseId, courseRef, onDocumentCreated
                 </span>
               </div>
 
+              {/* Work schedule button + compact summary (hiring_notice step only) */}
+              {isHiringNotice && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <button
+                      onClick={() => setShowScheduleModal(true)}
+                      style={actionBtn(
+                        planLocked ? 'transparent' : 'var(--primary)',
+                        planLocked ? 'var(--primary)' : '#fff',
+                        planLocked ? '1.5px solid var(--primary)' : undefined,
+                      )}
+                      aria-label="กำหนดหรือแก้ไขตารางปฏิบัติงาน"
+                    >
+                      {staffCase ? 'แก้ไขตารางปฏิบัติงาน' : 'กำหนดตารางปฏิบัติงาน'}
+                    </button>
+                    {staffCase && !planLocked && (
+                      <span className="badge badge-amber">ฉบับร่าง</span>
+                    )}
+                    {planLocked && (
+                      <span className="badge badge-green">กำหนดแล้ว</span>
+                    )}
+                  </div>
+
+                  {/* Compact period summary */}
+                  {staffCase?.work_start_date && staffCase?.work_end_date && (
+                    <div style={{
+                      marginTop: 8, fontSize: 12, color: 'var(--ink-600)',
+                      padding: '6px 10px', background: 'var(--blue-bg)',
+                      borderRadius: 'var(--radius-input)', display: 'inline-block',
+                    }}>
+                      ช่วงปฏิบัติงาน: {fmtDate(staffCase.work_start_date)} – {fmtDate(staffCase.work_end_date)}
+                    </div>
+                  )}
+
+                  {/* Blocking hint */}
+                  {!planLocked && (
+                    <div style={{ marginTop: 6, fontSize: 11, color: 'var(--amber)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span>⚠</span> ต้องยืนยันตารางปฏิบัติงานก่อนจึงจะสร้างเอกสารได้
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Action buttons */}
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
                 {isNotSupported ? (
-                  <button disabled style={disabledBtn} title="TODO: POST /staff/documents — ยังไม่รองรับประเภทเอกสารนี้">
+                  <button disabled style={disabledBtn} title="TODO: ยังไม่รองรับประเภทเอกสารนี้">
                     ยังไม่รองรับ
                   </button>
                 ) : (
                   <>
                     {/* Create */}
-                    {(item.status === 'waiting') && (
+                    {item.status === 'waiting' && (
                       <button
                         onClick={() => handleCreate(item)}
-                        disabled={isLoading}
-                        style={actionBtn('var(--accent)', '#fff')}
+                        disabled={isLoading || scheduleBlocked}
+                        title={scheduleBlocked ? 'ยืนยันตารางปฏิบัติงานก่อน' : undefined}
+                        style={actionBtn(
+                          scheduleBlocked ? 'var(--line-soft)' : 'var(--accent)',
+                          scheduleBlocked ? 'var(--ink-400)' : '#fff',
+                        )}
                         aria-label={`สร้างเอกสารขั้นตอนที่ ${item.step}`}
                       >
                         {isLoading ? 'กำลังสร้าง...' : 'สร้างเอกสาร'}
                       </button>
                     )}
 
-                    {/* Edit work schedule — always visible for existing hiring_notice */}
-                    {item.docType === 'hiring_notice' && item.documentId && (
-                      <button
-                        onClick={() => openEditSchedule(item)}
-                        style={actionBtn('transparent', 'var(--primary)', '1.5px solid var(--primary)')}
-                        aria-label="กรอก/แก้ไขตารางปฏิบัติงาน"
-                      >
-                        ตารางปฏิบัติงาน
-                      </button>
-                    )}
-
                     {/* Preview */}
-                    {(item.status !== 'not_reached') && (
+                    {item.status !== 'not_reached' && (
                       <button
                         onClick={() => setPreviewStep(item)}
                         style={actionBtn('transparent', 'var(--primary)', '1.5px solid var(--primary)')}
@@ -299,8 +285,12 @@ export function DocumentWorkflow({ items, courseId, courseRef, onDocumentCreated
                     {(item.status === 'created' || item.status === 'approved') && item.documentId && (
                       <button
                         onClick={() => confirmMut.mutate(item.documentId!)}
-                        disabled={confirmMut.isPending}
-                        style={actionBtn('var(--amber)', '#fff')}
+                        disabled={confirmMut.isPending || scheduleBlocked}
+                        title={scheduleBlocked ? 'ยืนยันตารางปฏิบัติงานก่อน' : undefined}
+                        style={actionBtn(
+                          scheduleBlocked ? 'var(--line-soft)' : 'var(--amber)',
+                          scheduleBlocked ? 'var(--ink-400)' : '#fff',
+                        )}
                         aria-label={`ส่งรอลงนามขั้นตอนที่ ${item.step}`}
                       >
                         {confirmMut.isPending ? 'กำลังบันทึก...' : 'ส่งรอลงนาม'}
@@ -328,102 +318,23 @@ export function DocumentWorkflow({ items, courseId, courseRef, onDocumentCreated
 
       <DocumentPreviewModal step={previewStep} onClose={() => setPreviewStep(null)} />
 
-      {/* Hiring notice work schedule modal */}
-      {hiringModalItem && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 1000,
-          background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }} onClick={(e) => { if (e.target === e.currentTarget) setHiringModalItem(null) }}>
-          <div style={{
-            background: '#fff', borderRadius: 'var(--radius-lg)',
-            padding: 28, width: '100%', maxWidth: 560,
-            boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
-          }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 4 }}>
-              {hiringModalMode === 'edit' ? 'แก้ไขตารางปฏิบัติงาน' : 'กรอกข้อมูลตารางปฏิบัติงาน'}
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--ink-500)', marginBottom: 20 }}>
-              อัตราค่าตอบแทน: 50 บาท/ชั่วโมง
-            </div>
-
-            {/* Work day slots */}
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 10 }}>
-                วันปฏิบัติงานในแต่ละสัปดาห์
-              </div>
-              {workSlots.map((slot, i) => (
-                <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-                  <select
-                    value={slot.day}
-                    onChange={(e) => updateSlot(i, 'day', e.target.value)}
-                    style={inputStyle}
-                  >
-                    <option value="">เลือกวัน</option>
-                    {DAY_OPTIONS.map((d) => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                  <input
-                    type="time"
-                    value={slot.time_start}
-                    onChange={(e) => updateSlot(i, 'time_start', e.target.value)}
-                    style={{ ...inputStyle, width: 110 }}
-                    placeholder="เวลาเริ่ม"
-                  />
-                  <span style={{ color: 'var(--ink-500)', fontSize: 13 }}>ถึง</span>
-                  <input
-                    type="time"
-                    value={slot.time_end}
-                    onChange={(e) => updateSlot(i, 'time_end', e.target.value)}
-                    style={{ ...inputStyle, width: 110 }}
-                    placeholder="เวลาสิ้นสุด"
-                  />
-                  {workSlots.length > 1 && (
-                    <button onClick={() => removeSlot(i)} style={removeBtn} title="ลบ">✕</button>
-                  )}
-                </div>
-              ))}
-              {workSlots.length < 3 && (
-                <button onClick={addSlot} style={addRowBtn}>+ เพิ่มวัน</button>
-              )}
-            </div>
-
-            {/* Sessions per month */}
-            <div style={{ marginBottom: 24 }}>
-              <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)', display: 'block', marginBottom: 6 }}>
-                จำนวนครั้งปฏิบัติงานต่อเดือน
-              </label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <input
-                  type="number"
-                  min={0}
-                  value={sessionsPerMonth || ''}
-                  onChange={(e) => setSessionsPerMonth(Number(e.target.value))}
-                  style={{ ...inputStyle, width: 100 }}
-                  placeholder="0"
-                />
-                <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>ครั้ง/เดือน</span>
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => setHiringModalItem(null)}
-                style={actionBtn('transparent', 'var(--ink-600)', '1px solid var(--line)')}
-              >
-                ยกเลิก
-              </button>
-              <button
-                onClick={handleHiringSubmit}
-                disabled={createMut.isPending || updateScheduleMut.isPending}
-                style={actionBtn('var(--accent)', '#fff')}
-              >
-                {(createMut.isPending || updateScheduleMut.isPending)
-                  ? 'กำลังบันทึก...'
-                  : hiringModalMode === 'edit' ? 'บันทึก' : 'สร้างเอกสาร'}
-              </button>
-            </div>
-          </div>
-        </div>
+      {showScheduleModal && (
+        <WorkScheduleModal
+          caseId={staffCase?.id}
+          courseId={courseId}
+          courseCode={courseCode ?? courseRef}
+          courseTitle={courseTitle ?? ''}
+          sectionNo={sectionNo ?? 0}
+          semester={semester ?? ''}
+          academicYear={academicYear ?? 0}
+          labBoyCount={labBoyCount ?? staffCase?.lab_boys?.length ?? 0}
+          courseSchedule={courseSchedule}
+          onClose={() => setShowScheduleModal(false)}
+          onSaved={() => {
+            qc.invalidateQueries({ queryKey: ['staff-cases'] })
+            onDocumentCreated()
+          }}
+        />
       )}
     </div>
   )
@@ -442,28 +353,6 @@ const disabledBtn: React.CSSProperties = {
   borderRadius: 'var(--radius-btn)', cursor: 'not-allowed',
   background: 'var(--line-soft)', color: 'var(--ink-400)',
   border: '1px solid var(--line)', opacity: 0.7,
-}
-
-const inputStyle: React.CSSProperties = {
-  flex: 1, padding: '6px 10px', fontSize: 13,
-  border: '1px solid var(--line)', borderRadius: 'var(--radius-btn)',
-  background: '#fff', color: 'var(--ink-900)',
-  outline: 'none',
-}
-
-const removeBtn: React.CSSProperties = {
-  width: 26, height: 26, borderRadius: '50%', border: 'none',
-  background: 'var(--line-soft)', color: 'var(--ink-500)',
-  cursor: 'pointer', fontSize: 11, flexShrink: 0,
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  padding: 0,
-}
-
-const addRowBtn: React.CSSProperties = {
-  padding: '4px 12px', fontSize: 12, fontWeight: 500,
-  border: '1px dashed var(--line)', borderRadius: 'var(--radius-btn)',
-  background: 'transparent', color: 'var(--ink-500)', cursor: 'pointer',
-  marginTop: 4,
 }
 
 function actionBtn(bg: string, color: string, border?: string): React.CSSProperties {

@@ -46,6 +46,10 @@ type createDocumentRequest struct {
 	WorkSchedule    []models.WorkDaySlot `json:"work_schedule"`
 	SessionsPerMonth int                 `json:"sessions_per_month"`
 
+	// StaffCaseID links this document to a Staff Case so that sessions_per_month
+	// and work_schedule can be derived from confirmed WorkOccurrence data.
+	StaffCaseID *uint `json:"staff_case_id"`
+
 	RefNumber        string `json:"ref_number"`
 	PriorMemoRef     string `json:"prior_memo_ref"`
 	PriorMemoDate    string `json:"prior_memo_date"`
@@ -256,6 +260,23 @@ func (h *Handler) CreateDocument(c *gin.Context) {
 				})
 			}
 			doc.Roster = roster
+
+			// When a Staff Case is linked, derive schedule from confirmed plan data.
+			if body.StaffCaseID != nil {
+				snap := database.BuildHiringNoticeSnapshot(*body.StaffCaseID)
+				if !snap.CanCreate {
+					reason := "แผนปฏิบัติงานยังไม่สมบูรณ์"
+					if len(snap.BlockingReasons) > 0 {
+						reason = snap.BlockingReasons[0]
+					}
+					c.JSON(http.StatusBadRequest, gin.H{"error": reason})
+					return
+				}
+				doc.SessionsPerMonth = snap.SessionsPerMonth
+				if len(snap.WorkSchedule) > 0 {
+					doc.WorkSchedule = snap.WorkSchedule
+				}
+			}
 		}
 	}
 

@@ -153,6 +153,114 @@ func (h *Handler) UpdateOccurrence(c *gin.Context) {
 	c.JSON(http.StatusOK, occ)
 }
 
+type patchOccurrenceRequest struct {
+	Date      *string                  `json:"date"`
+	StartTime *string                  `json:"start_time"`
+	EndTime   *string                  `json:"end_time"`
+	Status    *models.OccurrenceStatus `json:"status"`
+	Reason    *string                  `json:"reason"`
+}
+
+// PatchOccurrence godoc
+// @Summary แก้ไขวันที่ เวลา สถานะ และ/หรือหมายเหตุของ occurrence (partial update)
+// @Tags staff
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "Occurrence ID"
+// @Success 200 {object} models.WorkOccurrence
+// @Failure 400 {object} handlers.ErrorResponse
+// @Failure 404 {object} handlers.ErrorResponse
+// @Failure 409 {object} handlers.ErrorResponse
+// @Router /staff/occurrences/{id} [patch]
+func (h *Handler) PatchOccurrence(c *gin.Context) {
+	staffID, _ := c.Get("user_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	var body patchOccurrenceRequest
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	patch := database.OccurrencePatch{
+		Status: body.Status,
+		Reason: body.Reason,
+	}
+	if body.Date != nil {
+		t, parseErr := time.Parse("2006-01-02", *body.Date)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid date; use YYYY-MM-DD"})
+			return
+		}
+		patch.Date = &t
+	}
+	if body.StartTime != nil {
+		if !isValidHHMM(*body.StartTime) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid start_time; use HH:MM"})
+			return
+		}
+		patch.StartTime = body.StartTime
+	}
+	if body.EndTime != nil {
+		if !isValidHHMM(*body.EndTime) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid end_time; use HH:MM"})
+			return
+		}
+		patch.EndTime = body.EndTime
+	}
+
+	occ, patchErr := database.PatchOccurrenceFields(uint(id), patch, staffID.(uint))
+	if patchErr == database.ErrTerminalOccurrence {
+		c.JSON(http.StatusConflict, gin.H{"error": patchErr.Error()})
+		return
+	}
+	if patchErr != nil {
+		if patchErr.Error() == "record not found" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "occurrence not found"})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": patchErr.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, occ)
+}
+
+// DeleteOccurrenceHandler godoc
+// @Summary ลบ occurrence ที่ยังไม่ completed/absent
+// @Tags staff
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "Occurrence ID"
+// @Success 204
+// @Failure 404 {object} handlers.ErrorResponse
+// @Failure 409 {object} handlers.ErrorResponse
+// @Router /staff/occurrences/{id} [delete]
+func (h *Handler) DeleteOccurrenceHandler(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	deleted, delErr := database.DeleteOccurrence(uint(id))
+	if delErr == database.ErrTerminalOccurrence {
+		c.JSON(http.StatusConflict, gin.H{"error": "cannot delete a completed or absent occurrence"})
+		return
+	}
+	if delErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": delErr.Error()})
+		return
+	}
+	if !deleted {
+		c.JSON(http.StatusNotFound, gin.H{"error": "occurrence not found"})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 type rescheduleRequest struct {
 	NewDate  string `json:"new_date" binding:"required"`  // YYYY-MM-DD
 	NewStart string `json:"new_start" binding:"required"` // HH:MM

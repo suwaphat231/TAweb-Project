@@ -154,11 +154,17 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			staffGroup.POST("/staff/cases/:id/schedule-groups/:groupId/generate-occurrences", staffH.GenerateGroupOccurrences)
 
 			// Schedule group months
-			staffGroup.GET("/staff/cases/:id/schedule-groups/:groupId/months",                         staffH.ListGroupMonths)
-			staffGroup.POST("/staff/cases/:id/schedule-groups/:groupId/months",                        staffH.AddGroupMonth)
-			staffGroup.DELETE("/staff/cases/:id/schedule-groups/:groupId/months/:year/:month",         staffH.DeleteGroupMonth)
-			staffGroup.POST("/staff/cases/:id/schedule-groups/:groupId/months/:year/:month/generate",  staffH.GenerateGroupMonthOccurrences)
-			staffGroup.GET("/staff/cases/:id/schedule-groups/:groupId/months/:year/:month/summary",    staffH.GetGroupMonthSummary)
+			staffGroup.GET("/staff/cases/:id/schedule-groups/:groupId/months",                                  staffH.ListGroupMonths)
+			staffGroup.POST("/staff/cases/:id/schedule-groups/:groupId/months",                                 staffH.AddGroupMonth)
+			staffGroup.DELETE("/staff/cases/:id/schedule-groups/:groupId/months/:year/:month",                  staffH.DeleteGroupMonth)
+			staffGroup.POST("/staff/cases/:id/schedule-groups/:groupId/months/:year/:month/generate",           staffH.GenerateGroupMonthOccurrences)
+			staffGroup.GET("/staff/cases/:id/schedule-groups/:groupId/months/:year/:month/summary",             staffH.GetGroupMonthSummary)
+			staffGroup.POST("/staff/cases/:id/schedule-groups/:groupId/months/:year/:month/set-dates",          staffH.SetGroupMonthDatesList)
+			staffGroup.POST("/staff/cases/:id/schedule-groups/:groupId/months/:year/:month/occurrences",        staffH.AddGroupMonthOccurrence)
+
+			// Monthly plan aggregate
+			staffGroup.GET("/staff/cases/:id/monthly-plan",              staffH.GetMonthlyPlan)
+			staffGroup.GET("/staff/cases/:id/hiring-notice-snapshot",    staffH.GetHiringNoticeSnapshot)
 
 			// Calendar dates (holidays / no-class days)
 			staffGroup.GET("/staff/cases/:id/calendar-dates", staffH.ListCalendarDates)
@@ -169,6 +175,8 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			staffGroup.GET("/staff/cases/:id/occurrences",           staffH.ListOccurrences)
 			staffGroup.POST("/staff/cases/:id/generate-occurrences", staffH.GenerateOccurrences)
 			staffGroup.PUT("/staff/occurrences/:id",                 staffH.UpdateOccurrence)
+			staffGroup.PATCH("/staff/occurrences/:id",               staffH.PatchOccurrence)
+			staffGroup.DELETE("/staff/occurrences/:id",              staffH.DeleteOccurrenceHandler)
 			staffGroup.POST("/staff/occurrences/:id/reschedule",     staffH.RescheduleOccurrence)
 
 			// Monthly periods

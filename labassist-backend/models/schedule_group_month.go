@@ -14,7 +14,10 @@ type ScheduleGroupMonth struct {
 	MonthStartDate *time.Time `gorm:"type:date" json:"month_start_date,omitempty"`
 	// MonthEndDate overrides the last day of the month when staff end mid-month.
 	MonthEndDate *time.Time `gorm:"type:date" json:"month_end_date,omitempty"`
-	CreatedAt    time.Time  `json:"created_at"`
+	// IsManual is true when the occurrences for this month were set by staff
+	// picking exact dates rather than auto-generated from the weekly pattern.
+	IsManual  bool      `gorm:"not null;default:false" json:"is_manual"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func (ScheduleGroupMonth) TableName() string { return "schedule_group_months" }
@@ -31,15 +34,17 @@ type GroupWeekDaySlot struct {
 // schedule group. It is computed on the fly from WorkOccurrence rows — never
 // persisted — and returned by the summary endpoint.
 type MonthOccurrenceSummary struct {
-	Year            int     `json:"year"`
-	Month           int     `json:"month"`
-	Total           int     `json:"total"`
-	CancelledHoliday int    `json:"cancelled_holiday"`
-	CancelledOther  int     `json:"cancelled_other"`
-	Rescheduled     int     `json:"rescheduled"`
-	Valid            int    `json:"valid"`
-	ValidMinutes     int64  `json:"valid_minutes"`
+	Year             int     `json:"year"`
+	Month            int     `json:"month"`
+	Total            int     `json:"total"`
+	CancelledHoliday int     `json:"cancelled_holiday"`
+	CancelledOther   int     `json:"cancelled_other"`
+	Rescheduled      int     `json:"rescheduled"`
+	Valid            int     `json:"valid"`
+	ValidMinutes     int64   `json:"valid_minutes"`
 	ValidHours       float64 `json:"valid_hours"`
+	LabBoyCount      int     `json:"lab_boy_count"`
+	RatePerHourBaht  float64 `json:"rate_per_hour_baht"`
 	PayPerPersonBaht float64 `json:"pay_per_person_baht"`
 	TotalPayBaht     float64 `json:"total_pay_baht"`
 }
