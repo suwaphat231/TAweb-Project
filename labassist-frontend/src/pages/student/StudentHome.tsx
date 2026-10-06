@@ -12,7 +12,7 @@ import { Avatar } from '../../components/ui/Avatar'
 import { getInitials } from '../../utils/initials'
 import { CourseCard } from '../../components/course/CourseCard'
 import { useApplyLabboy } from '../../hooks/useApplyLabboy'
-import { groupCourseSections, getAppliedSection } from '../../utils/courseGrouping'
+import { groupCourseSections, getAppliedSections } from '../../utils/courseGrouping'
 import { cleanCourseTitle } from '../../utils/courseTitle'
 
 export default function StudentHome() {
@@ -86,7 +86,7 @@ export default function StudentHome() {
                 <CourseCard
                   key={group.key}
                   group={group}
-                  appliedSection={getAppliedSection(group, myApps)}
+                  appliedSections={getAppliedSections(group, myApps)}
                   onApply={openApply}
                 />
               ))}

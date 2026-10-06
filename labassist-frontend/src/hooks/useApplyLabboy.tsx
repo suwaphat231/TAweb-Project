@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { studentApi } from '../services/api'
 import { Modal } from '../components/ui/Modal'
 import { Select } from '../components/ui/Select'
@@ -7,74 +7,78 @@ import { Button } from '../components/ui/Button'
 import { useToast } from '../hooks/useToast'
 import { GRADE_OPTIONS } from '../utils/grades'
 import { cleanCourseTitle } from '../utils/courseTitle'
-import { groupSectionsByTime, timeOptionSecLabel, type CourseGroup } from '../utils/courseGrouping'
+import { getAppliedSections, groupSectionsByTime, timeOptionSecLabel, type CourseGroup } from '../utils/courseGrouping'
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024
 const ALLOWED_TYPES = ['image/jpeg', 'image/png']
 
-// Shared "สมัคร Lab Boy" modal flow (pick a section, optionally a grade,
+// Shared "สมัคร Lab Boy" modal flow (pick one or more times, optionally a grade,
 // confirm) so any page showing a CourseCard — the apply-to-courses page and
 // the student home dashboard alike — can open the same modal via onApply.
 export function useApplyLabboy() {
   const [applyTarget, setApplyTarget] = useState<CourseGroup | null>(null)
-  const [selectedSectionId, setSelectedSectionId] = useState<number | null>(null)
+  // One section id per picked time — a student may apply to several times
+  // of the same course, each becoming its own application.
+  const [selectedSectionIds, setSelectedSectionIds] = useState<number[]>([])
+  // Sections already applied to when the modal opened; they stay listed but
+  // can't be picked again.
+  const [appliedIds, setAppliedIds] = useState<Set<number>>(new Set())
   const [grade, setGrade] = useState('')
   const [gradeProofFile, setGradeProofFile] = useState<File | null>(null)
   const [fileError, setFileError] = useState<string | null>(null)
-  // Tracks an application that was created but whose grade-proof upload failed,
-  // so a retry can skip re-creating the application and only redo the upload.
-  // pendingCourseIdRef is kept in sync so that changing Sec between retries
-  // is detected: if the course_id no longer matches, the stale app is discarded
-  // and a fresh application is submitted for the newly selected section.
-  const pendingAppIdRef = useRef<number | null>(null)
-  const pendingCourseIdRef = useRef<number | null>(null)
+  // Progress of a multi-time submission keyed by course_id, so a retry after
+  // a partial failure doesn't re-apply what already went through: an app id
+  // means the application exists but its grade-proof upload is still owed,
+  // null means that section is fully done.
+  const submittedRef = useRef<Map<number, number | null>>(new Map())
   const qc = useQueryClient()
   const showToast = useToast()
 
+  const { data: myApps = [] } = useQuery({
+    queryKey: ['my-applications'],
+    queryFn: studentApi.applications,
+  })
+
   const applyMutation = useMutation({
-    mutationFn: async (vars: { course_id: number; grade?: string; gradeProofFile: File | null }) => {
-      let appId = pendingAppIdRef.current
-      // If the user changed Sec between retries, the pending app belongs to a
-      // different section — discard it and create a fresh application instead.
-      if (appId !== null && pendingCourseIdRef.current !== vars.course_id) {
-        appId = null
-        pendingAppIdRef.current = null
-        pendingCourseIdRef.current = null
-      }
-      if (appId === null) {
-        const app = await studentApi.apply({ course_id: vars.course_id, role_applied: 'labboy', grade: vars.grade })
-        appId = app.id
+    mutationFn: async (vars: { course_ids: number[]; grade?: string; gradeProofFile: File | null }) => {
+      let ocrWarning: string | undefined
+      for (const course_id of vars.course_ids) {
+        const prior = submittedRef.current.get(course_id)
+        if (prior === null) continue
+        let appId = prior
+        if (appId === undefined) {
+          const app = await studentApi.apply({ course_id, role_applied: 'labboy', grade: vars.grade })
+          appId = app.id
+          // Record before the upload so a failed upload is retried alone.
+          submittedRef.current.set(course_id, vars.gradeProofFile ? appId : null)
+        }
         if (vars.gradeProofFile) {
-          // Record the ID before the upload attempt so a failure here is
-          // recoverable — the next retry skips apply() and goes straight to
-          // uploadGradeProof() with this ID.
-          pendingAppIdRef.current = appId
-          pendingCourseIdRef.current = vars.course_id
+          const result = await studentApi.uploadGradeProof(appId, vars.gradeProofFile)
+          submittedRef.current.set(course_id, null)
+          if (result && typeof result === 'object' && 'ocr_warning' in result) {
+            ocrWarning = (result as { ocr_warning: string }).ocr_warning
+          }
         }
       }
-      if (vars.gradeProofFile) {
-        const result = await studentApi.uploadGradeProof(appId, vars.gradeProofFile)
-        pendingAppIdRef.current = null
-        pendingCourseIdRef.current = null
-        return result
-      }
+      return { ocrWarning, count: vars.course_ids.length }
     },
-    onSuccess: (result) => {
-      qc.invalidateQueries({ queryKey: ['my-applications'] })
-      qc.invalidateQueries({ queryKey: ['student-dashboard'] })
+    onSuccess: ({ ocrWarning, count }) => {
       const code = applyTarget?.code ?? ''
-      const hasOcrWarning = result && typeof result === 'object' && 'ocr_warning' in result
-      if (hasOcrWarning) {
-        showToast((result as { ocr_warning: string }).ocr_warning, 'warning')
+      if (ocrWarning) {
+        showToast(ocrWarning, 'warning')
       } else {
-        showToast(`ส่งใบสมัคร Lab Boy วิชา ${code} เรียบร้อย รออาจารย์พิจารณา`, 'success')
+        showToast(`ส่งใบสมัคร Lab Boy วิชา ${code}${count > 1 ? ` ${count} ช่วงเวลา` : ''} เรียบร้อย รออาจารย์พิจารณา`, 'success')
       }
       setApplyTarget(null)
-      setSelectedSectionId(null)
+      setSelectedSectionIds([])
       setGrade('')
       setGradeProofFile(null)
-      pendingAppIdRef.current = null
-      pendingCourseIdRef.current = null
+      submittedRef.current = new Map()
+    },
+    // Refresh even after a partial failure so cards reflect what went through.
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['my-applications'] })
+      qc.invalidateQueries({ queryKey: ['student-dashboard'] })
     },
     onError: (err: { response?: { data?: { error?: string }; status?: number } }) => {
       showToast(err?.response?.data?.error ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error')
@@ -105,23 +109,31 @@ export function useApplyLabboy() {
     setGrade('')
     setGradeProofFile(null)
     setFileError(null)
-    pendingAppIdRef.current = null
-    pendingCourseIdRef.current = null
-    const firstAvailable = group.sections.find((s) => !(s.labboy_slots > 0 && s.labboy_accepted >= s.labboy_slots) && !s.conflict_day)
-    setSelectedSectionId((firstAvailable ?? group.sections[0])?.id ?? null)
+    submittedRef.current = new Map()
+    setAppliedIds(new Set(getAppliedSections(group, myApps).map((s) => s.id)))
+    // With several times to choose from the student ticks them explicitly;
+    // a single-time posting is preselected as before.
+    const options = groupSectionsByTime(group.sections)
+    setSelectedSectionIds(options.length === 1 && group.sections[0] ? [group.sections[0].id] : [])
     setApplyTarget(group)
   }
 
-  function confirmApply() {
-    if (!selectedSectionId) return
-    if (requireGradeProof && !gradeProofFile) return
-    if (fileError) return
-    applyMutation.mutate({ course_id: selectedSectionId, grade: grade || undefined, gradeProofFile })
+  function toggleSection(id: number) {
+    setSelectedSectionIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]))
   }
 
-  const selectedSection = applyTarget?.sections.find((s) => s.id === selectedSectionId) ?? null
+  function confirmApply() {
+    if (selectedSectionIds.length === 0) return
+    if (requireGradeProof && !gradeProofFile) return
+    if (fileError) return
+    applyMutation.mutate({ course_ids: selectedSectionIds, grade: grade || undefined, gradeProofFile })
+  }
+
+  const selectedSections = applyTarget?.sections.filter((s) => selectedSectionIds.includes(s.id)) ?? []
+  // Single-time postings show that one section's schedule/conflict inline.
+  const selectedSection = selectedSections.length === 1 ? selectedSections[0] : null
   const timeOptions = applyTarget ? groupSectionsByTime(applyTarget.sections) : []
-  const requireGradeProof = !!selectedSection?.require_grade_proof
+  const requireGradeProof = selectedSections.some((s) => s.require_grade_proof)
 
   const modal = (
     <Modal
@@ -145,17 +157,21 @@ export function useApplyLabboy() {
 
         {timeOptions.length > 1 ? (
           <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 8 }}>เลือกช่วงเวลาที่ว่าง</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 8 }}>
+              เลือกช่วงเวลาที่ว่าง <span style={{ fontWeight: 400, color: 'var(--ink-400)' }}>(เลือกได้มากกว่า 1 ช่วงเวลา)</span>
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {timeOptions.map((opt) => {
                 // Secs merged into one time keep their own slot counts; the
                 // application goes to the first sec at this time with room.
                 const sectionFull = (s: (typeof opt.sections)[number]) => s.labboy_slots > 0 && s.labboy_accepted >= s.labboy_slots
                 const target = opt.sections.find((s) => !sectionFull(s) && !s.conflict_day)
-                const isFull = opt.sections.every(sectionFull)
-                const isConflict = !isFull && !target && opt.sections.some((s) => !!s.conflict_day)
-                const isDisabled = !target
-                const isSelected = opt.sections.some((s) => s.id === selectedSectionId)
+                const isApplied = opt.sections.some((s) => appliedIds.has(s.id))
+                const isFull = !isApplied && opt.sections.every(sectionFull)
+                const isConflict = !isApplied && !isFull && !target && opt.sections.some((s) => !!s.conflict_day)
+                const isDisabled = isApplied || !target
+                const selectedId = opt.sections.find((s) => selectedSectionIds.includes(s.id))?.id
+                const isSelected = selectedId !== undefined
                 const accepted = opt.sections.reduce((n, s) => n + s.labboy_accepted, 0)
                 const slots = opt.sections.reduce((n, s) => n + s.labboy_slots, 0)
                 const secLabel = timeOptionSecLabel(opt)
@@ -164,26 +180,34 @@ export function useApplyLabboy() {
                     key={opt.key}
                     type="button"
                     disabled={isDisabled}
-                    onClick={() => target && setSelectedSectionId(target.id)}
+                    aria-pressed={isSelected}
+                    onClick={() => {
+                      if (selectedId !== undefined) toggleSection(selectedId)
+                      else if (target) toggleSection(target.id)
+                    }}
                     style={{
                       padding: '10px 12px',
                       borderRadius: 10,
                       border: isSelected ? '2px solid var(--primary)' : isConflict ? '1.5px solid var(--amber)' : '1.5px solid var(--line)',
-                      background: isSelected ? 'var(--primary-50)' : isConflict ? 'var(--amber-bg)' : isFull ? '#F5F5F5' : '#fff',
+                      background: isSelected ? 'var(--primary-50)' : isConflict ? 'var(--amber-bg)' : isFull || isApplied ? '#F5F5F5' : '#fff',
                       cursor: isDisabled ? 'not-allowed' : 'pointer',
                       textAlign: 'left',
-                      opacity: isFull ? 0.5 : 1,
+                      opacity: isFull || isApplied ? 0.6 : 1,
                       transition: 'border .15s, background .15s',
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: isSelected ? 'var(--primary)' : isConflict ? 'var(--amber)' : 'var(--ink-900)', whiteSpace: 'pre-line' }}>
-                        {opt.schedule || secLabel}
+                      <span style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                        <input type="checkbox" checked={isSelected || isApplied} disabled={isDisabled} readOnly tabIndex={-1} style={{ marginTop: 2, pointerEvents: 'none' }} />
+                        <span style={{ fontSize: 13, fontWeight: 700, color: isSelected ? 'var(--primary)' : isConflict ? 'var(--amber)' : 'var(--ink-900)', whiteSpace: 'pre-line' }}>
+                          {opt.schedule || secLabel}
+                        </span>
                       </span>
                       <span style={{ fontSize: 11, color: 'var(--ink-500)', flexShrink: 0 }}>{accepted} / {slots} คน</span>
                     </div>
-                    <div style={{ fontSize: 12, color: isConflict ? 'var(--amber)' : 'var(--ink-500)', marginTop: 2 }}>
+                    <div style={{ fontSize: 12, color: isConflict ? 'var(--amber)' : 'var(--ink-500)', marginTop: 2, paddingLeft: 21 }}>
                       {!!opt.schedule && secLabel}
+                      {isApplied && <span style={{ marginLeft: 6, color: 'var(--green)' }}>สมัครแล้ว</span>}
                       {isFull && <span style={{ marginLeft: 6, color: 'var(--red)' }}>เต็มแล้ว</span>}
                       {isConflict && <span style={{ marginLeft: 6 }}>ชนตาราง</span>}
                     </div>
@@ -243,9 +267,9 @@ export function useApplyLabboy() {
           <Button
             onClick={confirmApply}
             loading={applyMutation.isPending}
-            disabled={!selectedSectionId || !!selectedSection?.conflict_day || (requireGradeProof && !gradeProofFile) || !!fileError}
+            disabled={selectedSectionIds.length === 0 || selectedSections.some((s) => !!s.conflict_day) || (requireGradeProof && !gradeProofFile) || !!fileError}
           >
-            ยืนยันสมัคร
+            ยืนยันสมัคร{selectedSectionIds.length > 1 ? ` (${selectedSectionIds.length} ช่วงเวลา)` : ''}
           </Button>
         </div>
       </div>

@@ -72,13 +72,20 @@ export function groupCourseSections(courses: Course[]): CourseGroup[] {
   })
 }
 
-// A student can only hold one active application per posting — match by any
-// section belonging to the group, not just one specific course row.
+// Every section of the group the student holds an active (pending/accepted)
+// application for in the current round. A student may apply to several
+// times of one course, one application per section.
+export function getAppliedSections(group: CourseGroup, apps: Application[]): Course[] {
+  const appliedIds = new Set(
+    apps
+      .filter((a) => a.posting_active !== false && (a.status === 'pending' || a.status === 'accepted'))
+      .map((a) => a.course_id),
+  )
+  return group.sections.filter((s) => appliedIds.has(s.id))
+}
+
 export function getAppliedSection(group: CourseGroup, apps: Application[]): Course | undefined {
-  const sectionIds = new Set(group.sections.map((s) => s.id))
-  const app = apps.find((a) => sectionIds.has(a.course_id) && a.posting_active !== false && (a.status === 'pending' || a.status === 'accepted'))
-  if (!app) return undefined
-  return group.sections.find((s) => s.id === app.course_id)
+  return getAppliedSections(group, apps)[0]
 }
 
 // A "time option" is every section of a posting that meets at the same

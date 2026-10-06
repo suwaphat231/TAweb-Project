@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getAppliedSection, groupCourseSections, groupSectionsByTime, timeOptionSecLabel } from './courseGrouping'
+import { getAppliedSection, getAppliedSections, groupCourseSections, groupSectionsByTime, timeOptionSecLabel } from './courseGrouping'
 import type { Application, Course } from '../types'
 
 describe('applications across recruitment rounds', () => {
@@ -25,6 +25,18 @@ describe('applications across recruitment rounds', () => {
     expect(getAppliedSection(group, [oldApplication, {
       ...oldApplication, id: 2, posting_id: 20, posting_active: true, status: 'pending',
     }])).toBe(course)
+  })
+
+  it('returns every section applied to when the student picked several times', () => {
+    const sec2 = { ...course, id: 2, section: 2 }
+    const sec3 = { ...course, id: 3, section: 3 }
+    const multi = groupCourseSections([course, sec2, sec3])[0]
+    const current = { ...oldApplication, posting_active: true, status: 'pending' } satisfies Application
+    expect(getAppliedSections(multi, [
+      { ...current, id: 2, course_id: 1 },
+      { ...current, id: 3, course_id: 3 },
+      { ...current, id: 4, course_id: 2, status: 'withdrawn' },
+    ]).map((s) => s.id)).toEqual([1, 3])
   })
 })
 

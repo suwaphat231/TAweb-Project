@@ -20,6 +20,14 @@ type Config struct {
 	DBUser     string
 	DBPassword string
 	DBName     string
+
+	// SMTP settings for password-reset emails. When SMTPHost is empty no
+	// email is sent; with DevLogin on, the code is logged instead.
+	SMTPHost     string
+	SMTPPort     string
+	SMTPUser     string
+	SMTPPassword string
+	SMTPFrom     string
 }
 
 func Load() (*Config, error) {
@@ -57,6 +65,12 @@ func Load() (*Config, error) {
 		DBUser:     getEnv("DB_USER", "labassist"),
 		DBPassword: getEnv("DB_PASSWORD", "labassist123"),
 		DBName:     getEnv("DB_NAME", "labassist"),
+
+		SMTPHost:     getEnv("SMTP_HOST", ""),
+		SMTPPort:     getEnv("SMTP_PORT", "587"),
+		SMTPUser:     getEnv("SMTP_USER", ""),
+		SMTPPassword: getEnv("SMTP_PASSWORD", ""),
+		SMTPFrom:     getEnv("SMTP_FROM", getEnv("SMTP_USER", "")),
 	}, nil
 }
 

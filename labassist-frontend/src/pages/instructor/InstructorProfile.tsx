@@ -10,12 +10,14 @@ import { getInitials } from '../../utils/initials'
 import { StatusBadge } from '../../components/ui/Badge'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../hooks/useToast'
+import { ChangePasswordModal } from './ChangePasswordModal'
 
 export default function InstructorProfile() {
   const { user, setUser } = useAuth()
   const qc = useQueryClient()
   const showToast = useToast()
-  const [draft, setDraft] = useState<Partial<Record<'full_name' | 'email' | 'faculty', string>>>({})
+  const [draft, setDraft] = useState<Partial<Record<'full_name' | 'email' | 'faculty' | 'username', string>>>({})
+  const [passwordOpen, setPasswordOpen] = useState(false)
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['instructor-profile'],
@@ -28,11 +30,12 @@ export default function InstructorProfile() {
     full_name: p?.full_name ?? '',
     email: p?.email ?? '',
     faculty: p?.faculty ?? '',
+    username: p?.username ?? '',
     ...draft,
   }
 
   const updateMut = useMutation({
-    mutationFn: (data: { full_name: string; email: string; faculty: string }) =>
+    mutationFn: (data: { full_name: string; email: string; faculty: string; username: string }) =>
       instructorApi.updateProfile(data),
     onSuccess: (updated) => {
       setUser(updated)
@@ -48,7 +51,8 @@ export default function InstructorProfile() {
       qc.invalidateQueries({ queryKey: ['instructor-courses'] })
       showToast('บันทึกข้อมูลเรียบร้อยแล้ว', 'success')
     },
-    onError: () => showToast('เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'),
+    onError: (err: { response?: { data?: { error?: string } } }) =>
+      showToast(err.response?.data?.error ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'),
   })
 
   function handleSubmit(e: React.FormEvent) {
@@ -103,7 +107,21 @@ export default function InstructorProfile() {
                 value={form.email}
                 onChange={(e) => setDraft(f => ({ ...f, email: e.target.value }))}
               />
-              
+              <Input
+                readOnly={updateMut.isPending}
+                label="Username"
+                autoComplete="username"
+                value={form.username}
+                onChange={(e) => setDraft(f => ({ ...f, username: e.target.value }))}
+              />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>รหัสผ่าน</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ fontSize: 14, color: 'var(--ink-500)', letterSpacing: 2 }}>••••••••</span>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setPasswordOpen(true)}>เปลี่ยนรหัสผ่าน</Button>
+                </div>
+              </div>
+
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <Button type="submit" loading={updateMut.isPending}>บันทึกการเปลี่ยนแปลง</Button>
               </div>
@@ -111,6 +129,8 @@ export default function InstructorProfile() {
           )}
         </Card>
       </div>
+
+      <ChangePasswordModal isOpen={passwordOpen} onClose={() => setPasswordOpen(false)} />
     </div>
   )
 }

@@ -6,7 +6,7 @@ import { Card } from '../../components/ui/Card'
 import { FilterChips } from '../../components/ui/FilterChips'
 import { SkeletonCard } from '../../components/ui/Skeleton'
 import { useApplyLabboy } from '../../hooks/useApplyLabboy'
-import { groupCourseSections, getAppliedSection } from '../../utils/courseGrouping'
+import { groupCourseSections, getAppliedSections } from '../../utils/courseGrouping'
 import type { CourseStatus } from '../../types'
 
 const filterOptions = [
@@ -137,7 +137,7 @@ export default function StudentApply() {
             <CourseCard
               key={group.key}
               group={group}
-              appliedSection={getAppliedSection(group, myApps)}
+              appliedSections={getAppliedSections(group, myApps)}
               onApply={openApply}
             />
           ))}

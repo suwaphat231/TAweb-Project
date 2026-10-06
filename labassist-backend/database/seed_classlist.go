@@ -54,11 +54,11 @@ func seedClasslistInstructors() error {
 		}
 
 		email := ins.Email
-		if email == "" {
-			// The classlist doesn't carry instructor emails; synthesize one
-			// so the column's NOT NULL + unique constraints are satisfied.
-			email = ins.Username + "@cp.su.ac.th"
-		}
+		// if email == "" {
+		// 	// The classlist doesn't carry instructor emails; synthesize one
+		// 	// so the column's NOT NULL + unique constraints are satisfied.
+		// 	email = ins.Username + "@cp.su.ac.th"
+		// }
 		username := ins.Username
 		u := models.User{
 			Username:     &username,

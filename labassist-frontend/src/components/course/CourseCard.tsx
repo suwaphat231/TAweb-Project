@@ -8,10 +8,10 @@ import { Button } from '../ui/Button'
 interface Props {
   group: CourseGroup
   onApply?: (group: CourseGroup) => void
-  appliedSection?: Course
+  appliedSections?: Course[]
 }
 
-export function CourseCard({ group, onApply, appliedSection }: Props) {
+export function CourseCard({ group, onApply, appliedSections = [] }: Props) {
   const allFull = group.totalSlots > 0 && group.totalAccepted >= group.totalSlots
   // A group conflicts when every section the student could take has a schedule
   // conflict. If even one section is conflict-free, the card stays actionable.
@@ -23,6 +23,16 @@ export function CourseCard({ group, onApply, appliedSection }: Props) {
     ? new Date(group.deadline).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
     : null
   const timeOptions = groupSectionsByTime(group.sections)
+  // Students may apply to several times of one course; once some are applied,
+  // keep offering the others that still have room and fit their schedule.
+  const appliedIds = new Set(appliedSections.map((s) => s.id))
+  const canApplyMore = timeOptions.some((opt) =>
+    !opt.sections.some((s) => appliedIds.has(s.id)) &&
+    opt.sections.some((s) => !(s.labboy_slots > 0 && s.labboy_accepted >= s.labboy_slots) && !s.conflict_day),
+  )
+  const appliedSecLabel = Array.from(new Set(appliedSections.map((s) => s.section).filter((n): n is number => !!n)))
+    .sort((a, b) => a - b)
+    .join(', ')
 
   function handleApply() {
     onApply?.(group)
@@ -122,8 +132,13 @@ export function CourseCard({ group, onApply, appliedSection }: Props) {
       <div style={{ paddingTop: 4, borderTop: '1px solid var(--line-soft)' }}>
         {group.status === 'closed' || group.status === 'draft' ? (
           <Badge variant="gray">ปิดรับ</Badge>
-        ) : appliedSection ? (
-          <Badge variant="green">สมัครแล้ว{appliedSection.section ? ` (Sec ${appliedSection.section})` : ''}</Badge>
+        ) : appliedSections.length > 0 ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+            <Badge variant="green">สมัครแล้ว{appliedSecLabel ? ` (Sec ${appliedSecLabel})` : ''}</Badge>
+            {canApplyMore && (
+              <Button size="sm" variant="outline" onClick={handleApply}>สมัครเวลาอื่นเพิ่ม</Button>
+            )}
+          </div>
         ) : conflictDay ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--amber)', flexShrink: 0 }}>

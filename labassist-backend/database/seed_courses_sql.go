@@ -95,6 +95,17 @@ func seedCoursesFromClasslist() error {
 
 	users := ListUsers(string(models.RoleInstructor), "", 1000, 0)
 
+	// A section can list different meeting times on different rows (e.g.
+	// 517494 sec 4), which stay separate groups above. Slots must still be
+	// unique per section, so number them across all of the section's groups.
+	type sectionKey struct {
+		code     string
+		section  int
+		semester int
+		year     int
+	}
+	nextSlot := map[sectionKey]int{}
+
 	for _, k := range order {
 		r := merged[k]
 		section := k.section
@@ -123,7 +134,10 @@ func seedCoursesFromClasslist() error {
 		}
 
 		// One row per meeting time so each time is opened/applied to on its own.
-		for slot, line := range SplitScheduleDays(r.Schedule) {
+		sk := sectionKey{k.code, k.section, k.semester, k.year}
+		for _, line := range SplitScheduleDays(r.Schedule) {
+			slot := nextSlot[sk]
+			nextSlot[sk]++
 			course := CreateCourse(models.Course{
 				Code:           r.SubjectCode,
 				Title:          title,

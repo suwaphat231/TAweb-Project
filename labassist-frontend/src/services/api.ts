@@ -61,6 +61,12 @@ export const authApi = {
     api.post<{ token: string; user: User }>('/auth/dev-login', { username }).then((r) => r.data),
   me: () => api.get<{ user: User }>('/auth/me').then((r) => r.data.user),
   logout: () => api.post('/auth/logout'),
+  changePassword: (data: { current_password: string; new_password: string }) =>
+    api.post<{ message: string }>('/auth/password/change', data).then((r) => r.data),
+  forgotPassword: () =>
+    api.post<{ email: string }>('/auth/password/forgot').then((r) => r.data),
+  resetPassword: (data: { code: string; new_password: string }) =>
+    api.post<{ message: string }>('/auth/password/reset', data).then((r) => r.data),
 }
 
 export const coursesAPI = {
@@ -268,7 +274,7 @@ export const instructorApi = {
   markNotificationRead: (id: number) => api.put(`/instructor/notifications/${id}/read`).then((r) => r.data),
   markAllNotificationsRead: () => api.put('/instructor/notifications/read-all').then((r) => r.data),
   profile: () => api.get<User>('/instructor/profile').then((r) => r.data),
-  updateProfile: (data: { full_name?: string; email?: string; faculty?: string }) =>
+  updateProfile: (data: { full_name?: string; email?: string; faculty?: string; username?: string }) =>
     api.put<User>('/instructor/profile', data).then((r) => r.data),
 }
 export const staffApi = {
