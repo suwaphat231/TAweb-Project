@@ -132,6 +132,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			staffGroup.PUT("/staff/reviews/:courseId/return", staffH.ReturnForm)
 			staffGroup.GET("/staff/documents",                staffH.ListDocuments)
 			staffGroup.POST("/staff/documents",               staffH.CreateDocument)
+			staffGroup.DELETE("/staff/documents/:id",         staffH.DeleteDocument)
 			staffGroup.PUT("/staff/documents/:id/status",     staffH.UpdateDocumentStatus)
 			staffGroup.PUT("/staff/documents/:id/schedule",   staffH.UpdateDocumentSchedule)
 			staffGroup.GET("/staff/documents/:id/file",       staffH.DownloadDocument)
@@ -167,6 +168,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			staffGroup.GET("/staff/cases/:id/hiring-notice-snapshot",    staffH.GetHiringNoticeSnapshot)
 
 			// Calendar dates (holidays / no-class days)
+			staffGroup.GET("/staff/calendar-dates",           staffH.ListCalendarDatesBySemester)
 			staffGroup.GET("/staff/cases/:id/calendar-dates", staffH.ListCalendarDates)
 			staffGroup.POST("/staff/calendar-dates",          staffH.CreateCalendarDate)
 			staffGroup.DELETE("/staff/calendar-dates/:id",    staffH.DeleteCalendarDate)

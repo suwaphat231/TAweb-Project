@@ -25,6 +25,31 @@ type createCalendarDateRequest struct {
 	Reason         string `json:"reason"`
 }
 
+// ListCalendarDatesBySemester godoc
+// @Summary รายการวันหยุดระดับเทอม (global + semester scope)
+// @Tags staff
+// @Produce json
+// @Security BearerAuth
+// @Param semester     query string true  "รหัสภาคการศึกษา เช่น 1, 2, S"
+// @Param academic_year query int   true  "ปีการศึกษา (CE)"
+// @Success 200 {array} models.CalendarDate
+// @Router /staff/calendar-dates [get]
+func (h *Handler) ListCalendarDatesBySemester(c *gin.Context) {
+	semester := c.Query("semester")
+	yearStr := c.Query("academic_year")
+	if semester == "" || yearStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "semester and academic_year are required"})
+		return
+	}
+	year, err := strconv.Atoi(yearStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid academic_year"})
+		return
+	}
+	dates := database.ListCalendarDatesBySemester(semester, year)
+	c.JSON(http.StatusOK, dates)
+}
+
 // ListCalendarDates godoc
 // @Summary วันหยุดและวันงดสำหรับ Staff Case
 // @Tags staff
@@ -95,7 +120,7 @@ func (h *Handler) CreateCalendarDate(c *gin.Context) {
 		Semester:       body.Semester,
 		AcademicYear:   body.AcademicYear,
 		StaffCaseID:    body.StaffCaseID,
-		AffectsWork:    body.AffectsWork,
+		AffectsWork:    &body.AffectsWork,
 		OriginalDateID: body.OriginalDateID,
 		EditReason:     body.Reason,
 		CreatedByID:    staffID.(uint),
@@ -105,6 +130,8 @@ func (h *Handler) CreateCalendarDate(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot save calendar date"})
 		return
 	}
+	// Auto-cancel existing scheduled occurrences that fall on this holiday date.
+	_ = database.CancelOccurrencesForHoliday(created)
 	c.JSON(http.StatusCreated, created)
 }
 
@@ -123,6 +150,8 @@ func (h *Handler) DeleteCalendarDate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
+	// Restore occurrences cancelled by this holiday before deleting it.
+	_ = database.RestoreOccurrencesForHoliday(uint(id))
 	if !database.DeleteCalendarDate(uint(id)) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "calendar date not found"})
 		return

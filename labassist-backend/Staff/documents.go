@@ -1,6 +1,7 @@
 package staff
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -43,8 +44,8 @@ type createDocumentRequest struct {
 	WorkTimeStart string `json:"work_time_start"`
 	WorkTimeEnd   string `json:"work_time_end"`
 
-	WorkSchedule    []models.WorkDaySlot `json:"work_schedule"`
-	SessionsPerMonth int                 `json:"sessions_per_month"`
+	WorkSchedule     []models.WorkDaySlot `json:"work_schedule"`
+	SessionsPerMonth int                  `json:"sessions_per_month"`
 
 	// StaffCaseID links this document to a Staff Case so that sessions_per_month
 	// and work_schedule can be derived from confirmed WorkOccurrence data.
@@ -63,8 +64,8 @@ type updateDocStatusRequest struct {
 }
 
 type updateDocScheduleRequest struct {
-	WorkSchedule    []models.WorkDaySlot `json:"work_schedule"`
-	SessionsPerMonth int                 `json:"sessions_per_month"`
+	WorkSchedule     []models.WorkDaySlot `json:"work_schedule"`
+	SessionsPerMonth int                  `json:"sessions_per_month"`
 }
 
 type regVerifyRequest struct {
@@ -146,6 +147,7 @@ func (h *Handler) CreateDocument(c *gin.Context) {
 		WorkTimeEnd:      body.WorkTimeEnd,
 		WorkSchedule:     body.WorkSchedule,
 		SessionsPerMonth: body.SessionsPerMonth,
+		StaffCaseID:      body.StaffCaseID,
 		RefNumber:        body.RefNumber,
 		PriorMemoRef:     body.PriorMemoRef,
 		PriorMemoDate:    body.PriorMemoDate,
@@ -276,6 +278,14 @@ func (h *Handler) CreateDocument(c *gin.Context) {
 				if len(snap.WorkSchedule) > 0 {
 					doc.WorkSchedule = snap.WorkSchedule
 				}
+
+				// Freeze a full data snapshot so the document is reproducible.
+				if ds, err := database.BuildDocumentSnapshot(*body.StaffCaseID, len(doc.Roster)); err == nil {
+					if b, err := json.Marshal(ds); err == nil {
+						doc.DataSnapshot = string(b)
+						doc.SnapshotVersion = ds.SchemaVersion
+					}
+				}
 			}
 		}
 	}
@@ -312,7 +322,8 @@ func (h *Handler) UpdateDocumentStatus(c *gin.Context) {
 		return
 	}
 	switch body.Status {
-	case models.DocDraft, models.DocPending, models.DocApproved:
+	case models.DocDraft, models.DocPending, models.DocApproved,
+		models.DocAwaitingSignature, models.DocSigned:
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid status"})
 		return
@@ -390,6 +401,31 @@ func (h *Handler) DownloadDocument(c *gin.Context) {
 
 	c.Header("Content-Disposition", `attachment; filename="`+filename+`"`)
 	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", data)
+}
+
+// DeleteDocument godoc
+// @Summary      ลบเอกสาร
+// @Tags         staff
+// @Security     BearerAuth
+// @Param        id  path  int  true  "Document ID"
+// @Success      204
+// @Failure      404  {object}  handlers.ErrorResponse
+// @Router       /staff/documents/{id} [delete]
+func (h *Handler) DeleteDocument(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	if _, ok := database.StaffDocumentByID(uint(id)); !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+		return
+	}
+	if !database.DeleteStaffDocument(uint(id)) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete document"})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 // RegVerifyRosterEntry godoc

@@ -5,6 +5,7 @@ import type {
   ScheduleGroup, GroupMonthPlanEntry, CalendarDate, WorkOccurrence,
   OccurrenceStatus, GroupWeekDaySlot, UpdateScheduleGroupPayload, PatchOccurrencePayload,
 } from '../../../types'
+import { formatThaiDate, thaiDayShort as thaiDayShortFn, toDateOnly } from '../../../utils/thaiDate'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -17,10 +18,7 @@ export const MONTH_NAMES = [
   'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
   'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
 ]
-const MONTHS_SHORT = [
-  'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
-  'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.',
-]
+
 const OCC_LABEL: Record<OccurrenceStatus, string> = {
   scheduled: 'กำหนด', cancelled_holiday: 'หยุด', rescheduled: 'เลื่อน',
   completed: 'เสร็จ', absent: 'ขาด', cancelled_other: 'ยกเลิก',
@@ -54,14 +52,11 @@ function computeSlotHours(s: string, e: string): number | null {
   return mins > 0 ? mins / 60 : null
 }
 
-export function thaiFmt(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00')
-  return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear() + 543}`
-}
+// Re-export so WorkScheduleModal can import from one place.
+export const thaiFmt = formatThaiDate
 
 function thaiDayShort(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00')
-  return ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'][d.getDay()]
+  return thaiDayShortFn(dateStr)
 }
 
 const thCss: React.CSSProperties = {
@@ -142,15 +137,19 @@ export function MonthlyWorkPlanCard({ caseId, group, entry, calDates, isReadOnly
     onSuccess: inv,
   })
 
+  // Normalise all dates to YYYY-MM-DD so comparisons work regardless of whether
+  // the API returns date-only or RFC3339.
   const holidayDates = new Set(
     calDates
       .filter(cd => {
-        const d = new Date(cd.date + 'T00:00:00')
-        return d.getFullYear() === sgm.year && (d.getMonth() + 1) === sgm.month && cd.affects_work
+        const dateOnly = toDateOnly(cd.date)
+        if (!dateOnly) return false
+        const [y, m] = dateOnly.split('-').map(Number)
+        return y === sgm.year && m === sgm.month && cd.affects_work
       })
-      .map(cd => cd.date),
+      .map(cd => toDateOnly(cd.date)!),
   )
-  const holidaysThisMonth = calDates.filter(cd => holidayDates.has(cd.date))
+  const holidaysThisMonth = calDates.filter(cd => holidayDates.has(toDateOnly(cd.date)!))
 
   function startEditOcc(occ: WorkOccurrence) {
     setEditOccId(occ.id)
@@ -175,7 +174,9 @@ export function MonthlyWorkPlanCard({ caseId, group, entry, calDates, isReadOnly
     })
   }
 
-  const sorted = [...occurrences].sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date))
+  const sorted = [...occurrences].sort((a, b) =>
+    (toDateOnly(a.scheduled_date) ?? '').localeCompare(toDateOnly(b.scheduled_date) ?? ''),
+  )
 
   return (
     <div className="card">
@@ -357,7 +358,7 @@ export function MonthlyWorkPlanCard({ caseId, group, entry, calDates, isReadOnly
                 </thead>
                 <tbody>
                   {sorted.map((occ, i) => {
-                    const isHol = holidayDates.has(occ.scheduled_date)
+                    const isHol = holidayDates.has(toDateOnly(occ.scheduled_date) ?? '')
                     const isEditing = editOccId === occ.id
                     const isRs = rsOccId === occ.id
                     const dimmed = occ.status === 'cancelled_holiday' || occ.status === 'cancelled_other'

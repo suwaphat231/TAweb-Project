@@ -5,27 +5,52 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 )
 
 // WorkDayEntry holds one weekly recurring work slot for rendering into the
 // "วันปฏิบัติงานในแต่ละสัปดาห์" table rows of the hiring notice.
 type WorkDayEntry struct {
-	Day       string // e.g. "วันพุธ"
-	TimeStart string // e.g. "10:00"
-	TimeEnd   string // e.g. "12:00"
+	Day             string  // e.g. "วันพุธ"
+	TimeStart       string  // e.g. "10:00"
+	TimeEnd         string  // e.g. "12:00"
+	HoursPerSession float64 // e.g. 3.5 — fills "รวมวันละ" column
+}
+
+// MonthPlanEntry holds working day data for one semester month.
+type MonthPlanEntry struct {
+	MonthTH  string // Thai month name e.g. "กรกฎาคม"
+	BeYear   int    // Buddhist Era year e.g. 2568
+	Count    int    // Number of valid sessions this month
+	DateNums []int  // Day-of-month numbers e.g. [2, 9, 16, 23]
+}
+
+// WorkDateItem holds one individual scheduled work date for appending to the
+// hiring notice as a supplementary date list after the main form.
+type WorkDateItem struct {
+	Date      string // Thai formatted, e.g. "1 ตุลาคม 2569"
+	TimeStart string
+	TimeEnd   string
+	IsHoliday bool
 }
 
 // LabBoyHiringNoticeInput holds all data needed to render the hiring intent form.
 type LabBoyHiringNoticeInput struct {
-	FormDate       string // e.g. "13 กันยายน 2569"
-	CourseCode     string
-	CourseTitle    string
-	InstructorName string
-	Semester       int    // 1=ต้น, 2=ปลาย, 3=ฤดูร้อน
-	AcademicYear   string // BE year e.g. "2568"
-	Students       []HiringNoticeStudent
-	WorkSchedule   []WorkDayEntry // up to 3 weekly slots
+	FormDate        string // e.g. "13 กันยายน 2569"
+	CourseCode      string
+	CourseTitle     string
+	InstructorName  string
+	Semester        int    // 1=ต้น, 2=ปลาย, 3=ฤดูร้อน
+	AcademicYear    string // BE year e.g. "2568"
+	Students        []HiringNoticeStudent
+	WorkSchedule    []WorkDayEntry // up to 3 weekly slots
+	WorkDates       []WorkDateItem // individual scheduled dates (appended as supplementary section)
+	LabBoyCount     int            // fills "จำนวน ___ คน" header field
+	MonthlyPlan     []MonthPlanEntry
+	TotalSessions   int
+	HoursPerSession float64 // hours per session for the summary formula
+	RateBaht        float64 // baht per hour for the summary formula
 }
 
 // HiringNoticeStudent represents one accepted student in the form.
@@ -73,6 +98,11 @@ func RenderLabBoyHiringNotice(in LabBoyHiringNoticeInput) ([]byte, error) {
 	docXML = prepareHiringNoticeTemplate(docXML)
 	// Fill the 3 work-day rows directly (no token needed — values are ready).
 	docXML = injectWorkSchedule(docXML, in.WorkSchedule)
+	// Fill monthly plan table and summary formula row.
+	docXML = injectMonthlyPlan(docXML, in.MonthlyPlan)
+	if in.TotalSessions > 0 {
+		docXML = injectSummaryLine(docXML, in.TotalSessions, in.LabBoyCount, in.HoursPerSession, in.RateBaht)
+	}
 
 	checkChar := func(selected bool) string {
 		if selected {
@@ -92,6 +122,7 @@ func RenderLabBoyHiringNotice(in LabBoyHiringNoticeInput) ([]byte, error) {
 		"{{SEMESTER_3_BOX}}":  checkChar(in.Semester == 3),
 		"{{TYPE_TA_BOX}}":     checkChar(false),
 		"{{TYPE_LABBOY_BOX}}": checkChar(true),
+		"{{LAB_BOY_COUNT}}":   fmt.Sprintf("%d", in.LabBoyCount),
 	}
 
 	rows := make([]map[string]string, 0, len(in.Students))
@@ -111,6 +142,10 @@ func RenderLabBoyHiringNotice(in LabBoyHiringNoticeInput) ([]byte, error) {
 
 	for token, val := range scalars {
 		docXML = strings.ReplaceAll(docXML, token, escapeXML(val))
+	}
+
+	if len(in.WorkDates) > 0 {
+		docXML = appendWorkDatesSection(docXML, in.WorkDates)
 	}
 
 	var out bytes.Buffer
@@ -226,6 +261,9 @@ func prepareHiringNoticeTemplate(docXML string) string {
 		nameCellBase+run("{{STUDENT_NAME}}")+`</w:p>`,
 		1)
 
+	// 8. Lab boy count — inline into "จำนวน" run (first occurrence = header "จำนวน ___ คน" field).
+	docXML = strings.Replace(docXML, `<w:t>จำนวน</w:t>`, `<w:t xml:space="preserve">จำนวน {{LAB_BOY_COUNT}}</w:t>`, 1)
+
 	// Delete rows 2-10 in reverse order so index positions remain valid.
 	for n := 10; n >= 2; n-- {
 		target := fmt.Sprintf("<w:t>%d.</w:t>", n)
@@ -267,8 +305,181 @@ func injectWorkSchedule(docXML string, schedule []WorkDayEntry) string {
 		if entry.TimeEnd != "" {
 			docXML = injectFirstTabCell(docXML, "1068", escapeXML(entry.TimeEnd))
 		}
+		if entry.HoursPerSession > 0 {
+			docXML = injectFirstTabCell(docXML, "936", fmt.Sprintf("%.1f", entry.HoursPerSession))
+		}
 	}
 	return docXML
+}
+
+// appendWorkDatesSection appends a page break followed by a supplementary
+// "วันที่ปฏิบัติงานทั้งหมด" table to the document XML, injected before </w:body>.
+// This keeps the original government form intact while adding the date list.
+func appendWorkDatesSection(docXML string, dates []WorkDateItem) string {
+	sarabunRPr := `<w:rFonts w:ascii="TH Sarabun New" w:hAnsi="TH Sarabun New" w:cs="TH Sarabun New"/>` +
+		`<w:sz w:val="28"/><w:szCs w:val="28"/>`
+
+	run := func(text string, bold bool) string {
+		bTag := ""
+		if bold {
+			bTag = `<w:b/><w:bCs/>`
+		}
+		return `<w:r><w:rPr>` + sarabunRPr + bTag + `</w:rPr>` +
+			`<w:t xml:space="preserve">` + escapeXML(text) + `</w:t></w:r>`
+	}
+
+	para := func(text string, bold bool, center bool) string {
+		jc := ""
+		if center {
+			jc = `<w:jc w:val="center"/>`
+		}
+		return `<w:p><w:pPr>` + jc + `<w:spacing w:after="60"/>` +
+			`<w:rPr>` + sarabunRPr + `</w:rPr></w:pPr>` +
+			run(text, bold) + `</w:p>`
+	}
+
+	borders := `<w:tcBorders>` +
+		`<w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/>` +
+		`<w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/>` +
+		`<w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/>` +
+		`<w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/>` +
+		`</w:tcBorders>`
+
+	headerCell := func(text string) string {
+		return `<w:tc><w:tcPr>` +
+			`<w:shd w:val="clear" w:color="auto" w:fill="E7E6E6"/>` +
+			borders +
+			`</w:tcPr><w:p><w:pPr><w:jc w:val="center"/>` +
+			`<w:rPr>` + sarabunRPr + `<w:b/><w:bCs/></w:rPr></w:pPr>` +
+			run(text, true) + `</w:p></w:tc>`
+	}
+
+	dataCell := func(text string, center bool) string {
+		jc := ""
+		if center {
+			jc = `<w:jc w:val="center"/>`
+		}
+		return `<w:tc><w:tcPr>` + borders + `</w:tcPr>` +
+			`<w:p><w:pPr>` + jc + `<w:rPr>` + sarabunRPr + `</w:rPr></w:pPr>` +
+			run(text, false) + `</w:p></w:tc>`
+	}
+
+	payable := 0
+	for _, d := range dates {
+		if !d.IsHoliday {
+			payable++
+		}
+	}
+
+	var sb strings.Builder
+
+	sb.WriteString(`<w:p><w:r><w:br w:type="page"/></w:r></w:p>`)
+	sb.WriteString(para(fmt.Sprintf("วันที่ปฏิบัติงานทั้งหมด (นับได้ %d วัน)", payable), true, true))
+	sb.WriteString(para("", false, false))
+
+	tblBorders := `<w:tblBorders>` +
+		`<w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/>` +
+		`<w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/>` +
+		`<w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/>` +
+		`<w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/>` +
+		`<w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/>` +
+		`<w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/>` +
+		`</w:tblBorders>`
+
+	sb.WriteString(`<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>` + tblBorders + `</w:tblPr>`)
+
+	sb.WriteString(`<w:tr>` +
+		headerCell("ลำดับ") +
+		headerCell("วัน/วันที่") +
+		headerCell("เวลาเริ่ม") +
+		headerCell("เวลาสิ้นสุด") +
+		headerCell("หมายเหตุ") +
+		`</w:tr>`)
+
+	for i, d := range dates {
+		note := ""
+		if d.IsHoliday {
+			note = "วันหยุด"
+		}
+		sb.WriteString(`<w:tr>` +
+			dataCell(fmt.Sprintf("%d", i+1), true) +
+			dataCell(d.Date, false) +
+			dataCell(d.TimeStart, true) +
+			dataCell(d.TimeEnd, true) +
+			dataCell(note, true) +
+			`</w:tr>`)
+	}
+	sb.WriteString(`</w:tbl>`)
+
+	return strings.Replace(docXML, "</w:body>", sb.String()+"</w:body>", 1)
+}
+
+// injectMonthlyPlan fills the "จำนวนครั้งปฏิบัติงานในแต่ละเดือน" table rows with
+// per-month session counts and date lists. Up to 6 rows are filled in order.
+func injectMonthlyPlan(docXML string, plan []MonthPlanEntry) string {
+	anchorIdx := strings.Index(docXML, "ในแต่ละเดือน")
+	if anchorIdx < 0 {
+		return docXML
+	}
+	tblRel := strings.Index(docXML[anchorIdx:], "<w:tbl>")
+	if tblRel < 0 {
+		return docXML
+	}
+	absStart := anchorIdx + tblRel
+	tblEndRel := strings.Index(docXML[absStart:], "</w:tbl>")
+	if tblEndRel < 0 {
+		return docXML
+	}
+	absEnd := absStart + tblEndRel + len("</w:tbl>")
+	tbl := docXML[absStart:absEnd]
+
+	for i, entry := range plan {
+		if i >= 6 {
+			break
+		}
+		tbl = injectFirstTabCell(tbl, "990", escapeXML(entry.MonthTH))
+		tbl = injectFirstTabCell(tbl, "900", strconv.Itoa(entry.BeYear))
+		tbl = injectFirstTabCell(tbl, "630", strconv.Itoa(entry.Count))
+		tbl = injectFirstTabCell(tbl, "2977", escapeXML(joinInts(entry.DateNums, ", ")))
+	}
+	return docXML[:absStart] + tbl + docXML[absEnd:]
+}
+
+// injectSummaryLine fills the "สรุปจำนวนปฏิบัติงานรวมทั้งหมด" formula row:
+// ทั้งหมด [sessions] ครั้ง x [labBoyCount] คน x [hours] ชั่วโมง x [rate] บาท รวมเป็นเงิน [total] บาท
+func injectSummaryLine(docXML string, totalSessions, labBoyCount int, hoursPerSession, rateBaht float64) string {
+	anchorIdx := strings.Index(docXML, "สรุปจำนวนปฏิบัติงาน")
+	if anchorIdx < 0 {
+		return docXML
+	}
+	tblRel := strings.Index(docXML[anchorIdx:], "<w:tbl>")
+	if tblRel < 0 {
+		return docXML
+	}
+	absStart := anchorIdx + tblRel
+	tblEndRel := strings.Index(docXML[absStart:], "</w:tbl>")
+	if tblEndRel < 0 {
+		return docXML
+	}
+	absEnd := absStart + tblEndRel + len("</w:tbl>")
+	tbl := docXML[absStart:absEnd]
+
+	totalPay := float64(totalSessions) * float64(labBoyCount) * hoursPerSession * rateBaht
+	tbl = injectFirstTabCell(tbl, "630", strconv.Itoa(totalSessions))
+	tbl = injectFirstTabCell(tbl, "900", strconv.Itoa(labBoyCount))
+	tbl = injectFirstTabCell(tbl, "810", fmt.Sprintf("%.1f", hoursPerSession))
+	tbl = injectFirstTabCell(tbl, "860", formatThousands(rateBaht))
+	tbl = injectFirstTabCell(tbl, "1260", formatThousands(totalPay))
+	return docXML[:absStart] + tbl + docXML[absEnd:]
+}
+
+// joinInts concatenates a slice of ints with sep.
+func joinInts(nums []int, sep string) string {
+	parts := make([]string, len(nums))
+	for i, n := range nums {
+		parts[i] = strconv.Itoa(n)
+	}
+	return strings.Join(parts, sep)
 }
 
 // injectFirstTabCell finds the first table cell with the given tcW width

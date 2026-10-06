@@ -289,6 +289,8 @@ export const staffApi = {
     api.get<StaffDocument[]>('/staff/documents', { params }).then((r) => r.data),
   createDocument: (data: CreateStaffDocumentPayload) =>
     api.post<StaffDocument>('/staff/documents', data).then((r) => r.data),
+  deleteDocument: (id: number) =>
+    api.delete(`/staff/documents/${id}`).then((r) => r.data),
   updateDocumentStatus: (id: number, status: string) =>
     api.put<StaffDocument>(`/staff/documents/${id}/status`, { status }).then((r) => r.data),
   updateDocumentSchedule: (id: number, data: { work_schedule?: WorkDaySlot[]; sessions_per_month?: number }) =>
@@ -342,6 +344,8 @@ export const staffApi = {
     api.get<MonthOccurrenceSummary>(`/staff/cases/${caseId}/schedule-groups/${groupId}/months/${year}/${month}/summary`).then((r) => r.data),
 
   // Calendar dates
+  listCalendarDatesBySemester: (semester: string, academicYear: number) =>
+    api.get<CalendarDate[]>('/staff/calendar-dates', { params: { semester, academic_year: academicYear } }).then((r) => r.data),
   listCalendarDates: (caseId: number) =>
     api.get<CalendarDate[]>(`/staff/cases/${caseId}/calendar-dates`).then((r) => r.data),
   createCalendarDate: (data: CreateCalendarDatePayload) =>

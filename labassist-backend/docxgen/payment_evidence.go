@@ -23,14 +23,14 @@ func renderPaymentEvidence(doc models.StaffDocument, course models.Course) ([]by
 		row := map[string]string{
 			"{{STUDENT_NAME}}": s.StudentName,
 			"{{STUDENT_CODE}}": s.StudentCode,
-			"{{RATE}}":         formatInt(doc.Rate),
-			"{{ROW_HOURS}}":    formatInt(s.Hours),
+			"{{RATE}}":         formatDecimal(doc.Rate),
+			"{{ROW_HOURS}}":    formatDecimal(s.Hours),
 			"{{ROW_AMOUNT}}":   formatThousands(s.Amount),
 		}
 		for day := 1; day <= 31; day++ {
 			key := fmt.Sprintf("{{DAY_%d}}", day)
 			if daySet[day] {
-				row[key] = formatInt(doc.HoursPerSession)
+				row[key] = formatDecimal(doc.HoursPerSession)
 			} else {
 				row[key] = ""
 			}
@@ -44,7 +44,7 @@ func renderPaymentEvidence(doc models.StaffDocument, course models.Course) ([]by
 		"{{MONTH_THAI}}":        thaiMonthName(period.Month),
 		"{{YEAR_BE}}":           fmt.Sprintf("%d", period.Year),
 		"{{TOTAL_AMOUNT_TEXT}}": BahtText(totalAmount),
-		"{{TOTAL_HOURS}}":       formatInt(totalHours),
+		"{{TOTAL_HOURS}}":       formatDecimal(totalHours),
 		"{{TOTAL_AMOUNT}}":      formatThousands(totalAmount),
 	}
 

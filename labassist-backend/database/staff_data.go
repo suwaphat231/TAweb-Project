@@ -125,6 +125,12 @@ func StaffDocumentByID(id uint) (models.StaffDocument, bool) {
 	return d, true
 }
 
+// DeleteStaffDocument removes a staff document by ID. Returns false if not found.
+func DeleteStaffDocument(id uint) bool {
+	result := DB.Delete(&models.StaffDocument{}, id)
+	return result.Error == nil && result.RowsAffected > 0
+}
+
 // ListStaffDocuments returns documents filtered by type and/or status, newest first.
 func ListStaffDocuments(typeFilter, statusFilter, search string) []models.StaffDocument {
 	query := DB.Order("created_at DESC")

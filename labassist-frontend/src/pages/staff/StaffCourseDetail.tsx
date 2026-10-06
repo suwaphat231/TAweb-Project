@@ -5,7 +5,33 @@ import { staffApi, applicationsAPI, coursesAPI } from '../../services/api'
 import { buildCourseOffering, buildWorkflowItems } from './staffCourseUtils'
 import { DocumentWorkflow } from './components/DocumentWorkflow'
 import { SelectedStudentsPanel } from './components/SelectedStudentsPanel'
-type Tab = 'documents' | 'info' | 'students' | 'history'
+import type { CalendarDate, CalendarDateType } from '../../types'
+type Tab = 'documents' | 'info' | 'students' | 'history' | 'holidays'
+
+const DATE_TYPE_LABELS: Record<CalendarDateType, string> = {
+  public_holiday:     'วันหยุดราชการ',
+  university_holiday: 'วันหยุดมหาวิทยาลัย',
+  no_class:           'งดการเรียนการสอน',
+  case_exception:     'ข้อยกเว้นรายวิชา',
+  makeup:             'ชดเชย',
+}
+
+const DATE_TYPE_COLOR: Record<CalendarDateType, string> = {
+  public_holiday:     '#DC2626',
+  university_holiday: '#7C3AED',
+  no_class:           '#D97706',
+  case_exception:     '#2563EB',
+  makeup:             '#059669',
+}
+
+const DAY_TH = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.']
+const MONTH_TH = ['', 'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม']
+
+function formatDateTH(iso: string): string {
+  const d = new Date(iso.slice(0, 10) + 'T00:00:00')
+  return `${d.getDate()} ${MONTH_TH[d.getMonth() + 1]} ${d.getFullYear() + 543} (${DAY_TH[d.getDay()]})`
+}
 
 export default function StaffCourseDetail() {
   const { year, semester, code, section } = useParams<{
@@ -73,6 +99,13 @@ export default function StaffCourseDetail() {
     queryFn: () => staffApi.listCases(),
     enabled: !!review,
   })
+
+  // Load calendar dates (holidays) for this semester from settings
+  const { data: calDates = [], isLoading: calDatesLoading } = useQuery<CalendarDate[]>({
+    queryKey: ['semester-cal-dates', review?.semester, review?.academic_year],
+    queryFn: () => staffApi.listCalendarDatesBySemester(review!.semester, review!.academic_year),
+    enabled: !!review,
+  })
   const staffCase = useMemo(() =>
     allCases.find((sc) => review?.posting_id ? sc.posting_id === review.posting_id : sc.course_id === review?.course_id),
     [allCases, review],
@@ -125,8 +158,12 @@ export default function StaffCourseDetail() {
     { id: 'documents', label: 'เอกสารต้นภาคเรียน' },
     { id: 'info',      label: 'ข้อมูลรายวิชา' },
     { id: 'students',  label: 'รายชื่อ Lab Boy' },
+    { id: 'holidays',  label: 'วันที่ไม่ต้องปฏิบัติงาน' },
     { id: 'history',   label: 'ประวัติการดำเนินงาน' },
   ]
+
+  const workingDayHolidays = calDates.filter((d) => d.affects_work)
+  const nonWorkingDayHolidays = calDates.filter((d) => !d.affects_work)
 
   const accepted = applicants.filter((a) => a.status === 'accepted')
 
@@ -355,6 +392,64 @@ export default function StaffCourseDetail() {
           </div>
         )}
 
+        {activeTab === 'holidays' && (
+          <div style={{ padding: '24px' }}>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)', marginBottom: 4 }}>
+                วันที่ไม่ต้องปฏิบัติงาน
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>
+                วันหยุดและวันงดการสอนในภาคเรียน {offering.semester}/{offering.academicYear} (ดึงจากการตั้งค่า)
+              </div>
+            </div>
+
+            {calDatesLoading ? (
+              <div style={{ height: 80, background: 'var(--line-soft)', borderRadius: 8 }} />
+            ) : calDates.length === 0 ? (
+              <div style={{
+                textAlign: 'center', padding: '40px 0',
+                fontSize: 13, color: 'var(--ink-400)', fontStyle: 'italic',
+              }}>
+                ยังไม่มีการตั้งค่าวันหยุดสำหรับภาคเรียนนี้
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                {workingDayHolidays.length > 0 && (
+                  <div>
+                    <div style={{
+                      fontSize: 11, fontWeight: 700, color: 'var(--ink-400)',
+                      textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10,
+                    }}>
+                      วันที่ไม่นับเป็นวันทำงาน ({workingDayHolidays.length} วัน)
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {workingDayHolidays.map((cd) => (
+                        <CalendarDateRow key={cd.id} cd={cd} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {nonWorkingDayHolidays.length > 0 && (
+                  <div>
+                    <div style={{
+                      fontSize: 11, fontWeight: 700, color: 'var(--ink-400)',
+                      textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10,
+                    }}>
+                      วันหยุด / วันพิเศษอื่นๆ ({nonWorkingDayHolidays.length} วัน)
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {nonWorkingDayHolidays.map((cd) => (
+                        <CalendarDateRow key={cd.id} cd={cd} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {activeTab === 'history' && (
           <div style={{ padding: '24px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -381,6 +476,38 @@ export default function StaffCourseDetail() {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function CalendarDateRow({ cd }: { cd: CalendarDate }) {
+  const color = DATE_TYPE_COLOR[cd.date_type] ?? 'var(--ink-400)'
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 12,
+      padding: '8px 12px', background: '#fff',
+      border: '1px solid var(--line)', borderRadius: 8,
+    }}>
+      <div style={{
+        width: 10, height: 10, borderRadius: '50%',
+        background: color, flexShrink: 0,
+      }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-900)' }}>
+          {cd.name}
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 1 }}>
+          {formatDateTH(cd.date)}
+        </div>
+      </div>
+      <span style={{
+        fontSize: 10, fontWeight: 600, padding: '2px 8px',
+        borderRadius: 'var(--radius-pill)',
+        background: color + '20', color,
+        whiteSpace: 'nowrap', flexShrink: 0,
+      }}>
+        {DATE_TYPE_LABELS[cd.date_type]}
+      </span>
     </div>
   )
 }

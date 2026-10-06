@@ -35,7 +35,8 @@ type CalendarDate struct {
 	StaffCaseID *uint `gorm:"index" json:"staff_case_id,omitempty"`
 
 	// AffectsWork = true means this date cancels a scheduled work occurrence.
-	AffectsWork bool `gorm:"not null;default:true" json:"affects_work"`
+	// Pointer so GORM can distinguish explicit false from zero-value (default true).
+	AffectsWork *bool `gorm:"not null;default:true" json:"affects_work"`
 
 	// OriginalDateID links a makeup CalendarDate back to the holiday it compensates for.
 	OriginalDateID *uint `gorm:"index" json:"original_date_id,omitempty"`

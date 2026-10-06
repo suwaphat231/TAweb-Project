@@ -67,7 +67,7 @@ func (h *Handler) GenerateOccurrences(c *gin.Context) {
 	calDates := database.ListCalendarDates(uint(id), sc.Semester, sc.AcademicYear, &startDate, &endDate)
 	cancelledDates := make(map[string]uint)
 	for _, cd := range calDates {
-		if cd.AffectsWork {
+		if cd.AffectsWork != nil && *cd.AffectsWork {
 			cancelledDates[cd.Date.Format("2006-01-02")] = cd.ID
 		}
 	}

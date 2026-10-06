@@ -30,6 +30,26 @@ type WorkDaySlot struct {
 	TimeEnd   string `json:"time_end"`
 }
 
+// OccurrenceSnapshot is a frozen record of one WorkOccurrence captured at
+// document creation time so the document can be re-rendered identically later.
+type OccurrenceSnapshot struct {
+	Date      string  `json:"date"`       // YYYY-MM-DD (CE)
+	StartTime string  `json:"start_time"` // HH:MM
+	EndTime   string  `json:"end_time"`   // HH:MM
+	Hours     float64 `json:"hours"`      // derived from start/end
+	Status    string  `json:"status"`     // scheduled | completed | cancelled_holiday | …
+}
+
+// DocumentDataSnapshot is the complete frozen dataset used to render a document,
+// stored in StaffDocument.DataSnapshot as JSON at creation time.
+type DocumentDataSnapshot struct {
+	SchemaVersion   int                  `json:"schema_version"`
+	Occurrences     []OccurrenceSnapshot `json:"occurrences,omitempty"`
+	WorkSchedule    []WorkDaySlot        `json:"work_schedule,omitempty"`
+	RatePerHourBaht float64              `json:"rate_per_hour_baht,omitempty"`
+	LabBoyCount     int                  `json:"lab_boy_count,omitempty"`
+}
+
 // RosterEntry is a per-student line item, computed and frozen onto a
 // StaffDocument at creation time from that moment's accepted-applicant list —
 // later status changes on the underlying Application never retroactively

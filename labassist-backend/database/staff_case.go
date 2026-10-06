@@ -308,6 +308,65 @@ func DeleteCalendarDate(id uint) bool {
 	return result.Error == nil && result.RowsAffected > 0
 }
 
+// CancelOccurrencesForHoliday sets status=cancelled_holiday on all 'scheduled'
+// occurrences that fall on the holiday date, scoped by the holiday's scope field.
+func CancelOccurrencesForHoliday(cd models.CalendarDate) error {
+	if cd.AffectsWork == nil || !*cd.AffectsWork {
+		return nil
+	}
+
+	var caseIDs []uint
+	statusFilter := []string{"open", "plan_locked"}
+
+	switch cd.Scope {
+	case models.DateScopeGlobal:
+		DB.Model(&models.StaffCase{}).Where("status IN ?", statusFilter).Pluck("id", &caseIDs)
+	case models.DateScopeSemester:
+		DB.Model(&models.StaffCase{}).
+			Where("semester = ? AND academic_year = ? AND status IN ?", cd.Semester, cd.AcademicYear, statusFilter).
+			Pluck("id", &caseIDs)
+	case models.DateScopeCase:
+		if cd.StaffCaseID != nil {
+			caseIDs = []uint{*cd.StaffCaseID}
+		}
+	}
+
+	if len(caseIDs) == 0 {
+		return nil
+	}
+
+	return DB.Model(&models.WorkOccurrence{}).
+		Where("staff_case_id IN ? AND scheduled_date = ? AND status = ?",
+			caseIDs, cd.Date.Format("2006-01-02"), "scheduled").
+		Updates(map[string]interface{}{
+			"status":           "cancelled_holiday",
+			"calendar_date_id": cd.ID,
+		}).Error
+}
+
+// RestoreOccurrencesForHoliday resets occurrences that were cancelled by this
+// holiday back to 'scheduled', used when the holiday is deleted.
+func RestoreOccurrencesForHoliday(holidayID uint) error {
+	return DB.Model(&models.WorkOccurrence{}).
+		Where("calendar_date_id = ? AND status = ?", holidayID, "cancelled_holiday").
+		Updates(map[string]interface{}{
+			"status":           "scheduled",
+			"calendar_date_id": nil,
+		}).Error
+}
+
+// ListCalendarDatesBySemester returns global + semester-scoped dates for a given semester.
+// Used by the settings page to manage semester-level holidays independently of any case.
+func ListCalendarDatesBySemester(semester string, academicYear int) []models.CalendarDate {
+	var out []models.CalendarDate
+	DB.Where(
+		"scope = ? OR (scope = ? AND semester = ? AND academic_year = ?)",
+		models.DateScopeGlobal,
+		models.DateScopeSemester, semester, academicYear,
+	).Order("date ASC").Find(&out)
+	return out
+}
+
 // --- ScheduleGroupAssignment ---
 
 // AssignStudentsToGroup replaces all student assignments for a schedule group.
@@ -1000,6 +1059,71 @@ func SetGroupMonthDates(
 			Update("is_manual", true).Error
 	})
 	return result, err
+}
+
+// occurrenceHours returns the work duration in hours for a single occurrence.
+func occurrenceHours(startTime, endTime string) float64 {
+	var sh, sm, eh, em int
+	fmt.Sscanf(startTime, "%d:%d", &sh, &sm)
+	fmt.Sscanf(endTime, "%d:%d", &eh, &em)
+	mins := (eh*60 + em) - (sh*60 + sm)
+	if mins <= 0 {
+		return 0
+	}
+	return float64(mins) / 60.0
+}
+
+// BuildDocumentSnapshot builds a frozen DocumentDataSnapshot for a StaffCase document.
+// It captures every WorkOccurrence and the current weekly schedule so the document
+// can be reproduced identically even after source data changes.
+func BuildDocumentSnapshot(caseID uint, labBoyCount int) (models.DocumentDataSnapshot, error) {
+	sc, ok := StaffCaseByID(caseID)
+	if !ok {
+		return models.DocumentDataSnapshot{}, errors.New("staff case not found")
+	}
+
+	snap := BuildHiringNoticeSnapshot(caseID)
+	occs := WorkOccurrencesForCase(caseID)
+
+	ds := models.DocumentDataSnapshot{
+		SchemaVersion:   1,
+		WorkSchedule:    snap.WorkSchedule,
+		RatePerHourBaht: float64(sc.RatePerHour) / 100.0,
+		LabBoyCount:     labBoyCount,
+	}
+	for _, o := range occs {
+		ds.Occurrences = append(ds.Occurrences, models.OccurrenceSnapshot{
+			Date:      o.ScheduledDate.Format("2006-01-02"),
+			StartTime: o.StartTime,
+			EndTime:   o.EndTime,
+			Hours:     occurrenceHours(o.StartTime, o.EndTime),
+			Status:    string(o.Status),
+		})
+	}
+	return ds, nil
+}
+
+// BuildMonthlyDocumentSnapshot builds a DocumentDataSnapshot from a pre-fetched
+// occurrence slice already filtered to one month. Used by GenerateMonthlyDocument
+// so the snapshot covers only that period's occurrences, not the full case history.
+func BuildMonthlyDocumentSnapshot(occs []models.WorkOccurrence, caseID uint, rateBaht float64, labBoyCount int) models.DocumentDataSnapshot {
+	snap := BuildHiringNoticeSnapshot(caseID)
+	ds := models.DocumentDataSnapshot{
+		SchemaVersion:   1,
+		WorkSchedule:    snap.WorkSchedule,
+		RatePerHourBaht: rateBaht,
+		LabBoyCount:     labBoyCount,
+	}
+	for _, o := range occs {
+		ds.Occurrences = append(ds.Occurrences, models.OccurrenceSnapshot{
+			Date:      o.ScheduledDate.Format("2006-01-02"),
+			StartTime: o.StartTime,
+			EndTime:   o.EndTime,
+			Hours:     occurrenceHours(o.StartTime, o.EndTime),
+			Status:    string(o.Status),
+		})
+	}
+	return ds
 }
 
 // weekDayThai maps short day codes to Thai day names for WorkDaySlot.Day.

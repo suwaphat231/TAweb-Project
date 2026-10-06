@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { DocumentWorkflowItem, DocType, DocStepStatus, StaffCaseResponse } from '../../../types'
+import { useState, useMemo } from 'react'
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
+import type { DocumentWorkflowItem, DocType, DocStepStatus, StaffCaseResponse, GroupMonthPlan } from '../../../types'
 import { staffApi } from '../../../services/api'
 import { useToast } from '../../../hooks/useToast'
 import { triggerBrowserDownload } from '../../../utils/download'
@@ -18,15 +18,6 @@ const STEP_STATUS_CONFIG: Record<DocStepStatus, { label: string; color: string; 
   completed:           { label: 'เสร็จสิ้น',         color: 'var(--green)',   bg: 'var(--green-bg)' },
 }
 
-const MONTHS_SHORT = [
-  'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
-  'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.',
-]
-
-function fmtDate(s: string) {
-  const d = new Date(s + 'T00:00:00')
-  return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear() + 543}`
-}
 
 interface Props {
   items: DocumentWorkflowItem[]
@@ -53,9 +44,34 @@ export function DocumentWorkflow({
   const [previewStep, setPreviewStep] = useState<DocumentWorkflowItem | null>(null)
   const [downloadingId, setDownloadingId] = useState<number | null>(null)
   const [creatingStep, setCreatingStep] = useState<number | null>(null)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
   const [showScheduleModal, setShowScheduleModal] = useState(false)
 
   const planLocked = staffCase?.status === 'plan_locked' || staffCase?.status === 'done'
+  const [showWorkDates, setShowWorkDates] = useState(false)
+
+  const { data: monthlyPlan = [] } = useQuery<GroupMonthPlan[]>({
+    queryKey: ['monthly-plan', staffCase?.id],
+    queryFn: () => staffApi.getMonthlyPlan(staffCase!.id),
+    enabled: !!staffCase?.id,
+  })
+
+  const workDates = useMemo(() => {
+    const all: Array<{ date: string; startTime: string; endTime: string; status: string }> = []
+    for (const gp of monthlyPlan) {
+      for (const entry of gp.months) {
+        for (const occ of entry.occurrences) {
+          all.push({
+            date: occ.scheduled_date.slice(0, 10),
+            startTime: occ.start_time,
+            endTime: occ.end_time,
+            status: occ.status,
+          })
+        }
+      }
+    }
+    return all.sort((a, b) => a.date.localeCompare(b.date))
+  }, [monthlyPlan])
 
   const createMut = useMutation({
     mutationFn: ({ docType }: { docType: DocType; step: number }) =>
@@ -71,8 +87,9 @@ export function DocumentWorkflow({
       setCreatingStep(null)
       onDocumentCreated()
     },
-    onError: () => {
-      showToast('เกิดข้อผิดพลาด กรุณาลองใหม่', 'error')
+    onError: (err) => {
+      const message = (err as { response?: { data?: { error?: string } } }).response?.data?.error
+      showToast(message || 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error')
       setCreatingStep(null)
     },
   })
@@ -85,6 +102,21 @@ export function DocumentWorkflow({
       onDocumentCreated()
     },
     onError: () => showToast('เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'),
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: (docId: number) => staffApi.deleteDocument(docId),
+    onSuccess: (_data, docId) => {
+      qc.invalidateQueries({ queryKey: ['staff-documents'] })
+      showToast('ลบเอกสารเรียบร้อย', 'success')
+      setDeletingId(null)
+      if (deletingId === docId) setDeletingId(null)
+      onDocumentCreated()
+    },
+    onError: () => {
+      showToast('ลบเอกสารไม่สำเร็จ', 'error')
+      setDeletingId(null)
+    },
   })
 
   const signedMut = useMutation({
@@ -191,48 +223,6 @@ export function DocumentWorkflow({
                 </span>
               </div>
 
-              {/* Work schedule button + compact summary (hiring_notice step only) */}
-              {isHiringNotice && (
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <button
-                      onClick={() => setShowScheduleModal(true)}
-                      style={actionBtn(
-                        planLocked ? 'transparent' : 'var(--primary)',
-                        planLocked ? 'var(--primary)' : '#fff',
-                        planLocked ? '1.5px solid var(--primary)' : undefined,
-                      )}
-                      aria-label="กำหนดหรือแก้ไขตารางปฏิบัติงาน"
-                    >
-                      {staffCase ? 'แก้ไขตารางปฏิบัติงาน' : 'กำหนดตารางปฏิบัติงาน'}
-                    </button>
-                    {staffCase && !planLocked && (
-                      <span className="badge badge-amber">ฉบับร่าง</span>
-                    )}
-                    {planLocked && (
-                      <span className="badge badge-green">กำหนดแล้ว</span>
-                    )}
-                  </div>
-
-                  {/* Compact period summary */}
-                  {staffCase?.work_start_date && staffCase?.work_end_date && (
-                    <div style={{
-                      marginTop: 8, fontSize: 12, color: 'var(--ink-600)',
-                      padding: '6px 10px', background: 'var(--blue-bg)',
-                      borderRadius: 'var(--radius-input)', display: 'inline-block',
-                    }}>
-                      ช่วงปฏิบัติงาน: {fmtDate(staffCase.work_start_date)} – {fmtDate(staffCase.work_end_date)}
-                    </div>
-                  )}
-
-                  {/* Blocking hint */}
-                  {!planLocked && (
-                    <div style={{ marginTop: 6, fontSize: 11, color: 'var(--amber)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <span>⚠</span> ต้องยืนยันตารางปฏิบัติงานก่อนจึงจะสร้างเอกสารได้
-                    </div>
-                  )}
-                </div>
-              )}
 
               {/* Action buttons */}
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
@@ -242,6 +232,39 @@ export function DocumentWorkflow({
                   </button>
                 ) : (
                   <>
+                    {/* Schedule setup button — visible when this step needs plan to be locked */}
+                    {scheduleBlocked && item.status === 'waiting' && (
+                      <button
+                        onClick={() => setShowScheduleModal(true)}
+                        style={actionBtn('var(--primary)', '#fff')}
+                        aria-label="กำหนดตารางปฏิบัติงาน"
+                      >
+                        กำหนดตารางปฏิบัติงาน
+                      </button>
+                    )}
+
+                    {/* View/edit schedule */}
+                    {isHiringNotice && item.status !== 'not_reached' && (
+                      <button
+                        onClick={() => setShowScheduleModal(true)}
+                        style={actionBtn('transparent', 'var(--ink-600)', '1px solid var(--line)')}
+                        aria-label="ดูตารางปฏิบัติงาน"
+                      >
+                        ดูตารางปฏิบัติงาน
+                      </button>
+                    )}
+
+                    {/* Show individual work dates panel */}
+                    {isHiringNotice && item.status !== 'not_reached' && workDates.length > 0 && (
+                      <button
+                        onClick={() => setShowWorkDates((v) => !v)}
+                        style={actionBtn('transparent', 'var(--primary)', '1.5px solid var(--primary)')}
+                        aria-label="แสดงวันที่ปฏิบัติงาน"
+                      >
+                        {showWorkDates ? 'ซ่อนวันที่ปฏิบัติงาน' : `วันที่ปฏิบัติงาน (${workDates.filter(d => d.status === 'scheduled' || d.status === 'completed').length} วัน)`}
+                      </button>
+                    )}
+
                     {/* Create */}
                     {item.status === 'waiting' && (
                       <button
@@ -281,6 +304,22 @@ export function DocumentWorkflow({
                       </button>
                     )}
 
+                    {/* Delete document */}
+                    {item.documentId && (
+                      <button
+                        onClick={() => {
+                          if (!window.confirm('ลบเอกสารนี้ใช่ไหม?')) return
+                          setDeletingId(item.documentId!)
+                          deleteMut.mutate(item.documentId!)
+                        }}
+                        disabled={deletingId === item.documentId}
+                        style={actionBtn('transparent', 'var(--red, #ef4444)', '1px solid var(--red, #ef4444)')}
+                        aria-label={`ลบเอกสารขั้นตอนที่ ${item.step}`}
+                      >
+                        {deletingId === item.documentId ? 'กำลังลบ...' : 'ลบ'}
+                      </button>
+                    )}
+
                     {/* Mark awaiting signature */}
                     {(item.status === 'created' || item.status === 'approved') && item.documentId && (
                       <button
@@ -311,6 +350,11 @@ export function DocumentWorkflow({
                   </>
                 )}
               </div>
+
+              {/* Work dates panel */}
+              {isHiringNotice && showWorkDates && item.status !== 'not_reached' && workDates.length > 0 && (
+                <WorkDatesPanel dates={workDates} />
+              )}
             </div>
           </div>
         )
@@ -362,4 +406,104 @@ function actionBtn(bg: string, color: string, border?: string): React.CSSPropert
     background: bg, color, border: border ?? 'none',
     transition: 'opacity .15s',
   }
+}
+
+// ─── WorkDatesPanel ───────────────────────────────────────────────────────────
+
+const MONTH_TH = ['', 'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม']
+const DAY_TH = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.']
+
+function fmtDateTH(iso: string) {
+  const d = new Date(iso + 'T00:00:00')
+  return `${d.getDate()} ${MONTH_TH[d.getMonth() + 1]} ${d.getFullYear() + 543} (${DAY_TH[d.getDay()]})`
+}
+
+interface WorkDateEntry { date: string; startTime: string; endTime: string; status: string }
+
+function WorkDatesPanel({ dates }: { dates: WorkDateEntry[] }) {
+  // Group by year-month
+  const groups = useMemo(() => {
+    const map = new Map<string, WorkDateEntry[]>()
+    for (const d of dates) {
+      const key = d.date.slice(0, 7) // YYYY-MM
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(d)
+    }
+    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b))
+  }, [dates])
+
+  const payable = dates.filter((d) => d.status === 'scheduled' || d.status === 'completed').length
+  const holiday = dates.filter((d) => d.status === 'cancelled_holiday').length
+
+  return (
+    <div style={{
+      marginTop: 12,
+      border: '1.5px solid var(--primary-100)',
+      borderRadius: 'var(--radius-card)',
+      background: 'var(--primary-50)',
+      overflow: 'hidden',
+    }}>
+      {/* Header */}
+      <div style={{
+        padding: '8px 14px',
+        borderBottom: '1px solid var(--primary-100)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8,
+      }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--primary)' }}>
+          วันที่ปฏิบัติงานทั้งหมด
+        </span>
+        <div style={{ display: 'flex', gap: 10, fontSize: 11 }}>
+          <span style={{ color: 'var(--green)', fontWeight: 600 }}>✓ นับได้ {payable} วัน</span>
+          {holiday > 0 && <span style={{ color: 'var(--red)', fontWeight: 600 }}>✗ วันหยุด {holiday} วัน</span>}
+        </div>
+      </div>
+
+      {/* Month groups */}
+      <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {groups.map(([key, entries]) => {
+          const [y, m] = key.split('-').map(Number)
+          const monthLabel = `${MONTH_TH[m]} ${y + 543}`
+          return (
+            <div key={key}>
+              <div style={{
+                fontSize: 11, fontWeight: 700, color: 'var(--ink-500)',
+                textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6,
+              }}>
+                {monthLabel} ({entries.filter((e) => e.status === 'scheduled' || e.status === 'completed').length} วันทำงาน)
+              </div>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+                gap: 4,
+              }}>
+                {entries.map((e, i) => {
+                  const isHol = e.status === 'cancelled_holiday'
+                  return (
+                    <div key={i} style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '4px 8px', borderRadius: 6, fontSize: 12,
+                      background: isHol ? 'var(--red-bg)' : '#fff',
+                      border: `1px solid ${isHol ? '#FCA5A5' : 'var(--line)'}`,
+                    }}>
+                      <span style={{
+                        width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                        background: isHol ? 'var(--red)' : 'var(--green)',
+                      }} />
+                      <span style={{ color: isHol ? 'var(--red)' : 'var(--ink-900)', flex: 1 }}>
+                        {fmtDateTH(e.date)}
+                      </span>
+                      <span style={{ color: 'var(--ink-400)', fontSize: 11, whiteSpace: 'nowrap' }}>
+                        {e.startTime}–{e.endTime}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
 }

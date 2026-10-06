@@ -40,14 +40,15 @@ func enrichScheduleGroup(sg models.ScheduleGroup, postingID uint) ScheduleGroupR
 // StaffCaseResponse is the enriched staff case returned to the frontend.
 type StaffCaseResponse struct {
 	models.StaffCase
-	CourseCode          string       `json:"course_code"`
-	CourseTitle         string       `json:"course_title"`
-	Section             int          `json:"section"`
-	Schedule            string       `json:"schedule"`
-	InstructorName      string       `json:"instructor_name"`
-	LabBoys             []LabBoyInfo `json:"lab_boys"`
-	NextTask            string       `json:"next_task"`
-	InstructorConfirmed bool         `json:"instructor_confirmed"`
+	CourseCode           string               `json:"course_code"`
+	CourseTitle          string               `json:"course_title"`
+	Section              int                  `json:"section"`
+	Schedule             string               `json:"schedule"`
+	CourseScheduleSlots  []CourseScheduleSlot `json:"course_schedule_slots"`
+	InstructorName       string               `json:"instructor_name"`
+	LabBoys              []LabBoyInfo         `json:"lab_boys"`
+	NextTask             string               `json:"next_task"`
+	InstructorConfirmed  bool                 `json:"instructor_confirmed"`
 }
 
 // LabBoyInfo is a lightweight student summary on a StaffCaseResponse.
@@ -67,6 +68,7 @@ func enrichStaffCase(sc models.StaffCase) StaffCaseResponse {
 			resp.CourseTitle = c.Title
 			resp.Section = c.Section
 			resp.Schedule = c.Schedule
+			resp.CourseScheduleSlots = ParseThaiSchedule(c.Schedule)
 			resp.InstructorName = c.InstructorName
 		}
 		for _, app := range database.AcceptedStudentsForPosting(sc.PostingID) {
@@ -707,7 +709,7 @@ func (h *Handler) GenerateGroupOccurrences(c *gin.Context) {
 	calDates := database.ListCalendarDates(uint(caseID), sc.Semester, sc.AcademicYear, &startDate, &endDate)
 	cancelledDates := make(map[string]uint)
 	for _, cd := range calDates {
-		if cd.AffectsWork {
+		if cd.AffectsWork != nil && *cd.AffectsWork {
 			cancelledDates[cd.Date.Format("2006-01-02")] = cd.ID
 		}
 	}
@@ -977,7 +979,7 @@ func (h *Handler) GenerateGroupMonthOccurrences(c *gin.Context) {
 	calDates := database.ListCalendarDates(uint(caseID), sc.Semester, sc.AcademicYear, &startDate, &endDate)
 	cancelledDates := make(map[string]uint)
 	for _, cd := range calDates {
-		if cd.AffectsWork {
+		if cd.AffectsWork != nil && *cd.AffectsWork {
 			cancelledDates[cd.Date.Format("2006-01-02")] = cd.ID
 		}
 	}

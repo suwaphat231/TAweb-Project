@@ -1,6 +1,9 @@
 package docxgen
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 var thaiMonths = [...]string{
 	"", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
@@ -19,6 +22,15 @@ func thaiMonthName(month int) string {
 		return fmt.Sprintf("%d", month)
 	}
 	return thaiMonths[month]
+}
+
+var thaiWeekdays = [...]string{
+	"วันอาทิตย์", "วันจันทร์", "วันอังคาร", "วันพุธ", "วันพฤหัสบดี", "วันศุกร์", "วันเสาร์",
+}
+
+// thaiWeekdayName converts a time.Weekday to the Thai full day name.
+func thaiWeekdayName(w time.Weekday) string {
+	return thaiWeekdays[int(w)%7]
 }
 
 // thaiShortDate renders "3 ธ.ค. 2568" for a day-of-month within period.

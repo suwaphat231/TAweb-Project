@@ -7,7 +7,6 @@ import (
 	"math"
 	"net/http"
 	"strconv"
-	"time"
 
 	"labassist/database"
 	"labassist/docxgen"
@@ -179,23 +178,6 @@ func (h *Handler) GetMonthlyOccurrences(c *gin.Context) {
 	c.JSON(http.StatusOK, occs)
 }
 
-// monthlyDocSnapshot captures the inputs used to generate a monthly document.
-// It is JSON-encoded into StaffDocument.DataSnapshot so the document can be
-// reproduced even after source data changes.
-type monthlyDocSnapshot struct {
-	PeriodID         uint    `json:"period_id"`
-	Month            int     `json:"month"`
-	Year             int     `json:"year"`
-	StaffCaseID      uint    `json:"staff_case_id"`
-	CompletedDays    []int   `json:"completed_days"`
-	HoursPerSession  float64 `json:"hours_per_session"`
-	RatePerHourBaht  float64 `json:"rate_per_hour_baht"`
-	TotalHours       float64 `json:"total_hours"`
-	PerStudentAmount float64 `json:"per_student_amount"`
-	TotalAmount      float64 `json:"total_amount"`
-	SnapshotAt       string  `json:"snapshot_at"`
-}
-
 type generateMonthlyDocRequest struct {
 	Type             models.DocType `json:"type" binding:"required"`
 	ScheduleGroupID  *uint          `json:"schedule_group_id"` // optional, nil = whole case
@@ -277,11 +259,16 @@ func (h *Handler) GenerateMonthlyDocument(c *gin.Context) {
 			}
 		}
 	}
+	// Apply system-wide default rate (50 THB/hr) when none has been explicitly set.
+	if effectiveRate == 0 {
+		effectiveRate = database.DefaultHourlyRateSatang
+	}
 
-	// Validate that effective rate/hours are set before generating the document
-	if effectiveRate == 0 || effectiveHours == 0 {
+	// HoursPerSession must still be configured explicitly — there is no sensible
+	// universal default for this value.
+	if effectiveHours == 0 {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{
-			"error": "กรุณาตั้งค่า hours_per_session และ rate_per_hour ก่อนสร้างเอกสาร",
+			"error": "กรุณาตั้งค่า hours_per_session ก่อนสร้างเอกสาร",
 		})
 		return
 	}
@@ -371,21 +358,10 @@ func (h *Handler) GenerateMonthlyDocument(c *gin.Context) {
 		sc.AcademicYear, p.Month,
 	)
 
-	// Freeze a JSON snapshot of all inputs so this document can be audited or regenerated later.
-	snap := monthlyDocSnapshot{
-		PeriodID:         p.ID,
-		Month:            p.Month,
-		Year:             p.Year,
-		StaffCaseID:      sc.ID,
-		CompletedDays:    completedDays,
-		HoursPerSession:  effectiveHours,
-		RatePerHourBaht:  rateBaht,
-		TotalHours:       totalHours,
-		PerStudentAmount: perAmount,
-		TotalAmount:      totalAmount,
-		SnapshotAt:       time.Now().UTC().Format(time.RFC3339),
-	}
-	snapBytes, _ := json.Marshal(snap)
+	// Freeze a JSON snapshot using the canonical DocumentDataSnapshot format so
+	// renderWorkReport can reconstruct per-occurrence rows from this document later.
+	ds := database.BuildMonthlyDocumentSnapshot(occs, sc.ID, rateBaht, len(labBoys))
+	snapBytes, _ := json.Marshal(ds)
 
 	doc := models.StaffDocument{
 		Name:             docName,
@@ -397,7 +373,7 @@ func (h *Handler) GenerateMonthlyDocument(c *gin.Context) {
 		StaffCaseID:      &sc.ID,
 		MonthlyPeriodID:  &p.ID,
 		Status:           models.DocDraft,
-		Period:           &models.DocumentPeriod{Month: p.Month, Year: p.Year},
+		Period:           &models.DocumentPeriod{Month: p.Month, Year: p.Year + 543},
 		SessionDates:     completedDays,
 		HoursPerSession:  effectiveHours,
 		Rate:             rateBaht,

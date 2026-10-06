@@ -24,7 +24,8 @@ type StaffCase struct {
 	// HoursPerSession is hours per work session (can be overridden per schedule group).
 	HoursPerSession float64 `gorm:"type:decimal(8,2);default:0" json:"hours_per_session"`
 	// RatePerHour is stored in satang (1 baht = 100 satang) to avoid floating-point errors.
-	RatePerHour int64 `gorm:"not null;default:0" json:"rate_per_hour_satang"`
+	// Default is 5000 satang = 50 THB/hr (system-wide standard rate).
+	RatePerHour int64 `gorm:"not null;default:5000" json:"rate_per_hour_satang"`
 
 	WorkStartDate *time.Time `json:"work_start_date,omitempty"`
 	WorkEndDate   *time.Time `json:"work_end_date,omitempty"`

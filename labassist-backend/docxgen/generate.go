@@ -69,6 +69,12 @@ func Render(in RenderInput) ([]byte, error) {
 	if docXML == "" {
 		return nil, fmt.Errorf("docxgen: word/document.xml missing in %s", in.TemplateFile)
 	}
+	if in.TemplateFile == "payment_evidence.docx" {
+		docXML, err = preparePaymentEvidenceDays(docXML)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	for _, group := range in.RowGroups {
 		var err error
@@ -193,4 +199,36 @@ func expandRows(docXML, anchor string, rows []map[string]string) (string, error)
 
 func escapeXML(s string) string {
 	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(s)
+}
+
+// The paper template only has example tokens for days 3, 17 and 24.
+// Populate every daily cell before expanding student rows.
+func preparePaymentEvidenceDays(docXML string) (string, error) {
+	cellPattern := regexp.MustCompile(`(?s)<w:tc\b.*?</w:tc>`)
+	for _, pos := range trPattern.FindAllStringIndex(docXML, -1) {
+		row := docXML[pos[0]:pos[1]]
+		if !strings.Contains(row, "{{STUDENT_NAME}}") {
+			continue
+		}
+		cells := cellPattern.FindAllStringIndex(row, -1)
+		if len(cells) != 40 {
+			return "", fmt.Errorf("docxgen: unexpected payment evidence daily cell layout")
+		}
+		for day := 31; day >= 1; day-- {
+			cellPos := cells[day+3]
+			cell := row[cellPos[0]:cellPos[1]]
+			token := fmt.Sprintf("{{DAY_%d}}", day)
+			if strings.Contains(cell, token) {
+				continue
+			}
+			end := strings.LastIndex(cell, "</w:p>")
+			if end < 0 {
+				return "", fmt.Errorf("docxgen: payment evidence day %d has no paragraph", day)
+			}
+			cell = cell[:end] + "<w:r><w:t>" + token + "</w:t></w:r>" + cell[end:]
+			row = row[:cellPos[0]] + cell + row[cellPos[1]:]
+		}
+		return docXML[:pos[0]] + row + docXML[pos[1]:], nil
+	}
+	return "", fmt.Errorf("docxgen: payment evidence student row missing")
 }

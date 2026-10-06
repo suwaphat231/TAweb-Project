@@ -1,13 +1,17 @@
 import type { GroupMonthPlan } from '../../../types'
+import { formatThaiDate, toDateOnly } from '../../../utils/thaiDate'
 
-const MONTHS_SHORT = [
+function thaiFmt(dateStr: string): string {
+  return formatThaiDate(dateStr)
+}
+
+const MONTH_SHORT_TH = [
   'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
   'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.',
 ]
 
-function thaiFmt(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00')
-  return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear() + 543}`
+function fmtBaht(n: number): string {
+  return n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 interface Props {
@@ -33,13 +37,13 @@ export function OverallScheduleSummary({
   let rescheduled = 0
   let totalValid = 0
   let totalHours = 0
-  let totalPay = 0
 
   for (const gp of monthlyPlan) {
     for (const entry of gp.months) {
       for (const occ of entry.occurrences) {
-        if (!earliest || occ.scheduled_date < earliest) earliest = occ.scheduled_date
-        if (!latest || occ.scheduled_date > latest) latest = occ.scheduled_date
+        const d = toDateOnly(occ.scheduled_date) ?? ''
+        if (d && (!earliest || d < earliest)) earliest = d
+        if (d && (!latest || d > latest)) latest = d
       }
       totalScheduled += entry.summary.total
       cancelledHoliday += entry.summary.cancelled_holiday
@@ -47,9 +51,19 @@ export function OverallScheduleSummary({
       rescheduled += entry.summary.rescheduled
       totalValid += entry.summary.valid
       totalHours += entry.summary.valid_hours
-      totalPay += entry.summary.total_pay_baht
     }
   }
+
+  const computedPay = totalHours * rateBaht * labBoyCount
+
+  // Sorted month entries for per-month breakdown
+  const monthEntries = monthlyPlan
+    .flatMap(gp => gp.months)
+    .sort((a, b) =>
+      a.month.year !== b.month.year
+        ? a.month.year - b.month.year
+        : a.month.month - b.month.month,
+    )
 
   const rows = [
     { label: 'วันที่กำหนดทั้งหมด', value: `${totalScheduled} วัน`, hi: false },
@@ -59,7 +73,7 @@ export function OverallScheduleSummary({
     { label: 'วันทำงานที่นับได้', value: `${totalValid} วัน`, hi: true },
     { label: 'ชั่วโมงรวม', value: `${totalHours.toFixed(1)} ชม.`, hi: true },
     { label: 'จำนวน Lab Boy', value: `${labBoyCount} คน`, hi: false },
-    { label: 'ค่าตอบแทนรวม', value: `${totalPay.toFixed(2)} บาท`, hi: true },
+    { label: 'ค่าตอบแทนรวม', value: `${fmtBaht(computedPay)} บาท`, hi: true },
   ]
 
   return (
@@ -110,6 +124,76 @@ export function OverallScheduleSummary({
           ))}
         </div>
       </div>
+
+      {/* Pay calculation breakdown */}
+      {monthEntries.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-500)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 8 }}>
+            การคำนวณค่าตอบแทน
+          </div>
+          <div style={{ border: '1.5px solid var(--line)', borderRadius: 'var(--radius-card)', overflow: 'hidden', marginBottom: 10 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: 'var(--line-soft)', borderBottom: '1px solid var(--line)' }}>
+                  {['เดือน', 'วันทำงาน', 'ชั่วโมง', 'ค่าตอบแทน'].map((h, i) => (
+                    <th key={i} style={{
+                      padding: '7px 12px', fontWeight: 600, color: 'var(--ink-600)',
+                      textAlign: i === 0 ? 'left' : 'right',
+                    }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {monthEntries.map((entry, i) => {
+                  const monthPay = entry.summary.valid_hours * rateBaht * labBoyCount
+                  const beYear = entry.month.year + 543
+                  return (
+                    <tr key={i} style={{ borderBottom: '1px solid var(--line-soft)', background: '#fff' }}>
+                      <td style={{ padding: '7px 12px', color: 'var(--ink-700)', fontWeight: 500 }}>
+                        {MONTH_SHORT_TH[entry.month.month - 1]} {beYear}
+                      </td>
+                      <td style={{ padding: '7px 12px', textAlign: 'right', color: 'var(--ink-700)' }}>
+                        {entry.summary.valid} วัน
+                      </td>
+                      <td style={{ padding: '7px 12px', textAlign: 'right', color: 'var(--ink-700)' }}>
+                        {entry.summary.valid_hours.toFixed(1)} ชม.
+                      </td>
+                      <td style={{ padding: '7px 12px', textAlign: 'right', fontWeight: 600, color: rateBaht > 0 ? 'var(--ink-900)' : 'var(--ink-400)' }}>
+                        {rateBaht > 0 ? `${fmtBaht(monthPay)} บาท` : '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              <tfoot>
+                <tr style={{ background: 'var(--primary-50)', borderTop: '1.5px solid var(--primary-100)' }}>
+                  <td style={{ padding: '8px 12px', fontWeight: 700, color: 'var(--primary)', fontSize: 13 }}>รวม</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: 'var(--primary)', fontSize: 13 }}>{totalValid} วัน</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: 'var(--primary)', fontSize: 13 }}>{totalHours.toFixed(1)} ชม.</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: 'var(--primary)', fontSize: 13 }}>
+                    {rateBaht > 0 ? `${fmtBaht(computedPay)} บาท` : '—'}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          {rateBaht > 0 && (
+            <div style={{
+              padding: '10px 14px', background: 'var(--primary-50)',
+              border: '1px solid var(--primary-100)', borderRadius: 'var(--radius-input)',
+              fontSize: 12, color: 'var(--ink-600)', textAlign: 'center',
+            }}>
+              {totalHours.toFixed(1)} ชม.
+              <span style={{ margin: '0 6px', color: 'var(--ink-400)' }}>×</span>
+              {rateBaht} บาท/ชม.
+              <span style={{ margin: '0 6px', color: 'var(--ink-400)' }}>×</span>
+              {labBoyCount} คน
+              <span style={{ margin: '0 6px', color: 'var(--ink-400)' }}>=</span>
+              <strong style={{ fontSize: 14, color: 'var(--primary)' }}>{fmtBaht(computedPay)} บาท</strong>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Rate editor */}
       {!planLocked && (

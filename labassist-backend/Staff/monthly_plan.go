@@ -215,7 +215,7 @@ func (h *Handler) SetGroupMonthDatesList(c *gin.Context) {
 	calDates := database.ListCalendarDates(uint(caseID), sc.Semester, sc.AcademicYear, &startDate, &endDate)
 	cancelledDates := make(map[string]uint)
 	for _, cd := range calDates {
-		if cd.AffectsWork {
+		if cd.AffectsWork != nil && *cd.AffectsWork {
 			cancelledDates[cd.Date.Format("2006-01-02")] = cd.ID
 		}
 	}
@@ -333,7 +333,7 @@ func (h *Handler) AddGroupMonthOccurrence(c *gin.Context) {
 	calDates := database.ListCalendarDates(uint(caseID), sc.Semester, sc.AcademicYear, &date, &date)
 	cancelledDates := make(map[string]uint)
 	for _, cd := range calDates {
-		if cd.AffectsWork {
+		if cd.AffectsWork != nil && *cd.AffectsWork {
 			cancelledDates[cd.Date.Format("2006-01-02")] = cd.ID
 		}
 	}

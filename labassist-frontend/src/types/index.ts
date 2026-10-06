@@ -556,11 +556,19 @@ export interface LabBoyInfo {
   student_name: string
 }
 
+// CourseScheduleSlot is one parsed day-and-time slot from the course schedule string.
+export interface CourseScheduleSlot {
+  weekday: number    // 0=Sun 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat
+  start_time: string // HH:MM
+  end_time: string   // HH:MM
+}
+
 export interface StaffCaseResponse extends StaffCase {
   course_code: string
   course_title: string
   section: number
   schedule: string
+  course_schedule_slots: CourseScheduleSlot[]
   instructor_name: string
   lab_boys: LabBoyInfo[]
   next_task: string
