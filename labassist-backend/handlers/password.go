@@ -35,6 +35,12 @@ type ChangePasswordRequest struct {
 	NewPassword     string `json:"new_password" binding:"required" example:"newsecret"`
 }
 
+// SetPasswordRequest creates the first password for an account that has none
+// (e.g. one that has only signed in with Google).
+type SetPasswordRequest struct {
+	NewPassword string `json:"new_password" binding:"required" example:"newsecret"`
+}
+
 // ResetPasswordRequest changes the password by proving the emailed code.
 type ResetPasswordRequest struct {
 	Code        string `json:"code" binding:"required" example:"123456"`
@@ -82,8 +88,8 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		return
 	}
-	if user.PasswordHash == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "บัญชีนี้ยังไม่มีรหัสผ่าน กรุณาใช้ \"ลืมรหัสผ่าน\" เพื่อตั้งรหัสผ่านผ่านอีเมล"})
+	if user.PasswordHash == nil || *user.PasswordHash == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "บัญชีนี้ยังไม่มีรหัสผ่าน กรุณาสร้างรหัสผ่านก่อน"})
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(*user.PasswordHash), []byte(body.CurrentPassword)) != nil {
@@ -94,6 +100,39 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "เปลี่ยนรหัสผ่านเรียบร้อยแล้ว"})
+}
+
+// SetPassword godoc
+// @Summary      สร้างรหัสผ่าน (สำหรับบัญชีที่ยังไม่มีรหัสผ่าน)
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body      SetPasswordRequest  true  "รหัสผ่านใหม่"
+// @Success      200   {object}  map[string]string
+// @Failure      400   {object}  ErrorResponse
+// @Failure      409   {object}  ErrorResponse
+// @Router       /auth/password/set [post]
+func (h *AuthHandler) SetPassword(c *gin.Context) {
+	var body SetPasswordRequest
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณากรอกรหัสผ่านใหม่"})
+		return
+	}
+	userID := c.GetUint("user_id")
+	user, ok := database.UserByID(userID)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+	if user.PasswordHash != nil && *user.PasswordHash != "" {
+		c.JSON(http.StatusConflict, gin.H{"error": "บัญชีนี้มีรหัสผ่านอยู่แล้ว กรุณาใช้การเปลี่ยนรหัสผ่าน"})
+		return
+	}
+	if !setPassword(c, userID, body.NewPassword) {
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "สร้างรหัสผ่านเรียบร้อยแล้ว"})
 }
 
 // ForgotPassword godoc

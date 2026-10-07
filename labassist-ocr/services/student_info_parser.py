@@ -3,7 +3,7 @@ student_info_parser.py — extract allowed student profile fields from a
 university info document image.
 
 Allowlist: student_id, full_name_th, full_name_en, education_level,
-           curriculum, faculty, campus.
+           curriculum, faculty, campus, student_status.
 
 Sensitive fields (national_id, birth_date, age, religion, nationality,
 address, postal_code, phone, emergency_contact) are explicitly blocked
@@ -58,6 +58,11 @@ _LABELS: Dict[str, list] = {
     'campus': [
         r'วิทยาเขต',
         r'\bcampus\b',
+    ],
+    'student_status': [
+        r'สถานภาพ',
+        r'สถานะนักศึกษา',
+        r'student[\s_]?status',
     ],
 }
 

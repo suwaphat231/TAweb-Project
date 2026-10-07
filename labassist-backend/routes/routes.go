@@ -42,6 +42,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 	{
 		authed.GET("/auth/me", authH.Me)
 		authed.POST("/auth/logout", authH.Logout)
+		authed.POST("/auth/password/set", authH.SetPassword)
 		authed.POST("/auth/password/change", authH.ChangePassword)
 		authed.POST("/auth/password/forgot", authH.ForgotPassword)
 		authed.POST("/auth/password/reset", authH.ResetPassword)

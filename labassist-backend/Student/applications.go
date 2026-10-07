@@ -29,6 +29,9 @@ type UpdateProfileRequest struct {
 	StudentID *string `json:"student_id,omitempty" example:"640710112"`
 	Year      *int    `json:"year,omitempty" binding:"omitempty,min=0,max=4" example:"3"`
 	Faculty   *string `json:"faculty,omitempty" example:"วิทยาการคอมพิวเตอร์"`
+	// Username is the login name used by /auth/login. Passwords are changed
+	// through /auth/password/* instead.
+	Username *string `json:"username,omitempty" example:"somchai"`
 }
 
 // StudentDashboard godoc
@@ -250,7 +253,22 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 		}
 	}
 
+	var username *string
+	if body.Username != nil {
+		trimmed := strings.TrimSpace(*body.Username)
+		if trimmed != "" {
+			if other, found := database.UserByUsername(trimmed); found && other.ID != studentID.(uint) {
+				c.JSON(http.StatusConflict, gin.H{"error": "ชื่อผู้ใช้นี้ถูกใช้แล้ว"})
+				return
+			}
+			username = &trimmed
+		}
+	}
+
 	updated, ok := database.UpdateUser(studentID.(uint), func(u *models.User) {
+		if username != nil {
+			u.Username = username
+		}
 		if body.FullName != nil {
 			u.FullName = *body.FullName
 		}

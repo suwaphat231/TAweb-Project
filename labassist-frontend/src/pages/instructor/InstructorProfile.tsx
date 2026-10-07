@@ -10,7 +10,7 @@ import { getInitials } from '../../utils/initials'
 import { StatusBadge } from '../../components/ui/Badge'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../hooks/useToast'
-import { ChangePasswordModal } from './ChangePasswordModal'
+import { ChangePasswordModal } from '../../components/account/ChangePasswordModal'
 
 export default function InstructorProfile() {
   const { user, setUser } = useAuth()
@@ -117,8 +117,14 @@ export default function InstructorProfile() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>รหัสผ่าน</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <span style={{ fontSize: 14, color: 'var(--ink-500)', letterSpacing: 2 }}>••••••••</span>
-                  <Button type="button" variant="outline" size="sm" onClick={() => setPasswordOpen(true)}>เปลี่ยนรหัสผ่าน</Button>
+                  {p?.has_password ? (
+                    <span style={{ fontSize: 14, color: 'var(--ink-500)', letterSpacing: 2 }}>••••••••</span>
+                  ) : (
+                    <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>ยังไม่ได้ตั้งรหัสผ่าน</span>
+                  )}
+                  <Button type="button" variant="outline" size="sm" onClick={() => setPasswordOpen(true)}>
+                    {p?.has_password ? 'เปลี่ยนรหัสผ่าน' : 'สร้างรหัสผ่าน'}
+                  </Button>
                 </div>
               </div>
 
@@ -130,7 +136,13 @@ export default function InstructorProfile() {
         </Card>
       </div>
 
-      <ChangePasswordModal isOpen={passwordOpen} onClose={() => setPasswordOpen(false)} />
+      <ChangePasswordModal
+        key={p?.has_password ? 'change' : 'create'}
+        isOpen={passwordOpen}
+        onClose={() => setPasswordOpen(false)}
+        hasPassword={!!p?.has_password}
+        onSaved={() => qc.invalidateQueries({ queryKey: ['instructor-profile'] })}
+      />
     </div>
   )
 }

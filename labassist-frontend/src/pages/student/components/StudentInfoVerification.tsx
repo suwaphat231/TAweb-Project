@@ -77,6 +77,7 @@ function ComparisonTable({ cmp }: { cmp: StudentInfoComparison }) {
         <FieldRow label="หลักสูตร"                 ocr={cmp.curriculum.ocr}      current={cmp.curriculum.current}      match={cmp.curriculum.match}      ocrOnly />
         <FieldRow label="ภาควิชา"                  ocr={cmp.faculty.ocr}         current={cmp.faculty.current}         match={cmp.faculty.match} />
         <FieldRow label="วิทยาเขต"                 ocr={cmp.campus.ocr}          current={cmp.campus.current}          match={cmp.campus.match}          ocrOnly />
+        <FieldRow label="สถานภาพนักศึกษา"          ocr={cmp.student_status.ocr}  current={cmp.student_status.current}  match={cmp.student_status.match}  ocrOnly />
       </tbody>
     </table>
   )
@@ -97,8 +98,14 @@ function hasAnyOcr(doc: StudentInfoDocument): boolean {
     doc.ocr_full_name_en ||
     doc.ocr_faculty ||
     doc.ocr_curriculum ||
-    doc.ocr_campus
+    doc.ocr_campus ||
+    doc.ocr_student_status
   )
+}
+
+// Statuses on the registrar document that mean the student is still enrolled.
+function isActiveStatus(status: string): boolean {
+  return /กำลังศึกษา|ปกติ|active|studying/i.test(status)
 }
 
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'application/pdf']
@@ -221,6 +228,16 @@ export function StudentInfoVerification() {
               ยืนยันแล้ว ✓
             </span>
           )}
+          {doc.ocr_student_status && (
+            <span style={{
+              fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 999,
+              ...(isActiveStatus(doc.ocr_student_status)
+                ? { background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE' }
+                : { background: '#FEF2F2', color: '#B91C1C', border: '1px solid #FECACA' }),
+            }}>
+              {doc.ocr_student_status}
+            </span>
+          )}
           <Button
             size="sm"
             variant="ghost"
@@ -260,6 +277,24 @@ export function StudentInfoVerification() {
           padding: '10px 14px', fontSize: 12, color: '#92400E', marginBottom: 14,
         }}>
           ความมั่นใจในการอ่านต่ำ ({(confidence * 100).toFixed(0)}%) — กรุณาตรวจสอบข้อมูลก่อนยืนยัน
+        </div>
+      )}
+
+      {/* Student status banner */}
+      {doc.ocr_student_status && !isActiveStatus(doc.ocr_student_status) && (
+        <div style={{
+          background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8,
+          padding: '10px 14px', fontSize: 12, color: '#B91C1C', marginBottom: 14,
+        }}>
+          สถานภาพนักศึกษาในเอกสาร: <b>{doc.ocr_student_status}</b> — กรุณาตรวจสอบว่ายังมีสถานะเป็นนักศึกษาอยู่
+        </div>
+      )}
+      {anyOcr && !doc.ocr_student_status && !isConfirmed && (
+        <div style={{
+          background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 8,
+          padding: '10px 14px', fontSize: 12, color: '#92400E', marginBottom: 14,
+        }}>
+          ไม่พบสถานภาพนักศึกษาในเอกสาร — กรุณาอัปโหลดเอกสารที่ระบุสถานภาพ (เช่น กำลังศึกษา)
         </div>
       )}
 

@@ -15,6 +15,8 @@ export interface User {
   faculty?: string
   year?: number
   is_active: boolean
+  /** False for accounts that have only signed in with Google. */
+  has_password?: boolean
   created_at: string
   transcript_grades?: Record<string, string>
   transcript_status?: 'pass' | 'needs_review' | 'fail'
@@ -456,6 +458,7 @@ export interface StudentInfoDocument {
   ocr_curriculum?: string
   ocr_faculty?: string
   ocr_campus?: string
+  ocr_student_status?: string
   confidence: number
   confirmed_at?: string
   created_at: string
@@ -476,6 +479,7 @@ export interface StudentInfoComparison {
   curriculum: StudentInfoFieldStr
   faculty: StudentInfoFieldStr
   campus: StudentInfoFieldStr
+  student_status: StudentInfoFieldStr
 }
 
 export interface StudentInfoUploadResult {

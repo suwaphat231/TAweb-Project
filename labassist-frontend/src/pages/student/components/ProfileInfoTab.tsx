@@ -12,6 +12,7 @@ import { StatusBadge } from '../../../components/ui/Badge'
 import { Skeleton } from '../../../components/ui/Skeleton'
 import { useToast } from '../../../hooks/useToast'
 import { StudentInfoVerification } from './StudentInfoVerification'
+import { ChangePasswordModal } from '../../../components/account/ChangePasswordModal'
 
 export function ProfileInfoTab() {
   const { user, setUser } = useAuth()
@@ -32,7 +33,8 @@ export function ProfileInfoTab() {
     },
   })
 
-  const [draft, setDraft] = useState<Partial<Record<'full_name' | 'student_id' | 'year' | 'faculty', string>>>({})
+  const [draft, setDraft] = useState<Partial<Record<'full_name' | 'student_id' | 'year' | 'faculty' | 'username', string>>>({})
+  const [passwordOpen, setPasswordOpen] = useState(false)
 
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['student-profile'],
@@ -46,11 +48,12 @@ export function ProfileInfoTab() {
     student_id: p?.student_id ?? '',
     year: String(p?.year ?? ''),
     faculty: p?.faculty ?? '',
+    username: p?.username ?? '',
     ...draft,
   }
 
   const updateMut = useMutation({
-    mutationFn: (data: { full_name: string; student_id: string; year: number; faculty: string }) =>
+    mutationFn: (data: { full_name: string; student_id: string; year: number; faculty: string; username: string }) =>
       studentApi.updateProfile(data),
     onSuccess: (updated) => {
       setUser(updated)
@@ -72,6 +75,7 @@ export function ProfileInfoTab() {
       student_id: form.student_id.trim(),
       year: Number(form.year) || 0,
       faculty: form.faculty,
+      username: form.username,
     })
   }
 
@@ -179,12 +183,12 @@ export function ProfileInfoTab() {
                 onChange={(e) => setDraft((f) => ({ ...f, student_id: e.target.value }))}
                 placeholder="กรอกรหัสนักศึกษาของคุณ"
               />
-              <Select
+              {/* <Select
                 disabled={updateMut.isPending}
                 label="ชั้นปี"
                 value={form.year}
                 onChange={(e) => setDraft((f) => ({ ...f, year: e.target.value }))}
-                options={[
+                options={[ 
                   { value: '', label: '— เลือกชั้นปี —' },
                   { value: '1', label: 'ปีที่ 1' },
                   { value: '2', label: 'ปีที่ 2' },
@@ -192,6 +196,7 @@ export function ProfileInfoTab() {
                   { value: '4', label: 'ปีที่ 4' },
                 ]}
               />
+              */}
               <Select
                 disabled={updateMut.isPending}
                 label="ภาควิชา"
@@ -209,6 +214,26 @@ export function ProfileInfoTab() {
                 value={p?.email ?? ''}
                 disabled
               />
+              <Input
+                readOnly={updateMut.isPending}
+                label="Username"
+                autoComplete="username"
+                value={form.username}
+                onChange={(e) => setDraft((f) => ({ ...f, username: e.target.value }))}
+              />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>รหัสผ่าน</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  {p?.has_password ? (
+                    <span style={{ fontSize: 14, color: 'var(--ink-500)', letterSpacing: 2 }}>••••••••</span>
+                  ) : (
+                    <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>ยังไม่ได้ตั้งรหัสผ่าน</span>
+                  )}
+                  <Button type="button" variant="outline" size="sm" onClick={() => setPasswordOpen(true)}>
+                    {p?.has_password ? 'เปลี่ยนรหัสผ่าน' : 'สร้างรหัสผ่าน'}
+                  </Button>
+                </div>
+              </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <Button
                   type="submit"
@@ -224,6 +249,13 @@ export function ProfileInfoTab() {
       </div>
       </div>
       <StudentInfoVerification />
+      <ChangePasswordModal
+        key={p?.has_password ? 'change' : 'create'}
+        isOpen={passwordOpen}
+        onClose={() => setPasswordOpen(false)}
+        hasPassword={!!p?.has_password}
+        onSaved={() => qc.invalidateQueries({ queryKey: ['student-profile'] })}
+      />
     </div>
   )
 }

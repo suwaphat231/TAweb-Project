@@ -61,6 +61,8 @@ export const authApi = {
     api.post<{ token: string; user: User }>('/auth/dev-login', { username }).then((r) => r.data),
   me: () => api.get<{ user: User }>('/auth/me').then((r) => r.data.user),
   logout: () => api.post('/auth/logout'),
+  setPassword: (data: { new_password: string }) =>
+    api.post<{ message: string }>('/auth/password/set', data).then((r) => r.data),
   changePassword: (data: { current_password: string; new_password: string }) =>
     api.post<{ message: string }>('/auth/password/change', data).then((r) => r.data),
   forgotPassword: () =>

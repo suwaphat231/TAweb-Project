@@ -73,3 +73,13 @@ type User struct {
 }
 
 func (User) TableName() string { return "users" }
+
+// MarshalJSON adds has_password so the client can offer "create password"
+// instead of "change password" without ever seeing the hash.
+func (u User) MarshalJSON() ([]byte, error) {
+	type plain User
+	return json.Marshal(struct {
+		plain
+		HasPassword bool `json:"has_password"`
+	}{plain(u), u.PasswordHash != nil && *u.PasswordHash != ""})
+}

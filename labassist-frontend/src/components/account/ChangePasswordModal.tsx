@@ -6,7 +6,7 @@ import { Input } from '../../components/ui/Input'
 import { Button } from '../../components/ui/Button'
 import { useToast } from '../../hooks/useToast'
 
-type Step = 'change' | 'reset'
+type Step = 'create' | 'change' | 'reset'
 type ApiError = { response?: { data?: { error?: string } } }
 
 const MIN_LENGTH = 6
@@ -15,11 +15,16 @@ const errorMessage = (err: ApiError) => err.response?.data?.error ?? 'เกิ�
 interface Props {
   isOpen: boolean
   onClose: () => void
+  /** False → the account has no password yet, so create one instead of changing it. */
+  hasPassword: boolean
+  /** Called after a password is saved, e.g. to refetch the profile's has_password. */
+  onSaved?: () => void
 }
 
-export function ChangePasswordModal({ isOpen, onClose }: Props) {
+export function ChangePasswordModal({ isOpen, onClose, hasPassword, onSaved }: Props) {
   const showToast = useToast()
-  const [step, setStep] = useState<Step>('change')
+  const initialStep: Step = hasPassword ? 'change' : 'create'
+  const [step, setStep] = useState<Step>(initialStep)
   const [currentPassword, setCurrentPassword] = useState('')
   const [code, setCode] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -28,7 +33,7 @@ export function ChangePasswordModal({ isOpen, onClose }: Props) {
   const [error, setError] = useState('')
 
   function close() {
-    setStep('change')
+    setStep(initialStep)
     setCurrentPassword('')
     setCode('')
     setNewPassword('')
@@ -39,9 +44,16 @@ export function ChangePasswordModal({ isOpen, onClose }: Props) {
   }
 
   const onDone = () => {
-    showToast('เปลี่ยนรหัสผ่านเรียบร้อยแล้ว', 'success')
+    showToast(step === 'create' ? 'สร้างรหัสผ่านเรียบร้อยแล้ว' : 'เปลี่ยนรหัสผ่านเรียบร้อยแล้ว', 'success')
+    onSaved?.()
     close()
   }
+
+  const createMut = useMutation({
+    mutationFn: authApi.setPassword,
+    onSuccess: onDone,
+    onError: (err: ApiError) => setError(errorMessage(err)),
+  })
 
   const changeMut = useMutation({
     mutationFn: authApi.changePassword,
@@ -77,30 +89,37 @@ export function ChangePasswordModal({ isOpen, onClose }: Props) {
     const invalid = validateNewPassword()
     if (invalid) { setError(invalid); return }
     setError('')
-    if (step === 'change') {
+    if (step === 'create') {
+      createMut.mutate({ new_password: newPassword })
+    } else if (step === 'change') {
       changeMut.mutate({ current_password: currentPassword, new_password: newPassword })
     } else {
       resetMut.mutate({ code: code.trim(), new_password: newPassword })
     }
   }
 
-  const busy = changeMut.isPending || resetMut.isPending
+  const busy = createMut.isPending || changeMut.isPending || resetMut.isPending
+  const title = step === 'create' ? 'สร้างรหัสผ่าน' : step === 'change' ? 'เปลี่ยนรหัสผ่าน' : 'ลืมรหัสผ่าน'
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={close}
-      title={step === 'change' ? 'เปลี่ยนรหัสผ่าน' : 'ลืมรหัสผ่าน'}
+      title={title}
       size="sm"
       footer={
         <>
           <Button type="button" variant="outline" onClick={close}>ยกเลิก</Button>
-          <Button type="submit" form="change-password-form" loading={busy}>เปลี่ยนรหัสผ่าน</Button>
+          <Button type="submit" form="change-password-form" loading={busy}>{step === 'create' ? 'สร้างรหัสผ่าน' : 'เปลี่ยนรหัสผ่าน'}</Button>
         </>
       }
     >
       <form id="change-password-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {step === 'change' ? (
+        {step === 'create' ? (
+          <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>
+            บัญชีนี้ยังไม่มีรหัสผ่าน ตั้งรหัสผ่านเพื่อใช้เข้าสู่ระบบด้วย Username และรหัสผ่าน
+          </div>
+        ) : step === 'change' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <Input
               label="รหัสผ่านปัจจุบัน *"

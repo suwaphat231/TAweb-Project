@@ -175,6 +175,7 @@ async def extract_student_information(file: UploadFile = File(...)):
             curriculum=fields.get("curriculum"),
             faculty=fields.get("faculty"),
             campus=fields.get("campus"),
+            student_status=fields.get("student_status"),
             confidence=round(confidence, 3),
         )
     except HTTPException:

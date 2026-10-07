@@ -25,7 +25,7 @@ class StudentInfoExtractResult(BaseModel):
     """Fields extracted from a student information document.
 
     Allowlist: student_id, full_name_th, full_name_en, education_level,
-               curriculum, faculty, campus.
+               curriculum, faculty, campus, student_status.
 
     Sensitive fields (national_id, birth_date, age, religion, nationality,
     address, postal_code, phone, emergency_contact) are never returned.
@@ -37,4 +37,5 @@ class StudentInfoExtractResult(BaseModel):
     curriculum: Optional[str] = None
     faculty: Optional[str] = None
     campus: Optional[str] = None
+    student_status: Optional[str] = None
     confidence: float
