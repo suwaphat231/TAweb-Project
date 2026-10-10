@@ -23,6 +23,10 @@ type ApplyRequest struct {
 	Grade *string `json:"grade,omitempty" binding:"omitempty,oneof=A B+ B C+ C D+ D F" example:"A"`
 }
 
+type WithdrawRequest struct {
+	Reason string `json:"reason" binding:"required" example:"มีตารางเรียนชนกับเวลาปฏิบัติงาน"`
+}
+
 // UpdateProfileRequest is the request body for updating student profile
 type UpdateProfileRequest struct {
 	FullName  *string `json:"full_name,omitempty" example:"สมชาย ใจดี"`
@@ -152,6 +156,7 @@ func (h *Handler) Apply(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id  path  int  true  "Application ID"
+// @Param        body  body  WithdrawRequest  true  "เหตุผลที่ถอนใบสมัคร"
 // @Success      200  {object}  models.Application
 // @Failure      400  {object}  handlers.ErrorResponse
 // @Failure      404  {object}  handlers.ErrorResponse
@@ -159,8 +164,22 @@ func (h *Handler) Apply(c *gin.Context) {
 func (h *Handler) Withdraw(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
 	id, _ := strconv.Atoi(c.Param("id"))
+	var body WithdrawRequest
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาระบุเหตุผลที่ถอนใบสมัคร"})
+		return
+	}
+	reason := strings.TrimSpace(body.Reason)
+	if reason == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาระบุเหตุผลที่ถอนใบสมัคร"})
+		return
+	}
+	if len([]rune(reason)) > 1000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "เหตุผลต้องมีความยาวไม่เกิน 1000 ตัวอักษร"})
+		return
+	}
 
-	updated, err := database.WithdrawApplication(uint(id), studentID.(uint))
+	updated, err := database.WithdrawApplication(uint(id), studentID.(uint), reason)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})

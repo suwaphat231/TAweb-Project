@@ -139,7 +139,7 @@ func TestPersistenceAcrossConnections(t *testing.T) {
 	if current.LabBoySlots != 0 || current.RequireGradeProof || current.Deadline != nil {
 		t.Fatalf("zero values were not saved: %+v", current)
 	}
-	if _, err := WithdrawApplication(app.ID, student.ID); err != nil {
+	if _, err := WithdrawApplication(app.ID, student.ID, "ตารางเรียนชน"); err != nil {
 		t.Fatal(err)
 	}
 	current, _ = ActivePostingForCourse(course.ID)

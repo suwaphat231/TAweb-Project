@@ -6,7 +6,7 @@ import type {
   AdminStats, CourseStatus, Transcript, Notification,
   CreateUserPayload, UpdateUserPayload, ImportCoursesResponse, ImportCourseFields,
   FormReview, StaffDocument, CreateStaffDocumentPayload, TranscriptOCRResult, CoreCourse, WorkDaySlot,
-  WorkSession, ClassSchedule, ClassScheduleImageResult, TermSchedule, TermOption, ScheduleSlot, TermScheduleStatus,
+  WorkSession, TermSchedule, TermOption, ScheduleSlot, TermScheduleStatus,
   LabBoyAssignment, CourseRelation, StudentInfoUploadResult,
   StaffCaseResponse, ScheduleGroup, CalendarDate, WorkOccurrence, MonthlyPeriodResponse, StaffAuditLog,
   UpdateCasePayload, AddScheduleGroupPayload, UpdateScheduleGroupPayload, CreateCalendarDatePayload, GenerateOccurrencesPayload,
@@ -85,7 +85,8 @@ export const coursesAPI = {
 export const applicationsAPI = {
   getMyApplications: () => api.get<Application[]>('/student/applications').then((r) => r.data),
   apply: (data: ApplyPayload) => api.post<Application>('/student/applications', data).then((r) => r.data),
-  withdraw: (id: number) => api.put<Application>(`/student/applications/${id}/withdraw`).then((r) => r.data),
+  withdraw: (id: number, reason: string) =>
+    api.put<Application>(`/student/applications/${id}/withdraw`, { reason }).then((r) => r.data),
   getCourseApplicants: (courseId: number) =>
     api.get<Application[]>(`/instructor/courses/${courseId}/applicants`).then((r) => r.data),
   review: (id: number, data: ReviewPayload) =>
@@ -206,15 +207,6 @@ export const studentApi = {
   gradeProof: applicationsAPI.gradeProof,
   workSchedule: () => api.get<WorkSession[]>('/student/work-schedule').then((r) => r.data),
   laboyAssignments: () => api.get<LabBoyAssignment[]>('/student/labboy-assignments').then((r) => r.data),
-  // Image evidence upload — no OCR, no slot extraction.
-  uploadScheduleImage: (file: File) => {
-    const formData = new FormData()
-    formData.append('file', file)
-    return api.post<ClassScheduleImageResult>('/student/profile/class-schedule', formData).then((r) => r.data)
-  },
-  getClassSchedule: () => api.get<ClassSchedule>('/student/profile/class-schedule').then((r) => r.data),
-  getClassScheduleImage: () =>
-    api.get('/student/profile/class-schedule/file', { responseType: 'blob' }).then((r) => r.data as Blob),
   // Per-term manual schedule
   getTermSchedule: (semester: string, academicYear: number) =>
     api.get<TermSchedule>('/student/profile/term-schedule', { params: { semester, academic_year: academicYear } }).then((r) => r.data),

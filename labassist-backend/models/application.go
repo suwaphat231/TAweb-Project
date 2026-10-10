@@ -43,6 +43,7 @@ type Application struct {
 	ReviewedByID *uint      `json:"reviewed_by_id,omitempty"`
 	ReviewedBy   *User      `gorm:"foreignKey:ReviewedByID;references:ID" json:"-"`
 	Note         *string    `gorm:"type:text" json:"note,omitempty"`
+	WithdrawalReason *string  `gorm:"type:text" json:"withdrawal_reason,omitempty"`
 	// Cancelled marks a rejection that came from the instructor undoing an
 	// accept clicked by mistake. The instructor's list shows no status for
 	// it and can accept again; the student sees it as still pending (see
@@ -121,6 +122,7 @@ type ApplicationHistory struct {
 	ReviewedAt    *time.Time  `json:"reviewed_at,omitempty"`
 	ReviewedByID  *uint       `json:"reviewed_by_id,omitempty"`
 	Note          *string     `gorm:"type:text" json:"note,omitempty"`
+	WithdrawalReason *string  `gorm:"type:text" json:"withdrawal_reason,omitempty"`
 	OcrWarning    *string     `gorm:"type:text" json:"ocr_warning,omitempty"`
 	// GradeProofData is included so the instructor can still view proof
 	// from a rejected round when reconsidering.

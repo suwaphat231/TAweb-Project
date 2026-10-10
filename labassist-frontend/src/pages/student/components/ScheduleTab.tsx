@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { studentApi } from '../../../services/api'
 import { Card } from '../../../components/ui/Card'
@@ -116,7 +116,6 @@ function validate(drafts: DraftSlot[], noClass: boolean): ValidationErrors {
 export function ScheduleTab() {
   const qc = useQueryClient()
   const showToast = useToast()
-  const imageInput = useRef<HTMLInputElement>(null)
 
   // Term picker
   const { data: termOptions = [] } = useQuery({
@@ -156,20 +155,11 @@ export function ScheduleTab() {
     queryFn: studentApi.workSchedule,
   })
 
-  // Class schedule image (evidence)
-  const { data: existingImage } = useQuery({
-    queryKey: ['class-schedule'],
-    queryFn: studentApi.getClassSchedule,
-    retry: false,
-  })
-
   // Draft state — local copy of slots being edited
   const [drafts, setDrafts] = useState<DraftSlot[]>([])
   const [noClass, setNoClass] = useState(false)
   const [confirmed, setConfirmed] = useState(false)
   const [errors, setErrors] = useState<ValidationErrors>({ slots: {}, global: '' })
-  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
-  const [showOcrImport, setShowOcrImport] = useState(false)
 
   // Sync drafts from saved schedule on term change
   useEffect(() => {
@@ -183,11 +173,7 @@ export function ScheduleTab() {
     }
     setConfirmed(false)
     setErrors({ slots: {}, global: '' })
-    setShowOcrImport(
-      savedSchedule.status === 'unset' &&
-        !!existingImage?.slots?.length
-    )
-  }, [savedSchedule, existingImage?.slots?.length])
+  }, [savedSchedule])
 
   // Save mutation
   const saveMut = useMutation({
@@ -205,19 +191,6 @@ export function ScheduleTab() {
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
       showToast(msg ?? 'บันทึกไม่สำเร็จ กรุณาลองใหม่', 'error')
-    },
-  })
-
-  // Image upload mutation
-  const imgMut = useMutation({
-    mutationFn: studentApi.uploadScheduleImage,
-    onSuccess: (result) => {
-      qc.invalidateQueries({ queryKey: ['class-schedule'] })
-      showToast(`แนบรูป "${result.file_name}" เรียบร้อยแล้ว`, 'success')
-    },
-    onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
-      showToast(msg ?? 'อัปโหลดรูปไม่สำเร็จ', 'error')
     },
   })
 
@@ -256,13 +229,6 @@ export function ScheduleTab() {
       return { ...e, slots: next }
     })
   }, [])
-
-  const importOcrSlots = useCallback(() => {
-    if (!existingImage?.slots?.length) return
-    setDrafts(existingImage.slots.map((s) => ({ _id: nextId(), ...s })))
-    setShowOcrImport(false)
-    showToast(`นำเข้า ${existingImage.slots.length} ช่วงเวลาจากรูปเดิม — กรุณาตรวจสอบและบันทึก`, 'info')
-  }, [existingImage?.slots, showToast])
 
   // Conflict detection
   const conflicts = useMemo(() => {
@@ -332,25 +298,6 @@ export function ScheduleTab() {
         <Skeleton lines={4} height={16} />
       ) : (
         <>
-          {/* OCR import banner */}
-          {showOcrImport && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
-              padding: '12px 16px', borderRadius: 8,
-              background: 'var(--primary-50, #F0F1FA)',
-              border: '1px solid var(--primary-100, #E1E3F3)',
-            }}>
-              <div style={{ flex: 1, fontSize: 13, color: 'var(--ink-700)' }}>
-                พบข้อมูลตารางเรียนจากรูปที่เคยอัปโหลด ({existingImage!.slots.length} ช่วงเวลา)
-                — สามารถนำเข้าเป็นร่างเพื่อตรวจทานก่อนบันทึก
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Button size="sm" onClick={importOcrSlots}>นำเข้าเป็นร่าง</Button>
-                <Button size="sm" variant="ghost" onClick={() => setShowOcrImport(false)}>ข้าม</Button>
-              </div>
-            </div>
-          )}
-
           {/* Main card: slots form + preview */}
           <Card style={{ padding: 0, overflow: 'hidden' }}>
             <div style={{
@@ -462,114 +409,6 @@ export function ScheduleTab() {
 
           {/* CSS for responsive grid */}
           <style>{`@media(max-width:700px){.schedule-grid{grid-template-columns:1fr!important}}`}</style>
-
-          {/* Image evidence card */}
-          <Card style={{ padding: 24 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 4 }}>
-              รูปตารางเรียนประกอบ
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 16 }}>
-              ใช้ให้อาจารย์ตรวจสอบข้อมูล — ไม่กระทบช่วงเวลาที่กรอก
-            </div>
-
-            <input
-              ref={imageInput}
-              type="file"
-              accept="image/jpeg,image/png"
-              hidden
-              aria-label="เลือกรูปตารางเรียนประกอบ"
-              onChange={(e) => {
-                const file = e.target.files?.[0]
-                e.target.value = ''
-                if (!file) return
-                if (file.size > 10 * 1024 * 1024) {
-                  showToast('ไฟล์ใหญ่เกิน 10 MB', 'error')
-                  return
-                }
-                if (!['image/jpeg', 'image/png'].includes(file.type)) {
-                  showToast('รองรับเฉพาะ JPG และ PNG', 'error')
-                  return
-                }
-                const url = URL.createObjectURL(file)
-                setImagePreviewUrl(url)
-                imgMut.mutate(file)
-              }}
-            />
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-              {/* Thumbnail */}
-              {(imagePreviewUrl || existingImage) && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (imagePreviewUrl) {
-                      window.open(imagePreviewUrl, '_blank')
-                      return
-                    }
-                    // Use authenticated fetch for existing image
-                    try {
-                      const blob = await studentApi.getClassScheduleImage()
-                      const url = URL.createObjectURL(blob)
-                      window.open(url, '_blank')
-                    } catch { /* ignore */ }
-                  }}
-                  aria-label="เปิดดูรูปตารางเรียน"
-                  style={{
-                    background: 'none', border: '1px solid var(--line)',
-                    borderRadius: 8, padding: 4, cursor: 'pointer', flexShrink: 0,
-                  }}
-                >
-                  {imagePreviewUrl ? (
-                    <img
-                      src={imagePreviewUrl}
-                      alt="รูปตารางเรียน"
-                      style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 6, display: 'block' }}
-                    />
-                  ) : (
-                    <div style={{
-                      width: 72, height: 72, borderRadius: 6,
-                      background: 'var(--line-soft)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 28,
-                    }}>
-                      🖼
-                    </div>
-                  )}
-                </button>
-              )}
-
-              <div style={{ flex: 1 }}>
-                {existingImage && (
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 2 }}>
-                    {existingImage.file_name}
-                  </div>
-                )}
-                {existingImage && (
-                  <div style={{ fontSize: 12, color: 'var(--green)', marginBottom: 6 }}>
-                    แนบแล้ว · อัปเดต {new Date(existingImage.updated_at).toLocaleDateString('th-TH')}
-                  </div>
-                )}
-                {imgMut.isPending && (
-                  <div style={{ fontSize: 13, color: 'var(--primary)' }}>กำลังอัปโหลด...</div>
-                )}
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={existingImage ? 'outline' : 'primary'}
-                  loading={imgMut.isPending}
-                  onClick={() => imageInput.current?.click()}
-                >
-                  {existingImage ? 'เปลี่ยนรูป' : 'แนบรูปตารางเรียน'}
-                </Button>
-              </div>
-
-              {!existingImage && !imgMut.isPending && (
-                <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>
-                  ยังไม่ได้แนบรูป — เป็นทางเลือก ไม่บังคับ
-                </div>
-              )}
-            </div>
-          </Card>
 
           {/* Conflict detection */}
           {parsedTerm && savedSchedule?.status === 'set' && (

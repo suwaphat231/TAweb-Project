@@ -35,6 +35,7 @@ export function ProfileInfoTab() {
 
   const [draft, setDraft] = useState<Partial<Record<'full_name' | 'student_id' | 'year' | 'faculty' | 'username', string>>>({})
   const [passwordOpen, setPasswordOpen] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
 
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['student-profile'],
@@ -58,6 +59,7 @@ export function ProfileInfoTab() {
     onSuccess: (updated) => {
       setUser(updated)
       setDraft({})
+      setIsEditing(false)
       qc.setQueryData(['student-profile'], updated)
       qc.invalidateQueries({ queryKey: ['student-profile'] })
       showToast('บันทึกข้อมูลเรียบร้อยแล้ว', 'success')
@@ -118,7 +120,7 @@ export function ProfileInfoTab() {
             <Button
               type="button" size="sm" variant="ghost"
               loading={avatarMut.isPending}
-              disabled={updateMut.isPending}
+              disabled={!isEditing || updateMut.isPending}
               onClick={() => avatarInput.current?.click()}
             >
               เปลี่ยนรูปโปรไฟล์
@@ -162,29 +164,49 @@ export function ProfileInfoTab() {
       {/* Right: edit form */}
       <div style={{ flex: 1, minWidth: 320 }}>
         <Card style={{ padding: 24 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 18 }}>
-            แก้ไขข้อมูลส่วนตัว
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 18 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)' }}>
+              ข้อมูลส่วนตัว
+            </div>
+            {!isEditing ? (
+              <Button type="button" size="sm" onClick={() => setIsEditing(true)}>
+                แก้ไขข้อมูลส่วนตัว
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={updateMut.isPending || avatarMut.isPending}
+                onClick={() => {
+                  setDraft({})
+                  setIsEditing(false)
+                }}
+              >
+                ยกเลิก
+              </Button>
+            )}
           </div>
           {profileLoading ? (
             <Skeleton lines={4} height={16} />
           ) : (
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <Input
-                readOnly={updateMut.isPending}
+                readOnly={!isEditing || updateMut.isPending}
                 label="ชื่อ-นามสกุล *"
                 value={form.full_name}
                 onChange={(e) => setDraft((f) => ({ ...f, full_name: e.target.value }))}
                 required
               />
               <Input
-                readOnly={updateMut.isPending}
+                readOnly={!isEditing || updateMut.isPending}
                 label="รหัสนักศึกษา"
                 value={form.student_id}
                 onChange={(e) => setDraft((f) => ({ ...f, student_id: e.target.value }))}
                 placeholder="กรอกรหัสนักศึกษาของคุณ"
               />
               {/* <Select
-                disabled={updateMut.isPending}
+                disabled={!isEditing || updateMut.isPending}
                 label="ชั้นปี"
                 value={form.year}
                 onChange={(e) => setDraft((f) => ({ ...f, year: e.target.value }))}
@@ -209,7 +231,7 @@ export function ProfileInfoTab() {
                 ]}
               />
               <Input
-                readOnly={updateMut.isPending}
+                readOnly={!isEditing || updateMut.isPending}
                 label="อีเมล (ใช้สำหรับเข้าสู่ระบบ)"
                 value={p?.email ?? ''}
                 disabled
@@ -229,20 +251,22 @@ export function ProfileInfoTab() {
                   ) : (
                     <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>ยังไม่ได้ตั้งรหัสผ่าน</span>
                   )}
-                  <Button type="button" variant="outline" size="sm" onClick={() => setPasswordOpen(true)}>
+                  <Button type="button" variant="outline" size="sm" disabled={!isEditing} onClick={() => setPasswordOpen(true)}>
                     {p?.has_password ? 'เปลี่ยนรหัสผ่าน' : 'สร้างรหัสผ่าน'}
                   </Button>
                 </div>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <Button
-                  type="submit"
-                  loading={updateMut.isPending}
-                  disabled={avatarMut.isPending}
-                >
-                  บันทึกการเปลี่ยนแปลง
-                </Button>
-              </div>
+              {isEditing && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <Button
+                    type="submit"
+                    loading={updateMut.isPending}
+                    disabled={avatarMut.isPending}
+                  >
+                    บันทึกการเปลี่ยนแปลง
+                  </Button>
+                </div>
+              )}
             </form>
           )}
         </Card>

@@ -9,6 +9,7 @@ import { ErrorState } from '../../components/ui/ErrorState'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { Card } from '../../components/ui/Card'
 import { Modal } from '../../components/ui/Modal'
+import { Textarea } from '../../components/ui/Textarea'
 import { cleanCourseTitle } from '../../utils/courseTitle'
 import { useToast } from '../../hooks/useToast'
 import type { Application, ApplicationStatus } from '../../types'
@@ -27,6 +28,7 @@ const filterOptions = [
 export default function StudentStatus() {
   const [filter, setFilter] = useState('')
   const [pendingWithdraw, setPendingWithdraw] = useState<Application | null>(null)
+  const [withdrawReason, setWithdrawReason] = useState('')
   const [uploadTarget, setUploadTarget] = useState<Application | null>(null)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [uploadFileError, setUploadFileError] = useState<string | null>(null)
@@ -40,13 +42,14 @@ export default function StudentStatus() {
   })
 
   const withdrawMut = useMutation({
-    mutationFn: studentApi.withdraw,
+    mutationFn: ({ id, reason }: { id: number; reason: string }) => studentApi.withdraw(id, reason),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['my-applications'] })
       qc.invalidateQueries({ queryKey: ['student-dashboard'] })
       qc.invalidateQueries({ queryKey: ['courses'] })
       showToast(`ถอนใบสมัคร ${pendingWithdraw?.course_code ?? ''} เรียบร้อยแล้ว`, 'success')
       setPendingWithdraw(null)
+      setWithdrawReason('')
     },
     onError: () => {
       showToast('ถอนใบสมัครไม่สำเร็จ กรุณาลองอีกครั้ง', 'error')
@@ -170,7 +173,7 @@ export default function StudentStatus() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => setPendingWithdraw(app)}
+                    onClick={() => { setPendingWithdraw(app); setWithdrawReason('') }}
                     style={{ color: 'var(--red)', border: '1px solid var(--line)', whiteSpace: 'nowrap' }}
                   >
                     ถอนใบสมัคร
@@ -256,7 +259,8 @@ export default function StudentStatus() {
             <Button
               variant="danger"
               loading={withdrawMut.isPending}
-              onClick={() => pendingWithdraw && withdrawMut.mutate(pendingWithdraw.id)}
+              disabled={!withdrawReason.trim()}
+              onClick={() => pendingWithdraw && withdrawMut.mutate({ id: pendingWithdraw.id, reason: withdrawReason.trim() })}
             >
               ยืนยันถอน
             </Button>
@@ -281,6 +285,15 @@ export default function StudentStatus() {
             <p style={{ fontSize: 14, color: 'var(--ink-600)', margin: 0 }}>
               หากถอนใบสมัครแล้ว สถานะจะเปลี่ยนเป็น &quot;ถอนแล้ว&quot; และสามารถสมัครใหม่ได้หากวิชายังเปิดรับอยู่
             </p>
+            <Textarea
+              label="เหตุผลที่ถอนใบสมัคร *"
+              value={withdrawReason}
+              onChange={(e) => setWithdrawReason(e.target.value)}
+              placeholder="กรุณาระบุเหตุผล"
+              maxLength={1000}
+              rows={4}
+              disabled={withdrawMut.isPending}
+            />
           </div>
         )}
       </Modal>

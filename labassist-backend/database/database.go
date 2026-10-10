@@ -999,6 +999,7 @@ func CreateApplication(a models.Application) (models.Application, error) {
 				ReviewedAt:         existing.ReviewedAt,
 				ReviewedByID:       existing.ReviewedByID,
 				Note:               existing.Note,
+				WithdrawalReason:   existing.WithdrawalReason,
 				OcrWarning:         existing.OcrWarning,
 				GradeProofFileName: existing.GradeProofFileName,
 				GradeProofData:     existing.GradeProofData,
@@ -1060,7 +1061,7 @@ var ErrAlreadyWithdrawn = errors.New("already withdrawn")
 // WithdrawApplication atomically sets the application to withdrawn and, if it
 // was previously accepted, decrements the course's accepted-slot counter — all
 // within a single transaction so concurrent withdrawals cannot double-decrement.
-func WithdrawApplication(id, studentID uint) (models.Application, error) {
+func WithdrawApplication(id, studentID uint, reason string) (models.Application, error) {
 	var a models.Application
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -1082,6 +1083,7 @@ func WithdrawApplication(id, studentID uint) (models.Application, error) {
 		}
 		prevStatus := a.Status
 		a.Status = models.AppWithdrawn
+		a.WithdrawalReason = &reason
 		// The student saw a cancelled acceptance as pending, so withdrawing
 		// it must leave them free to re-apply like any other withdrawal.
 		a.Cancelled = false

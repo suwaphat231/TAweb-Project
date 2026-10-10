@@ -147,6 +147,7 @@ export interface Application {
   reviewed_at?: string
   reviewed_by_name?: string
   note?: string
+  withdrawal_reason?: string
 }
 
 export interface AuthState {
@@ -492,23 +493,6 @@ export interface ScheduleSlot {
   day: string        // MON TUE WED THU FRI SAT SUN
   start_time: string // HH:MM
   end_time: string   // HH:MM
-}
-
-/** Stored class schedule image evidence for a student. */
-export interface ClassSchedule {
-  id: number
-  user_id: number
-  file_name: string
-  /** Legacy OCR slots — may be present from earlier uploads, not confirmed. */
-  slots: ScheduleSlot[]
-  updated_at: string
-}
-
-/** Result of POST /student/profile/class-schedule (image evidence upload, no OCR). */
-export interface ClassScheduleImageResult {
-  id: number
-  file_name: string
-  updated_at: string
 }
 
 /** Status of a student's term schedule entry. */
