@@ -17,7 +17,7 @@ import { cleanCourseTitle } from '../../utils/courseTitle'
 
 export default function StudentHome() {
   const { user } = useAuth()
-  const { openApply, modal } = useApplyLabboy()
+  const { openApply, modal, scheduleConfirmed } = useApplyLabboy()
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['student-dashboard'],
     queryFn: studentApi.dashboard,
@@ -50,6 +50,23 @@ export default function StudentHome() {
           </div>
         </div>
       </div>
+
+      {scheduleConfirmed === false && (
+        <div style={{
+          display: 'flex', alignItems: 'flex-start', gap: 10, margin: '16px 0',
+          padding: '12px 16px', borderRadius: 8,
+          background: 'var(--amber-bg)', color: 'var(--amber)', fontSize: 13,
+        }}>
+          <span aria-hidden="true" style={{ fontSize: 16, lineHeight: 1 }}>!</span>
+          <div>
+            <div style={{ fontWeight: 700, marginBottom: 3 }}>กรุณากรอกตารางเรียนก่อนสมัคร Lab Boy</div>
+            <div>กรอกและบันทึกข้อมูลตารางเรียนในหน้าโปรไฟล์ก่อนจึงจะสมัครรายวิชาได้</div>
+            <Link to="/student/profile" style={{ display: 'inline-block', marginTop: 6, color: 'var(--primary)', fontWeight: 700 }}>
+              ไปกรอกตารางเรียน
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Stat cards */}
       {isLoading ? (
@@ -88,6 +105,7 @@ export default function StudentHome() {
                   group={group}
                   appliedSections={getAppliedSections(group, myApps)}
                   onApply={openApply}
+                  scheduleRequired={scheduleConfirmed === false}
                 />
               ))}
             </div>

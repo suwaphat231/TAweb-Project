@@ -23,6 +23,13 @@ func (h *Handler) GetTermSchedule(c *gin.Context) {
 	c.JSON(http.StatusOK, ts)
 }
 
+// GetTermScheduleStatus reports whether the student has confirmed at least
+// one term schedule before applying for Lab Boy.
+func (h *Handler) GetTermScheduleStatus(c *gin.Context) {
+	studentID, _ := c.Get("user_id")
+	c.JSON(http.StatusOK, gin.H{"confirmed": database.HasConfirmedTermSchedule(studentID.(uint))})
+}
+
 type saveTermScheduleRequest struct {
 	Semester     string                    `json:"semester" binding:"required"`
 	AcademicYear int                       `json:"academic_year" binding:"required"`

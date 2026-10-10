@@ -210,6 +210,8 @@ export const studentApi = {
   // Per-term manual schedule
   getTermSchedule: (semester: string, academicYear: number) =>
     api.get<TermSchedule>('/student/profile/term-schedule', { params: { semester, academic_year: academicYear } }).then((r) => r.data),
+  termScheduleStatus: () =>
+    api.get<{ confirmed: boolean }>('/student/profile/term-schedule/status').then((r) => r.data.confirmed),
   saveTermSchedule: (data: { semester: string; academic_year: number; slots: ScheduleSlot[]; status: TermScheduleStatus }) =>
     api.put<TermSchedule>('/student/profile/term-schedule', data).then((r) => r.data),
   getAvailableTerms: () =>

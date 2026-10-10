@@ -260,7 +260,7 @@ func mergeDuplicateCourses() error {
 // referenced keeps its row so existing applications stay valid.
 func splitMultiTimeCourses() error {
 	var courses []models.Course
-	if err := DB.Where("slot = 0 AND schedule LIKE ?", "%\n%").Order("id ASC").Find(&courses).Error; err != nil {
+	if err := DB.Where("slot = 0 AND (schedule LIKE ? OR schedule LIKE ?)", "%\n%", "%,%").Order("id ASC").Find(&courses).Error; err != nil {
 		return fmt.Errorf("load courses: %w", err)
 	}
 
@@ -268,16 +268,12 @@ func splitMultiTimeCourses() error {
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		for _, c := range courses {
 			lines := SplitScheduleDays(c.Schedule)
-			if len(lines) < 2 || courseReferenced(tx, c.ID) {
+			if len(lines) < 2 {
 				continue
 			}
-			var recruiting int64
-			if err := tx.Model(&models.Posting{}).Where("course_id = ? AND status <> ?", c.ID, models.StatusDraft).Count(&recruiting).Error; err != nil {
-				return err
-			}
-			if recruiting > 0 {
-				continue
-			}
+
+			var sourcePosting models.Posting
+			hasSourcePosting := tx.Where("course_id = ? AND is_active = true", c.ID).First(&sourcePosting).Error == nil
 
 			var links []models.CourseInstructor
 			if err := tx.Where("course_id = ?", c.ID).Find(&links).Error; err != nil {
@@ -291,7 +287,6 @@ func splitMultiTimeCourses() error {
 				nc.ID = 0
 				nc.Slot = slot + 1
 				nc.Schedule = line
-				nc.Status = models.StatusDraft
 				if err := tx.Omit(clause.Associations).Create(&nc).Error; err != nil {
 					return err
 				}
@@ -302,7 +297,15 @@ func splitMultiTimeCourses() error {
 						return err
 					}
 				}
-				if err := syncPostingTx(tx, nc); err != nil {
+				if hasSourcePosting {
+					newPosting := sourcePosting
+					newPosting.ID = 0
+					newPosting.CourseID = nc.ID
+					newPosting.LabBoyAccepted = 0
+					if err := tx.Create(&newPosting).Error; err != nil {
+						return err
+					}
+				} else if err := syncPostingTx(tx, nc); err != nil {
 					return err
 				}
 			}

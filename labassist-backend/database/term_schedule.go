@@ -19,6 +19,18 @@ func TermScheduleByUserTerm(userID uint, semester string, academicYear int) mode
 	return ts
 }
 
+// HasConfirmedTermSchedule reports whether the student has explicitly saved
+// a schedule or confirmed that a term has no classes.
+func HasConfirmedTermSchedule(userID uint) bool {
+	var count int64
+	DB.Model(&models.TermSchedule{}).
+		Where("user_id = ? AND status IN ?", userID, []models.TermScheduleStatus{
+			models.TermScheduleSet,
+			models.TermScheduleNoClass,
+		}).Count(&count)
+	return count > 0
+}
+
 // UpsertTermSchedule saves or replaces the TermSchedule for one student/term.
 func UpsertTermSchedule(userID uint, semester string, academicYear int, slots []models.ScheduleSlot, status models.TermScheduleStatus) (models.TermSchedule, error) {
 	var ts models.TermSchedule

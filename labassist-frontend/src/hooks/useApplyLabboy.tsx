@@ -39,6 +39,11 @@ export function useApplyLabboy() {
     queryFn: studentApi.applications,
   })
 
+  const { data: scheduleConfirmed } = useQuery({
+    queryKey: ['term-schedule-status'],
+    queryFn: studentApi.termScheduleStatus,
+  })
+
   const applyMutation = useMutation({
     mutationFn: async (vars: { course_ids: number[]; grade?: string; gradeProofFile: File | null }) => {
       let ocrWarning: string | undefined
@@ -124,6 +129,7 @@ export function useApplyLabboy() {
 
   function confirmApply() {
     if (selectedSectionIds.length === 0) return
+    if (scheduleConfirmed !== true) return
     if (requireGradeProof && !gradeProofFile) return
     if (fileError) return
     applyMutation.mutate({ course_ids: selectedSectionIds, grade: grade || undefined, gradeProofFile })
@@ -152,6 +158,15 @@ export function useApplyLabboy() {
               </div>
             )}
             <div style={{ marginTop: 4 }}>{applyTarget.instructor_name}</div>
+          </div>
+        )}
+
+        {scheduleConfirmed === false && (
+          <div style={{ padding: '12px 14px', borderRadius: 8, background: 'var(--amber-bg)', color: 'var(--amber)', fontSize: 13 }}>
+            กรุณากรอกและบันทึกตารางเรียนของคุณในหน้าโปรไฟล์ก่อนสมัคร Lab Boy
+            <a href="/student/profile" style={{ display: 'inline-block', marginTop: 6, color: 'var(--primary)', fontWeight: 700 }}>
+              ไปกรอกตารางเรียน
+            </a>
           </div>
         )}
 
@@ -267,7 +282,7 @@ export function useApplyLabboy() {
           <Button
             onClick={confirmApply}
             loading={applyMutation.isPending}
-            disabled={selectedSectionIds.length === 0 || selectedSections.some((s) => !!s.conflict_day) || (requireGradeProof && !gradeProofFile) || !!fileError}
+            disabled={scheduleConfirmed !== true || selectedSectionIds.length === 0 || selectedSections.some((s) => !!s.conflict_day) || (requireGradeProof && !gradeProofFile) || !!fileError}
           >
             ยืนยันสมัคร{selectedSectionIds.length > 1 ? ` (${selectedSectionIds.length} ช่วงเวลา)` : ''}
           </Button>
@@ -276,5 +291,5 @@ export function useApplyLabboy() {
     </Modal>
   )
 
-  return { openApply, modal }
+  return { openApply, modal, scheduleConfirmed }
 }

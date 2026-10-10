@@ -103,6 +103,13 @@ func (h *Handler) Apply(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "course is not accepting applications"})
 		return
 	}
+	if !database.HasConfirmedTermSchedule(studentID.(uint)) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":             "กรุณากรอกและบันทึกตารางเรียนในหน้าโปรไฟล์ก่อนสมัคร Lab Boy",
+			"schedule_required": true,
+		})
+		return
+	}
 
 	// Block if the student's confirmed term schedule conflicts with this course.
 	// Falls back to any set TermSchedule when the course-specific term has no

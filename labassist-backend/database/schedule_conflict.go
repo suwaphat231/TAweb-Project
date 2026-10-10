@@ -119,6 +119,19 @@ func ConflictingDay(courseSchedule string, ts models.TermSchedule) string {
 // two). Blank and repeated lines are dropped; an empty schedule yields one
 // empty entry so the section still gets a row.
 func SplitScheduleDays(schedule string) []string {
+	if m := thaiCommaRe.FindStringSubmatch(strings.TrimSpace(schedule)); m != nil {
+		var days []string
+		for _, day := range strings.Split(m[1], ",") {
+			day = strings.TrimSpace(day)
+			if day != "" {
+				days = append(days, fmt.Sprintf("%s %s-%s", day, m[2], m[3]))
+			}
+		}
+		if len(days) > 0 {
+			return days
+		}
+	}
+
 	var days []string
 	byDay := map[string][]string{}
 	seen := map[string]bool{}

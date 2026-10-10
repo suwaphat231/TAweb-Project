@@ -18,7 +18,7 @@ const filterOptions = [
 export default function StudentApply() {
   const [filter, setFilter] = useState('')
   const [search, setSearch] = useState('')
-  const { openApply, modal } = useApplyLabboy()
+  const { openApply, modal, scheduleConfirmed } = useApplyLabboy()
 
   const { data: courses = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['student-courses', filter],
@@ -56,6 +56,23 @@ export default function StudentApply() {
         <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 4 }}>สมัคร Lab Boy</h1>
         <p style={{ color: 'var(--ink-500)', fontSize: 14 }}>เลือกวิชาที่คุณต้องการสมัคร</p>
       </div>
+
+      {scheduleConfirmed === false && (
+        <div style={{
+          display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 16,
+          padding: '12px 16px', borderRadius: 8,
+          background: 'var(--amber-bg)', color: 'var(--amber)', fontSize: 13,
+        }}>
+          <span aria-hidden="true" style={{ fontSize: 16, lineHeight: 1 }}>!</span>
+          <div>
+            <div style={{ fontWeight: 700, marginBottom: 3 }}>กรุณากรอกตารางเรียนก่อนสมัคร</div>
+            <div>ต้องบันทึกตารางเรียนหรือยืนยันว่าไม่มีคาบเรียนในหน้าโปรไฟล์ก่อนสมัคร Lab Boy</div>
+            <a href="/student/profile" style={{ display: 'inline-block', marginTop: 6, color: 'var(--primary)', fontWeight: 700 }}>
+              ไปกรอกตารางเรียน
+            </a>
+          </div>
+        </div>
+      )}
 
       <div style={{ position: 'relative', marginBottom: 14 }}>
         <svg
@@ -139,6 +156,7 @@ export default function StudentApply() {
               group={group}
               appliedSections={getAppliedSections(group, myApps)}
               onApply={openApply}
+              scheduleRequired={scheduleConfirmed === false}
             />
           ))}
         </div>

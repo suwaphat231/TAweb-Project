@@ -9,9 +9,10 @@ interface Props {
   group: CourseGroup
   onApply?: (group: CourseGroup) => void
   appliedSections?: Course[]
+  scheduleRequired?: boolean
 }
 
-export function CourseCard({ group, onApply, appliedSections = [] }: Props) {
+export function CourseCard({ group, onApply, appliedSections = [], scheduleRequired = false }: Props) {
   const allFull = group.totalSlots > 0 && group.totalAccepted >= group.totalSlots
   // A group conflicts when every section the student could take has a schedule
   // conflict. If even one section is conflict-free, the card stays actionable.
@@ -136,7 +137,9 @@ export function CourseCard({ group, onApply, appliedSections = [] }: Props) {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
             <Badge variant="green">สมัครแล้ว{appliedSecLabel ? ` (Sec ${appliedSecLabel})` : ''}</Badge>
             {canApplyMore && (
-              <Button size="sm" variant="outline" onClick={handleApply}>สมัครเวลาอื่นเพิ่ม</Button>
+              <Button size="sm" variant="outline" disabled={scheduleRequired} onClick={handleApply}>
+                {scheduleRequired ? 'กรอกตารางเรียนก่อน' : 'สมัครเวลาอื่นเพิ่ม'}
+              </Button>
             )}
           </div>
         ) : conflictDay ? (
@@ -150,6 +153,10 @@ export function CourseCard({ group, onApply, appliedSections = [] }: Props) {
           </div>
         ) : allFull ? (
           <Button size="sm" variant="outline" disabled style={{ cursor: 'not-allowed' }}>เต็มแล้ว</Button>
+        ) : scheduleRequired ? (
+          <Button size="sm" variant="outline" disabled style={{ cursor: 'not-allowed' }}>
+            กรอกตารางเรียนก่อน
+          </Button>
         ) : (
           <Button size="sm" onClick={handleApply}>สมัคร Lab Boy</Button>
         )}

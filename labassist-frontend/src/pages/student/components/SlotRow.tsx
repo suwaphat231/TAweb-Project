@@ -11,26 +11,19 @@ const DAY_OPTIONS = [
   { value: 'SUN', label: 'วันอาทิตย์' },
 ]
 
-// University hours: 07:00 – 21:00
-const HOURS = Array.from({ length: 15 }, (_, i) => String(i + 7).padStart(2, '0'))
-// Minutes in 5-minute increments
-const MINUTES = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55']
-
-const selectStyle: React.CSSProperties = {
+const timeInputStyle: React.CSSProperties = {
   padding: '6px 8px',
   border: '1.5px solid var(--line)',
   borderRadius: 'var(--radius-input, 8px)',
   fontSize: 13,
   color: 'var(--ink-900)',
   background: '#fff',
-  cursor: 'pointer',
   outline: 'none',
-  appearance: 'none',
-  WebkitAppearance: 'none',
   textAlign: 'center',
+  width: 76,
 }
 
-interface TimeSelectProps {
+interface TimeInputProps {
   label?: string
   value: string   // "HH:MM" or ""
   onChange: (v: string) => void
@@ -38,17 +31,7 @@ interface TimeSelectProps {
   'aria-label'?: string
 }
 
-function TimeSelect({ label, value, onChange, disabled, 'aria-label': ariaLabel }: TimeSelectProps) {
-  const [hh, mm] = value ? value.split(':') : ['', '']
-
-  function emit(newH: string, newM: string) {
-    if (newH && newM) {
-      onChange(`${newH}:${newM}`)
-    } else {
-      onChange('')
-    }
-  }
-
+function TimeInput({ label, value, onChange, disabled, 'aria-label': ariaLabel }: TimeInputProps) {
   return (
     <div>
       {label && (
@@ -56,32 +39,20 @@ function TimeSelect({ label, value, onChange, disabled, 'aria-label': ariaLabel 
           {label}
         </div>
       )}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 2 }} aria-label={ariaLabel}>
-        <select
-          value={hh || ''}
-          onChange={(e) => emit(e.target.value, mm || '00')}
+      <div aria-label={ariaLabel}>
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
-          aria-label={`${ariaLabel ?? label} ชั่วโมง`}
-          style={{ ...selectStyle, width: 56 }}
+          placeholder="HH:MM"
+          maxLength={5}
+          inputMode="numeric"
+          aria-label={ariaLabel ?? label}
+          style={timeInputStyle}
           onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--primary)')}
           onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
-        >
-          <option value="">ชม.</option>
-          {HOURS.map(h => <option key={h} value={h}>{h}</option>)}
-        </select>
-        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-400)', padding: '0 1px' }}>:</span>
-        <select
-          value={mm || ''}
-          onChange={(e) => emit(hh || '', e.target.value)}
-          disabled={disabled}
-          aria-label={`${ariaLabel ?? label} นาที`}
-          style={{ ...selectStyle, width: 56 }}
-          onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--primary)')}
-          onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
-        >
-          <option value="">นาที</option>
-          {MINUTES.map(m => <option key={m} value={m}>{m}</option>)}
-        </select>
+        />
       </div>
     </div>
   )
@@ -120,7 +91,7 @@ export function SlotRow({ slot, index, error, disabled, onChange, onDelete }: Pr
         </div>
 
         {/* Start time */}
-        <TimeSelect
+        <TimeInput
           label={index === 0 ? 'เริ่ม' : undefined}
           value={slot.start_time}
           onChange={(v) => onChange(slot._id, 'start_time', v)}
@@ -138,7 +109,7 @@ export function SlotRow({ slot, index, error, disabled, onChange, onDelete }: Pr
         </div>
 
         {/* End time */}
-        <TimeSelect
+        <TimeInput
           label={index === 0 ? 'สิ้นสุด' : undefined}
           value={slot.end_time}
           onChange={(v) => onChange(slot._id, 'end_time', v)}

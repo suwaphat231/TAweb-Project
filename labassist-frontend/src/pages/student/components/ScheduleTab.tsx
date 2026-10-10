@@ -30,6 +30,10 @@ function toMin(t: string): number {
   return h * 60 + m
 }
 
+function isValidTime(t: string): boolean {
+  return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(t)
+}
+
 function hasOverlap(s1: string, e1: string, s2: string, e2: string): boolean {
   return toMin(s1) < toMin(e2) && toMin(s2) < toMin(e1)
 }
@@ -77,6 +81,8 @@ function validate(drafts: DraftSlot[], noClass: boolean): ValidationErrors {
   for (const d of drafts) {
     if (!d.day || !d.start_time || !d.end_time) {
       errors[d._id] = 'กรุณากรอกวันและเวลาให้ครบ'
+    } else if (!isValidTime(d.start_time) || !isValidTime(d.end_time)) {
+      errors[d._id] = 'กรุณากรอกเวลาในรูปแบบ HH:MM เช่น 08:30'
     } else if (d.start_time >= d.end_time) {
       errors[d._id] = 'เวลาเริ่มต้องน้อยกว่าเวลาสิ้นสุด'
     }
@@ -184,6 +190,7 @@ export function ScheduleTab() {
         ['term-schedule', parsedTerm?.semester, parsedTerm?.academic_year],
         result,
       )
+      qc.invalidateQueries({ queryKey: ['term-schedule-status'] })
       showToast('บันทึกตารางเรียนเรียบร้อยแล้ว', 'success')
       setConfirmed(false)
       setErrors({ slots: {}, global: '' })
