@@ -200,8 +200,30 @@ func (h *Handler) Withdraw(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "ไม่สามารถถอนใบสมัครได้หลังจากอาจารย์ปิดรับสมัครแล้ว"})
 			return
 		}
+		if errors.Is(err, database.ErrWithdrawAlreadyRequested) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ส่งคำขอถอนไปแล้ว กรุณารออาจารย์พิจารณา"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot save application"})
 		return
+	}
+
+	// An accepted Lab Boy's withdrawal waits for the instructor's approval.
+	if updated.WithdrawRequested {
+		if course, ok := database.CourseByID(updated.CourseID); ok {
+			if applicant, ok := database.UserByID(studentID.(uint)); ok {
+				notifs := make([]models.Notification, 0, 1)
+				for _, ins := range database.InstructorsForCourse(course) {
+					notifs = append(notifs, models.Notification{
+						UserID:   ins.ID,
+						CourseID: &course.ID,
+						Title:    "มีคำขอถอนจาก Lab Boy",
+						Body:     fmt.Sprintf("นักศึกษา %s ขอถอนจากการเป็น Lab Boy วิชา %s (%s) เหตุผล: %s", applicant.FullName, course.Title, course.Code, reason),
+					})
+				}
+				database.CreateNotifications(notifs)
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, updated)

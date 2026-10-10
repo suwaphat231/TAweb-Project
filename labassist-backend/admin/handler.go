@@ -9,6 +9,7 @@ import (
 	"labassist/models"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,14 +19,16 @@ import (
 // instructors fill in their own email themselves (via Google sign-in, wired
 // up separately) rather than having an admin type it in for them.
 type CreateUserRequest struct {
-	FullName string          `json:"full_name" binding:"required" example:"John Doe"`
-	Role     models.UserRole `json:"role" binding:"required" example:"instructor"`
+	FullName   string          `json:"full_name" binding:"required" example:"สมชาย ใจดี"`
+	FullNameEn string          `json:"full_name_en" example:"Somchai Jaidee"`
+	Role       models.UserRole `json:"role" binding:"required" example:"instructor"`
 }
 
 // UpdateUserRequest is the request body for editing a user's name/role
 type UpdateUserRequest struct {
-	FullName *string          `json:"full_name,omitempty" example:"John Doe"`
-	Role     *models.UserRole `json:"role,omitempty" example:"instructor"`
+	FullName   *string          `json:"full_name,omitempty" example:"สมชาย ใจดี"`
+	FullNameEn *string          `json:"full_name_en,omitempty" example:"Somchai Jaidee"`
+	Role       *models.UserRole `json:"role,omitempty" example:"instructor"`
 }
 
 // UpdateUserStatusRequest is the request body for updating user active status
@@ -116,8 +119,9 @@ func (h *Handler) CreateUser(c *gin.Context) {
 	}
 
 	user, err := database.CreateUser(models.User{
-		FullName: body.FullName,
-		Role:     body.Role,
+		FullName:   body.FullName,
+		FullNameEn: strings.TrimSpace(body.FullNameEn),
+		Role:       body.Role,
 	})
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "could not create user"})
@@ -148,6 +152,9 @@ func (h *Handler) UpdateUser(c *gin.Context) {
 	updated, ok := database.UpdateUser(uint(id), func(u *models.User) {
 		if body.FullName != nil {
 			u.FullName = *body.FullName
+		}
+		if body.FullNameEn != nil {
+			u.FullNameEn = strings.TrimSpace(*body.FullNameEn)
 		}
 		if body.Role != nil {
 			u.Role = *body.Role

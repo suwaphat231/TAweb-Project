@@ -69,7 +69,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	user, ok := database.UserByUsername(body.Username)
+	// Autofill and mobile keyboards often add stray spaces to the username.
+	user, ok := database.UserByUsername(strings.TrimSpace(body.Username))
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง"})
 		return

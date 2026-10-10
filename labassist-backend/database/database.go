@@ -214,7 +214,7 @@ func ListUsers(role, search string, limit, offset int) []models.User {
 	}
 	if search != "" {
 		s := "%" + strings.ToLower(search) + "%"
-		q = q.Where("LOWER(full_name) LIKE ? OR LOWER(email) LIKE ?", s, s)
+		q = q.Where("LOWER(full_name) LIKE ? OR LOWER(full_name_en) LIKE ? OR LOWER(email) LIKE ?", s, s, s)
 	}
 	out := make([]models.User, 0)
 	q.Offset(offset).Limit(limit).Find(&out)
@@ -1081,6 +1081,18 @@ func WithdrawApplication(id, studentID uint, reason string) (models.Application,
 				return ErrWithdrawalClosed
 			}
 		}
+		// An accepted Lab Boy only files a request; the instructor decides
+		// in ResolveWithdrawRequest, so the slot stays taken until then.
+		if a.Status == models.AppAccepted {
+			if a.WithdrawRequested {
+				return ErrWithdrawAlreadyRequested
+			}
+			now := time.Now()
+			a.WithdrawRequested = true
+			a.WithdrawRequestedAt = &now
+			a.WithdrawalReason = &reason
+			return tx.Omit(clause.Associations).Save(&a).Error
+		}
 		prevStatus := a.Status
 		a.Status = models.AppWithdrawn
 		a.WithdrawalReason = &reason
@@ -1092,6 +1104,62 @@ func WithdrawApplication(id, studentID uint, reason string) (models.Application,
 		}
 		if prevStatus == models.AppAccepted {
 			return tx.Model(&models.Posting{}).Where("id = ?", a.PostingID).
+				UpdateColumn("lab_boy_accepted", gorm.Expr("GREATEST(0, lab_boy_accepted - 1)")).Error
+		}
+		return nil
+	})
+	if err != nil {
+		return models.Application{}, err
+	}
+	return enrichApplication(a), nil
+}
+
+// ErrWithdrawAlreadyRequested is returned by WithdrawApplication when an
+// accepted student's withdrawal request is still awaiting the instructor.
+var ErrWithdrawAlreadyRequested = errors.New("withdraw already requested")
+
+// ErrNoWithdrawRequest is returned by ResolveWithdrawRequest when the
+// application has no pending withdrawal request.
+var ErrNoWithdrawRequest = errors.New("no pending withdraw request")
+
+// ErrPostingArchived is returned when the application's posting has been
+// archived, which makes it read-only.
+var ErrPostingArchived = errors.New("posting archived")
+
+// ResolveWithdrawRequest approves or rejects an accepted Lab Boy's pending
+// withdrawal request. Approving withdraws the application and hands its slot
+// back; rejecting clears the request and leaves the student accepted.
+func ResolveWithdrawRequest(appID uint, approve bool, reviewerID uint) (models.Application, error) {
+	var a models.Application
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&a, appID).Error; err != nil {
+			return err
+		}
+		if a.Status != models.AppAccepted || !a.WithdrawRequested {
+			return ErrNoWithdrawRequest
+		}
+		var posting models.Posting
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&posting, a.PostingID).Error; err != nil {
+			return err
+		}
+		if !posting.IsActive {
+			return ErrPostingArchived
+		}
+		now := time.Now()
+		a.WithdrawRequested = false
+		a.ReviewedAt = &now
+		a.ReviewedByID = &reviewerID
+		if approve {
+			a.Status = models.AppWithdrawn
+		} else {
+			a.WithdrawRequestedAt = nil
+			a.WithdrawalReason = nil
+		}
+		if err := tx.Omit(clause.Associations).Save(&a).Error; err != nil {
+			return err
+		}
+		if approve {
+			return tx.Model(&posting).
 				UpdateColumn("lab_boy_accepted", gorm.Expr("GREATEST(0, lab_boy_accepted - 1)")).Error
 		}
 		return nil
@@ -1158,6 +1226,10 @@ func ReviewApplicationTx(appID uint, newStatus models.AppStatus, applyFields fun
 		}
 
 		applyFields(&app)
+		// Leaving accepted settles any pending withdrawal request.
+		if app.Status != models.AppAccepted {
+			app.WithdrawRequested = false
+		}
 		if err := tx.Omit(clause.Associations).Save(&app).Error; err != nil {
 			return err
 		}

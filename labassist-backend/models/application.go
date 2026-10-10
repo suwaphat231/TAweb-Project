@@ -44,6 +44,11 @@ type Application struct {
 	ReviewedBy   *User      `gorm:"foreignKey:ReviewedByID;references:ID" json:"-"`
 	Note         *string    `gorm:"type:text" json:"note,omitempty"`
 	WithdrawalReason *string  `gorm:"type:text" json:"withdrawal_reason,omitempty"`
+	// WithdrawRequested marks an accepted Lab Boy who asked to withdraw.
+	// The application stays accepted (keeping its slot) until the instructor
+	// approves the request, which turns it withdrawn; rejecting clears it.
+	WithdrawRequested   bool       `gorm:"not null;default:false" json:"withdraw_requested,omitempty"`
+	WithdrawRequestedAt *time.Time `json:"withdraw_requested_at,omitempty"`
 	// Cancelled marks a rejection that came from the instructor undoing an
 	// accept clicked by mistake. The instructor's list shows no status for
 	// it and can accept again; the student sees it as still pending (see

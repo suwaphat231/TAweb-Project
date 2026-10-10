@@ -29,10 +29,10 @@ export default function AdminUsers() {
   const [showCreate, setShowCreate] = useState(false)
   const [roleFilter, setRoleFilter] = useState<UserRole | ''>('')
   const [search, setSearch] = useState('')
-  const [form, setForm] = useState({ full_name: '', role: 'instructor' as UserRole })
+  const [form, setForm] = useState({ full_name: '', full_name_en: '', role: 'instructor' as UserRole })
 
   const [editingUser, setEditingUser] = useState<User | null>(null)
-  const [editForm, setEditForm] = useState({ full_name: '', role: 'instructor' as UserRole })
+  const [editForm, setEditForm] = useState({ full_name: '', full_name_en: '', role: 'instructor' as UserRole })
 
   const [viewingUser, setViewingUser] = useState<User | null>(null)
 
@@ -48,6 +48,7 @@ export default function AdminUsers() {
     ? users
     : users.filter((u) =>
         u.full_name.toLowerCase().includes(q) ||
+        (u.full_name_en ?? '').toLowerCase().includes(q) ||
         (u.username ?? '').toLowerCase().includes(q) ||
         (u.email ?? '').toLowerCase().includes(q)
       )
@@ -63,7 +64,7 @@ export default function AdminUsers() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-users'] })
       setShowCreate(false)
-      setForm({ full_name: '', role: 'instructor' })
+      setForm({ full_name: '', full_name_en: '', role: 'instructor' })
     },
   })
   const updateMut = useMutation({
@@ -87,11 +88,19 @@ export default function AdminUsers() {
 
   function openEdit(u: User) {
     setEditingUser(u)
-    setEditForm({ full_name: u.full_name, role: u.role })
+    setEditForm({ full_name: u.full_name, full_name_en: u.full_name_en ?? '', role: u.role })
   }
 
   const columns = [
-    { key: 'full_name', header: 'ชื่อ',     render: (u: User) => <span style={{ fontWeight: 600 }}>{u.full_name}</span> },
+    {
+      key: 'full_name', header: 'ชื่อ',
+      render: (u: User) => (
+        <div>
+          <span style={{ fontWeight: 600 }}>{u.full_name}</span>
+          {u.full_name_en && <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{u.full_name_en}</div>}
+        </div>
+      ),
+    },
     { key: 'username',  header: 'Username', render: (u: User) => <code style={{ fontSize: 13 }}>{u.username || '—'}</code> },
     { key: 'email',     header: 'อีเมล',    render: (u: User) => <span style={{ fontSize: 13 }}>{u.email || '—'}</span> },
   
@@ -164,7 +173,7 @@ export default function AdminUsers() {
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="ค้นหาชื่อ / username / อีเมล..."
+          placeholder="ค้นหาชื่อ (ไทย/อังกฤษ) / username / อีเมล..."
           style={{
             padding: '7px 12px', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-input)',
             fontSize: 13, color: 'var(--ink-900)', outline: 'none', minWidth: 240,
@@ -188,6 +197,7 @@ export default function AdminUsers() {
             กรอกแค่ชื่อ-นามสกุลและบทบาท — อีเมลจะถูกเติมเองภายหลังตอนเจ้าของบัญชีเข้าสู่ระบบ
           </p>
           <Input label="ชื่อ-นามสกุล *" value={form.full_name} onChange={set('full_name')} required />
+          <Input label="ชื่อ-นามสกุล (ภาษาอังกฤษ)" value={form.full_name_en} onChange={set('full_name_en')} placeholder="เช่น Somchai Jaidee" />
           <Select
             label="บทบาท *" value={form.role} onChange={set('role')}
             options={ROLE_OPTIONS}
@@ -205,6 +215,7 @@ export default function AdminUsers() {
           style={{ display: 'flex', flexDirection: 'column', gap: 14 }}
         >
           <Input label="ชื่อ-นามสกุล *" value={editForm.full_name} onChange={setEdit('full_name')} required />
+          <Input label="ชื่อ-นามสกุล (ภาษาอังกฤษ)" value={editForm.full_name_en} onChange={setEdit('full_name_en')} placeholder="เช่น Somchai Jaidee" />
           <Select
             label="บทบาท *" value={editForm.role} onChange={setEdit('role')}
             options={ROLE_OPTIONS}

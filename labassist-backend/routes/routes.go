@@ -120,6 +120,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			review.POST("/instructor/courses/:id/notify", teacherH.NotifyCourse)
 			review.PUT("/instructor/applications/:id/review", teacherH.Review)
 			review.PUT("/instructor/applications/:id/cancel", teacherH.CancelAcceptance)
+			review.PUT("/instructor/applications/:id/withdraw-request", teacherH.ResolveWithdraw)
 			review.PUT("/instructor/applications/bulk-review", teacherH.BulkReview)
 			review.GET("/instructor/applications/:id/grade-proof", teacherH.GradeProof)
 			review.POST("/instructor/courses/:id/confirm-schedule", teacherH.ConfirmSchedule)
