@@ -3,7 +3,6 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { authApi } from '../../services/api'
 import { Avatar } from '../ui/Avatar'
-import { getInitials } from '../../utils/initials'
 import type { UserRole } from '../../types'
 
 interface Props {
@@ -180,7 +179,7 @@ export function Sidebar({ collapsed = false, onClose }: Props) {
           justifyContent: collapsed ? 'center' : 'flex-start',
           flexShrink: 0,
         }}>
-          <Avatar initials={getInitials(user.full_name)} src={user.avatar_url} color="blue" size={34} />
+          <Avatar src={user.avatar_url} size={34} />
           {!collapsed && (
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-900)', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

@@ -9,7 +9,6 @@ import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { ErrorState } from '../../components/ui/ErrorState'
 import { Avatar } from '../../components/ui/Avatar'
-import { getInitials } from '../../utils/initials'
 import { CourseCard } from '../../components/course/CourseCard'
 import { useApplyLabboy } from '../../hooks/useApplyLabboy'
 import { groupCourseSections, getAppliedSections } from '../../utils/courseGrouping'
@@ -41,8 +40,8 @@ export default function StudentHome() {
         gap: 20,
         color: '#fff',
       }}>
-        <Avatar initials={getInitials(user?.full_name ?? '?')} color="blue" size={64}
-          style={{ background: 'rgba(255,255,255,0.2)', border: '2px solid rgba(255,255,255,0.35)', flexShrink: 0 }} />
+        <Avatar size={64}
+          style={{ background: 'rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.85)', border: '2px solid rgba(255,255,255,0.35)', flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 22, fontWeight: 700 }}>สวัสดี, {user?.full_name}</div>
           <div style={{ fontSize: 14, opacity: 0.8, marginTop: 4 }}>

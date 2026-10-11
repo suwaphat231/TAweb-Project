@@ -13,6 +13,7 @@ import { CourseFormModal } from './CourseFormModal'
 import { COURSE_FORM_EMPTY, splitRequirements, joinRequirements } from './_courseFormShared'
 import { displayCourseTitle } from '../../utils/courseDisplay'
 import type { CreateCoursePayload, CourseStatus, Course } from '../../types'
+import { formatSchedule } from '../../utils/schedule'
 
 const STATUS_OPTIONS = [
   { value: 'open',         label: 'เปิดรับสมัคร' },
@@ -198,7 +199,7 @@ export default function InstructorAnnounce() {
                   </div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 4 }}>{displayCourseTitle(c.title, c.english_title)}</div>
                   {c.schedule && (
-                    <div style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 2 }}>🕐 {c.schedule}</div>
+                    <div style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 2, whiteSpace: 'pre-line' }}>🕐 {formatSchedule(c.schedule)}</div>
                   )}
                   <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>
                     ภาค {c.semester}/{c.academic_year}

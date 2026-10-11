@@ -258,3 +258,6 @@ select.slot-control { width: 100%; cursor: pointer; }
   .slot-field-time { flex: 1 1 0; }
   .slot-time { width: 100%; }
 }
+
+/* ─── Topbar account menu ──────────────────────────────────────────────── */
+.user-menu-item:hover, .user-menu-item:focus-visible { background: var(--line-soft); }

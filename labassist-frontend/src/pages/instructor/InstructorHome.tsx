@@ -17,6 +17,7 @@ import { COURSE_FORM_EMPTY, splitRequirements, joinRequirements } from './_cours
 import { displayCourseTitle } from '../../utils/courseDisplay'
 import { groupCourseSections, groupSectionsByTime } from '../../utils/courseGrouping'
 import type { CreateCoursePayload, Course } from '../../types'
+import { formatSchedule } from '../../utils/schedule'
 
 // One row per course: every time slot the instructor opened for it is its own
 // Course row underneath, but they're managed together here — the per-time
@@ -394,7 +395,7 @@ export default function InstructorHome() {
                           </div>
                           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)' }}>{displayCourseTitle(c.title, c.english_title)}</div>
                           {groupSectionsByTime(p.sections).filter((o) => o.schedule).map((o) => (
-                            <div key={o.key} style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2, whiteSpace: 'pre-line' }}>{o.schedule}</div>
+                            <div key={o.key} style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2, whiteSpace: 'pre-line' }}>{formatSchedule(o.schedule)}</div>
                           ))}
                           <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 2 }}>
                             ภาค {c.semester}/{c.academic_year}

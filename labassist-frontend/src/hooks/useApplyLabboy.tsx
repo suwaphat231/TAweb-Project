@@ -8,12 +8,17 @@ import { useToast } from '../hooks/useToast'
 import { GRADE_OPTIONS } from '../utils/grades'
 import { cleanCourseTitle } from '../utils/courseTitle'
 import { getAppliedSections, groupSectionsByTime, timeOptionSecLabel, type CourseGroup } from '../utils/courseGrouping'
+import { formatSchedule } from '../utils/schedule'
+
+// The shared list starts with a "-" (no grade) entry for instructors' minimum
+// grade; students must pick a real grade, so swap it for a prompt.
+const STUDENT_GRADE_OPTIONS = [{ value: '', label: '— เลือกเกรด —' }, ...GRADE_OPTIONS.filter((o) => o.value)]
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024
 const ALLOWED_TYPES = ['image/jpeg', 'image/png']
 
-// Shared "สมัคร Lab Boy" modal flow (pick one or more times, optionally a grade,
-// confirm) so any page showing a CourseCard — the apply-to-courses page and
+// Shared "สมัคร Lab Boy" modal flow (pick one or more times, the grade the
+// student got in the course — required — then confirm) so any page showing a CourseCard — the apply-to-courses page and
 // the student home dashboard alike — can open the same modal via onApply.
 export function useApplyLabboy() {
   const [applyTarget, setApplyTarget] = useState<CourseGroup | null>(null)
@@ -24,6 +29,8 @@ export function useApplyLabboy() {
   // can't be picked again.
   const [appliedIds, setAppliedIds] = useState<Set<number>>(new Set())
   const [grade, setGrade] = useState('')
+  // Show the "required" error only after the student tries to submit.
+  const [gradeTouched, setGradeTouched] = useState(false)
   const [gradeProofFile, setGradeProofFile] = useState<File | null>(null)
   const [fileError, setFileError] = useState<string | null>(null)
   // Progress of a multi-time submission keyed by course_id, so a retry after
@@ -45,7 +52,7 @@ export function useApplyLabboy() {
   })
 
   const applyMutation = useMutation({
-    mutationFn: async (vars: { course_ids: number[]; grade?: string; gradeProofFile: File | null }) => {
+    mutationFn: async (vars: { course_ids: number[]; grade: string; gradeProofFile: File | null }) => {
       let ocrWarning: string | undefined
       for (const course_id of vars.course_ids) {
         const prior = submittedRef.current.get(course_id)
@@ -112,6 +119,7 @@ export function useApplyLabboy() {
 
   function openApply(group: CourseGroup) {
     setGrade('')
+    setGradeTouched(false)
     setGradeProofFile(null)
     setFileError(null)
     submittedRef.current = new Map()
@@ -130,9 +138,13 @@ export function useApplyLabboy() {
   function confirmApply() {
     if (selectedSectionIds.length === 0) return
     if (scheduleConfirmed !== true) return
+    if (!grade) {
+      setGradeTouched(true)
+      return
+    }
     if (requireGradeProof && !gradeProofFile) return
     if (fileError) return
-    applyMutation.mutate({ course_ids: selectedSectionIds, grade: grade || undefined, gradeProofFile })
+    applyMutation.mutate({ course_ids: selectedSectionIds, grade, gradeProofFile })
   }
 
   const selectedSections = applyTarget?.sections.filter((s) => selectedSectionIds.includes(s.id)) ?? []
@@ -215,7 +227,7 @@ export function useApplyLabboy() {
                       <span style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                         <input type="checkbox" checked={isSelected || isApplied} disabled={isDisabled} readOnly tabIndex={-1} style={{ marginTop: 2, pointerEvents: 'none' }} />
                         <span style={{ fontSize: 13, fontWeight: 700, color: isSelected ? 'var(--primary)' : isConflict ? 'var(--amber)' : 'var(--ink-900)', whiteSpace: 'pre-line' }}>
-                          {opt.schedule || secLabel}
+                          {formatSchedule(opt.schedule) || secLabel}
                         </span>
                       </span>
                       <span style={{ fontSize: 11, color: 'var(--ink-500)', flexShrink: 0 }}>{accepted} / {slots} คน</span>
@@ -235,7 +247,7 @@ export function useApplyLabboy() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {selectedSection.schedule && (
               <div style={{ fontSize: 13, color: selectedSection.conflict_day ? 'var(--amber)' : 'var(--ink-500)', whiteSpace: 'pre-line' }}>
-                {selectedSection.schedule}
+                {formatSchedule(selectedSection.schedule)}
               </div>
             )}
             {selectedSection.conflict_day && (
@@ -251,10 +263,15 @@ export function useApplyLabboy() {
         ) : null}
 
         <Select
-          label="เกรดที่เคยได้ในวิชานี้ (ไม่บังคับ)"
+          label="เกรดที่เคยได้ในวิชานี้ *"
           value={grade}
           onChange={(e) => setGrade(e.target.value)}
-          options={GRADE_OPTIONS}
+          onBlur={() => setGradeTouched(true)}
+          options={STUDENT_GRADE_OPTIONS}
+          required
+          aria-required="true"
+          error={gradeTouched && !grade ? 'กรุณาเลือกเกรดที่เคยได้ในวิชานี้' : undefined}
+          hint="อาจารย์ใช้เกรดนี้ตรวจกับเกรดขั้นต่ำของวิชา"
         />
 
         {requireGradeProof && (

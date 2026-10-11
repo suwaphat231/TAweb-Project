@@ -331,13 +331,17 @@ export function ScheduleTab() {
                     type="checkbox"
                     checked={noClass}
                     onChange={(e) => {
+                      // Only hide the entered slots — they stay in drafts so an
+                      // accidental tick can be undone; saving as no_class is
+                      // what finally drops them. Switching mode also clears the
+                      // confirmation so the change has to be re-confirmed.
                       setNoClass(e.target.checked)
-                      if (e.target.checked) setDrafts([])
+                      setConfirmed(false)
                       setErrors({ slots: {}, global: '' })
                     }}
                     disabled={saveMut.isPending}
                   />
-                  ภาคเรียนนี้ไม่มีคาบเรียน
+                  เทอมนี้ไม่มีคาบเรียน
                 </label>
 
                 {/* Slot rows */}
@@ -377,8 +381,31 @@ export function ScheduleTab() {
                   <div style={{
                     fontSize: 13, color: 'var(--amber)', padding: '10px 14px',
                     background: 'var(--amber-bg)', borderRadius: 8,
+                    display: 'flex', flexDirection: 'column', gap: 8,
                   }}>
-                    ยืนยันว่าภาคเรียนนี้ไม่มีคาบเรียน ระบบจะไม่ตรวจเวลาชนสำหรับภาคเรียนนี้
+                    <span>ยืนยันว่าเทอมนี้ไม่มีคาบเรียน ระบบจะไม่ตรวจเวลาชนสำหรับภาคเรียนนี้</span>
+                    {drafts.length > 0 && (
+                      <>
+                        <span>
+                          ช่วงเวลาที่กรอกไว้ <strong>{drafts.length} ช่วง</strong> ถูกซ่อนไว้ ยังไม่ถูกลบ
+                          — ถ้ากดบันทึกขณะติ๊กช่องนี้อยู่ ช่วงเวลาเหล่านี้จะถูกลบ
+                        </span>
+                        <div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setNoClass(false)
+                              setConfirmed(false)
+                            }}
+                            disabled={saveMut.isPending}
+                          >
+                            กดผิด — แสดงช่วงเวลาที่กรอกไว้
+                          </Button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
               </div>

@@ -14,9 +14,29 @@ import type {
   GroupMonthPlan, AddGroupMonthOccurrencePayload, PatchOccurrencePayload, HiringNoticePlanSnapshot,
 } from '../types'
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1'
+// Keep API calls on the same origin by default. This works both behind the
+// frontend nginx proxy and through Vite's /api proxy, and avoids pointing
+// browsers on other computers at their own localhost.
+const BASE_URL = import.meta.env.VITE_API_URL || '/api/v1'
 
 export const api = axios.create({ baseURL: BASE_URL, withCredentials: false })
+
+export async function getApiErrorMessage(error: unknown, fallback: string): Promise<string> {
+  const response = (error as { response?: { data?: unknown } })?.response
+  const data = response?.data
+  if (data instanceof Blob) {
+    try {
+      const parsed = JSON.parse(await data.text()) as { error?: unknown }
+      if (typeof parsed.error === 'string' && parsed.error) return parsed.error
+    } catch {
+      // Keep the caller's fallback for non-JSON error bodies.
+    }
+  } else if (data && typeof data === 'object' && 'error' in data) {
+    const message = (data as { error?: unknown }).error
+    if (typeof message === 'string' && message) return message
+  }
+  return fallback
+}
 
 api.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token

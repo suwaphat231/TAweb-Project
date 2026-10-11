@@ -6,6 +6,7 @@ import { buildCourseOffering, buildWorkflowItems } from './staffCourseUtils'
 import { DocumentWorkflow } from './components/DocumentWorkflow'
 import { SelectedStudentsPanel } from './components/SelectedStudentsPanel'
 import type { CalendarDate, CalendarDateType } from '../../types'
+import { formatSchedule } from '../../utils/schedule'
 type Tab = 'documents' | 'info' | 'students' | 'history' | 'holidays'
 
 const DATE_TYPE_LABELS: Record<CalendarDateType, string> = {
@@ -203,7 +204,7 @@ export default function StaffCourseDetail() {
               <span>ภาคเรียน {offering.semester} / {offering.academicYear}</span>
               {courseDetail?.credits && <span>หน่วยกิต {courseDetail.credits}</span>}
               {(courseDetail?.schedule ?? offering.schedule) && (
-                <span>{courseDetail?.schedule ?? offering.schedule}</span>
+                <span>{formatSchedule(courseDetail?.schedule ?? offering.schedule, { separator: ' / ' })}</span>
               )}
             </div>
           </div>
@@ -321,8 +322,8 @@ export default function StaffCourseDetail() {
                   <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-400)', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 }}>
                     ตารางเรียน
                   </div>
-                  <div style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.6 }}>
-                    {courseDetail?.schedule ?? offering.schedule}
+                  <div style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.6, whiteSpace: 'pre-line' }}>
+                    {formatSchedule(courseDetail?.schedule ?? offering.schedule)}
                   </div>
                 </div>
               )}
@@ -366,7 +367,7 @@ export default function StaffCourseDetail() {
               <InfoRow label="หน่วยกิต" value={courseDetail?.credits ?? '—'} />
               <InfoRow label="ภาคเรียน" value={`${offering.semester}`} />
               <InfoRow label="ปีการศึกษา" value={`${offering.academicYear}`} />
-              <InfoRow label="ตารางเรียน" value={courseDetail?.schedule ?? '—'} />
+              <InfoRow label="ตารางเรียน" value={formatSchedule(courseDetail?.schedule, { separator: ' / ' }) || '—'} />
               <InfoRow label="ห้องเรียน" value={offering.room ?? '—'} />
               <InfoRow label="สถานะแบบฟอร์ม" value={review.status === 'verified' ? 'ผ่านการตรวจสอบ' : review.status === 'returned' ? 'ส่งกลับแก้ไข' : 'รอตรวจสอบ'} />
               <InfoRow label="จำนวน Lab Boy (ที่ยืนยัน / ทั้งหมด)" value={`${offering.labboyAccepted} / ${offering.labboySlots} คน`} />

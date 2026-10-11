@@ -20,8 +20,8 @@ type ApplyRequest struct {
 	RoleApplied models.RoleApplied `json:"role_applied" binding:"required,oneof=labboy" example:"labboy"`
 	// Grade is the letter grade the student got when they previously took
 	// this course, so the instructor can check it against the posting's
-	// minimum-grade requirement.
-	Grade *string `json:"grade,omitempty" binding:"omitempty,oneof=A B+ B C+ C D+ D F" example:"A"`
+	// minimum-grade requirement. Required — Apply rejects a missing grade.
+	Grade *string `json:"grade" binding:"omitempty,oneof=A B+ B C+ C D+ D F" example:"A"`
 }
 
 type WithdrawRequest struct {
@@ -113,6 +113,10 @@ func (h *Handler) Apply(c *gin.Context) {
 	var body ApplyRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if body.Grade == nil || *body.Grade == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาระบุเกรดที่เคยได้ในวิชานี้"})
 		return
 	}
 
@@ -246,7 +250,13 @@ func (h *Handler) Withdraw(c *gin.Context) {
 		if course, ok := database.CourseByID(updated.CourseID); ok {
 			if applicant, ok := database.UserByID(studentID.(uint)); ok {
 				notifs := make([]models.Notification, 0, 1)
-				for _, ins := range database.InstructorsForCourse(course) {
+				// The withdrawal request is already saved, so a failed lookup
+				// only skips the notification instead of failing the request.
+				instructors, err := database.InstructorsForCourse(course)
+				if err != nil {
+					log.Printf("notify instructors of course %d: %v", course.ID, err)
+				}
+				for _, ins := range instructors {
 					notifs = append(notifs, models.Notification{
 						UserID:   ins.ID,
 						CourseID: &course.ID,

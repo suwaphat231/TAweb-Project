@@ -9,12 +9,12 @@ import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { Modal } from '../../components/ui/Modal'
 import { Avatar } from '../../components/ui/Avatar'
-import { getInitials } from '../../utils/initials'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { useToast } from '../../hooks/useToast'
 import { displayCourseTitle } from '../../utils/courseDisplay'
 import type { Course, CourseRelation } from '../../types'
+import { formatSchedule } from '../../utils/schedule'
 
 function DeleteIcon() {
   return (
@@ -175,7 +175,7 @@ export default function InstructorMyCourses() {
                     <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)' }}>{displayCourseTitle(c.title, c.english_title)}</div>
                     <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 2 }}>
                       ภาค {c.semester}/{c.academic_year}
-                      {c.schedule && <span> · 🕐 {c.schedule}</span>}
+                      {c.schedule && <span> · 🕐 {formatSchedule(c.schedule, { separator: ' / ' })}</span>}
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -225,7 +225,7 @@ export default function InstructorMyCourses() {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))', gap: 10 }}>
                       {accepted.map((a) => (
                         <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid var(--line-soft)', borderRadius: 10 }}>
-                          <Avatar initials={getInitials(a.student_name)} color="purple" size={32} />
+                          <Avatar size={32} />
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {a.student_name}
@@ -298,7 +298,7 @@ export default function InstructorMyCourses() {
                         {displayCourseTitle(course.title, course.english_title)}
                       </div>
                       {course.schedule && (
-                        <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>🕐 {course.schedule}</div>
+                        <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>🕐 {formatSchedule(course.schedule, { separator: ' / ' })}</div>
                       )}
                     </div>
                     <Button

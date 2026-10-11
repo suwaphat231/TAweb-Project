@@ -1,4 +1,5 @@
 import type { Application, Course, CourseStatus } from '../types'
+import { formatSchedule } from './schedule'
 
 // A "posting" is one recruiting announcement; each section an instructor
 // teaches for the same course/semester/instructor is a separate Course row
@@ -148,4 +149,12 @@ function timeSortKey(schedule: string): string {
 export function timeOptionSecLabel(option: TimeOption): string {
   const secs = Array.from(new Set(option.sections.map((s) => s.section).filter((n): n is number => !!n))).sort((a, b) => a - b)
   return secs.length ? `Sec ${secs.join(', ')}` : ''
+}
+
+/**
+ * Short day/time text without the room, e.g. "อังคาร 13:00–16:35" — for
+ * compact labels like the "สมัครแล้ว" badge. See formatSchedule.
+ */
+export function scheduleDayLabel(schedule?: string): string {
+  return formatSchedule(schedule, { room: false, separator: ', ' })
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"net/http"
 	"strconv"
@@ -410,6 +411,7 @@ func (h *Handler) DownloadDocument(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		log.Printf("staff document download failed: document_id=%d type=%s: %v", id, doc.Type, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "generate document failed"})
 		return
 	}

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { staffApi, applicationsAPI } from '../../services/api'
+import { getApiErrorMessage, staffApi, applicationsAPI } from '../../services/api'
 import { Modal } from '../../components/ui/Modal'
 import { Select } from '../../components/ui/Select'
 import { Input } from '../../components/ui/Input'
@@ -178,7 +178,7 @@ export default function StaffDocs() {
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response?.status
       if (status === 501) showToast('เอกสารประเภทนี้ยังไม่รองรับการสร้างไฟล์', 'info')
-      else showToast('ดาวน์โหลดไม่สำเร็จ', 'error')
+      else showToast(await getApiErrorMessage(err, 'ดาวน์โหลดไม่สำเร็จ'), 'error')
     } finally {
       setDownloadingId(null)
     }

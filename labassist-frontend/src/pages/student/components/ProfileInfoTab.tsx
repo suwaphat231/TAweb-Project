@@ -7,7 +7,6 @@ import { Input } from '../../../components/ui/Input'
 import { Select } from '../../../components/ui/Select'
 import { Button } from '../../../components/ui/Button'
 import { Avatar } from '../../../components/ui/Avatar'
-import { getInitials } from '../../../utils/initials'
 import { StatusBadge } from '../../../components/ui/Badge'
 import { Skeleton } from '../../../components/ui/Skeleton'
 import { useToast } from '../../../hooks/useToast'
@@ -94,7 +93,7 @@ export function ProfileInfoTab() {
         ) : (
           <>
             <div style={{ position: 'relative', width: 72, marginBottom: 14 }}>
-              <Avatar initials={getInitials(p?.full_name ?? '?')} src={p?.avatar_url} color="blue" size={72} />
+              <Avatar src={p?.avatar_url} size={72} />
               <span style={{
                 position: 'absolute', bottom: 2, right: 2, width: 14, height: 14,
                 borderRadius: '50%', background: 'var(--green)', border: '2.5px solid #fff',

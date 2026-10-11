@@ -226,7 +226,7 @@ export interface CreateCoursePayload {
 export interface ApplyPayload {
   course_id: number
   role_applied: 'labboy'
-  grade?: string
+  grade: string
 }
 
 export interface Transcript {

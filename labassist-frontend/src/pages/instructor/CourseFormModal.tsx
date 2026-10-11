@@ -7,6 +7,7 @@ import { CourseCodeAutocomplete } from '../../components/course/CourseCodeAutoco
 import { SectionCatalogPicker } from '../../components/course/SectionCatalogPicker'
 import { GRADE_OPTIONS } from './_courseFormShared'
 import type { CreateCoursePayload } from '../../types'
+import { formatSchedule } from '../../utils/schedule'
 
 /** Today's date (YYYY-MM-DD) in Bangkok time — matches the backend's deadlinePassed check. */
 function todayBangkok(): string {
@@ -112,7 +113,7 @@ export function CourseFormModal({
             <div>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 5 }}>เวลาเรียน</div>
               <div style={{ fontSize: 14, color: 'var(--ink-900)', padding: '9px 12px', background: 'var(--bg)', borderRadius: 'var(--radius-input)', whiteSpace: 'pre-line' }}>
-                {form.schedule || '—'}
+                {formatSchedule(form.schedule) || '—'}
               </div>
             </div>
           </div>

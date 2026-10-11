@@ -12,6 +12,7 @@ import { useToast } from '../../hooks/useToast'
 import { displayCourseTitle } from '../../utils/courseDisplay'
 import { isLabCourse } from '../../utils/labCourse'
 import type { Course, ImportConflict, ImportCourseFields } from '../../types'
+import { formatSchedule } from '../../utils/schedule'
 
 const SEMESTER_TABS: { label: string; value: string }[] = [
   { label: 'ทั้งหมด', value: '' },
@@ -233,7 +234,7 @@ export default function AdminCourses() {
       ),
     },
     { key: 'credits', header: 'หน่วยกิต', render: (c: Course) => <span style={{ fontSize: 13 }}>{c.credits || '—'}</span> },
-    { key: 'schedule', header: 'เวลาเรียน', render: (c: Course) => <span style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{c.schedule || '—'}</span> },
+    { key: 'schedule', header: 'เวลาเรียน', render: (c: Course) => <span style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{formatSchedule(c.schedule) || '—'}</span> },
     {
       key: 'instructor_name', header: 'อาจารย์',
       render: (c: Course) => <span style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{c.instructors_raw || c.instructor_name || '—'}</span>,

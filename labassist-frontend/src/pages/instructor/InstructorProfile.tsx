@@ -6,7 +6,6 @@ import { Card } from '../../components/ui/Card'
 import { Input } from '../../components/ui/Input'
 import { Button } from '../../components/ui/Button'
 import { Avatar } from '../../components/ui/Avatar'
-import { getInitials } from '../../utils/initials'
 import { StatusBadge } from '../../components/ui/Badge'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../hooks/useToast'
@@ -73,7 +72,7 @@ export default function InstructorProfile() {
           ) : (
             <>
               <div style={{ position: 'relative', width: 72, marginBottom: 14 }}>
-                <Avatar initials={getInitials(p?.full_name ?? '?')} color="blue" size={72} />
+                <Avatar size={72} />
                 <span style={{
                   position: 'absolute', bottom: 2, right: 2, width: 14, height: 14,
                   borderRadius: '50%', background: 'var(--green)', border: '2.5px solid #fff',

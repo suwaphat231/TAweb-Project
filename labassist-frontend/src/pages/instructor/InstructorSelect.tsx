@@ -8,12 +8,12 @@ import { Select } from '../../components/ui/Select'
 import { FilterChips } from '../../components/ui/FilterChips'
 import { Modal } from '../../components/ui/Modal'
 import { Avatar } from '../../components/ui/Avatar'
-import { getInitials } from '../../utils/initials'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { useToast } from '../../hooks/useToast'
 import { displayCourseTitle } from '../../utils/courseDisplay'
 import { groupCourseSections, groupSectionsByTime } from '../../utils/courseGrouping'
 import type { Application } from '../../types'
+import { formatSchedule } from '../../utils/schedule'
 
 const statusOptions = [
   { value: '', label: 'ทุกสถานะ' },
@@ -309,7 +309,7 @@ export default function InstructorSelect() {
                     }}
                   >
                     <div style={{ fontSize: 13, fontWeight: 600, color: active ? 'var(--primary)' : 'var(--ink-900)', whiteSpace: 'pre-line' }}>
-                      {s.schedule || `Sec ${s.section}`}
+                      {formatSchedule(s.schedule) || `Sec ${s.section}`}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 2 }}>
                       {s.schedule && s.section ? `Sec ${s.section} · ` : ''}{s.applicant_count ?? 0} ผู้สมัคร · รับ {s.labboy_accepted}/{s.labboy_slots}
@@ -401,7 +401,7 @@ export default function InstructorSelect() {
                   <div>
                     <div style={{ fontSize: 11, color: 'var(--ink-400)', fontWeight: 600, marginBottom: 2 }}>กำลังดู</div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>
-                      Sec {selectedCourse.section}{selectedCourse.schedule ? ` · ${selectedCourse.schedule}` : ''}
+                      Sec {selectedCourse.section}{selectedCourse.schedule ? ` · ${formatSchedule(selectedCourse.schedule, { separator: ' / ' })}` : ''}
                     </div>
                   </div>
                 </>
@@ -518,7 +518,7 @@ export default function InstructorSelect() {
                       {/* Student */}
                       <td style={{ padding: '14px 16px', cursor: 'pointer' }} onClick={() => openProfile(row)}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <Avatar initials={getInitials(row.student_name)} color="blue" size={34} />
+                          <Avatar size={34} />
                           <div>
                             <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--ink-900)' }}>{row.student_name}</div>
                             <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{row.student_code || '—'}</div>
@@ -840,7 +840,7 @@ export default function InstructorSelect() {
             )}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-              <Avatar initials={getInitials(profileTarget.student_name)} color="blue" size={56} />
+              <Avatar size={56} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink-900)' }}>{profileTarget.student_name}</div>
                 <div style={{ fontSize: 13, color: 'var(--ink-500)', marginTop: 2 }}>{profileTarget.student_code || '—'}</div>
@@ -854,7 +854,7 @@ export default function InstructorSelect() {
               <ProfileInfo label="เกรดที่เคยได้ในวิชานี้" value={profileTarget.grade || '—'} />
               <ProfileInfo
                 label="Sec / เวลาเรียนที่สมัคร"
-                value={profileTarget.course_section ? `Sec ${profileTarget.course_section}${profileTarget.course_schedule ? ` · ${profileTarget.course_schedule}` : ''}` : '—'}
+                value={profileTarget.course_section ? `Sec ${profileTarget.course_section}${profileTarget.course_schedule ? ` · ${formatSchedule(profileTarget.course_schedule, { separator: ' / ' })}` : ''}` : '—'}
               />
               <ProfileInfo label="วันที่สมัคร" value={new Date(profileTarget.applied_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })} />
             </div>

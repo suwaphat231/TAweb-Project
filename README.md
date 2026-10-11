@@ -103,7 +103,8 @@ cd labassist-frontend
 สร้างไฟล์ `.env.local`:
 
 ```env
-VITE_API_URL=http://localhost:8080/api/v1
+# Use the same-origin path when the frontend proxy serves /api to the backend.
+VITE_API_URL=/api/v1
 VITE_GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
 ```
 
@@ -112,6 +113,9 @@ npm install
 npm run dev
 # UI พร้อมใช้งานที่ http://localhost:5173
 ```
+
+เมื่อต้องการเปิดจากคอมพิวเตอร์เครื่องอื่น ให้รัน `npm run dev -- --host 0.0.0.0`
+และใช้ URL ของเครื่องที่รัน frontend แทน `localhost` โดยต้องเปิด backend ให้เข้าถึงได้จากเครื่องนั้นด้วย
 
 ---
 
