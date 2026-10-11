@@ -6,6 +6,7 @@ export interface User {
   id: number
   username: string
   full_name: string
+  full_name_en?: string
   avatar_url?: string
   email: string
   role: UserRole
@@ -148,6 +149,8 @@ export interface Application {
   reviewed_by_name?: string
   note?: string
   withdrawal_reason?: string
+  withdraw_requested?: boolean
+  withdraw_requested_at?: string
 }
 
 export interface AuthState {
@@ -188,11 +191,13 @@ export interface BulkReviewResult {
 
 export interface CreateUserPayload {
   full_name: string
+  full_name_en?: string
   role: UserRole
 }
 
 export interface UpdateUserPayload {
   full_name?: string
+  full_name_en?: string
   role?: UserRole
 }
 

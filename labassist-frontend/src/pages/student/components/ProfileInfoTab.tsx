@@ -220,7 +220,7 @@ export function ProfileInfoTab() {
               />
               */}
               <Select
-                disabled={updateMut.isPending}
+                disabled={!isEditing || updateMut.isPending}
                 label="ภาควิชา"
                 value={form.faculty}
                 onChange={(e) => setDraft((f) => ({ ...f, faculty: e.target.value }))}
@@ -237,7 +237,7 @@ export function ProfileInfoTab() {
                 disabled
               />
               <Input
-                readOnly={updateMut.isPending}
+                readOnly={!isEditing || updateMut.isPending}
                 label="Username"
                 autoComplete="username"
                 value={form.username}

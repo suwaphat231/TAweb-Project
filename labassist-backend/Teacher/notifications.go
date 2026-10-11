@@ -36,6 +36,21 @@ func acceptanceRevokedNotification(app models.Application, course models.Course)
 	}
 }
 
+// withdrawDecisionNotification tells an accepted Lab Boy whether the
+// instructor approved their withdrawal request.
+func withdrawDecisionNotification(app models.Application, course models.Course, approved bool) models.Notification {
+	cid := course.ID
+	n := models.Notification{UserID: app.StudentID, CourseID: &cid}
+	if approved {
+		n.Title = fmt.Sprintf("อนุมัติคำขอถอน Lab Boy — %s", course.Code)
+		n.Body = fmt.Sprintf("อาจารย์อนุมัติคำขอถอนจากการเป็น Lab Boy วิชา %s (%s) แล้ว", course.Title, course.Code)
+	} else {
+		n.Title = fmt.Sprintf("ไม่อนุมัติคำขอถอน Lab Boy — %s", course.Code)
+		n.Body = fmt.Sprintf("อาจารย์ไม่อนุมัติคำขอถอนจากการเป็น Lab Boy วิชา %s (%s) คุณยังเป็น Lab Boy ของวิชานี้อยู่", course.Title, course.Code)
+	}
+	return n
+}
+
 // NotifyCourse godoc
 // @Summary      ส่งแจ้งเตือนนักศึกษาที่ผ่านการคัดเลือก
 // @Tags         instructor

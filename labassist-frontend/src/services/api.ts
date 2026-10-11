@@ -93,6 +93,8 @@ export const applicationsAPI = {
     api.put<Application>(`/instructor/applications/${id}/review`, data).then((r) => r.data),
   bulkReview: (data: BulkReviewPayload) =>
     api.put<BulkReviewResult>('/instructor/applications/bulk-review', data).then((r) => r.data),
+  resolveWithdraw: (id: number, approve: boolean) =>
+    api.put<Application>(`/instructor/applications/${id}/withdraw-request`, { approve }).then((r) => r.data),
   uploadGradeProof: (applicationId: number, file: File) => {
     const formData = new FormData()
     formData.append('file', file)
@@ -259,6 +261,7 @@ export const instructorApi = {
   applicants: applicationsAPI.getCourseApplicants,
   review: applicationsAPI.review,
   bulkReview: applicationsAPI.bulkReview,
+  resolveWithdraw: applicationsAPI.resolveWithdraw,
   gradeProof: applicationsAPI.instructorGradeProof,
   notifyCourse: notificationApi.notifyCourse,
   confirmSchedule: (courseId: number) =>

@@ -43,16 +43,21 @@ export default function StudentStatus() {
 
   const withdrawMut = useMutation({
     mutationFn: ({ id, reason }: { id: number; reason: string }) => studentApi.withdraw(id, reason),
-    onSuccess: () => {
+    onSuccess: (updated) => {
       qc.invalidateQueries({ queryKey: ['my-applications'] })
       qc.invalidateQueries({ queryKey: ['student-dashboard'] })
       qc.invalidateQueries({ queryKey: ['courses'] })
-      showToast(`ถอนใบสมัคร ${pendingWithdraw?.course_code ?? ''} เรียบร้อยแล้ว`, 'success')
+      showToast(
+        updated.withdraw_requested
+          ? `ส่งคำขอถอน ${pendingWithdraw?.course_code ?? ''} แล้ว รออาจารย์อนุมัติ`
+          : `ถอนใบสมัคร ${pendingWithdraw?.course_code ?? ''} เรียบร้อยแล้ว`,
+        'success',
+      )
       setPendingWithdraw(null)
       setWithdrawReason('')
     },
-    onError: () => {
-      showToast('ถอนใบสมัครไม่สำเร็จ กรุณาลองอีกครั้ง', 'error')
+    onError: (err: { response?: { data?: { error?: string } } }) => {
+      showToast(err?.response?.data?.error ?? 'ถอนใบสมัครไม่สำเร็จ กรุณาลองอีกครั้ง', 'error')
     },
   })
 
@@ -139,6 +144,14 @@ export default function StudentStatus() {
                   ) : (
                     <StatusBadge value={app.status} />
                   )}
+                  {app.withdraw_requested && (
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+                      background: 'var(--amber-bg)', color: 'var(--amber)',
+                    }}>
+                      รออาจารย์อนุมัติการถอน
+                    </span>
+                  )}
                   {app.posting_active === false && <span>รอบรับสมัครเก่า</span>}
                 </div>
                 <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink-900)' }}>{cleanCourseTitle(app.course_title)}</div>
@@ -157,6 +170,11 @@ export default function StudentStatus() {
                     ใบสมัครยังไม่สมบูรณ์ — กรุณาแนบรูปภาพเกรดเพื่อให้อาจารย์พิจารณา
                   </div>
                 )}
+                {app.withdraw_requested && app.withdrawal_reason && (
+                  <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 4 }}>
+                    เหตุผลที่ขอถอน: {app.withdrawal_reason}
+                  </div>
+                )}
                 {app.note && <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 4, fontStyle: 'italic' }}>"{app.note}"</div>}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
@@ -169,14 +187,14 @@ export default function StudentStatus() {
                     แนบหลักฐาน
                   </Button>
                 )}
-                {(app.status === 'accepted' || app.status === 'pending') && (
+                {(app.status === 'accepted' || app.status === 'pending') && !app.withdraw_requested && (
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => { setPendingWithdraw(app); setWithdrawReason('') }}
                     style={{ color: 'var(--red)', border: '1px solid var(--line)', whiteSpace: 'nowrap' }}
                   >
-                    ถอนใบสมัคร
+                    {app.status === 'accepted' ? 'ขอถอน' : 'ถอนใบสมัคร'}
                   </Button>
                 )}
               </div>
@@ -245,7 +263,7 @@ export default function StudentStatus() {
       <Modal
         isOpen={!!pendingWithdraw}
         onClose={() => !withdrawMut.isPending && setPendingWithdraw(null)}
-        title="ยืนยันถอนใบสมัคร"
+        title={pendingWithdraw?.status === 'accepted' ? 'ขอถอนจากการเป็น Lab Boy' : 'ยืนยันถอนใบสมัคร'}
         size="sm"
         footer={
           <>
@@ -262,7 +280,7 @@ export default function StudentStatus() {
               disabled={!withdrawReason.trim()}
               onClick={() => pendingWithdraw && withdrawMut.mutate({ id: pendingWithdraw.id, reason: withdrawReason.trim() })}
             >
-              ยืนยันถอน
+              {pendingWithdraw?.status === 'accepted' ? 'ส่งคำขอถอน' : 'ยืนยันถอน'}
             </Button>
           </>
         }
@@ -283,7 +301,9 @@ export default function StudentStatus() {
               )}
             </div>
             <p style={{ fontSize: 14, color: 'var(--ink-600)', margin: 0 }}>
-              หากถอนใบสมัครแล้ว สถานะจะเปลี่ยนเป็น &quot;ถอนแล้ว&quot; และสามารถสมัครใหม่ได้หากวิชายังเปิดรับอยู่
+              {pendingWithdraw.status === 'accepted'
+                ? 'คุณผ่านการคัดเลือกเป็น Lab Boy แล้ว การถอนต้องรออาจารย์อนุมัติ ระหว่างรอคุณยังเป็น Lab Boy ของวิชานี้อยู่'
+                : <>หากถอนใบสมัครแล้ว สถานะจะเปลี่ยนเป็น &quot;ถอนแล้ว&quot; และสามารถสมัครใหม่ได้หากวิชายังเปิดรับอยู่</>}
             </p>
             <Textarea
               label="เหตุผลที่ถอนใบสมัคร *"

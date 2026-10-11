@@ -143,6 +143,19 @@ export default function InstructorSelect() {
       showToast(err?.response?.data?.error ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'),
   })
 
+  const resolveWithdrawMut = useMutation({
+    mutationFn: ({ id, approve }: { id: number; approve: boolean }) =>
+      instructorApi.resolveWithdraw(id, approve),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['applicants', courseId] })
+      qc.invalidateQueries({ queryKey: ['instructor-courses'] })
+      setProfileTarget(null)
+      showToast(vars.approve ? 'อนุมัติการถอนเรียบร้อยแล้ว' : 'ไม่อนุมัติการถอน นักศึกษายังเป็น Lab Boy ต่อ', 'success')
+    },
+    onError: (err: { response?: { data?: { error?: string } } }) =>
+      showToast(err?.response?.data?.error ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'),
+  })
+
   const filtered = useMemo(() => {
     let list = [...applicants].sort((a, b) => (b.student_gpa ?? 0) - (a.student_gpa ?? 0))
     if (statusFilter) list = list.filter((a) => a.status === statusFilter)
@@ -539,6 +552,11 @@ export default function InstructorSelect() {
                       {/* Status */}
                       <td style={{ padding: '14px 16px' }}>
                         <StatusBadge value={row.status} />
+                        {row.withdraw_requested && (
+                          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)', marginTop: 4 }}>
+                            ขอถอน · รออนุมัติ
+                          </div>
+                        )}
                       </td>
 
                       {/* ── Actions ── */}
@@ -556,8 +574,28 @@ export default function InstructorSelect() {
                             />
                           )}
 
+                          {/* Withdraw request — approve/deny */}
+                          {row.withdraw_requested && (
+                            <>
+                              <ActionBtn
+                                color="red"
+                                onClick={(e) => { e.stopPropagation(); resolveWithdrawMut.mutate({ id: row.id, approve: true }) }}
+                                disabled={resolveWithdrawMut.isPending}
+                                icon={<CheckIcon size={11} />}
+                                label="อนุมัติถอน"
+                              />
+                              <ActionBtn
+                                color="green"
+                                onClick={(e) => { e.stopPropagation(); resolveWithdrawMut.mutate({ id: row.id, approve: false }) }}
+                                disabled={resolveWithdrawMut.isPending}
+                                icon={<XIcon size={11} />}
+                                label="ไม่อนุมัติ"
+                              />
+                            </>
+                          )}
+
                           {/* Reject — red soft pill */}
-                          {(row.status === 'pending' || row.status === 'accepted') && (
+                          {(row.status === 'pending' || row.status === 'accepted') && !row.withdraw_requested && (
                             <ActionBtn
                               color="red"
                               onClick={(e) => { e.stopPropagation(); reviewMut.mutate({ id: row.id, status: 'rejected' }) }}
@@ -780,6 +818,26 @@ export default function InstructorSelect() {
             {profileTarget.status === 'rejected' && <StatusBanner color="#FEF2F2" border="#FECACA" icon="❌" text="ไม่ผ่านการคัดเลือก" textColor="#DC2626" />}
             {profileTarget.status === 'pending'  && <StatusBanner color="#FFFBEB" border="#FDE68A" icon="⏳" text="รอการพิจารณา" textColor="#B45309" />}
             {profileTarget.status === 'withdrawn'&& <StatusBanner color="var(--bg)" border="var(--line)" icon="↩️" text="ถอนใบสมัครแล้ว" textColor="var(--ink-500)" />}
+            {profileTarget.withdraw_requested && (
+              <div style={{ background: 'var(--amber-bg)', borderRadius: 10, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--amber)' }}>
+                  นักศึกษาขอถอนจากการเป็น Lab Boy — รอการอนุมัติ
+                  {profileTarget.withdraw_requested_at && (
+                    <span style={{ fontWeight: 400 }}>
+                      {' '}· {new Date(profileTarget.withdraw_requested_at).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  )}
+                </div>
+                {profileTarget.withdrawal_reason && (
+                  <div style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.6 }}>
+                    เหตุผล: {profileTarget.withdrawal_reason}
+                  </div>
+                )}
+              </div>
+            )}
+            {profileTarget.status === 'withdrawn' && profileTarget.withdrawal_reason && (
+              <div style={{ fontSize: 13, color: 'var(--ink-700)' }}>เหตุผลที่ถอน: {profileTarget.withdrawal_reason}</div>
+            )}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
               <Avatar initials={getInitials(profileTarget.student_name)} color="blue" size={56} />
@@ -867,7 +925,27 @@ export default function InstructorSelect() {
             )}
 
             {/* Modal action buttons */}
-            {profileTarget.status !== 'withdrawn' && (
+            {profileTarget.withdraw_requested && (
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 4, borderTop: '1px solid var(--line-soft)' }}>
+                <Button
+                  variant="outline"
+                  loading={resolveWithdrawMut.isPending && resolveWithdrawMut.variables?.approve === false}
+                  disabled={resolveWithdrawMut.isPending}
+                  onClick={() => resolveWithdrawMut.mutate({ id: profileTarget.id, approve: false })}
+                >
+                  ไม่อนุมัติการถอน
+                </Button>
+                <Button
+                  variant="danger"
+                  loading={resolveWithdrawMut.isPending && resolveWithdrawMut.variables?.approve === true}
+                  disabled={resolveWithdrawMut.isPending}
+                  onClick={() => resolveWithdrawMut.mutate({ id: profileTarget.id, approve: true })}
+                >
+                  อนุมัติการถอน
+                </Button>
+              </div>
+            )}
+            {profileTarget.status !== 'withdrawn' && !profileTarget.withdraw_requested && (
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 4, borderTop: '1px solid var(--line-soft)' }}>
                 {(profileTarget.status === 'pending' || profileTarget.status === 'accepted') && (
                   <Button
