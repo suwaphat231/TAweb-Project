@@ -27,7 +27,12 @@ func (h *Handler) GetTermSchedule(c *gin.Context) {
 // one term schedule before applying for Lab Boy.
 func (h *Handler) GetTermScheduleStatus(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
-	c.JSON(http.StatusOK, gin.H{"confirmed": database.HasConfirmedTermSchedule(studentID.(uint))})
+	confirmed, err := database.HasConfirmedTermSchedule(studentID.(uint))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"confirmed": confirmed})
 }
 
 type saveTermScheduleRequest struct {
@@ -84,6 +89,10 @@ func (h *Handler) SaveTermSchedule(c *gin.Context) {
 // GetAvailableTerms returns distinct (semester, academic_year) pairs from
 // the courses catalog, newest-first. Used to populate the semester picker.
 func (h *Handler) GetAvailableTerms(c *gin.Context) {
-	terms := database.DistinctCourseTerms()
+	terms, err := database.DistinctCourseTerms()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, terms)
 }

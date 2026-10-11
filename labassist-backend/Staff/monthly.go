@@ -26,9 +26,12 @@ type MonthlyPeriodResponse struct {
 	TotalAmountSatang int64   `json:"total_amount_satang"`
 }
 
-func enrichMonthlyPeriod(p models.MonthlyPeriod, sc models.StaffCase) MonthlyPeriodResponse {
-	occs := database.WorkOccurrencesForMonth(p.StaffCaseID, p.Year, p.Month)
+func enrichMonthlyPeriod(p models.MonthlyPeriod, sc models.StaffCase) (MonthlyPeriodResponse, error) {
 	resp := MonthlyPeriodResponse{MonthlyPeriod: p}
+	occs, err := database.WorkOccurrencesForMonth(p.StaffCaseID, p.Year, p.Month)
+	if err != nil {
+		return resp, err
+	}
 	for _, o := range occs {
 		if o.Status == models.OccurrenceRescheduled {
 			continue // replaced by the new occurrence, not counted
@@ -49,7 +52,7 @@ func enrichMonthlyPeriod(p models.MonthlyPeriod, sc models.StaffCase) MonthlyPer
 		}
 	}
 	resp.TotalAmountSatang = int64(math.Round(resp.TotalHours * float64(sc.RatePerHour)))
-	return resp
+	return resp, nil
 }
 
 // ListMonthlyPeriods godoc
@@ -72,10 +75,19 @@ func (h *Handler) ListMonthlyPeriods(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "staff case not found"})
 		return
 	}
-	periods := database.MonthlyPeriodsForCase(uint(id))
+	periods, err := database.MonthlyPeriodsForCase(uint(id))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	out := make([]MonthlyPeriodResponse, 0, len(periods))
 	for _, p := range periods {
-		out = append(out, enrichMonthlyPeriod(p, sc))
+		r, err := enrichMonthlyPeriod(p, sc)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
+		out = append(out, r)
 	}
 	c.JSON(http.StatusOK, out)
 }
@@ -117,7 +129,12 @@ func (h *Handler) OpenMonthlyPeriod(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot open period: " + err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, enrichMonthlyPeriod(p, sc))
+	resp, err := enrichMonthlyPeriod(p, sc)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusCreated, resp)
 }
 
 // CloseMonthlyPeriod godoc
@@ -151,7 +168,12 @@ func (h *Handler) CloseMonthlyPeriod(c *gin.Context) {
 		c.JSON(http.StatusOK, p)
 		return
 	}
-	c.JSON(http.StatusOK, enrichMonthlyPeriod(p, sc))
+	resp, err := enrichMonthlyPeriod(p, sc)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // GetMonthlyOccurrences godoc
@@ -174,7 +196,11 @@ func (h *Handler) GetMonthlyOccurrences(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "period not found"})
 		return
 	}
-	occs := database.WorkOccurrencesForMonth(p.StaffCaseID, p.Year, p.Month)
+	occs, err := database.WorkOccurrencesForMonth(p.StaffCaseID, p.Year, p.Month)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, occs)
 }
 
@@ -246,7 +272,11 @@ func (h *Handler) GenerateMonthlyDocument(c *gin.Context) {
 	effectiveRate := sc.RatePerHour
 	effectiveHours := sc.HoursPerSession
 	if body.ScheduleGroupID != nil {
-		groups := database.ScheduleGroupsForCase(sc.ID)
+		groups, err := database.ScheduleGroupsForCase(sc.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
 		for _, sg := range groups {
 			if sg.ID == *body.ScheduleGroupID {
 				if sg.RatePerHourSatang > 0 {
@@ -275,10 +305,15 @@ func (h *Handler) GenerateMonthlyDocument(c *gin.Context) {
 
 	// Collect completed occurrences for this month.
 	var occs []models.WorkOccurrence
+	var occErr error
 	if body.ScheduleGroupID != nil {
-		occs = database.WorkOccurrencesForGroupInMonth(*body.ScheduleGroupID, p.Year, p.Month)
+		occs, occErr = database.WorkOccurrencesForGroupInMonth(*body.ScheduleGroupID, p.Year, p.Month)
 	} else {
-		occs = database.WorkOccurrencesForMonth(sc.ID, p.Year, p.Month)
+		occs, occErr = database.WorkOccurrencesForMonth(sc.ID, p.Year, p.Month)
+	}
+	if occErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
 	}
 	var completedDays []int
 	for _, o := range occs {
@@ -300,10 +335,18 @@ func (h *Handler) GenerateMonthlyDocument(c *gin.Context) {
 
 	var labBoys []models.Application
 	if body.ScheduleGroupID != nil {
-		assignedIDs := database.GroupStudentIDs(*body.ScheduleGroupID)
+		assignedIDs, err := database.GroupStudentIDs(*body.ScheduleGroupID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
 		if len(assignedIDs) > 0 {
 			// Use only the assigned students for this group
-			allBoys := database.AcceptedStudentsForPosting(sc.PostingID)
+			allBoys, err := database.AcceptedStudentsForPosting(sc.PostingID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				return
+			}
 			idSet := make(map[uint]bool, len(assignedIDs))
 			for _, id := range assignedIDs {
 				idSet[id] = true
@@ -314,10 +357,19 @@ func (h *Handler) GenerateMonthlyDocument(c *gin.Context) {
 				}
 			}
 		} else {
-			labBoys = database.AcceptedStudentsForPosting(sc.PostingID)
+			labBoys, err = database.AcceptedStudentsForPosting(sc.PostingID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				return
+			}
 		}
 	} else {
-		labBoys = database.AcceptedStudentsForPosting(sc.PostingID)
+		var err error
+		labBoys, err = database.AcceptedStudentsForPosting(sc.PostingID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
 	}
 	if len(labBoys) == 0 {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "ไม่พบ Lab Boy ที่ได้รับการคัดเลือก"})

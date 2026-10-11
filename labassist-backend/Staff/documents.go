@@ -108,7 +108,12 @@ func (h *Handler) ListDocuments(c *gin.Context) {
 	t := c.Query("type")
 	s := c.Query("status")
 	q := c.Query("q")
-	c.JSON(http.StatusOK, database.ListStaffDocuments(t, s, q))
+	docs, err := database.ListStaffDocuments(t, s, q)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, docs)
 }
 
 // CreateDocument godoc
@@ -223,8 +228,13 @@ func (h *Handler) CreateDocument(c *gin.Context) {
 			// with no floating-point drift.
 			hours := roundSatang(body.HoursPerSession * float64(len(body.SessionDates)))
 			perAmount := roundSatang(hours * body.Rate)
+			accepted, err := database.AcceptedStudentsForCourse(*body.CourseID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				return
+			}
 			var roster []models.RosterEntry
-			for _, app := range database.AcceptedStudentsForCourse(*body.CourseID) {
+			for _, app := range accepted {
 				if excluded[app.StudentID] {
 					continue
 				}
@@ -250,8 +260,13 @@ func (h *Handler) CreateDocument(c *gin.Context) {
 			doc.TotalAmount = roundSatang(total)
 		} else {
 			// hiring_notice: student list only, no financial fields.
+			accepted, err := database.AcceptedStudentsForCourse(*body.CourseID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				return
+			}
 			var roster []models.RosterEntry
-			for _, app := range database.AcceptedStudentsForCourse(*body.CourseID) {
+			for _, app := range accepted {
 				if excluded[app.StudentID] {
 					continue
 				}

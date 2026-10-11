@@ -318,7 +318,7 @@ export function ScheduleTab() {
                   ช่วงเวลาที่ติดเรียน
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 16 }}>
-                  กรอกครั้งเดียว ใช้กับการสมัครทุกวิชา
+                  กรอกครั้งเดียว ใช้กับการสมัครทุกวิชา · เวลาแบบ 24 ชม. พิมพ์ <strong>0830</strong> จะได้ <strong>08:30</strong>
                 </div>
 
                 {/* No-class option */}

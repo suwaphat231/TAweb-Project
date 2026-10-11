@@ -30,7 +30,9 @@ func seedCoursesFromClasslist() error {
 	}
 
 	var count int64
-	DB.Model(&models.Course{}).Count(&count)
+	if err := DB.Model(&models.Course{}).Count(&count).Error; err != nil {
+		return fmt.Errorf("count courses: %w", err)
+	}
 	if count > 0 {
 		return nil
 	}
@@ -93,7 +95,10 @@ func seedCoursesFromClasslist() error {
 		}
 	}
 
-	users := ListUsers(string(models.RoleInstructor), "", 1000, 0)
+	users, err := ListUsers(string(models.RoleInstructor), "", 1000, 0)
+	if err != nil {
+		return fmt.Errorf("load instructors: %w", err)
+	}
 
 	// A section can list different meeting times on different rows (e.g.
 	// 517494 sec 4), which stay separate groups above. Slots must still be

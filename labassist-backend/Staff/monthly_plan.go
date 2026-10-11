@@ -56,19 +56,36 @@ func (h *Handler) GetMonthlyPlan(c *gin.Context) {
 		return
 	}
 
-	groups := database.ScheduleGroupsForCase(uint(caseID))
+	groups, err := database.ScheduleGroupsForCase(uint(caseID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	result := make([]GroupMonthPlan, 0, len(groups))
 
 	for _, sg := range groups {
-		months := database.ListScheduleGroupMonths(sg.ID)
+		months, err := database.ListScheduleGroupMonths(sg.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
 		entries := make([]GroupMonthPlanEntry, 0, len(months))
-		labBoyCount := len(database.GroupStudentIDs(sg.ID))
+		assigned, err := database.GroupStudentIDs(sg.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
+		labBoyCount := len(assigned)
 		effectiveRate := sg.RatePerHourSatang
 		if effectiveRate == 0 {
 			effectiveRate = sc.RatePerHour
 		}
 		for _, m := range months {
-			occs := database.WorkOccurrencesForGroupInMonth(sg.ID, m.Year, m.Month)
+			occs, err := database.WorkOccurrencesForGroupInMonth(sg.ID, m.Year, m.Month)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				return
+			}
 			summary := database.ComputeMonthOccurrenceSummary(occs, m.Year, m.Month, effectiveRate, labBoyCount)
 			entries = append(entries, GroupMonthPlanEntry{
 				Month:       m,
@@ -156,7 +173,11 @@ func (h *Handler) SetGroupMonthDatesList(c *gin.Context) {
 		return
 	}
 
-	groups := database.ScheduleGroupsForCase(uint(caseID))
+	groups, err := database.ScheduleGroupsForCase(uint(caseID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	var sg models.ScheduleGroup
 	for _, g := range groups {
 		if g.ID == uint(groupID) {
@@ -173,7 +194,11 @@ func (h *Handler) SetGroupMonthDatesList(c *gin.Context) {
 		return
 	}
 
-	months := database.ListScheduleGroupMonths(uint(groupID))
+	months, err := database.ListScheduleGroupMonths(uint(groupID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	var sgMonth *models.ScheduleGroupMonth
 	for i, m := range months {
 		if m.Year == year && m.Month == month {
@@ -212,7 +237,11 @@ func (h *Handler) SetGroupMonthDatesList(c *gin.Context) {
 	if sgMonth.MonthEndDate != nil {
 		endDate = *sgMonth.MonthEndDate
 	}
-	calDates := database.ListCalendarDates(uint(caseID), sc.Semester, sc.AcademicYear, &startDate, &endDate)
+	calDates, err := database.ListCalendarDates(uint(caseID), sc.Semester, sc.AcademicYear, &startDate, &endDate)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	cancelledDates := make(map[string]uint)
 	for _, cd := range calDates {
 		if cd.AffectsWork != nil && *cd.AffectsWork {
@@ -312,7 +341,11 @@ func (h *Handler) AddGroupMonthOccurrence(c *gin.Context) {
 		return
 	}
 
-	groups := database.ScheduleGroupsForCase(uint(caseID))
+	groups, err := database.ScheduleGroupsForCase(uint(caseID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	var sg models.ScheduleGroup
 	for _, g := range groups {
 		if g.ID == uint(groupID) {
@@ -330,7 +363,11 @@ func (h *Handler) AddGroupMonthOccurrence(c *gin.Context) {
 	}
 
 	// Holiday check for this single date.
-	calDates := database.ListCalendarDates(uint(caseID), sc.Semester, sc.AcademicYear, &date, &date)
+	calDates, err := database.ListCalendarDates(uint(caseID), sc.Semester, sc.AcademicYear, &date, &date)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	cancelledDates := make(map[string]uint)
 	for _, cd := range calDates {
 		if cd.AffectsWork != nil && *cd.AffectsWork {

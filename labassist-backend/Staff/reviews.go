@@ -25,7 +25,12 @@ type reviewActionRequest struct {
 func (h *Handler) ListReviews(c *gin.Context) {
 	status := c.Query("status")
 	search := c.Query("q")
-	c.JSON(http.StatusOK, database.ListFormReviews(status, search))
+	reviews, err := database.ListFormReviews(status, search)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, reviews)
 }
 
 // VerifyForm godoc

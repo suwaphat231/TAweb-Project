@@ -41,9 +41,11 @@ type LabBoyAssignment struct {
 
 // LabBoyAssignmentsForStudent returns all courses where the student has an
 // accepted application and the instructor has confirmed the schedule.
-func LabBoyAssignmentsForStudent(studentUserID uint) []LabBoyAssignment {
+func LabBoyAssignmentsForStudent(studentUserID uint) ([]LabBoyAssignment, error) {
 	var apps []models.Application
-	DB.Where("student_id = ? AND status = ?", studentUserID, models.AppAccepted).Find(&apps)
+	if err := DB.Where("student_id = ? AND status = ?", studentUserID, models.AppAccepted).Find(&apps).Error; err != nil {
+		return nil, err
+	}
 	out := make([]LabBoyAssignment, 0, len(apps))
 	for _, app := range apps {
 		// Read schedule-confirmed flag from the posting.
@@ -78,18 +80,20 @@ func LabBoyAssignmentsForStudent(studentUserID uint) []LabBoyAssignment {
 			AcademicYear:   course.AcademicYear,
 		})
 	}
-	return out
+	return out, nil
 }
 
 // WorkScheduleForStudent returns every work session found in StaffDocuments
 // where the student (by userID) appears as an accepted Lab Boy in the roster.
 // Sessions are deduplicated by (course, date) — multiple document types can
 // cover the same period — and returned sorted oldest-first.
-func WorkScheduleForStudent(studentUserID uint) []WorkSession {
+func WorkScheduleForStudent(studentUserID uint) ([]WorkSession, error) {
 	var apps []models.Application
-	DB.Where("student_id = ? AND status = ?", studentUserID, models.AppAccepted).Find(&apps)
+	if err := DB.Where("student_id = ? AND status = ?", studentUserID, models.AppAccepted).Find(&apps).Error; err != nil {
+		return nil, err
+	}
 	if len(apps) == 0 {
-		return []WorkSession{}
+		return []WorkSession{}, nil
 	}
 
 	// Collect posting IDs from accepted applications (primary path).
@@ -106,12 +110,16 @@ func WorkScheduleForStudent(studentUserID uint) []WorkSession {
 
 	var docs []models.StaffDocument
 	if len(postingIDs) > 0 {
-		DB.Where("posting_id IN ?", postingIDs).Find(&docs)
+		if err := DB.Where("posting_id IN ?", postingIDs).Find(&docs).Error; err != nil {
+			return nil, err
+		}
 	}
 	// Legacy fallback: also fetch docs linked by course_id for pre-migration rows.
 	if len(legacyCourseIDs) > 0 {
 		var legacyDocs []models.StaffDocument
-		DB.Where("course_id IN ? AND (posting_id IS NULL OR posting_id = 0)", legacyCourseIDs).Find(&legacyDocs)
+		if err := DB.Where("course_id IN ? AND (posting_id IS NULL OR posting_id = 0)", legacyCourseIDs).Find(&legacyDocs).Error; err != nil {
+			return nil, err
+		}
 		docs = append(docs, legacyDocs...)
 	}
 
@@ -178,5 +186,5 @@ func WorkScheduleForStudent(studentUserID uint) []WorkSession {
 	sort.SliceStable(out, func(i, j int) bool {
 		return out[i].SessionDate < out[j].SessionDate
 	})
-	return out
+	return out, nil
 }

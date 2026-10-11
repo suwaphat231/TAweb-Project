@@ -21,14 +21,14 @@ func TermScheduleByUserTerm(userID uint, semester string, academicYear int) mode
 
 // HasConfirmedTermSchedule reports whether the student has explicitly saved
 // a schedule or confirmed that a term has no classes.
-func HasConfirmedTermSchedule(userID uint) bool {
+func HasConfirmedTermSchedule(userID uint) (bool, error) {
 	var count int64
-	DB.Model(&models.TermSchedule{}).
+	err := DB.Model(&models.TermSchedule{}).
 		Where("user_id = ? AND status IN ?", userID, []models.TermScheduleStatus{
 			models.TermScheduleSet,
 			models.TermScheduleNoClass,
-		}).Count(&count)
-	return count > 0
+		}).Count(&count).Error
+	return count > 0, err
 }
 
 // UpsertTermSchedule saves or replaces the TermSchedule for one student/term.
@@ -58,10 +58,12 @@ type TermOption struct {
 
 // DistinctCourseTerms returns all distinct semester/year pairs from courses,
 // ordered newest-year-first, then semester ascending.
-func DistinctCourseTerms() []TermOption {
+func DistinctCourseTerms() ([]TermOption, error) {
 	var rows []TermOption
-	DB.Raw("SELECT DISTINCT semester, academic_year FROM courses ORDER BY academic_year DESC, semester ASC").Scan(&rows)
-	return rows
+	if err := DB.Raw("SELECT DISTINCT semester, academic_year FROM courses ORDER BY academic_year DESC, semester ASC").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
 }
 
 // BestTermSchedule returns the student's TermSchedule for the given

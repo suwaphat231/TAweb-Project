@@ -27,7 +27,12 @@ type BlacklistRequest struct {
 // @Success      200  {array}  models.Blacklist
 // @Router       /instructor/blacklist [get]
 func (h *Handler) ListBlacklist(c *gin.Context) {
-	c.JSON(http.StatusOK, database.ActiveBlacklists())
+	rows, err := database.ActiveBlacklists()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, rows)
 }
 
 // CreateBlacklist godoc
@@ -82,7 +87,12 @@ func (h *Handler) CreateBlacklist(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "blacklist ได้เฉพาะนักศึกษาที่เป็น Lab Boy ของวิชานี้"})
 		return
 	}
-	if database.HasActiveBlacklistForApplication(app.ID) {
+	exists, err := database.HasActiveBlacklistForApplication(app.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	if exists {
 		c.JSON(http.StatusConflict, gin.H{"error": "นักศึกษาคนนี้ถูก blacklist จากวิชานี้แล้ว"})
 		return
 	}
@@ -136,13 +146,17 @@ func (h *Handler) RevokeBlacklist(c *gin.Context) {
 
 // attachBlacklists fills in each applicant's active blacklist entries so the
 // reviewer sees the warning next to the application.
-func attachBlacklists(apps []models.Application) {
+func attachBlacklists(apps []models.Application) error {
 	ids := make([]uint, 0, len(apps))
 	for _, a := range apps {
 		ids = append(ids, a.StudentID)
 	}
-	byStudent := database.ActiveBlacklistsByStudent(ids)
+	byStudent, err := database.ActiveBlacklistsByStudent(ids)
+	if err != nil {
+		return err
+	}
 	for i := range apps {
 		apps[i].Blacklists = byStudent[apps[i].StudentID]
 	}
+	return nil
 }

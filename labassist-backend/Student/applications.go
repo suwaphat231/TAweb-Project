@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"labassist/database"
 	"labassist/models"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -49,10 +50,27 @@ func (h *Handler) StudentDashboard(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
 	sid := studentID.(uint)
 
-	recentApps := database.RecentStudentApplications(sid, 5)
-	recentCourses := enrichConflicts(sid, database.RecentOpenCourses(3))
-	openCount := database.CountOpenCourses()
-	appliedCount := database.CountAppliedByStudent(sid)
+	recentApps, err := database.RecentStudentApplications(sid, 5)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	openCourses, err := database.RecentOpenCourses(3)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	recentCourses := enrichConflicts(sid, openCourses)
+	openCount, err := database.CountOpenCourses()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	appliedCount, err := database.CountAppliedByStudent(sid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"recent_applications": recentApps,
@@ -70,7 +88,11 @@ func (h *Handler) StudentDashboard(c *gin.Context) {
 // @Router       /student/applications [get]
 func (h *Handler) MyApplications(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
-	apps := database.StudentApplications(studentID.(uint))
+	apps, err := database.StudentApplications(studentID.(uint))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, apps)
 }
 
@@ -103,7 +125,12 @@ func (h *Handler) Apply(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "course is not accepting applications"})
 		return
 	}
-	if !database.HasConfirmedTermSchedule(studentID.(uint)) {
+	hasSchedule, err := database.HasConfirmedTermSchedule(studentID.(uint))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	if !hasSchedule {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":             "กรุณากรอกและบันทึกตารางเรียนในหน้าโปรไฟล์ก่อนสมัคร Lab Boy",
 			"schedule_required": true,
@@ -143,7 +170,13 @@ func (h *Handler) Apply(c *gin.Context) {
 	// Notify the instructor account linked to this course.
 	if applicant, ok := database.UserByID(studentID.(uint)); ok {
 		notifs := make([]models.Notification, 0, 1)
-		for _, ins := range database.InstructorsForCourse(course) {
+		// The application is already saved, so a failed lookup only skips
+		// the notification instead of failing the request.
+		instructors, err := database.InstructorsForCourse(course)
+		if err != nil {
+			log.Printf("notify instructors of course %d: %v", course.ID, err)
+		}
+		for _, ins := range instructors {
 			notifs = append(notifs, models.Notification{
 				UserID:   ins.ID,
 				CourseID: &body.CourseID,
@@ -226,7 +259,11 @@ func (h *Handler) ApplicationHistory(c *gin.Context) {
 		return
 	}
 
-	history := database.ApplicationHistoryForApplication(uint(id))
+	history, err := database.ApplicationHistoryForApplication(uint(id))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, history)
 }
 

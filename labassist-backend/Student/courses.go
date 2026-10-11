@@ -37,6 +37,10 @@ func enrichConflicts(studentID uint, courses []models.Course) []models.Course {
 func (h *Handler) StudentCourses(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
 	sid := studentID.(uint)
-	courses := database.ListCourses(c.Query("status"), c.Query("q"), nil)
+	courses, err := database.ListCourses(c.Query("status"), c.Query("q"), nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, enrichConflicts(sid, courses))
 }

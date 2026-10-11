@@ -101,7 +101,10 @@ func renderHiringNotice(doc models.StaffDocument, course models.Course) ([]byte,
 			}
 		}
 	} else if doc.StaffCaseID != nil {
-		occs := database.WorkOccurrencesForCase(*doc.StaffCaseID)
+		occs, err := database.WorkOccurrencesForCase(*doc.StaffCaseID)
+		if err != nil {
+			return nil, fmt.Errorf("load work occurrences: %w", err)
+		}
 		workDates, monthlyPlan, totalSessions = occurrencesFromSlice(occs)
 		if sc, ok := database.StaffCaseByID(*doc.StaffCaseID); ok && sc.RatePerHour > 0 {
 			rateBaht = float64(sc.RatePerHour) / 100.0

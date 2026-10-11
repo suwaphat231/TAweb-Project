@@ -81,9 +81,11 @@ func reviewByPostingID(postingID, courseID uint) models.FormReview {
 // ListFormReviews returns all active postings with labboy slots, each
 // enriched with their current review status. If statusFilter is non-empty
 // only that status is returned.
-func ListFormReviews(statusFilter, search string) []models.FormReview {
+func ListFormReviews(statusFilter, search string) ([]models.FormReview, error) {
 	var postings []models.Posting
-	DB.Where("is_active = true AND lab_boy_slots > 0").Order("id DESC").Find(&postings)
+	if err := DB.Where("is_active = true AND lab_boy_slots > 0").Order("id DESC").Find(&postings).Error; err != nil {
+		return nil, err
+	}
 
 	out := make([]models.FormReview, 0, len(postings))
 	for _, p := range postings {
@@ -102,7 +104,7 @@ func ListFormReviews(statusFilter, search string) []models.FormReview {
 		}
 		out = append(out, r)
 	}
-	return out
+	return out, nil
 }
 
 // --- StaffDocument ---
@@ -132,7 +134,7 @@ func DeleteStaffDocument(id uint) bool {
 }
 
 // ListStaffDocuments returns documents filtered by type and/or status, newest first.
-func ListStaffDocuments(typeFilter, statusFilter, search string) []models.StaffDocument {
+func ListStaffDocuments(typeFilter, statusFilter, search string) ([]models.StaffDocument, error) {
 	query := DB.Order("created_at DESC")
 	if typeFilter != "" {
 		query = query.Where("type = ?", typeFilter)
@@ -145,8 +147,10 @@ func ListStaffDocuments(typeFilter, statusFilter, search string) []models.StaffD
 		query = query.Where("LOWER(name) LIKE ? OR LOWER(course_ref) LIKE ?", q, q)
 	}
 	var out []models.StaffDocument
-	query.Find(&out)
-	return out
+	if err := query.Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // UpdateStaffDocumentStatus changes the status of a document by ID.

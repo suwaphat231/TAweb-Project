@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"time"
 
@@ -30,14 +31,16 @@ func PostingByIDExported(id uint) (models.Posting, bool) {
 // AcceptedStudentsForPosting returns accepted Lab Boy applications for a
 // specific posting, including archived postings (for Staff Case enrichment
 // after the posting may no longer be active).
-func AcceptedStudentsForPosting(postingID uint) []models.Application {
-	out := make([]models.Application, 0)
+func AcceptedStudentsForPosting(postingID uint) ([]models.Application, error) {
 	var apps []models.Application
-	DB.Where("posting_id = ? AND status = ?", postingID, models.AppAccepted).Find(&apps)
+	if err := DB.Where("posting_id = ? AND status = ?", postingID, models.AppAccepted).Find(&apps).Error; err != nil {
+		return nil, err
+	}
+	out := make([]models.Application, 0, len(apps))
 	for _, a := range apps {
 		out = append(out, enrichApplication(a))
 	}
-	return out
+	return out, nil
 }
 
 // --- StaffCase ---
@@ -134,14 +137,16 @@ func StaffCaseByPostingID(postingID uint) (models.StaffCase, bool) {
 }
 
 // ListStaffCases returns all staff cases, optionally filtered by status.
-func ListStaffCases(statusFilter string) []models.StaffCase {
+func ListStaffCases(statusFilter string) ([]models.StaffCase, error) {
 	q := DB.Order("id DESC")
 	if statusFilter != "" {
 		q = q.Where("status = ?", statusFilter)
 	}
 	var out []models.StaffCase
-	q.Find(&out)
-	return out
+	if err := q.Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // UpdateStaffCase applies fn to a staff case inside a SELECT FOR UPDATE transaction
@@ -164,10 +169,12 @@ func UpdateStaffCase(id uint, fn func(sc *models.StaffCase)) (models.StaffCase, 
 // --- ScheduleGroup ---
 
 // ScheduleGroupsForCase returns all schedule groups for a staff case.
-func ScheduleGroupsForCase(staffCaseID uint) []models.ScheduleGroup {
+func ScheduleGroupsForCase(staffCaseID uint) ([]models.ScheduleGroup, error) {
 	var out []models.ScheduleGroup
-	DB.Where("staff_case_id = ?", staffCaseID).Order("id ASC").Find(&out)
-	return out
+	if err := DB.Where("staff_case_id = ?", staffCaseID).Order("id ASC").Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // UpsertScheduleGroup creates a new schedule group.
@@ -268,7 +275,7 @@ func CalendarDateByID(id uint) (models.CalendarDate, bool) {
 // It returns dates matching any of: (a) scope=global, (b) scope=semester with
 // matching semester/academic_year, (c) scope=case with matching staff_case_id.
 // If from/to are non-nil the results are further bounded by that date range.
-func ListCalendarDates(staffCaseID uint, semester string, academicYear int, from, to *time.Time) []models.CalendarDate {
+func ListCalendarDates(staffCaseID uint, semester string, academicYear int, from, to *time.Time) ([]models.CalendarDate, error) {
 	q := DB.Where(
 		"scope = ? OR (scope = ? AND semester = ? AND academic_year = ?) OR (scope = ? AND staff_case_id = ?)",
 		models.DateScopeGlobal,
@@ -282,8 +289,10 @@ func ListCalendarDates(staffCaseID uint, semester string, academicYear int, from
 		q = q.Where("date <= ?", to.Format("2006-01-02"))
 	}
 	var out []models.CalendarDate
-	q.Order("date ASC").Find(&out)
-	return out
+	if err := q.Order("date ASC").Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // UpdateCalendarDate applies fn to a calendar date inside a transaction.
@@ -318,17 +327,22 @@ func CancelOccurrencesForHoliday(cd models.CalendarDate) error {
 	var caseIDs []uint
 	statusFilter := []string{"open", "plan_locked"}
 
+	var err error
 	switch cd.Scope {
 	case models.DateScopeGlobal:
-		DB.Model(&models.StaffCase{}).Where("status IN ?", statusFilter).Pluck("id", &caseIDs)
+		err = DB.Model(&models.StaffCase{}).Where("status IN ?", statusFilter).Pluck("id", &caseIDs).Error
 	case models.DateScopeSemester:
-		DB.Model(&models.StaffCase{}).
+		err = DB.Model(&models.StaffCase{}).
 			Where("semester = ? AND academic_year = ? AND status IN ?", cd.Semester, cd.AcademicYear, statusFilter).
-			Pluck("id", &caseIDs)
+			Pluck("id", &caseIDs).Error
 	case models.DateScopeCase:
 		if cd.StaffCaseID != nil {
 			caseIDs = []uint{*cd.StaffCaseID}
 		}
+	}
+
+	if err != nil {
+		return fmt.Errorf("find staff cases for holiday: %w", err)
 	}
 
 	if len(caseIDs) == 0 {
@@ -357,14 +371,16 @@ func RestoreOccurrencesForHoliday(holidayID uint) error {
 
 // ListCalendarDatesBySemester returns global + semester-scoped dates for a given semester.
 // Used by the settings page to manage semester-level holidays independently of any case.
-func ListCalendarDatesBySemester(semester string, academicYear int) []models.CalendarDate {
+func ListCalendarDatesBySemester(semester string, academicYear int) ([]models.CalendarDate, error) {
 	var out []models.CalendarDate
-	DB.Where(
+	if err := DB.Where(
 		"scope = ? OR (scope = ? AND semester = ? AND academic_year = ?)",
 		models.DateScopeGlobal,
 		models.DateScopeSemester, semester, academicYear,
-	).Order("date ASC").Find(&out)
-	return out
+	).Order("date ASC").Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // --- ScheduleGroupAssignment ---
@@ -387,32 +403,38 @@ func AssignStudentsToGroup(groupID uint, studentIDs []uint) error {
 }
 
 // GroupStudentIDs returns the student user IDs assigned to a schedule group.
-func GroupStudentIDs(groupID uint) []uint {
+func GroupStudentIDs(groupID uint) ([]uint, error) {
 	var rows []models.ScheduleGroupAssignment
-	DB.Where("schedule_group_id = ?", groupID).Find(&rows)
+	if err := DB.Where("schedule_group_id = ?", groupID).Find(&rows).Error; err != nil {
+		return nil, err
+	}
 	ids := make([]uint, len(rows))
 	for i, r := range rows {
 		ids[i] = r.StudentID
 	}
-	return ids
+	return ids, nil
 }
 
 // WorkOccurrencesForGroup returns all occurrences linked to a schedule group, date ascending.
-func WorkOccurrencesForGroup(groupID uint) []models.WorkOccurrence {
+func WorkOccurrencesForGroup(groupID uint) ([]models.WorkOccurrence, error) {
 	var out []models.WorkOccurrence
-	DB.Where("schedule_group_id = ?", groupID).Order("scheduled_date ASC, start_time ASC").Find(&out)
-	return out
+	if err := DB.Where("schedule_group_id = ?", groupID).Order("scheduled_date ASC, start_time ASC").Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // WorkOccurrencesForGroupInMonth returns occurrences for a group in a specific calendar month.
-func WorkOccurrencesForGroupInMonth(groupID uint, year, month int) []models.WorkOccurrence {
+func WorkOccurrencesForGroupInMonth(groupID uint, year, month int) ([]models.WorkOccurrence, error) {
 	start := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
 	end := start.AddDate(0, 1, -1)
 	var out []models.WorkOccurrence
-	DB.Where("schedule_group_id = ? AND scheduled_date >= ? AND scheduled_date <= ?",
+	if err := DB.Where("schedule_group_id = ? AND scheduled_date >= ? AND scheduled_date <= ?",
 		groupID, start.Format("2006-01-02"), end.Format("2006-01-02")).
-		Order("scheduled_date ASC").Find(&out)
-	return out
+		Order("scheduled_date ASC").Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // --- WorkOccurrence ---
@@ -444,22 +466,26 @@ func GenerateWorkOccurrences(
 }
 
 // WorkOccurrencesForCase returns all occurrences for a staff case, date ascending.
-func WorkOccurrencesForCase(staffCaseID uint) []models.WorkOccurrence {
+func WorkOccurrencesForCase(staffCaseID uint) ([]models.WorkOccurrence, error) {
 	var out []models.WorkOccurrence
-	DB.Where("staff_case_id = ?", staffCaseID).Order("scheduled_date ASC, start_time ASC").Find(&out)
-	return out
+	if err := DB.Where("staff_case_id = ?", staffCaseID).Order("scheduled_date ASC, start_time ASC").Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // WorkOccurrencesForMonth returns occurrences for a staff case in a specific
 // calendar month (CE year/month).
-func WorkOccurrencesForMonth(staffCaseID uint, year, month int) []models.WorkOccurrence {
+func WorkOccurrencesForMonth(staffCaseID uint, year, month int) ([]models.WorkOccurrence, error) {
 	start := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
 	end := start.AddDate(0, 1, -1)
 	var out []models.WorkOccurrence
-	DB.Where("staff_case_id = ? AND scheduled_date >= ? AND scheduled_date <= ?",
+	if err := DB.Where("staff_case_id = ? AND scheduled_date >= ? AND scheduled_date <= ?",
 		staffCaseID, start.Format("2006-01-02"), end.Format("2006-01-02")).
-		Order("scheduled_date ASC").Find(&out)
-	return out
+		Order("scheduled_date ASC").Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // UpdateOccurrenceStatus changes the status of a work occurrence and records who changed it.
@@ -567,10 +593,12 @@ func CloseMonthlyPeriod(id, closedByID uint) (models.MonthlyPeriod, error) {
 }
 
 // MonthlyPeriodsForCase returns all monthly periods for a staff case, month ascending.
-func MonthlyPeriodsForCase(staffCaseID uint) []models.MonthlyPeriod {
+func MonthlyPeriodsForCase(staffCaseID uint) ([]models.MonthlyPeriod, error) {
 	var out []models.MonthlyPeriod
-	DB.Where("staff_case_id = ?", staffCaseID).Order("year ASC, month ASC").Find(&out)
-	return out
+	if err := DB.Where("staff_case_id = ?", staffCaseID).Order("year ASC, month ASC").Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // MonthlyPeriodByID returns a monthly period by primary key.
@@ -584,26 +612,33 @@ func MonthlyPeriodByID(id uint) (models.MonthlyPeriod, bool) {
 
 // --- StaffAuditLog ---
 
-// CreateStaffAuditLog persists an audit log entry. Fire-and-forget; errors are silently dropped.
-func CreateStaffAuditLog(log models.StaffAuditLog) {
-	log.ID = 0
-	DB.Create(&log)
+// CreateStaffAuditLog persists an audit log entry. It is best-effort: a failed
+// audit write must not fail the action it records, so the error is logged.
+func CreateStaffAuditLog(entry models.StaffAuditLog) {
+	entry.ID = 0
+	if err := DB.Create(&entry).Error; err != nil {
+		log.Printf("create staff audit log (%s): %v", entry.Action, err)
+	}
 }
 
 // StaffAuditLogsForCase returns all audit log entries for a staff case, newest first.
-func StaffAuditLogsForCase(staffCaseID uint) []models.StaffAuditLog {
+func StaffAuditLogsForCase(staffCaseID uint) ([]models.StaffAuditLog, error) {
 	var out []models.StaffAuditLog
-	DB.Where("staff_case_id = ?", staffCaseID).Order("id DESC").Find(&out)
-	return out
+	if err := DB.Where("staff_case_id = ?", staffCaseID).Order("id DESC").Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // --- ScheduleGroupMonth ---
 
 // ListScheduleGroupMonths returns all months registered for a schedule group.
-func ListScheduleGroupMonths(groupID uint) []models.ScheduleGroupMonth {
+func ListScheduleGroupMonths(groupID uint) ([]models.ScheduleGroupMonth, error) {
 	var out []models.ScheduleGroupMonth
-	DB.Where("schedule_group_id = ?", groupID).Order("year ASC, month ASC").Find(&out)
-	return out
+	if err := DB.Where("schedule_group_id = ?", groupID).Order("year ASC, month ASC").Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // AddScheduleGroupMonth adds a new month to a schedule group.
@@ -1083,7 +1118,10 @@ func BuildDocumentSnapshot(caseID uint, labBoyCount int) (models.DocumentDataSna
 	}
 
 	snap := BuildHiringNoticeSnapshot(caseID)
-	occs := WorkOccurrencesForCase(caseID)
+	occs, err := WorkOccurrencesForCase(caseID)
+	if err != nil {
+		return models.DocumentDataSnapshot{}, err
+	}
 
 	ds := models.DocumentDataSnapshot{
 		SchemaVersion:   1,
@@ -1164,6 +1202,10 @@ type HiringNoticePlanSnapshot struct {
 	BlockingReasons  []string             `json:"blocking_reasons"`
 }
 
+// errSnapshotRead blocks document generation when plan data could not be
+// read, so a database failure never produces a document with missing days.
+const errSnapshotRead = "อ่านข้อมูลแผนงานจากฐานข้อมูลไม่สำเร็จ กรุณาลองใหม่"
+
 // BuildHiringNoticeSnapshot derives the hiring notice fields from confirmed
 // WorkOccurrence data. BlockingReasons is non-empty and CanCreate is false
 // when the plan is incomplete.
@@ -1182,7 +1224,11 @@ func BuildHiringNoticeSnapshot(caseID uint) HiringNoticePlanSnapshot {
 	}
 	snap.RatePerHourBaht = float64(effectiveRate) / 100.0
 
-	groups := ScheduleGroupsForCase(caseID)
+	groups, err := ScheduleGroupsForCase(caseID)
+	if err != nil {
+		snap.BlockingReasons = append(snap.BlockingReasons, errSnapshotRead)
+		return snap
+	}
 	if len(groups) == 0 {
 		snap.BlockingReasons = append(snap.BlockingReasons, "ยังไม่มีกลุ่มตารางทำงาน")
 		return snap
@@ -1209,8 +1255,18 @@ func BuildHiringNoticeSnapshot(caseID uint) HiringNoticePlanSnapshot {
 	totalValid := 0
 	monthKeys := make(map[string]struct{})
 	for _, sg := range groups {
-		for _, m := range ListScheduleGroupMonths(sg.ID) {
-			for _, o := range WorkOccurrencesForGroupInMonth(sg.ID, m.Year, m.Month) {
+		months, err := ListScheduleGroupMonths(sg.ID)
+		if err != nil {
+			snap.BlockingReasons = append(snap.BlockingReasons, errSnapshotRead)
+			return snap
+		}
+		for _, m := range months {
+			occs, err := WorkOccurrencesForGroupInMonth(sg.ID, m.Year, m.Month)
+			if err != nil {
+				snap.BlockingReasons = append(snap.BlockingReasons, errSnapshotRead)
+				return snap
+			}
+			for _, o := range occs {
 				if o.Status == models.OccurrenceScheduled || o.Status == models.OccurrenceCompleted {
 					totalValid++
 					monthKeys[fmt.Sprintf("%d-%02d", m.Year, m.Month)] = struct{}{}

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "database-schema-designer": {
+      "source": "jeremylongshore/claude-code-plugins-plus-skills",
+      "sourceType": "github",
+      "skillPath": "skills/06-backend-dev/database-schema-designer/SKILL.md",
+      "computedHash": "d4b3b320878464ee67882f22b244550380634717cb5f16482778212a5eac6686"
+    }
+  }
+}

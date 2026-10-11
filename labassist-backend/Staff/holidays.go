@@ -1,6 +1,7 @@
 package staff
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -46,7 +47,11 @@ func (h *Handler) ListCalendarDatesBySemester(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid academic_year"})
 		return
 	}
-	dates := database.ListCalendarDatesBySemester(semester, year)
+	dates, err := database.ListCalendarDatesBySemester(semester, year)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, dates)
 }
 
@@ -70,7 +75,11 @@ func (h *Handler) ListCalendarDates(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "staff case not found"})
 		return
 	}
-	dates := database.ListCalendarDates(uint(id), sc.Semester, sc.AcademicYear, nil, nil)
+	dates, err := database.ListCalendarDates(uint(id), sc.Semester, sc.AcademicYear, nil, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, dates)
 }
 
@@ -131,7 +140,18 @@ func (h *Handler) CreateCalendarDate(c *gin.Context) {
 		return
 	}
 	// Auto-cancel existing scheduled occurrences that fall on this holiday date.
-	_ = database.CancelOccurrencesForHoliday(created)
+	// The holiday itself is already saved, so a failed cascade is reported as
+	// a warning rather than an error that would invite a duplicate retry.
+	if err := database.CancelOccurrencesForHoliday(created); err != nil {
+		log.Printf("cancel occurrences for holiday %d: %v", created.ID, err)
+		// Same shape as the success response plus a warning field, so
+		// clients that insert the returned row into their list keep working.
+		c.JSON(http.StatusCreated, struct {
+			models.CalendarDate
+			Warning string `json:"warning"`
+		}{created, "บันทึกวันหยุดแล้ว แต่ยกเลิกวันทำงานที่ตรงกับวันหยุดไม่สำเร็จ กรุณาตรวจสอบแผนงาน"})
+		return
+	}
 	c.JSON(http.StatusCreated, created)
 }
 
@@ -150,8 +170,12 @@ func (h *Handler) DeleteCalendarDate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	// Restore occurrences cancelled by this holiday before deleting it.
-	_ = database.RestoreOccurrencesForHoliday(uint(id))
+	// Restore occurrences cancelled by this holiday before deleting it; stop
+	// if that fails so the work days are not left cancelled with no holiday.
+	if err := database.RestoreOccurrencesForHoliday(uint(id)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	if !database.DeleteCalendarDate(uint(id)) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "calendar date not found"})
 		return

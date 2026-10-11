@@ -134,7 +134,11 @@ func (h *Handler) InstructorList(c *gin.Context) {
 		fullName = u.FullName
 	}
 
-	courses := database.InstructorCourses(instructorID.(uint), fullName, role.(string) == "admin", nil)
+	courses, err := database.InstructorCourses(instructorID.(uint), fullName, role.(string) == "admin", nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, courses)
 }
 
@@ -156,7 +160,11 @@ func (h *Handler) CourseCatalog(c *gin.Context) {
 		fullName = u.FullName
 	}
 
-	courses := database.CoursesTaughtBy(instructorID.(uint), fullName, isAdmin)
+	courses, err := database.CoursesTaughtBy(instructorID.(uint), fullName, isAdmin)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, courses)
 }
 
@@ -182,7 +190,11 @@ func (h *Handler) CourseCatalogSections(c *gin.Context) {
 	}
 
 	academicYear, _ := strconv.Atoi(c.Query("academic_year"))
-	sections := database.TaughtCourseSections(instructorID.(uint), fullName, isAdmin, c.Query("code"), c.Query("semester"), academicYear)
+	sections, err := database.TaughtCourseSections(instructorID.(uint), fullName, isAdmin, c.Query("code"), c.Query("semester"), academicYear)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, sections)
 }
 
@@ -525,7 +537,12 @@ func (h *Handler) Delete(c *gin.Context) {
 // @Router       /instructor/my-courses [get]
 func (h *Handler) MyCourses(c *gin.Context) {
 	instructorID, _ := c.Get("user_id")
-	c.JSON(http.StatusOK, database.MyCourseRelations(instructorID.(uint)))
+	rels, err := database.MyCourseRelations(instructorID.(uint))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, rels)
 }
 
 // CourseCandidatesList godoc
@@ -541,12 +558,17 @@ func (h *Handler) MyCourses(c *gin.Context) {
 func (h *Handler) CourseCandidatesList(c *gin.Context) {
 	instructorID, _ := c.Get("user_id")
 	academicYear, _ := strconv.Atoi(c.Query("academic_year"))
-	c.JSON(http.StatusOK, database.CourseCandidates(
+	candidates, err := database.CourseCandidates(
 		instructorID.(uint),
 		c.Query("semester"),
 		academicYear,
 		c.Query("q"),
-	))
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, candidates)
 }
 
 type addMyCourseRequest struct {
@@ -648,13 +670,21 @@ func (h *Handler) ConfirmSchedule(c *gin.Context) {
 
 	// Ensure a StaffCase exists for this posting so the staff workflow can begin.
 	if posting, ok := database.ActivePostingForCourse(uint(courseID)); ok {
-		accepted := database.AcceptedStudentsForPosting(posting.ID)
+		accepted, err := database.AcceptedStudentsForPosting(posting.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
 		if len(accepted) > 0 {
 			database.EnsureStaffCase(posting.ID, uint(courseID), updated.Semester, updated.AcademicYear, instructorID)
 		}
 	}
 
-	accepted := database.AcceptedStudentsForCourse(uint(courseID))
+	accepted, err := database.AcceptedStudentsForCourse(uint(courseID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	notifs := make([]models.Notification, 0, len(accepted))
 	for _, app := range accepted {
 		cid := updated.ID
@@ -697,7 +727,14 @@ func (h *Handler) Applicants(c *gin.Context) {
 		return
 	}
 
-	apps := database.ApplicantsForCourse(uint(courseID), c.Query("role_applied"), c.Query("status"), c.Query("search"))
-	attachBlacklists(apps)
+	apps, err := database.ApplicantsForCourse(uint(courseID), c.Query("role_applied"), c.Query("status"), c.Query("search"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	if err := attachBlacklists(apps); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, apps)
 }

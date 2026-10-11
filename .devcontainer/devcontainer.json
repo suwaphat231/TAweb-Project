@@ -1,0 +1,8 @@
+{
+  "name": "LabAssist",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  // After a Codespace restart, the iptables-legacy FORWARD policy is DROP and only
+  // allows docker0, which blocks traffic between docker compose containers
+  // (backend -> mysql times out, so login fails). Re-open it on every start.
+  "postStartCommand": "sudo iptables-legacy -P FORWARD ACCEPT 2>/dev/null || true"
+}

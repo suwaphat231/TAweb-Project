@@ -274,7 +274,11 @@ func (h *Handler) ImportCourses(c *gin.Context) {
 		}
 	}
 
-	instructors := database.ListUsers(string(models.RoleInstructor), "", 1000, 0)
+	instructors, err := database.ListUsers(string(models.RoleInstructor), "", 1000, 0)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 
 	resp := ImportCoursesResponse{
 		Created: []ImportCourseResult{}, Skipped: []ImportSkippedRow{},
@@ -421,7 +425,11 @@ func (h *Handler) ResolveImportConflicts(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
-	instructors := database.ListUsers(string(models.RoleInstructor), "", 1000, 0)
+	instructors, err := database.ListUsers(string(models.RoleInstructor), "", 1000, 0)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	updated := 0
 	for _, u := range req.Updates {
 		f := u.Fields
