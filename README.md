@@ -42,6 +42,21 @@ git clone <repo-url>
 cd TAweb-test
 ```
 
+### เริ่มเร็ว (เครื่องใหม่ / Codespace)
+
+```bash
+./setup-env.sh                       # สร้าง .env (JWT_SECRET, DEV_LOGIN, demo accounts) — Codespace รันให้อัตโนมัติ
+cd labassist-backend && ./dev.sh     # MySQL + API :8080
+cd labassist-frontend && npm run dev # UI :5173 (อีก terminal)
+```
+
+Login ด้วย `demo_std01` / `parinya` / `admin` รหัส `password123` หรือปุ่ม dev login ได้ทันที
+ทั้งจาก `localhost:5173` และ URL ของ Codespace (`https://<name>-5173.app.github.dev`)
+
+**Google Sign-In บน Codespace:** Google ไม่รองรับ wildcard origin ต้องเพิ่ม URL
+`https://<codespace-name>-5173.app.github.dev` ใน Authorized JavaScript origins ของ OAuth client
+(Google Cloud Console) ทุกครั้งที่สร้าง Codespace ใหม่ หรือเปิดผ่าน VS Code desktop ที่ forward เป็น `http://localhost:5173`
+
 ### 2. Database
 
 ```bash

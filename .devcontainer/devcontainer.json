@@ -1,6 +1,10 @@
 {
   "name": "LabAssist",
   "image": "mcr.microsoft.com/devcontainers/universal:2",
+  // .env files are gitignored, so a new Codespace has none and the backend
+  // refuses to start (no JWT_SECRET) — every login then fails. Create them
+  // and install frontend dependencies once, when the Codespace is created.
+  "postCreateCommand": "./setup-env.sh && cd labassist-frontend && npm ci",
   // After a Codespace restart, the iptables-legacy FORWARD policy is DROP and only
   // allows docker0, which blocks traffic between docker compose containers
   // (backend -> mysql times out, so login fails). Re-open it on every start.
