@@ -126,6 +126,11 @@ type StaffDocument struct {
 	// is created with Version incremented and the old row's SupersededByID set.
 	Version        int   `gorm:"not null;default:1" json:"version"`
 	SupersededByID *uint `gorm:"index" json:"superseded_by_id,omitempty"`
+	// BasedOnDocumentID is the previous workflow step's document this one was
+	// created from (e.g. the approval memo → its hiring notice). When that
+	// document is later replaced by a new version, this one is reported as
+	// stale so staff know to regenerate it. Nullable for older documents.
+	BasedOnDocumentID *uint `gorm:"index" json:"based_on_document_id,omitempty"`
 
 	// Signed document upload — separate from generated DOCX bytes.
 	SignedFileName string    `json:"signed_file_name,omitempty"`

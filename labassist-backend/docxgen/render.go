@@ -14,7 +14,7 @@ import (
 )
 
 // ErrNoTemplate is returned by RenderDocument for a DocType with no
-// registered template (currently DocApprovalMemo).
+// registered template (currently DocLabNotice).
 var ErrNoTemplate = errors.New("docxgen: no template registered for this document type")
 
 // RenderDocument dispatches a StaffDocument to its type's builder and
@@ -38,6 +38,8 @@ func RenderDocument(doc models.StaffDocument) (data []byte, filename string, err
 		data, err = renderPaymentRequest(doc, course)
 	case models.DocWorkReport:
 		data, err = renderWorkReport(doc, course)
+	case models.DocApprovalMemo:
+		data, err = renderApprovalMemo(doc, course)
 	default:
 		return nil, "", ErrNoTemplate
 	}

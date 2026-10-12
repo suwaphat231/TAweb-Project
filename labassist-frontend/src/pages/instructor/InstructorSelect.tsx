@@ -10,6 +10,7 @@ import { Modal } from '../../components/ui/Modal'
 import { Avatar } from '../../components/ui/Avatar'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { useToast } from '../../hooks/useToast'
+import { ConfirmedHistory } from '../../components/reports/ConfirmedHistory'
 import { displayCourseTitle } from '../../utils/courseDisplay'
 import { groupCourseSections, groupSectionsByTime } from '../../utils/courseGrouping'
 import type { Application } from '../../types'
@@ -522,6 +523,11 @@ export default function InstructorSelect() {
                           <div>
                             <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--ink-900)' }}>{row.student_name}</div>
                             <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{row.student_code || '—'}</div>
+                            {!!row.confirmed_record_count && (
+                              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--primary-700)', marginTop: 2 }}>
+                                มีประวัติที่ยืนยันแล้ว {row.confirmed_record_count} รายการ
+                              </div>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -858,6 +864,8 @@ export default function InstructorSelect() {
               />
               <ProfileInfo label="วันที่สมัคร" value={new Date(profileTarget.applied_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })} />
             </div>
+
+            <ConfirmedHistory applicationId={profileTarget.id} count={profileTarget.confirmed_record_count ?? 0} />
 
             {/* Grade proof */}
             {selectedCourse?.require_grade_proof && (

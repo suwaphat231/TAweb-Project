@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { authApi } from '../../services/api'
 import { Avatar } from '../ui/Avatar'
@@ -26,6 +26,7 @@ function Ico({ name }: { name: string }): ReactNode {
     case 'file-text': return <svg {...s}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
     case 'layout':    return <svg {...s}><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
     case 'book':      return <svg {...s}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+    case 'clipboard': return <svg {...s}><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>
     case 'log-out':   return <svg {...s}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
     case 'x':         return <svg {...s}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     case 'calendar':  return <svg {...s}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -34,7 +35,11 @@ function Ico({ name }: { name: string }): ReactNode {
   }
 }
 
-interface NavItem { to: string; label: string; icon: string }
+interface NavItem {
+  to: string; label: string; icon: string
+  /** Extra path prefixes that also count as this item (nested pages). */
+  match?: string[]
+}
 
 const navMap: Record<UserRole, NavItem[]> = {
   student: [
@@ -43,18 +48,21 @@ const navMap: Record<UserRole, NavItem[]> = {
     { to: '/student/status',   label: 'สถานะการสมัคร',     icon: 'check-square' },
     { to: '/student/schedule', label: 'ตารางปฏิบัติงาน',   icon: 'calendar' },
     { to: '/student/grade-check', label: 'ตรวจสอบเกรด',   icon: 'file-text' },
+    { to: '/student/reports',  label: 'รายงานการปฏิบัติงาน', icon: 'clipboard', match: ['/reports/'] },
     { to: '/student/profile',  label: 'โปรไฟล์ของฉัน',    icon: 'user' },
   ],
   instructor: [
     { to: '/instructor/home',     label: 'หน้าหลัก',           icon: 'home' },
     { to: '/instructor/courses',  label: 'วิชาของฉัน',       icon: 'book' },
     { to: '/instructor/announce', label: 'จัดการประกาศ',     icon: 'megaphone' },
+    { to: '/instructor/reports',  label: 'Blacklist', icon: 'clipboard', match: ['/instructor/reports/', '/reports/'] },
     { to: '/instructor/profile',  label: 'ข้อมูลส่วนตัว',    icon: 'user' },
   ],
   staff: [
     { to: '/staff/home',     label: 'หน้าหลัก',          icon: 'home' },
     { to: '/staff/docs',     label: 'เอกสารทั้งหมด',     icon: 'file-text' },
     { to: '/staff/review',   label: 'ตรวจสอบแบบฟอร์ม',  icon: 'check-square' },
+    { to: '/staff/reports',  label: 'ตรวจสอบรายงาน Lab Boy', icon: 'clipboard', match: ['/reports/'] },
     { to: '/staff/settings', label: 'กำหนดวันหยุด',        icon: 'settings' },
     { to: '/staff/profile',  label: 'ข้อมูลส่วนตัว',     icon: 'user' },
   ],
@@ -62,6 +70,7 @@ const navMap: Record<UserRole, NavItem[]> = {
     { to: '/admin/overview',     label: 'ภาพรวม',         icon: 'layout' },
     { to: '/admin/courses',      label: 'จัดการรายวิชา',  icon: 'book' },
     { to: '/admin/users',        label: 'จัดการผู้ใช้งาน', icon: 'users' },
+    { to: '/staff/reports',      label: 'ตรวจสอบรายงาน Lab Boy', icon: 'clipboard', match: ['/reports/'] },
     { to: '/instructor/profile', label: 'ข้อมูลส่วนตัว',   icon: 'user' },
   ],
 }
@@ -76,6 +85,7 @@ const roleLabel: Record<UserRole, string> = {
 export function Sidebar({ collapsed = false, onClose }: Props) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const { pathname } = useLocation()
   const items = user ? (navMap[user.role] ?? []) : []
 
   async function handleLogout() {
@@ -145,7 +155,7 @@ export function Sidebar({ collapsed = false, onClose }: Props) {
             end
             title={collapsed ? item.label : undefined}
             onClick={onClose}
-            style={({ isActive }) => ({
+            style={({ isActive: exact }) => { const isActive = exact || !!item.match?.some((p) => pathname.startsWith(p)); return {
               display: 'flex',
               alignItems: 'center',
               gap: collapsed ? 0 : 10,
@@ -160,7 +170,7 @@ export function Sidebar({ collapsed = false, onClose }: Props) {
               boxShadow: isActive ? 'inset 3px 0 0 #818CF8' : 'none',
               textDecoration: 'none',
               transition: 'background .15s, color .15s',
-            })}
+            } }}
           >
             <span style={{ flexShrink: 0, display: 'flex' }}><Ico name={item.icon} /></span>
             {!collapsed && item.label}

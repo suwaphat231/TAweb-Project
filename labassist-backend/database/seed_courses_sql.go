@@ -174,7 +174,7 @@ func seedCoursesFromClasslist() error {
 // duplicate course referenced from any of them has real activity attached and
 // is never merged away.
 var courseRefTables = []string{
-	"applications", "application_history", "blacklists",
+	"applications", "application_history", "blacklists", "labboy_reports",
 	"form_reviews", "notifications", "staff_documents",
 }
 

@@ -147,10 +147,10 @@ func TestRenderWorkReport_TwoRowGroups(t *testing.T) {
 	}
 }
 
-func TestRenderDocument_NoTemplateForApprovalMemo(t *testing.T) {
-	// approval_memo has no CourseID, so RenderDocument must return
-	// ErrNoTemplate before ever attempting a database lookup.
-	doc := models.StaffDocument{Type: models.DocApprovalMemo}
+func TestRenderDocument_NoTemplateForLabNotice(t *testing.T) {
+	// lab_notice has no CourseID and no template, so RenderDocument must
+	// return ErrNoTemplate before ever attempting a database lookup.
+	doc := models.StaffDocument{Type: models.DocLabNotice}
 	_, _, err := RenderDocument(doc)
 	if err != ErrNoTemplate {
 		t.Fatalf("expected ErrNoTemplate, got %v", err)

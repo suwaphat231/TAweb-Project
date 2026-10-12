@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { staffApi, applicationsAPI, coursesAPI } from '../../services/api'
-import { buildCourseOffering, buildWorkflowItems } from './staffCourseUtils'
+import { buildCourseOffering } from './staffCourseUtils'
 import { DocumentWorkflow } from './components/DocumentWorkflow'
 import { SelectedStudentsPanel } from './components/SelectedStudentsPanel'
 import type { CalendarDate, CalendarDateType } from '../../types'
@@ -73,11 +73,6 @@ export default function StaffCourseDetail() {
     [allDocs, review],
   )
 
-  const workflowItems = useMemo(
-    () => review ? buildWorkflowItems(courseDocs, review.status === 'verified') : [],
-    [courseDocs, review],
-  )
-
   const courseRef = review ? `${review.course_code} ตอน ${review.section}` : ''
 
   // Load course details for schedule/credits
@@ -119,6 +114,7 @@ export default function StaffCourseDetail() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['staff-reviews'] })
       qc.invalidateQueries({ queryKey: ['staff-documents'] })
+      qc.invalidateQueries({ queryKey: ['document-workflow'] })
     },
   })
 
@@ -281,7 +277,6 @@ export default function StaffCourseDetail() {
                 ขั้นตอนการดำเนินงาน
               </div>
               <DocumentWorkflow
-                items={workflowItems}
                 courseId={offering.courseId}
                 courseRef={courseRef}
                 onDocumentCreated={() => setDocRefreshKey((k) => k + 1)}

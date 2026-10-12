@@ -261,3 +261,49 @@ select.slot-control { width: 100%; cursor: pointer; }
 
 /* ─── Topbar account menu ──────────────────────────────────────────────── */
 .user-menu-item:hover, .user-menu-item:focus-visible { background: var(--line-soft); }
+
+/* ─── Lab Boy performance reports ──────────────────────────────────────── */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+.report-crumb { color: var(--primary); text-decoration: none; font-weight: 500; }
+.report-crumb:hover { text-decoration: underline; }
+.report-file-btn {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px;
+  padding: 7px 14px; border: 1.5px dashed var(--primary-100); border-radius: var(--radius-btn);
+  background: var(--primary-50); color: var(--primary); font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.report-file-btn:hover { border-color: var(--primary); }
+.report-file-btn:has(+ input.sr-only:focus-visible) { outline: 2px solid var(--primary); outline-offset: 2px; }
+.report-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px;
+  border: none; border-radius: 6px; background: transparent; color: var(--ink-500); cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.report-icon-btn:hover { background: var(--red-bg); color: var(--red); }
+
+.report-card-link {
+  text-align: left; background: var(--bg-card); border: 1.5px solid var(--line); border-radius: var(--radius-card);
+  padding: 18px; cursor: pointer; display: flex; flex-direction: column; gap: 10px; font-family: inherit;
+  transition: border-color .15s, box-shadow .15s, transform .15s;
+}
+.report-card-link:hover { border-color: var(--primary); box-shadow: 0 4px 14px rgba(56,65,157,0.10); }
+.report-card-link:active { transform: translateY(1px); }
+
+.report-row-link {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%; text-align: left;
+  background: var(--bg-card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+  cursor: pointer; font-family: inherit; transition: border-color .15s, background .15s;
+}
+.report-row-link:hover { border-color: var(--primary); background: var(--primary-50); }
+
+/* Detail page: content on the left, status / actions / timeline on the right. */
+.report-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+.report-main, .report-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+@media (min-width: 961px) { .report-side { position: sticky; top: calc(var(--topbar-h) + 16px); } }
+@media (max-width: 960px) { .report-layout { grid-template-columns: 1fr; } }
+
+.report-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+@media (max-width: 720px) { .report-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

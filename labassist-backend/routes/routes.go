@@ -9,6 +9,7 @@ import (
 	_ "labassist/docs"
 	"labassist/handlers"
 	"labassist/middleware"
+	"labassist/reports"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
@@ -26,6 +27,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 	teacherH := teacher.NewHandler()
 	studentH := student.NewHandler(cfg)
 	staffH := staff.NewHandler()
+	reportH := reports.NewHandler()
 
 	v1 := r.Group("/api/v1")
 
@@ -46,6 +48,14 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 		authed.POST("/auth/password/change", authH.ChangePassword)
 		authed.POST("/auth/password/forgot", authH.ForgotPassword)
 		authed.POST("/auth/password/reset", authH.ResetPassword)
+
+		// Lab Boy performance reports shared by every role. The route only
+		// requires a login; each handler checks the caller against the
+		// report itself (reporter / the student / reviewer / admin).
+		authed.GET("/reports/:id", reportH.Detail)
+		authed.POST("/reports/:id/actions", reportH.Act)
+		authed.POST("/reports/:id/responses", reportH.Respond)
+		authed.GET("/reports/:id/evidence/:evidenceId", reportH.DownloadEvidence)
 
 		// Student
 		studentGroup := authed.Group("")
@@ -85,6 +95,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			studentGroup.GET("/student/profile/student-info", studentH.GetStudentInfo)
 			studentGroup.POST("/student/profile/student-info/confirm", studentH.ConfirmStudentInfo)
 			studentGroup.GET("/student/profile/student-info/file", studentH.GetStudentInfoFile)
+			studentGroup.GET("/student/reports", reportH.MyReports)
 		}
 
 		// Instructor
@@ -108,8 +119,11 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			instructor.GET("/instructor/notifications", teacherH.MyNotifications)
 			instructor.PUT("/instructor/notifications/read-all", teacherH.MarkAllRead)
 			instructor.PUT("/instructor/notifications/:id/read", teacherH.MarkRead)
-			instructor.POST("/instructor/blacklist", teacherH.CreateBlacklist)
-			instructor.DELETE("/instructor/blacklist/:id", teacherH.RevokeBlacklist)
+			// Lab Boy performance reports (filed by the course's instructor)
+			instructor.GET("/instructor/reports", reportH.ListMine)
+			instructor.POST("/instructor/reports", reportH.CreateReport)
+			instructor.PUT("/instructor/reports/:id", reportH.UpdateDraft)
+			instructor.POST("/instructor/reports/:id/evidence", reportH.UploadEvidence)
 		}
 
 		// Instructor + Staff + Admin for applicants and reviews
@@ -124,7 +138,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			review.PUT("/instructor/applications/bulk-review", teacherH.BulkReview)
 			review.GET("/instructor/applications/:id/grade-proof", teacherH.GradeProof)
 			review.POST("/instructor/courses/:id/confirm-schedule", teacherH.ConfirmSchedule)
-			review.GET("/instructor/blacklist", teacherH.ListBlacklist)
+			review.GET("/instructor/applications/:id/performance-records", reportH.ConfirmedHistory)
 		}
 
 		// Staff
@@ -134,6 +148,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			staffGroup.GET("/staff/profile", staffH.GetProfile)
 			staffGroup.PUT("/staff/profile", staffH.UpdateProfile)
 			staffGroup.GET("/staff/reviews", staffH.ListReviews)
+			staffGroup.GET("/staff/reports", reportH.ReviewQueue)
 			staffGroup.PUT("/staff/reviews/:courseId/verify", staffH.VerifyForm)
 			staffGroup.PUT("/staff/reviews/:courseId/return", staffH.ReturnForm)
 			staffGroup.GET("/staff/documents", staffH.ListDocuments)
@@ -142,6 +157,9 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			staffGroup.PUT("/staff/documents/:id/status", staffH.UpdateDocumentStatus)
 			staffGroup.PUT("/staff/documents/:id/schedule", staffH.UpdateDocumentSchedule)
 			staffGroup.GET("/staff/documents/:id/file", staffH.DownloadDocument)
+			// Per-course document workflow (hiring notice → approval memo → …)
+			staffGroup.GET("/staff/courses/:courseId/document-workflow", staffH.GetDocumentWorkflow)
+			staffGroup.POST("/staff/courses/:courseId/document-workflow/:type", staffH.CreateWorkflowStep)
 			staffGroup.PUT("/staff/documents/:id/reg-verify", staffH.RegVerifyRosterEntry)
 
 			// Staff Case management

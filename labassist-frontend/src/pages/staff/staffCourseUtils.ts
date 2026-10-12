@@ -1,19 +1,20 @@
 import type {
   FormReview, StaffDocument, CourseOffering,
-  CourseDocStatus, DocumentWorkflowItem, DocStepStatus, DocType,
+  CourseDocStatus, DocType,
 } from '../../types'
 
-// Pre-work documents: created once per posting before work begins.
+// Pre-work documents: created once per posting before work begins. The
+// server (Staff/doc_workflow.go) owns the real step list and its rules; this
+// copy only drives the progress shown on the staff home course cards.
 export const PRE_WORK_STEPS: { step: number; label: string; docType: DocType }[] = [
   { step: 1, label: 'แบบฟอร์มแจ้งความประสงค์ในการจ้างนักศึกษาช่วยสอนและช่วยคุมปฏิบัติการ', docType: 'hiring_notice' },
-  { step: 2, label: 'บันทึกขออนุมัติจ้างนักศึกษาช่วยสอน', docType: 'approval_memo' },
-  { step: 3, label: 'แบบแจ้งนักศึกษาช่วยคุมรายวิชาปฏิบัติการ', docType: 'lab_notice' },
+  { step: 2, label: 'บันทึกข้อความ ขออนุมัติจ้างนักศึกษาปฏิบัติงาน', docType: 'approval_memo' },
 ]
 
 // Monthly documents: created once per billing period.
 export const MONTHLY_STEPS: { step: number; label: string; docType: DocType }[] = [
-  { step: 4, label: 'รายงานผลการปฏิบัติงานนอกเวลาราชการ', docType: 'work_report' },
-  { step: 5, label: 'บันทึกขออนุมัติเบิกจ่ายเงิน', docType: 'payment_request' },
+  { step: 3, label: 'รายงานผลการปฏิบัติงานนอกเวลาราชการ', docType: 'work_report' },
+  { step: 4, label: 'บันทึกขออนุมัติเบิกจ่ายเงิน', docType: 'payment_request' },
 ]
 
 export const WORKFLOW_STEPS = [...PRE_WORK_STEPS, ...MONTHLY_STEPS]
@@ -61,41 +62,6 @@ export function buildCourseOffering(review: FormReview, allDocs: StaffDocument[]
     totalDocs: TOTAL_DOC_STEPS,
     reviewStatus: review.status,
   }
-}
-
-function docStatusToStepStatus(doc: StaffDocument, reviewVerified: boolean): DocStepStatus {
-  if (!reviewVerified) return 'not_reached'
-  switch (doc.status) {
-    case 'signed':     return 'signed'
-    case 'awaiting_signature': return 'awaiting_signature'
-    case 'approved':   return 'approved'
-    case 'generated':  return 'created'
-    case 'pending':    return 'in_review'
-    case 'draft':      return 'created'
-    default:           return 'created'
-  }
-}
-
-export function buildWorkflowItems(courseDocs: StaffDocument[], reviewVerified: boolean): DocumentWorkflowItem[] {
-  return WORKFLOW_STEPS.map(({ step, label, docType }) => {
-    const doc = courseDocs
-      .filter((d) => d.type === docType && d.status !== 'superseded' && d.status !== 'cancelled')
-      .sort((a, b) => (b.version ?? 1) - (a.version ?? 1))[0]
-
-    const status: DocStepStatus = doc
-      ? docStatusToStepStatus(doc, reviewVerified)
-      : reviewVerified ? 'waiting' : 'not_reached'
-
-    return {
-      step,
-      label,
-      docType,
-      status,
-      documentId: doc?.id,
-      documentName: doc?.name,
-      createdAt: doc?.created_at,
-    }
-  })
 }
 
 export function getCourseOfferingKey(

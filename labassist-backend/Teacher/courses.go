@@ -732,9 +732,27 @@ func (h *Handler) Applicants(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
-	if err := attachBlacklists(apps); err != nil {
+	if err := attachConfirmedRecordCounts(apps); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
 	c.JSON(http.StatusOK, apps)
+}
+
+// attachConfirmedRecordCounts flags applicants who have CONFIRMED Lab Boy
+// performance reports, so the reviewer knows to open the details (which go
+// through the audited performance-records endpoint).
+func attachConfirmedRecordCounts(apps []models.Application) error {
+	ids := make([]uint, 0, len(apps))
+	for _, a := range apps {
+		ids = append(ids, a.StudentID)
+	}
+	counts, err := database.ConfirmedRecordCounts(ids)
+	if err != nil {
+		return err
+	}
+	for i := range apps {
+		apps[i].ConfirmedRecordCount = counts[apps[i].StudentID]
+	}
+	return nil
 }

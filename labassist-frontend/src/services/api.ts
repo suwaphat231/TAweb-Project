@@ -12,6 +12,8 @@ import type {
   UpdateCasePayload, AddScheduleGroupPayload, UpdateScheduleGroupPayload, CreateCalendarDatePayload, GenerateOccurrencesPayload,
   ScheduleGroupMonth, AddGroupMonthPayload, MonthOccurrenceSummary,
   GroupMonthPlan, AddGroupMonthOccurrencePayload, PatchOccurrencePayload, HiringNoticePlanSnapshot,
+  LabBoyReport, ReportDetail, ReportPage, ReportListParams, ReportInput, ReportAction, ReportEvidence,
+  ReportResponse, ConfirmedRecord, DocumentWorkflowResponse, CreateWorkflowStepPayload, DocType,
 } from '../types'
 
 // Keep API calls on the same origin by default. This works both behind the
@@ -314,8 +316,13 @@ export const staffApi = {
     api.get<StaffDocument[]>('/staff/documents', { params }).then((r) => r.data),
   createDocument: (data: CreateStaffDocumentPayload) =>
     api.post<StaffDocument>('/staff/documents', data).then((r) => r.data),
-  deleteDocument: (id: number) =>
-    api.delete(`/staff/documents/${id}`).then((r) => r.data),
+  // Cancels the document (kept for history, hidden from the list).
+  deleteDocument: (id: number, reason?: string) =>
+    api.delete(`/staff/documents/${id}`, { params: reason ? { reason } : undefined }).then((r) => r.data),
+  documentWorkflow: (courseId: number) =>
+    api.get<DocumentWorkflowResponse>(`/staff/courses/${courseId}/document-workflow`).then((r) => r.data),
+  createWorkflowStep: (courseId: number, type: DocType, data: CreateWorkflowStepPayload = {}) =>
+    api.post<StaffDocument>(`/staff/courses/${courseId}/document-workflow/${type}`, data).then((r) => r.data),
   updateDocumentStatus: (id: number, status: string) =>
     api.put<StaffDocument>(`/staff/documents/${id}/status`, { status }).then((r) => r.data),
   updateDocumentSchedule: (id: number, data: { work_schedule?: WorkDaySlot[]; sessions_per_month?: number }) =>
@@ -434,3 +441,41 @@ export const staffApi = {
     api.delete(`/staff/occurrences/${id}`),
 }
 export const adminApi = adminAPI
+
+// Lab Boy performance reports. Every call is re-authorized on the server
+// against the report itself; the UI only hides what the server would refuse.
+function cleanParams(p?: ReportListParams) {
+  if (!p) return undefined
+  return Object.fromEntries(Object.entries(p).filter(([, v]) => v !== '' && v !== undefined && v !== 0))
+}
+
+function filesForm(files: File[], fields: Record<string, string> = {}) {
+  const body = new FormData()
+  for (const [k, v] of Object.entries(fields)) body.append(k, v)
+  for (const f of files) body.append('files', f)
+  return body
+}
+
+export const reportsApi = {
+  mine: (params?: ReportListParams) =>
+    api.get<ReportPage>('/instructor/reports', { params: cleanParams(params) }).then((r) => r.data),
+  reviewQueue: (params?: ReportListParams) =>
+    api.get<ReportPage>('/staff/reports', { params: cleanParams(params) }).then((r) => r.data),
+  studentReports: (params?: ReportListParams) =>
+    api.get<ReportPage>('/student/reports', { params: cleanParams(params) }).then((r) => r.data),
+  create: (data: ReportInput) => api.post<LabBoyReport>('/instructor/reports', data).then((r) => r.data),
+  updateDraft: (id: number, data: ReportInput) =>
+    api.put<LabBoyReport>(`/instructor/reports/${id}`, data).then((r) => r.data),
+  uploadEvidence: (id: number, files: File[]) =>
+    api.post<ReportEvidence[]>(`/instructor/reports/${id}/evidence`, filesForm(files)).then((r) => r.data),
+  detail: (id: number) => api.get<ReportDetail>(`/reports/${id}`).then((r) => r.data),
+  act: (id: number, action: ReportAction, reason = '') =>
+    api.post<LabBoyReport>(`/reports/${id}/actions`, { action, reason }).then((r) => r.data),
+  respond: (id: number, message: string, files: File[], reconsideration = false) =>
+    api.post<ReportResponse>(`/reports/${id}/responses`,
+      filesForm(files, { message, reconsideration: String(reconsideration) })).then((r) => r.data),
+  evidenceFile: (id: number, evidenceId: number) =>
+    api.get(`/reports/${id}/evidence/${evidenceId}`, { responseType: 'blob' }).then((r) => r.data as Blob),
+  confirmedHistory: (applicationId: number) =>
+    api.get<ConfirmedRecord[]>(`/instructor/applications/${applicationId}/performance-records`).then((r) => r.data),
+}

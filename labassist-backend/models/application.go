@@ -86,10 +86,11 @@ type Application struct {
 	CourseSchedule     string  `gorm:"-" json:"course_schedule,omitempty"`
 	ReviewedByName     string  `gorm:"-" json:"reviewed_by_name,omitempty"`
 
-	// Blacklists holds the student's active blacklist entries. Only the
-	// instructor applicants endpoint fills it in — student-facing responses
-	// must never carry it.
-	Blacklists []Blacklist `gorm:"-" json:"blacklists,omitempty"`
+	// ConfirmedRecordCount is how many of the student's Lab Boy performance
+	// reports have been CONFIRMED by a reviewer. Only the instructor
+	// applicants endpoint fills it in — student-facing responses must never
+	// carry it. Reports still under review are never counted.
+	ConfirmedRecordCount int `gorm:"-" json:"confirmed_record_count,omitempty"`
 }
 
 func (Application) TableName() string { return "applications" }

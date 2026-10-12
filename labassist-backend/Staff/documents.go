@@ -1,13 +1,13 @@
 package staff
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"labassist/database"
@@ -15,6 +15,7 @@ import (
 	"labassist/models"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // roundSatang rounds a baht amount to the nearest satang (2 decimal places)
@@ -77,7 +78,7 @@ type regVerifyRequest struct {
 
 var docTypeLabel = map[models.DocType]string{
 	models.DocHiringNotice:    "แบบฟอร์มแจ้งความประสงค์จ้าง",
-	models.DocApprovalMemo:    "บันทึกขออนุมัติจ้าง",
+	models.DocApprovalMemo:    "บันทึกขออนุมัติจ้างนักศึกษาปฏิบัติงาน",
 	models.DocPaymentEvidence: "หลักฐานการจ่ายเงิน",
 	models.DocPaymentRequest:  "บันทึกขอเบิกจ่าย",
 	models.DocWorkReport:      "รายงานผลการปฏิบัติงานนอกเวลาราชการ",
@@ -138,6 +139,31 @@ func (h *Handler) CreateDocument(c *gin.Context) {
 	label, ok := docTypeLabel[body.Type]
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid document type"})
+		return
+	}
+
+	// Workflow documents (hiring notice, approval memo) always belong to one
+	// course offering and go through the same prerequisite / duplicate rules
+	// as the workflow endpoint, whichever page created them.
+	if step, ok := stepFor(body.Type); ok {
+		if body.CourseID == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "course_id is required for this document type"})
+			return
+		}
+		course, found := database.CourseByID(*body.CourseID)
+		if !found {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "course not found"})
+			return
+		}
+		posting, found := database.ActivePostingForCourse(course.ID)
+		if !found {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "no active recruitment posting for this course"})
+			return
+		}
+		createStep(c, step, course, posting, CreateWorkflowStepRequest{
+			Note: strings.TrimSpace(body.Note), RefNumber: strings.TrimSpace(body.RefNumber),
+			DeptHeadName: strings.TrimSpace(body.DeptHeadName), StaffOfficerName: strings.TrimSpace(body.StaffOfficerName),
+		})
 		return
 	}
 
@@ -259,50 +285,6 @@ func (h *Handler) CreateDocument(c *gin.Context) {
 			doc.Rate = body.Rate
 			doc.Roster = roster
 			doc.TotalAmount = roundSatang(total)
-		} else {
-			// hiring_notice: student list only, no financial fields.
-			accepted, err := database.AcceptedStudentsForCourse(*body.CourseID)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
-				return
-			}
-			var roster []models.RosterEntry
-			for _, app := range accepted {
-				if excluded[app.StudentID] {
-					continue
-				}
-				roster = append(roster, models.RosterEntry{
-					StudentID:   app.StudentID,
-					StudentName: app.StudentName,
-					StudentCode: app.StudentCode,
-				})
-			}
-			doc.Roster = roster
-
-			// When a Staff Case is linked, derive schedule from confirmed plan data.
-			if body.StaffCaseID != nil {
-				snap := database.BuildHiringNoticeSnapshot(*body.StaffCaseID)
-				if !snap.CanCreate {
-					reason := "แผนปฏิบัติงานยังไม่สมบูรณ์"
-					if len(snap.BlockingReasons) > 0 {
-						reason = snap.BlockingReasons[0]
-					}
-					c.JSON(http.StatusBadRequest, gin.H{"error": reason})
-					return
-				}
-				doc.SessionsPerMonth = snap.SessionsPerMonth
-				if len(snap.WorkSchedule) > 0 {
-					doc.WorkSchedule = snap.WorkSchedule
-				}
-
-				// Freeze a full data snapshot so the document is reproducible.
-				if ds, err := database.BuildDocumentSnapshot(*body.StaffCaseID, len(doc.Roster)); err == nil {
-					if b, err := json.Marshal(ds); err == nil {
-						doc.DataSnapshot = string(b)
-						doc.SnapshotVersion = ds.SchemaVersion
-					}
-				}
-			}
 		}
 	}
 
@@ -344,12 +326,17 @@ func (h *Handler) UpdateDocumentStatus(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid status"})
 		return
 	}
-	doc, ok := database.UpdateStaffDocumentStatus(uint(id), body.Status)
-	if !ok {
+	doc, err := database.ChangeStaffDocumentStatus(uint(id), body.Status, c.GetUint("user_id"))
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
-		return
+	case errors.Is(err, database.ErrDocumentInactive):
+		c.JSON(http.StatusConflict, gin.H{"error": "เอกสารนี้ถูกยกเลิกหรือมีฉบับใหม่แทนแล้ว จึงเปลี่ยนสถานะไม่ได้"})
+	case err != nil:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+	default:
+		c.JSON(http.StatusOK, doc)
 	}
-	c.JSON(http.StatusOK, doc)
 }
 
 // UpdateDocumentSchedule godoc
@@ -410,6 +397,10 @@ func (h *Handler) DownloadDocument(c *gin.Context) {
 		c.JSON(http.StatusNotImplemented, gin.H{"error": "เอกสารประเภทนี้ยังไม่รองรับการสร้างไฟล์"})
 		return
 	}
+	if errors.Is(err, docxgen.ErrIncompleteDocumentData) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "ข้อมูลของเอกสารไม่ครบ (ต้องมีรายชื่อนักศึกษา วันปฏิบัติงาน และอัตราค่าจ้าง) — กรุณาสร้างฉบับใหม่"})
+		return
+	}
 	if err != nil {
 		log.Printf("staff document download failed: document_id=%d type=%s: %v", id, doc.Type, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "generate document failed"})
@@ -421,7 +412,7 @@ func (h *Handler) DownloadDocument(c *gin.Context) {
 }
 
 // DeleteDocument godoc
-// @Summary      ลบเอกสาร
+// @Summary      ยกเลิกเอกสาร (ไม่ลบจริง เก็บประวัติไว้)
 // @Tags         staff
 // @Security     BearerAuth
 // @Param        id  path  int  true  "Document ID"
@@ -434,15 +425,19 @@ func (h *Handler) DeleteDocument(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	if _, ok := database.StaffDocumentByID(uint(id)); !ok {
+	// Documents are never hard-deleted: "delete" cancels the document and
+	// records who did it, so the issued history stays intact.
+	err = database.CancelStaffDocument(uint(id), c.GetUint("user_id"), strings.TrimSpace(c.Query("reason")))
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound), errors.Is(err, database.ErrDocumentInactive):
 		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
-		return
+	case errors.Is(err, database.ErrDocumentHasDependents):
+		c.JSON(http.StatusConflict, gin.H{"error": "มีเอกสารขั้นถัดไปที่สร้างจากเอกสารนี้ — ต้องยกเลิกเอกสารขั้นถัดไปก่อน"})
+	case err != nil:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to cancel document"})
+	default:
+		c.Status(http.StatusNoContent)
 	}
-	if !database.DeleteStaffDocument(uint(id)) {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete document"})
-		return
-	}
-	c.Status(http.StatusNoContent)
 }
 
 // RegVerifyRosterEntry godoc

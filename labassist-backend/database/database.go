@@ -1492,6 +1492,11 @@ func migrateApplicationData(db *gorm.DB) error {
 		&models.MonthlyPeriod{},
 		&models.StaffAuditLog{},
 		&models.ScheduleGroupMonth{},
+		&models.LabBoyReport{},
+		&models.LabBoyReportResponse{},
+		&models.LabBoyReportEvidence{},
+		&models.LabBoyReportReview{},
+		&models.LabBoyReportStatusHistory{},
 	)
 }
 
