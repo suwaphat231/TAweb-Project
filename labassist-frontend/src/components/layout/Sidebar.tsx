@@ -48,7 +48,7 @@ const navMap: Record<UserRole, NavItem[]> = {
     { to: '/student/status',   label: 'สถานะการสมัคร',     icon: 'check-square' },
     { to: '/student/schedule', label: 'ตารางปฏิบัติงาน',   icon: 'calendar' },
     { to: '/student/grade-check', label: 'ตรวจสอบเกรด',   icon: 'file-text' },
-    { to: '/student/reports',  label: 'รายงานการปฏิบัติงาน', icon: 'clipboard', match: ['/reports/'] },
+    { to: '/student/reports',  label: 'รายงาน / Blacklist', icon: 'clipboard', match: ['/reports/'] },
     { to: '/student/profile',  label: 'โปรไฟล์ของฉัน',    icon: 'user' },
   ],
   instructor: [
@@ -62,7 +62,6 @@ const navMap: Record<UserRole, NavItem[]> = {
     { to: '/staff/home',     label: 'หน้าหลัก',          icon: 'home' },
     { to: '/staff/docs',     label: 'เอกสารทั้งหมด',     icon: 'file-text' },
     { to: '/staff/review',   label: 'ตรวจสอบแบบฟอร์ม',  icon: 'check-square' },
-    { to: '/staff/reports',  label: 'ตรวจสอบรายงาน Lab Boy', icon: 'clipboard', match: ['/reports/'] },
     { to: '/staff/settings', label: 'กำหนดวันหยุด',        icon: 'settings' },
     { to: '/staff/profile',  label: 'ข้อมูลส่วนตัว',     icon: 'user' },
   ],
@@ -70,7 +69,7 @@ const navMap: Record<UserRole, NavItem[]> = {
     { to: '/admin/overview',     label: 'ภาพรวม',         icon: 'layout' },
     { to: '/admin/courses',      label: 'จัดการรายวิชา',  icon: 'book' },
     { to: '/admin/users',        label: 'จัดการผู้ใช้งาน', icon: 'users' },
-    { to: '/staff/reports',      label: 'ตรวจสอบรายงาน Lab Boy', icon: 'clipboard', match: ['/reports/'] },
+    { to: '/instructor/reports', label: 'Blacklist',      icon: 'clipboard', match: ['/instructor/reports/', '/reports/'] },
     { to: '/instructor/profile', label: 'ข้อมูลส่วนตัว',   icon: 'user' },
   ],
 }

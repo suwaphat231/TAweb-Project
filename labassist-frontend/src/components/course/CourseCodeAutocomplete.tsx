@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { instructorApi } from '../../services/api'
 import { displayCourseTitle } from '../../utils/courseDisplay'
+import { isRecruitmentExcludedCourse } from '../../utils/recruitmentCourse'
 
 interface Suggestion {
   code: string
@@ -33,14 +34,16 @@ export function CourseCodeAutocomplete({ value, onChange, onSelect, disabled }: 
     staleTime: 5 * 60 * 1000,
   })
 
+  const eligibleCatalog = catalog.filter((course) => !isRecruitmentExcludedCourse(course))
+
   // Sync when parent resets the value (e.g. modal re-opens for edit)
   useEffect(() => {
     setInputValue(value)
   }, [value])
 
   const q = inputValue.trim().toLowerCase()
-  const selectedCode = catalog.some((c) => c.code === inputValue.trim()) ? inputValue.trim() : ''
-  const suggestions = showAll ? catalog : catalog.filter((c) =>
+  const selectedCode = eligibleCatalog.some((c) => c.code === inputValue.trim()) ? inputValue.trim() : ''
+  const suggestions = showAll ? eligibleCatalog : eligibleCatalog.filter((c) =>
     !q || c.code.toLowerCase().includes(q) || c.title.toLowerCase().includes(q)
   )
 
@@ -75,7 +78,7 @@ export function CourseCodeAutocomplete({ value, onChange, onSelect, disabled }: 
     return () => document.removeEventListener('mousedown', onMouseDown)
   }, [])
 
-  if (!disabled && !isLoading && catalog.length === 0) {
+  if (!disabled && !isLoading && eligibleCatalog.length === 0) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
         <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>รหัสวิชา *</label>

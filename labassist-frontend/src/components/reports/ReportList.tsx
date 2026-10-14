@@ -7,7 +7,7 @@ import { Skeleton } from '../ui/Skeleton'
 import { Button } from '../ui/Button'
 import { ErrorState } from '../ui/ErrorState'
 import { ReportStatusBadge } from './ReportStatusBadge'
-import { categoryLabel, categoryOptions, formatDate } from './reportLabels'
+import { categoryLabel, categoryOptions, formatDate, penaltyInfo } from './reportLabels'
 import type { LabBoyReport, ReportListParams, ReportPage, ReportCategory } from '../../types'
 
 const PAGE_SIZE = 20
@@ -20,6 +20,8 @@ const controlStyle: React.CSSProperties = {
 interface Props {
   queryKey: string
   fetchPage: (params: ReportListParams) => Promise<ReportPage>
+  /** Params always sent (and part of the cache key), e.g. { from: 'students' }. */
+  fixedParams?: Partial<ReportListParams>
   /** Status chips; value may be a comma-separated list. */
   statusOptions: { value: string; label: string }[]
   courseOptions?: { value: number; label: string }[]
@@ -31,10 +33,10 @@ interface Props {
 }
 
 // ReportList is the shared, server-paginated report table used by the
-// instructor, reviewer and student pages. Filtering happens on the server so
+// instructor and student pages. Filtering happens on the server so
 // pages and totals stay correct.
 export function ReportList({
-  queryKey, fetchPage, statusOptions, courseOptions, showSearch = true,
+  queryKey, fetchPage, fixedParams, statusOptions, courseOptions, showSearch = true,
   showReporter, showStudent = true, emptyText, toolbarExtra,
 }: Props) {
   const navigate = useNavigate()
@@ -47,6 +49,7 @@ export function ReportList({
   const [page, setPage] = useState(1)
 
   const params: ReportListParams = {
+    ...fixedParams,
     status, q: search.trim(), category, course_id: courseId, date_from: dateFrom, date_to: dateTo,
     page, limit: PAGE_SIZE,
   }
@@ -145,8 +148,8 @@ export function ReportList({
                   {showReporter && <td style={{ padding: '13px 16px', fontSize: 13, color: 'var(--ink-700)' }}>{r.reporter_name}</td>}
                   <td style={{ padding: '13px 16px' }}>
                     <ReportStatusBadge status={r.status} />
-                    {r.reconsideration_requested_at && r.status === 'CONFIRMED' && (
-                      <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4, fontWeight: 600 }}>มีคำขอทบทวน</div>
+                    {r.penalty_status && r.penalty_status !== 'blacklisted' && (
+                      <div style={{ fontSize: 11, color: 'var(--ink-600)', marginTop: 4, fontWeight: 600 }}>{penaltyInfo[r.penalty_status].label}</div>
                     )}
                   </td>
                   <td style={{ padding: '13px 16px', fontSize: 12, color: 'var(--ink-400)', whiteSpace: 'nowrap' }}>{formatDate(r.updated_at)}</td>

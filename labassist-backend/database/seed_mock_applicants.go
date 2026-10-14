@@ -26,22 +26,35 @@ var mockDemoStaff = struct {
 	Email    string
 }{"parinya", "ปริญญา สุภาวดี", "parinya@cp.su.ac.th"}
 
-// mockDemoCourseBase is the primary debug course: open, 6 Lab Boy slots,
-// 5 pre-applied students — the 6th slot is left for a real student to fill.
+// mockDemoCourseBase is the primary debug course: open, split into two
+// sections of 3 Lab Boy slots each, with 5 pre-applied students — the 6th
+// slot is left for a real student to fill.
 var mockDemoCourseBase = models.Course{
 	Code:         "517122",
 	Title:        "ทักษะการเขียนโปรแกรมคอมพิวเตอร์ 2",
 	EnglishTitle: "COMPUTER PROGRAMMING SKILL 2",
 	Semester:     "1",
 	AcademicYear: 2569,
-	LabBoySlots:  6,
 	Status:       models.StatusOpen,
 }
 
-var mockDemoSection = struct {
-	Section  int
-	Schedule string
-}{1, "อ,พฤ 13:00-16:00"}
+type mockDemoSection struct {
+	Section     int
+	Schedule    string
+	LabBoySlots int
+}
+
+// Each section meets on a single day: a multi-day schedule would be split
+// into one course row per day by splitMultiTimeCourses, each copying the
+// section's full slot count.
+var mockDemoSections = []mockDemoSection{
+	{1, "อ 13:00-16:00", 3},
+	{2, "พฤ 13:00-16:00", 3},
+}
+
+// mockDemoLegacySlots is the slot count the old single-section seed gave
+// section 1; a posting still at that value has never been edited by hand.
+const mockDemoLegacySlots = 6
 
 type mockDemoStudent struct {
 	Username  string
@@ -52,22 +65,24 @@ type mockDemoStudent struct {
 	Faculty   string
 	Year      int8
 	Grade     string
+	Section   int // section applied to; 0 = applies manually
 }
 
 // demo_std01 is the student dev-login account and applies manually.
 // The other five accounts are pre-seeded applicants for instructor puriwat.
 var mockDemoStudents = []mockDemoStudent{
-	{"demo_std01", "ธนภัทร ศรีวิไล", "demo_std01@example.com", "6410123456", 3.85, "เทคโนโลยีสารสนเทศ", 3, "A"},
-	{"demo_std02", "ปวีณ์นุช อินทรสุวรรณ", "demo_std02@example.com", "6410123457", 3.42, "วิทยาการคอมพิวเตอร์", 3, "B+"},
-	{"demo_std03", "กิตติภูมิ ทองสุข", "demo_std03@example.com", "6410123458", 3.15, "วิทยาการคอมพิวเตอร์", 2, "B"},
-	{"demo_std04", "ศศิวิมล บุญมาก", "demo_std04@example.com", "6410123459", 3.67, "เทคโนโลยีสารสนเทศ", 3, "A"},
-	{"demo_std05", "อดิศร แก้วมณี", "demo_std05@example.com", "6410123460", 2.89, "วิทยาการคอมพิวเตอร์", 3, "B+"},
-	{"demo_std06", "ณัฐพล ทดสอบระบบ", "demo_std06@example.com", "6410123461", 3.50, "วิทยาการคอมพิวเตอร์", 3, "A"},
+	{"demo_std01", "ธนภัทร ศรีวิไล", "demo_std01@example.com", "6410123456", 3.85, "เทคโนโลยีสารสนเทศ", 3, "A", 0},
+	{"demo_std02", "ปวีณ์นุช อินทรสุวรรณ", "demo_std02@example.com", "6410123457", 3.42, "วิทยาการคอมพิวเตอร์", 3, "B+", 1},
+	{"demo_std03", "กิตติภูมิ ทองสุข", "demo_std03@example.com", "6410123458", 3.15, "วิทยาการคอมพิวเตอร์", 2, "B", 1},
+	{"demo_std04", "ศศิวิมล บุญมาก", "demo_std04@example.com", "6410123459", 3.67, "เทคโนโลยีสารสนเทศ", 3, "A", 1},
+	{"demo_std05", "อดิศร แก้วมณี", "demo_std05@example.com", "6410123460", 2.89, "วิทยาการคอมพิวเตอร์", 3, "B+", 2},
+	{"demo_std06", "ณัฐพล ทดสอบระบบ", "demo_std06@example.com", "6410123461", 3.50, "วิทยาการคอมพิวเตอร์", 3, "A", 2},
 }
 
 // seedMockApplicants sets up the debug demo:
-// one instructor with an open Lab Boy posting (6 slots, section 1) and
-// 5 pre-applied students — leaving the 6th slot open for manual testing.
+// one instructor with an open Lab Boy posting split into sections 1 and 2
+// (3 slots each) and 5 pre-applied students — leaving the 6th slot open for
+// manual testing.
 // Duplicate accounts/applications are skipped so restarting is safe.
 func seedMockApplicants() error {
 	if _, ok := UserByUsername(mockDemoStaff.Username); !ok {
@@ -102,42 +117,14 @@ func seedMockApplicants() error {
 		}
 	}
 
-	course, found := FindCourseByKey(mockDemoCourseBase.Code, mockDemoCourseBase.Semester, mockDemoCourseBase.AcademicYear, mockDemoSection.Section)
-	if !found {
-		deadline := time.Now().AddDate(0, 0, 21)
-		newCourse := mockDemoCourseBase
-		newCourse.InstructorID = &instructor.ID
-		newCourse.Section = mockDemoSection.Section
-		newCourse.Schedule = mockDemoSection.Schedule
-		newCourse.Deadline = &deadline
-		course = CreateCourse(newCourse)
-		if course.ID == 0 {
-			return fmt.Errorf("create demo course")
+	courses := make(map[int]models.Course, len(mockDemoSections))
+	for _, sec := range mockDemoSections {
+		course, err := ensureMockDemoSection(sec, instructor.ID)
+		if err != nil {
+			return err
 		}
-	} else {
-		// Seed only an untouched draft; retain existing recruitment decisions.
-		course = courseWithInstructor(course)
-		if course.Status == models.StatusDraft {
-			var saved bool
-			course, saved = UpdateCourse(course.ID, func(c *models.Course) {
-				c.InstructorID = &instructor.ID
-				c.Status = models.StatusOpen
-				c.LabBoySlots = mockDemoCourseBase.LabBoySlots
-			})
-			if !saved {
-				return fmt.Errorf("initialize demo posting")
-			}
-		}
+		courses[sec.Section] = course
 	}
-
-	// Guarantee the instructor has a course_instructors row so InstructorCourses
-	// (which JOINs on that table) can find this course regardless of whether
-	// backfillCourseInstructors ran before or after the demo course was created.
-	DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.CourseInstructor{
-		CourseID:     course.ID,
-		InstructorID: instructor.ID,
-		Source:       models.CourseInstructorImported,
-	})
 
 	for _, s := range mockDemoStudents {
 		student, ok := UserByUsername(s.Username)
@@ -163,8 +150,12 @@ func seedMockApplicants() error {
 			}
 		}
 
-		if s.Username == "demo_std01" {
+		if s.Section == 0 {
 			continue
+		}
+		course := courses[s.Section]
+		if err := moveLegacyMockApplication(student.ID, courses[1].ID, course.ID); err != nil {
+			return err
 		}
 
 		grade := s.Grade
@@ -180,6 +171,72 @@ func seedMockApplicants() error {
 	}
 
 	return nil
+}
+
+// ensureMockDemoSection creates one section of the demo course, or brings an
+// existing one in line with the seed without touching instructor edits.
+func ensureMockDemoSection(sec mockDemoSection, instructorID uint) (models.Course, error) {
+	course, found := FindCourseSlot(mockDemoCourseBase.Code, mockDemoCourseBase.Semester, mockDemoCourseBase.AcademicYear, sec.Section, 0)
+	if !found {
+		deadline := time.Now().AddDate(0, 0, 21)
+		newCourse := mockDemoCourseBase
+		newCourse.InstructorID = &instructorID
+		newCourse.Section = sec.Section
+		newCourse.Schedule = sec.Schedule
+		newCourse.LabBoySlots = sec.LabBoySlots
+		newCourse.Deadline = &deadline
+		course = CreateCourse(newCourse)
+		if course.ID == 0 {
+			return models.Course{}, fmt.Errorf("create demo course section %d", sec.Section)
+		}
+	} else {
+		// Seed only an untouched draft, or shrink section 1 from the old
+		// single-section seed; retain existing recruitment decisions.
+		course = courseWithInstructor(course)
+		if course.Status == models.StatusDraft || course.LabBoySlots == mockDemoLegacySlots {
+			var saved bool
+			course, saved = UpdateCourse(course.ID, func(c *models.Course) {
+				c.InstructorID = &instructorID
+				if c.Status == models.StatusDraft {
+					c.Status = models.StatusOpen
+				}
+				c.LabBoySlots = sec.LabBoySlots
+			})
+			if !saved {
+				return models.Course{}, fmt.Errorf("initialize demo posting section %d", sec.Section)
+			}
+		}
+	}
+
+	// Guarantee the instructor has a course_instructors row so InstructorCourses
+	// (which JOINs on that table) can find this course regardless of whether
+	// backfillCourseInstructors ran before or after the demo course was created.
+	DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.CourseInstructor{
+		CourseID:     course.ID,
+		InstructorID: instructorID,
+		Source:       models.CourseInstructorImported,
+	})
+	return course, nil
+}
+
+// moveLegacyMockApplication moves a demo student's still-pending application
+// from section 1 (where the old single-section seed put everyone) to the
+// section the student now belongs to.
+func moveLegacyMockApplication(studentID, fromCourseID, toCourseID uint) error {
+	if fromCourseID == toCourseID {
+		return nil
+	}
+	from, ok := ActivePostingForCourse(fromCourseID)
+	if !ok {
+		return nil
+	}
+	to, ok := ActivePostingForCourse(toCourseID)
+	if !ok {
+		return nil
+	}
+	return DB.Model(&models.Application{}).
+		Where("student_id = ? AND posting_id = ? AND status = ?", studentID, from.ID, models.AppPending).
+		Updates(map[string]any{"course_id": toCourseID, "posting_id": to.ID}).Error
 }
 
 // setPassword gives a freshly-created demo account the same login password

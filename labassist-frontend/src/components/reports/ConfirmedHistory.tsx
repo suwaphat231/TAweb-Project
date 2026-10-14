@@ -4,7 +4,7 @@ import { reportsApi } from '../../services/api'
 import { Button } from '../ui/Button'
 import { categoryLabel, formatDate } from './reportLabels'
 
-// ConfirmedHistory shows an applicant's CONFIRMED work-performance records
+// ConfirmedHistory shows an applicant's blacklist records ("เคยโดนรีพอร์ท")
 // inside the instructor's applicant review. Details load only when the
 // instructor asks for them, because every view is written to the audit log.
 export function ConfirmedHistory({ applicationId, count }: { applicationId: number; count: number }) {
@@ -16,12 +16,14 @@ export function ConfirmedHistory({ applicationId, count }: { applicationId: numb
   })
 
   return (
-    <div style={{ border: '1px solid var(--line)', borderRadius: 10, padding: '12px 16px' }}>
+    <div style={{ border: `1px solid ${count > 0 ? '#FECACA' : 'var(--line)'}`, background: count > 0 ? 'var(--red-bg)' : undefined, borderRadius: 10, padding: '12px 16px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-900)' }}>ประวัติการปฏิบัติงานที่ยืนยันแล้ว</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: count > 0 ? 'var(--red)' : 'var(--ink-900)' }}>
+            {count > 0 ? 'นักศึกษาคนนี้เคยโดนรีพอร์ท' : 'ประวัติการโดนรีพอร์ท'}
+          </div>
           <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2 }}>
-            {count > 0 ? `${count} รายการที่ผ่านการตรวจสอบแล้ว` : 'ไม่มีรายการที่ผ่านการตรวจสอบ'}
+            {count > 0 ? `ถูก Blacklist ${count} ครั้ง` : 'ไม่เคยถูก Blacklist'}
           </div>
         </div>
         {count > 0 && !open && <Button size="sm" variant="outline" onClick={() => setOpen(true)}>ดูรายละเอียด</Button>}
@@ -39,13 +41,13 @@ export function ConfirmedHistory({ applicationId, count }: { applicationId: numb
                 {categoryLabel[rec.category]} · {formatDate(rec.incident_date)}
               </div>
               <div style={{ fontSize: 12, color: 'var(--ink-500)', margin: '2px 0 6px' }}>
-                {rec.course_code} {rec.course_title}{rec.course_semester ? ` (${rec.course_semester}/${rec.course_academic_year})` : ''} · ยืนยันเมื่อ {formatDate(rec.confirmed_at)}
+                {rec.course_code} {rec.course_title}{rec.course_semester ? ` (${rec.course_semester}/${rec.course_academic_year})` : ''} · Blacklist เมื่อ {formatDate(rec.confirmed_at)}{rec.blacklist_until && ` ถึง ${formatDate(rec.blacklist_until)}`}
                 {rec.student_responded && ' · นักศึกษาได้ส่งคำชี้แจงแล้ว'}
               </div>
               <div style={{ color: 'var(--ink-700)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{rec.description}</div>
               {rec.review_reason && (
                 <div style={{ marginTop: 6, fontSize: 12, color: 'var(--ink-600)', borderLeft: '3px solid var(--line)', paddingLeft: 8 }}>
-                  เหตุผลของผู้ตรวจสอบ: {rec.review_reason}
+                  เหตุผลของอาจารย์ประจำวิชา: {rec.review_reason}
                 </div>
               )}
             </div>

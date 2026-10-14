@@ -30,7 +30,8 @@ function Stat({ label, value, tone }: { label: string; value: number; tone: stri
 }
 
 // One course (all its sections): every Lab Boy the instructor accepted, the
-// reports already filed about each, and a button to file a new one.
+// reports about each (the instructor's own and those fellow Lab Boys sent),
+// and a button to blacklist one.
 export default function InstructorReportCourse() {
   const { courseId } = useParams()
   const id = Number(courseId) || 0
@@ -49,8 +50,8 @@ export default function InstructorReportCourse() {
       queryFn: () => instructorApi.applicants(s.id),
     })),
   })
-  // Reports this instructor filed per section; a course rarely has more than
-  // a handful, so one 100-row page per section covers it.
+  // Reports per section — filed by this instructor or sent by Lab Boys; a
+  // course rarely has more than a handful, so one 100-row page covers it.
   const reportQueries = useQueries({
     queries: sections.map((s) => ({
       queryKey: ['instructor-reports', { course_id: s.id, limit: 100 }],
@@ -91,16 +92,16 @@ export default function InstructorReportCourse() {
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto' }}>
       <ReportPageHeader
-        crumbs={[{ label: 'รายวิชาทั้งหมด', to: '/instructor/reports' }, { label: group.code }]}
+        crumbs={[{ label: 'Blacklist', to: '/instructor/reports' }, { label: group.code }]}
         title={<><span style={{ color: 'var(--primary)' }}>{group.code}</span> {title}</>}
-        subtitle={`ภาค ${group.semester}/${group.academic_year} · กด "รายงานพฤติกรรม" ที่ชื่อนักศึกษาเพื่อบันทึกเหตุการณ์พร้อมเหตุผล`}
+        subtitle={`ภาค ${group.semester}/${group.academic_year} · กด "Blacklist" ที่ชื่อนักศึกษาเพื่อบันทึกเหตุการณ์พร้อมเหตุผล`}
       />
 
       <div className="report-stats">
         <Stat label="Lab Boy ในรายวิชา" value={allLabBoys.length} tone="var(--ink-900)" />
-        <Stat label="รายงานที่บันทึก" value={allReports.length} tone="var(--primary)" />
-        <Stat label="อยู่ระหว่างตรวจสอบ" value={allReports.filter((r) => IN_PROGRESS.includes(r.status)).length} tone="var(--amber)" />
-        <Stat label="ยืนยันแล้ว" value={allReports.filter((r) => r.status === 'CONFIRMED').length} tone="var(--primary-700)" />
+        <Stat label="รายงานทั้งหมด" value={allReports.length} tone="var(--primary)" />
+        <Stat label="รายงานจาก Lab Boy รอพิจารณา" value={allReports.filter((r) => IN_PROGRESS.includes(r.status)).length} tone="var(--amber)" />
+        <Stat label="Blacklist แล้ว" value={allReports.filter((r) => r.status === 'CONFIRMED').length} tone="var(--red)" />
       </div>
 
       <div style={{ background: 'var(--bg-card)', borderRadius: 'var(--radius-card)', border: '1.5px solid var(--line)', overflow: 'hidden' }}>
@@ -156,12 +157,12 @@ export default function InstructorReportCourse() {
                       <span style={{ fontSize: 13, color: 'var(--ink-400)' }}>ยังไม่มีรายงาน</span>
                     )}
                     <Button
-                      variant="outline"
+                      variant="danger-ghost"
                       icon={<Icon name="flag" size={14} />}
                       style={{ minHeight: 40 }}
                       onClick={() => setTarget({ applicationId: a.id, studentName: a.student_name, studentCode: a.student_code, courseLabel: courseLabel(a) })}
                     >
-                      รายงานพฤติกรรม
+                      Blacklist
                     </Button>
                   </div>
                   {open && (
@@ -170,7 +171,10 @@ export default function InstructorReportCourse() {
                         <button key={r.id} className="report-row-link" onClick={() => navigate(`/reports/${r.id}`)}>
                           <Icon name="calendar" size={14} style={{ color: 'var(--ink-400)' }} />
                           <span style={{ fontSize: 13, color: 'var(--ink-600)', minWidth: 76 }}>{formatDate(r.incident_date)}</span>
-                          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)', flex: 1, minWidth: 160 }}>{categoryLabel[r.category]}</span>
+                          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)', flex: 1, minWidth: 160 }}>
+                            {categoryLabel[r.category]}
+                            {r.reporter_role === 'student' && <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--ink-500)' }}> · รายงานโดย {r.reporter_name}</span>}
+                          </span>
                           <ReportStatusBadge status={r.status} />
                           <Icon name="chevron-right" size={16} style={{ color: 'var(--ink-400)' }} />
                         </button>

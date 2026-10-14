@@ -7,23 +7,27 @@ import "labassist/models"
 type Actor struct {
 	ID   uint
 	Role string
+	// ManagesCourse is whether the actor teaches the course of the report
+	// being checked (always true for admin). The handler fills it in per
+	// report; there is no staff step — the course's instructor decides.
+	ManagesCourse bool
 }
 
 func (a Actor) isAdmin() bool    { return a.Role == string(models.RoleAdmin) }
-func (a Actor) isReviewer() bool { return a.Role == string(models.RoleStaff) || a.isAdmin() }
+func (a Actor) isStudent() bool  { return a.Role == string(models.RoleStudent) }
+func (a Actor) isReviewer() bool { return a.ManagesCourse || a.isAdmin() }
 
 // Action is a step a user can take on a report.
 type Action string
 
 const (
-	ActionSubmit                 Action = "submit"
-	ActionWithdraw               Action = "withdraw"
-	ActionStartReview            Action = "start_review"
-	ActionRequestInfo            Action = "request_info"
-	ActionConfirm                Action = "confirm"
-	ActionNotSubstantiated       Action = "not_substantiated"
-	ActionReopen                 Action = "reopen"
-	ActionDeclineReconsideration Action = "decline_reconsideration"
+	ActionSubmit           Action = "submit"
+	ActionBlacklist        Action = "blacklist"
+	ActionWithdraw         Action = "withdraw"
+	ActionRequestInfo      Action = "request_info"
+	ActionConfirm          Action = "confirm"
+	ActionNotSubstantiated Action = "not_substantiated"
+	ActionReopen           Action = "reopen"
 )
 
 type actorKind int
@@ -34,60 +38,63 @@ const (
 )
 
 type transitionRule struct {
-	from        []models.ReportStatus
-	to          models.ReportStatus // empty = status stays the same
-	by          actorKind
-	needsReason bool
-	review      *models.ReviewDecision
-	needsRecons bool // only while a reconsideration request is pending
-	clearRecons bool
+	from []models.ReportStatus
+	to   models.ReportStatus // empty = status stays the same
+	by   actorKind
+	// studentReporter / instructorReporter limit a reporter action to
+	// reports filed by a student (sent to the instructor) or by the
+	// course's own instructor (who decides on the spot).
+	studentReporter    bool
+	instructorReporter bool
+	needsReason        bool
+	review             *models.ReviewDecision
 }
 
 func decision(d models.ReviewDecision) *models.ReviewDecision { return &d }
 
 // open statuses are the ones a report can still be withdrawn from or
-// commented on — it has not reached a reviewer's final decision.
+// commented on — the instructor has not decided yet.
 var openStatuses = []models.ReportStatus{
 	models.ReportSubmitted, models.ReportUnderReview, models.ReportAwaitingResponse,
 }
 
 // rules is the whole state machine. Anything not listed here is rejected,
-// which is what stops e.g. DRAFT → CONFIRMED or a reporter confirming.
+// which is what stops e.g. a student blacklisting someone or DRAFT → CONFIRMED
+// on a student's report.
+//
+// Two ways in, no staff step:
+//   - a Lab Boy reports a fellow Lab Boy: DRAFT → SUBMITTED, then the
+//     course's instructor blacklists (CONFIRMED) or dismisses it.
+//   - the course's instructor blacklists directly: DRAFT → CONFIRMED.
 var rules = map[Action]transitionRule{
 	ActionSubmit: {
-		from: []models.ReportStatus{models.ReportDraft}, to: models.ReportSubmitted, by: byReporter,
+		from: []models.ReportStatus{models.ReportDraft}, to: models.ReportSubmitted, by: byReporter, studentReporter: true,
+	},
+	ActionBlacklist: {
+		from: []models.ReportStatus{models.ReportDraft}, to: models.ReportConfirmed, by: byReporter, instructorReporter: true,
+		review: decision(models.DecisionConfirm),
 	},
 	ActionWithdraw: {
 		from: append([]models.ReportStatus{models.ReportDraft}, openStatuses...), to: models.ReportWithdrawn,
 		by: byReporter, needsReason: true,
 	},
-	ActionStartReview: {
-		// AWAITING_RESPONSE → UNDER_REVIEW lets the reviewer carry on when
-		// nobody answers the request for information.
-		from: []models.ReportStatus{models.ReportSubmitted, models.ReportAwaitingResponse}, to: models.ReportUnderReview,
-		by: byReviewer,
-	},
 	ActionRequestInfo: {
-		from: []models.ReportStatus{models.ReportUnderReview}, to: models.ReportAwaitingResponse,
+		from: []models.ReportStatus{models.ReportSubmitted, models.ReportUnderReview}, to: models.ReportAwaitingResponse,
 		by: byReviewer, needsReason: true, review: decision(models.DecisionRequestInfo),
 	},
 	ActionConfirm: {
-		from: []models.ReportStatus{models.ReportUnderReview}, to: models.ReportConfirmed,
+		from: openStatuses, to: models.ReportConfirmed,
 		by: byReviewer, needsReason: true, review: decision(models.DecisionConfirm),
 	},
 	ActionNotSubstantiated: {
-		from: []models.ReportStatus{models.ReportUnderReview}, to: models.ReportNotSubstantiated,
+		from: openStatuses, to: models.ReportNotSubstantiated,
 		by: byReviewer, needsReason: true, review: decision(models.DecisionNotSubstantiated),
 	},
 	ActionReopen: {
 		// Correcting a final decision goes back through review instead of
 		// editing the old result — the earlier decision stays on record.
 		from: []models.ReportStatus{models.ReportConfirmed, models.ReportNotSubstantiated}, to: models.ReportUnderReview,
-		by: byReviewer, needsReason: true, review: decision(models.DecisionReopen), clearRecons: true,
-	},
-	ActionDeclineReconsideration: {
-		from: []models.ReportStatus{models.ReportConfirmed}, by: byReviewer, needsReason: true,
-		review: decision(models.DecisionDeclineReconsideration), needsRecons: true, clearRecons: true,
+		by: byReviewer, needsReason: true, review: decision(models.DecisionReopen),
 	},
 }
 
@@ -115,19 +122,19 @@ func CheckAction(r models.LabBoyReport, actor Actor, action Action, reason strin
 		if r.ReporterID != actor.ID && !(action == ActionWithdraw && actor.isAdmin()) {
 			return "", &Denial{Forbidden: true, Message: "เฉพาะผู้รายงานเท่านั้นที่ทำรายการนี้ได้"}
 		}
+		if rule.studentReporter && !r.FiledByStudent() {
+			return "", &Denial{Forbidden: true, Message: "รายงานของอาจารย์ไม่ต้องส่งตรวจสอบ ใช้ปุ่ม Blacklist แทน"}
+		}
+		if rule.instructorReporter && (r.FiledByStudent() || !actor.isReviewer()) {
+			return "", &Denial{Forbidden: true, Message: "เฉพาะอาจารย์ประจำวิชาเท่านั้นที่ Blacklist ได้"}
+		}
 	case byReviewer:
 		if !actor.isReviewer() {
-			return "", &Denial{Forbidden: true, Message: "เฉพาะผู้ตรวจสอบ (เจ้าหน้าที่/ผู้ดูแลระบบ) เท่านั้น"}
-		}
-		if r.ReporterID == actor.ID {
-			return "", &Denial{Forbidden: true, Message: "ผู้รายงานไม่สามารถพิจารณารายงานของตนเองได้"}
+			return "", &Denial{Forbidden: true, Message: "เฉพาะอาจารย์ประจำวิชาเท่านั้น"}
 		}
 	}
 	if !statusIn(r.Status, rule.from) {
 		return "", &Denial{Message: "ไม่สามารถทำรายการนี้ในสถานะปัจจุบันของรายงานได้"}
-	}
-	if rule.needsRecons && r.ReconsiderationRequestedAt == nil {
-		return "", &Denial{Message: "ไม่มีคำขอทบทวนที่รอการพิจารณา"}
 	}
 	if rule.needsReason && reason == "" {
 		return "", &Denial{Message: "กรุณาระบุเหตุผล"}
@@ -153,8 +160,8 @@ func statusIn(s models.ReportStatus, list []models.ReportStatus) bool {
 func AllowedActions(r models.LabBoyReport, actor Actor) []Action {
 	out := make([]Action, 0)
 	for _, a := range []Action{
-		ActionSubmit, ActionStartReview, ActionRequestInfo, ActionConfirm, ActionNotSubstantiated,
-		ActionReopen, ActionDeclineReconsideration, ActionWithdraw,
+		ActionSubmit, ActionBlacklist, ActionConfirm, ActionNotSubstantiated, ActionRequestInfo,
+		ActionReopen, ActionWithdraw,
 	} {
 		if _, d := CheckAction(r, actor, a, "x"); d == nil {
 			out = append(out, a)
@@ -163,21 +170,35 @@ func AllowedActions(r models.LabBoyReport, actor Actor) []Action {
 	return out
 }
 
-// CanView decides who may open a report (and its evidence). Students see
-// only their own reports once submitted; instructors only the reports they
-// filed; staff every submitted report; admin everything.
+// CanView decides who may open a report (and its evidence): the reporter,
+// the course's instructor and the reported student once it is no longer a
+// draft, and admin. Staff are not part of this workflow.
 func CanView(r models.LabBoyReport, actor Actor) bool {
 	switch {
 	case actor.isAdmin():
 		return true
 	case r.ReporterID == actor.ID:
 		return true
-	case actor.Role == string(models.RoleStaff):
-		return r.Status != models.ReportDraft
-	case actor.Role == string(models.RoleStudent):
-		return r.StudentID == actor.ID && r.Status != models.ReportDraft
+	case r.Status == models.ReportDraft:
+		return false
+	case actor.ManagesCourse:
+		return true
+	case actor.isStudent():
+		return r.StudentID == actor.ID
 	}
 	return false
+}
+
+// HidesReporter is whether actor must not learn who filed r: the reported
+// student never sees which fellow Lab Boy reported them.
+func HidesReporter(r models.LabBoyReport, actor Actor) bool {
+	return r.FiledByStudent() && r.StudentID == actor.ID && r.ReporterID != actor.ID
+}
+
+// HidesStudentSide is whether actor is a student reporter, who sees the
+// outcome of their report but not the reported student's explanations.
+func HidesStudentSide(r models.LabBoyReport, actor Actor) bool {
+	return r.FiledByStudent() && r.ReporterID == actor.ID
 }
 
 // CanEditDraft: only the reporter, only while it is a draft.
@@ -197,26 +218,17 @@ func EvidenceStatuses() []models.ReportStatus {
 }
 
 // ResponseKindFor works out which kind of response actor may post on r, or
-// a denial. The student explains while the report is open and may ask for
-// reconsideration once it is CONFIRMED; the reporter adds information while
-// it is open.
-func ResponseKindFor(r models.LabBoyReport, actor Actor, reconsideration bool) (models.ReportResponseKind, *Denial) {
+// a denial. The student explains while the report is open — once
+// blacklisted they appeal instead (appeal.go); the reporter adds information
+// while it is open.
+func ResponseKindFor(r models.LabBoyReport, actor Actor) (models.ReportResponseKind, *Denial) {
 	switch {
-	case actor.Role == string(models.RoleStudent) && r.StudentID == actor.ID:
-		if reconsideration {
-			if r.Status != models.ReportConfirmed {
-				return "", &Denial{Message: "ขอทบทวนได้เฉพาะรายงานที่ยืนยันแล้ว"}
-			}
-			if r.ReconsiderationRequestedAt != nil {
-				return "", &Denial{Message: "ส่งคำขอทบทวนไปแล้ว กรุณารอผลการพิจารณา"}
-			}
-			return models.ResponseReconsideration, nil
-		}
+	case actor.isStudent() && r.StudentID == actor.ID:
 		if !statusIn(r.Status, openStatuses) {
-			return "", &Denial{Message: "ไม่สามารถส่งคำชี้แจงในสถานะปัจจุบันของรายงานได้"}
+			return "", &Denial{Message: "ไม่สามารถส่งคำชี้แจงในสถานะปัจจุบันของรายงานได้ หากถูก Blacklist ให้ยื่นอุทธรณ์แทน"}
 		}
 		return models.ResponseExplanation, nil
-	case r.ReporterID == actor.ID && !reconsideration:
+	case r.ReporterID == actor.ID:
 		if !statusIn(r.Status, openStatuses) {
 			return "", &Denial{Message: "ไม่สามารถเพิ่มข้อมูลในสถานะปัจจุบันของรายงานได้"}
 		}

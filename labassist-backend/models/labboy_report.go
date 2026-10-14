@@ -2,12 +2,12 @@ package models
 
 import "time"
 
-// LabBoyReport is an instructor's report about how a Lab Boy performed in
-// one of the instructor's courses. It replaces the old instant Blacklist
-// flag: a report is only an allegation until a reviewer (staff/admin, never
-// the reporter) confirms it, and only CONFIRMED reports are ever shown to
-// other instructors as work-performance history. Nothing here blocks a
-// student from applying.
+// LabBoyReport is a report about how a Lab Boy behaved in a course. A
+// fellow Lab Boy of the same course may file one, which goes to the
+// course's instructor to blacklist (CONFIRMED) or dismiss; the instructor may
+// also blacklist a Lab Boy directly. There is no staff step. Only CONFIRMED
+// reports are shown to other instructors, as "เคยโดนรีพอร์ท" on the student's
+// later applications. Nothing here blocks a student from applying.
 //
 // Reports are never deleted. Every status change is written to
 // LabBoyReportStatusHistory and to staff_audit_logs in the same transaction.
@@ -16,22 +16,32 @@ type LabBoyReport struct {
 	// ApplicationID is the accepted Lab Boy application the report is about.
 	// StudentID and CourseID are copied from it server-side so the client
 	// can never point a report at a student it did not work with.
-	ApplicationID uint           `gorm:"not null;index" json:"application_id"`
-	StudentID     uint           `gorm:"not null;index:idx_lbr_student_status" json:"student_id"`
-	CourseID      uint           `gorm:"not null;index" json:"course_id"`
-	ReporterID    uint           `gorm:"not null;index" json:"reporter_id"`
-	IncidentDate  time.Time      `gorm:"type:date;not null;index" json:"incident_date"`
-	Category      ReportCategory `gorm:"type:enum('ABSENCE','LATE_NOTICE','DUTY_NEGLECT','UNPROFESSIONAL_CONDUCT','OTHER');not null;index" json:"category"`
-	Description   string         `gorm:"type:text;not null" json:"description"`
-	Impact        string         `gorm:"type:text" json:"impact,omitempty"`
-	Status        ReportStatus   `gorm:"type:enum('DRAFT','SUBMITTED','UNDER_REVIEW','AWAITING_RESPONSE','CONFIRMED','NOT_SUBSTANTIATED','WITHDRAWN');not null;default:'DRAFT';index;index:idx_lbr_student_status" json:"status"`
-	SubmittedAt   *time.Time     `json:"submitted_at,omitempty"`
-	// ReconsiderationRequestedAt is set when the student asks for a
-	// CONFIRMED report to be reviewed again; cleared when a reviewer
-	// reopens or declines the request.
-	ReconsiderationRequestedAt *time.Time `json:"reconsideration_requested_at,omitempty"`
-	CreatedAt                  time.Time  `json:"created_at"`
-	UpdatedAt                  time.Time  `json:"updated_at"`
+	ApplicationID uint `gorm:"not null;index" json:"application_id"`
+	StudentID     uint `gorm:"not null;index:idx_lbr_student_status" json:"student_id"`
+	CourseID      uint `gorm:"not null;index" json:"course_id"`
+	ReporterID    uint `gorm:"not null;index" json:"reporter_id"`
+	// ReporterRole is the reporter's role when filing ("student" for a
+	// fellow Lab Boy, otherwise the course's instructor or admin). Rows from
+	// before student reports existed are empty, meaning an instructor.
+	ReporterRole string         `gorm:"size:20;not null;default:''" json:"reporter_role"`
+	IncidentDate time.Time      `gorm:"type:date;not null;index" json:"incident_date"`
+	Category     ReportCategory `gorm:"type:enum('ABSENCE','LATE_NOTICE','DUTY_NEGLECT','UNPROFESSIONAL_CONDUCT','OTHER');not null;index" json:"category"`
+	Description  string         `gorm:"type:text;not null" json:"description"`
+	Impact       string         `gorm:"type:text" json:"impact,omitempty"`
+	Status       ReportStatus   `gorm:"type:enum('DRAFT','SUBMITTED','UNDER_REVIEW','AWAITING_RESPONSE','CONFIRMED','NOT_SUBSTANTIATED','WITHDRAWN');not null;default:'DRAFT';index;index:idx_lbr_student_status" json:"status"`
+	SubmittedAt  *time.Time     `json:"submitted_at,omitempty"`
+	// ReconsiderationRequestedAt belonged to the old "ask the instructor to
+	// reconsider" step, replaced by BlacklistAppeal. No longer written; kept
+	// so the column and its history stay in place.
+	ReconsiderationRequestedAt *time.Time `json:"-"`
+	// BlacklistedAt is when the report last became CONFIRMED; the 15-day
+	// appeal window runs from it. BlacklistUntil is the last day the
+	// "เคยโดนรีพอร์ท" flag shows to other instructors (it never blocks
+	// applying). Both stay set after the report leaves CONFIRMED, as history.
+	BlacklistedAt  *time.Time `json:"blacklisted_at,omitempty"`
+	BlacklistUntil *time.Time `gorm:"type:date" json:"blacklist_until,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 
 	// Display fields filled in by the database layer, not stored.
 	StudentName    string `gorm:"-" json:"student_name"`
@@ -42,9 +52,16 @@ type LabBoyReport struct {
 	CourseSection  int    `gorm:"-" json:"course_section,omitempty"`
 	CourseSemester string `gorm:"-" json:"course_semester,omitempty"`
 	CourseYear     int    `gorm:"-" json:"course_academic_year,omitempty"`
+	// PenaltyStatus is set while the report is or was a blacklisting:
+	// blacklisted, or the status of the appeal against it.
+	PenaltyStatus PenaltyStatus `gorm:"-" json:"penalty_status,omitempty"`
 }
 
 func (LabBoyReport) TableName() string { return "labboy_reports" }
+
+// FiledByStudent is whether a fellow Lab Boy filed the report, so it waits
+// for the course's instructor to decide.
+func (r LabBoyReport) FiledByStudent() bool { return r.ReporterRole == string(RoleStudent) }
 
 type ReportStatus string
 
@@ -85,12 +102,14 @@ type LabBoyReportEvidence struct {
 	ReportID     uint `gorm:"not null;index" json:"report_id"`
 	UploadedByID uint `gorm:"not null" json:"uploaded_by_id"`
 	// ResponseID links a student's file to the response it was sent with.
-	ResponseID  *uint     `gorm:"index" json:"response_id,omitempty"`
-	FileName    string    `gorm:"size:255;not null" json:"file_name"`
-	ContentType string    `gorm:"size:100;not null" json:"content_type"`
-	SizeBytes   int64     `gorm:"not null" json:"size_bytes"`
-	Data        []byte    `gorm:"type:longblob;not null" json:"-"`
-	CreatedAt   time.Time `json:"created_at"`
+	ResponseID *uint `gorm:"index" json:"response_id,omitempty"`
+	// AppealEventID links a file to the appeal step it was sent with.
+	AppealEventID *uint     `gorm:"index" json:"appeal_event_id,omitempty"`
+	FileName      string    `gorm:"size:255;not null" json:"file_name"`
+	ContentType   string    `gorm:"size:100;not null" json:"content_type"`
+	SizeBytes     int64     `gorm:"not null" json:"size_bytes"`
+	Data          []byte    `gorm:"type:longblob;not null" json:"-"`
+	CreatedAt     time.Time `json:"created_at"`
 
 	UploadedByName string `gorm:"-" json:"uploaded_by_name"`
 }
@@ -166,7 +185,8 @@ type LabBoyReportStatusHistory struct {
 
 func (LabBoyReportStatusHistory) TableName() string { return "labboy_report_status_history" }
 
-// ConfirmedRecord is the minimal view of a CONFIRMED report that an
+// ConfirmedRecord is the minimal view of a CONFIRMED report (still within
+// its BlacklistUntil) that an
 // instructor sees when considering the student for another course: what was
 // confirmed and why, never the evidence or the reporter's raw files.
 type ConfirmedRecord struct {
@@ -179,6 +199,7 @@ type ConfirmedRecord struct {
 	CourseYear     int            `json:"course_academic_year,omitempty"`
 	Description    string         `json:"description"`
 	ConfirmedAt    time.Time      `json:"confirmed_at"`
+	BlacklistUntil *time.Time     `json:"blacklist_until,omitempty"`
 	ReviewReason   string         `json:"review_reason"`
 	// StudentResponded tells the reader the student gave their side.
 	StudentResponded bool `json:"student_responded"`

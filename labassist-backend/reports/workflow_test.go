@@ -2,130 +2,164 @@ package reports
 
 import (
 	"testing"
-	"time"
 
 	"labassist/models"
 )
 
 var (
-	reporter   = Actor{ID: 10, Role: "instructor"}
+	courseInst = Actor{ID: 10, Role: "instructor", ManagesCourse: true}
 	otherInst  = Actor{ID: 11, Role: "instructor"}
-	student    = Actor{ID: 20, Role: "student"}
+	student    = Actor{ID: 20, Role: "student"} // the reported Lab Boy
 	otherStu   = Actor{ID: 21, Role: "student"}
+	peer       = Actor{ID: 22, Role: "student"} // fellow Lab Boy who reports
 	staffUser  = Actor{ID: 30, Role: "staff"}
 	adminUser  = Actor{ID: 40, Role: "admin"}
-	adminOwner = Actor{ID: 41, Role: "admin"}
 )
 
-func report(status models.ReportStatus) models.LabBoyReport {
-	return models.LabBoyReport{ID: 1, ReporterID: reporter.ID, StudentID: student.ID, Status: status}
+var allStatuses = []models.ReportStatus{
+	models.ReportDraft, models.ReportSubmitted, models.ReportUnderReview, models.ReportAwaitingResponse,
+	models.ReportConfirmed, models.ReportNotSubstantiated, models.ReportWithdrawn,
 }
 
-func TestStateMachine(t *testing.T) {
-	all := []models.ReportStatus{
-		models.ReportDraft, models.ReportSubmitted, models.ReportUnderReview, models.ReportAwaitingResponse,
-		models.ReportConfirmed, models.ReportNotSubstantiated, models.ReportWithdrawn,
-	}
-	// Every allowed (action, from) pair and who performs it. Anything not
-	// in this table must be rejected.
-	type key struct {
-		a    Action
-		from models.ReportStatus
-	}
-	allowed := map[key]struct {
-		by Actor
-		to models.ReportStatus
-	}{
-		{ActionSubmit, models.ReportDraft}:                 {reporter, models.ReportSubmitted},
-		{ActionWithdraw, models.ReportDraft}:               {reporter, models.ReportWithdrawn},
-		{ActionWithdraw, models.ReportSubmitted}:           {reporter, models.ReportWithdrawn},
-		{ActionWithdraw, models.ReportUnderReview}:         {reporter, models.ReportWithdrawn},
-		{ActionWithdraw, models.ReportAwaitingResponse}:    {reporter, models.ReportWithdrawn},
-		{ActionStartReview, models.ReportSubmitted}:        {staffUser, models.ReportUnderReview},
-		{ActionStartReview, models.ReportAwaitingResponse}: {staffUser, models.ReportUnderReview},
-		{ActionRequestInfo, models.ReportUnderReview}:      {staffUser, models.ReportAwaitingResponse},
-		{ActionConfirm, models.ReportUnderReview}:          {staffUser, models.ReportConfirmed},
-		{ActionNotSubstantiated, models.ReportUnderReview}: {staffUser, models.ReportNotSubstantiated},
-		{ActionReopen, models.ReportConfirmed}:             {staffUser, models.ReportUnderReview},
-		{ActionReopen, models.ReportNotSubstantiated}:      {staffUser, models.ReportUnderReview},
-	}
+// instReport is filed by the course's instructor; peerReport by a fellow Lab Boy.
+func instReport(status models.ReportStatus) models.LabBoyReport {
+	return models.LabBoyReport{ID: 1, ReporterID: courseInst.ID, ReporterRole: "instructor", StudentID: student.ID, Status: status}
+}
+
+func peerReport(status models.ReportStatus) models.LabBoyReport {
+	return models.LabBoyReport{ID: 2, ReporterID: peer.ID, ReporterRole: "student", StudentID: student.ID, Status: status}
+}
+
+type step struct {
+	a    Action
+	from models.ReportStatus
+}
+
+type outcome struct {
+	by Actor
+	to models.ReportStatus
+}
+
+// checkMachine asserts that exactly the listed (action, from) pairs are
+// allowed for reports built by mk; anything else is tried with the most
+// plausible actor and must be rejected.
+func checkMachine(t *testing.T, name string, mk func(models.ReportStatus) models.LabBoyReport, reporter Actor, allowed map[step]outcome) {
+	t.Helper()
 	for a := range rules {
-		if a == ActionDeclineReconsideration {
-			continue // covered separately: depends on the pending request
-		}
-		for _, from := range all {
-			want, ok := allowed[key{a, from}]
+		for _, from := range allStatuses {
+			want, ok := allowed[step{a, from}]
 			actor := want.by
 			if !ok {
-				// Try with the most privileged plausible actor for the action.
-				actor = staffUser
+				actor = courseInst
 				if rules[a].by == byReporter {
 					actor = reporter
 				}
 			}
-			to, d := CheckAction(report(from), actor, a, "เหตุผล")
+			to, d := CheckAction(mk(from), actor, a, "เหตุผล")
 			if ok && (d != nil || to != want.to) {
-				t.Errorf("%s from %s: want → %s, got %q denial=%v", a, from, want.to, to, d)
+				t.Errorf("%s: %s from %s: want → %s, got %q denial=%v", name, a, from, want.to, to, d)
 			}
 			if !ok && d == nil {
-				t.Errorf("%s from %s must be rejected, got → %s", a, from, to)
+				t.Errorf("%s: %s from %s must be rejected, got → %s", name, a, from, to)
 			}
 		}
 	}
 }
 
-func TestCannotSkipToConfirmed(t *testing.T) {
-	for _, s := range []models.ReportStatus{models.ReportDraft, models.ReportSubmitted, models.ReportAwaitingResponse, models.ReportWithdrawn} {
-		if _, d := CheckAction(report(s), staffUser, ActionConfirm, "ok"); d == nil {
-			t.Errorf("confirm from %s must be rejected", s)
-		}
-	}
+func TestStateMachinePeerReport(t *testing.T) {
+	checkMachine(t, "peer", peerReport, peer, map[step]outcome{
+		{ActionSubmit, models.ReportDraft}:                      {peer, models.ReportSubmitted},
+		{ActionWithdraw, models.ReportDraft}:                    {peer, models.ReportWithdrawn},
+		{ActionWithdraw, models.ReportSubmitted}:                {peer, models.ReportWithdrawn},
+		{ActionWithdraw, models.ReportUnderReview}:              {peer, models.ReportWithdrawn},
+		{ActionWithdraw, models.ReportAwaitingResponse}:         {peer, models.ReportWithdrawn},
+		{ActionRequestInfo, models.ReportSubmitted}:             {courseInst, models.ReportAwaitingResponse},
+		{ActionRequestInfo, models.ReportUnderReview}:           {courseInst, models.ReportAwaitingResponse},
+		{ActionConfirm, models.ReportSubmitted}:                 {courseInst, models.ReportConfirmed},
+		{ActionConfirm, models.ReportUnderReview}:               {courseInst, models.ReportConfirmed},
+		{ActionConfirm, models.ReportAwaitingResponse}:          {courseInst, models.ReportConfirmed},
+		{ActionNotSubstantiated, models.ReportSubmitted}:        {courseInst, models.ReportNotSubstantiated},
+		{ActionNotSubstantiated, models.ReportUnderReview}:      {courseInst, models.ReportNotSubstantiated},
+		{ActionNotSubstantiated, models.ReportAwaitingResponse}: {courseInst, models.ReportNotSubstantiated},
+		{ActionReopen, models.ReportConfirmed}:                  {courseInst, models.ReportUnderReview},
+		{ActionReopen, models.ReportNotSubstantiated}:           {courseInst, models.ReportUnderReview},
+	})
 }
 
-func TestReporterCannotReviewOwnReport(t *testing.T) {
-	// An admin who filed the report is still not allowed to judge it.
-	r := report(models.ReportUnderReview)
-	r.ReporterID = adminOwner.ID
+func TestStateMachineInstructorReport(t *testing.T) {
+	checkMachine(t, "instructor", instReport, courseInst, map[step]outcome{
+		{ActionBlacklist, models.ReportDraft}:                   {courseInst, models.ReportConfirmed},
+		{ActionWithdraw, models.ReportDraft}:                    {courseInst, models.ReportWithdrawn},
+		{ActionWithdraw, models.ReportSubmitted}:                {courseInst, models.ReportWithdrawn},
+		{ActionWithdraw, models.ReportUnderReview}:              {courseInst, models.ReportWithdrawn},
+		{ActionWithdraw, models.ReportAwaitingResponse}:         {courseInst, models.ReportWithdrawn},
+		{ActionRequestInfo, models.ReportSubmitted}:             {courseInst, models.ReportAwaitingResponse},
+		{ActionRequestInfo, models.ReportUnderReview}:           {courseInst, models.ReportAwaitingResponse},
+		{ActionConfirm, models.ReportSubmitted}:                 {courseInst, models.ReportConfirmed},
+		{ActionConfirm, models.ReportUnderReview}:               {courseInst, models.ReportConfirmed},
+		{ActionConfirm, models.ReportAwaitingResponse}:          {courseInst, models.ReportConfirmed},
+		{ActionNotSubstantiated, models.ReportSubmitted}:        {courseInst, models.ReportNotSubstantiated},
+		{ActionNotSubstantiated, models.ReportUnderReview}:      {courseInst, models.ReportNotSubstantiated},
+		{ActionNotSubstantiated, models.ReportAwaitingResponse}: {courseInst, models.ReportNotSubstantiated},
+		{ActionReopen, models.ReportConfirmed}:                  {courseInst, models.ReportUnderReview},
+		{ActionReopen, models.ReportNotSubstantiated}:           {courseInst, models.ReportUnderReview},
+	})
+}
+
+func TestOnlyCourseInstructorDecides(t *testing.T) {
 	for _, a := range []Action{ActionConfirm, ActionNotSubstantiated, ActionRequestInfo} {
-		_, d := CheckAction(r, adminOwner, a, "ok")
-		if d == nil || !d.Forbidden {
-			t.Errorf("reporter-admin %s: want forbidden, got %v", a, d)
+		for _, who := range []Actor{otherInst, staffUser, peer, student, otherStu} {
+			if _, d := CheckAction(peerReport(models.ReportSubmitted), who, a, "ok"); d == nil || !d.Forbidden {
+				t.Errorf("%s by %+v: want forbidden, got %v", a, who, d)
+			}
 		}
 	}
-	// A different admin may.
-	if _, d := CheckAction(r, adminUser, ActionConfirm, "ok"); d != nil {
-		t.Fatalf("other admin confirm: %v", d)
-	}
-	// An instructor (the reporter) can never review.
-	if _, d := CheckAction(report(models.ReportUnderReview), reporter, ActionConfirm, "ok"); d == nil || !d.Forbidden {
-		t.Fatalf("instructor confirm: want forbidden, got %v", d)
+	if _, d := CheckAction(peerReport(models.ReportSubmitted), adminUser, ActionConfirm, "ok"); d != nil {
+		t.Fatalf("admin confirm: %v", d)
 	}
 }
 
-func TestStudentCannotChangeStatus(t *testing.T) {
+func TestStudentCannotBlacklist(t *testing.T) {
+	// A student reporter can only send the report to the instructor.
+	if _, d := CheckAction(peerReport(models.ReportDraft), peer, ActionBlacklist, ""); d == nil || !d.Forbidden {
+		t.Fatalf("student blacklist: want forbidden, got %v", d)
+	}
+	// An instructor who no longer teaches the course cannot either.
+	r := instReport(models.ReportDraft)
+	r.ReporterID = otherInst.ID
+	if _, d := CheckAction(r, otherInst, ActionBlacklist, ""); d == nil || !d.Forbidden {
+		t.Fatalf("non-teaching instructor blacklist: want forbidden, got %v", d)
+	}
+	// Blacklisting needs no extra reason; the report itself is the reason.
+	if to, d := CheckAction(instReport(models.ReportDraft), courseInst, ActionBlacklist, ""); d != nil || to != models.ReportConfirmed {
+		t.Fatalf("instructor blacklist: to=%s d=%v", to, d)
+	}
+}
+
+func TestReportedStudentCannotChangeStatus(t *testing.T) {
 	for a := range rules {
 		for _, s := range []models.ReportStatus{models.ReportDraft, models.ReportSubmitted, models.ReportUnderReview, models.ReportConfirmed} {
-			r := report(s)
-			now := time.Now()
-			r.ReconsiderationRequestedAt = &now
-			if _, d := CheckAction(r, student, a, "x"); d == nil || !d.Forbidden {
-				t.Errorf("student %s on %s: want forbidden, got %v", a, s, d)
+			for _, mk := range []func(models.ReportStatus) models.LabBoyReport{instReport, peerReport} {
+				r := mk(s)
+				if _, d := CheckAction(r, student, a, "x"); d == nil || !d.Forbidden {
+					t.Errorf("student %s on %s: want forbidden, got %v", a, s, d)
+				}
 			}
 		}
 	}
 }
 
 func TestOnlyReporterSubmitsOrWithdraws(t *testing.T) {
-	if _, d := CheckAction(report(models.ReportDraft), otherInst, ActionSubmit, ""); d == nil || !d.Forbidden {
-		t.Fatalf("other instructor submit: %v", d)
+	if _, d := CheckAction(peerReport(models.ReportDraft), otherStu, ActionSubmit, ""); d == nil || !d.Forbidden {
+		t.Fatalf("other student submit: %v", d)
 	}
-	if _, d := CheckAction(report(models.ReportSubmitted), otherInst, ActionWithdraw, "x"); d == nil || !d.Forbidden {
-		t.Fatalf("other instructor withdraw: %v", d)
+	if _, d := CheckAction(peerReport(models.ReportSubmitted), courseInst, ActionWithdraw, "x"); d == nil || !d.Forbidden {
+		t.Fatalf("instructor withdraw of a student's report: %v", d)
 	}
-	if _, d := CheckAction(report(models.ReportSubmitted), adminUser, ActionWithdraw, "x"); d != nil {
+	if _, d := CheckAction(peerReport(models.ReportSubmitted), adminUser, ActionWithdraw, "x"); d != nil {
 		t.Fatalf("admin withdraw: %v", d)
 	}
-	if _, d := CheckAction(report(models.ReportDraft), adminUser, ActionSubmit, ""); d == nil {
+	if _, d := CheckAction(peerReport(models.ReportDraft), adminUser, ActionSubmit, ""); d == nil {
 		t.Fatal("admin must not submit someone else's draft")
 	}
 }
@@ -137,45 +171,33 @@ func TestReasonRequired(t *testing.T) {
 		ActionReopen: models.ReportConfirmed,
 	}
 	for a, s := range cases {
-		actor := staffUser
+		actor := courseInst
 		if a == ActionWithdraw {
-			actor = reporter
+			actor = peer
 		}
-		if _, d := CheckAction(report(s), actor, a, ""); d == nil {
+		if _, d := CheckAction(peerReport(s), actor, a, ""); d == nil {
 			t.Errorf("%s without reason must be rejected", a)
 		}
 	}
 }
 
-func TestDeclineReconsiderationNeedsPendingRequest(t *testing.T) {
-	r := report(models.ReportConfirmed)
-	if _, d := CheckAction(r, staffUser, ActionDeclineReconsideration, "x"); d == nil {
-		t.Fatal("decline without pending request must be rejected")
-	}
-	now := time.Now()
-	r.ReconsiderationRequestedAt = &now
-	to, d := CheckAction(r, staffUser, ActionDeclineReconsideration, "x")
-	if d != nil || to != models.ReportConfirmed {
-		t.Fatalf("decline: to=%s d=%v", to, d)
-	}
-}
-
 func TestCanView(t *testing.T) {
-	draft, sub := report(models.ReportDraft), report(models.ReportSubmitted)
+	draft, sub := peerReport(models.ReportDraft), peerReport(models.ReportSubmitted)
 	checks := []struct {
 		name string
 		r    models.LabBoyReport
 		a    Actor
 		want bool
 	}{
-		{"reporter sees draft", draft, reporter, true},
+		{"reporter sees draft", draft, peer, true},
 		{"student cannot see draft", draft, student, false},
-		{"staff cannot see draft", draft, staffUser, false},
+		{"instructor cannot see a student's draft", draft, courseInst, false},
 		{"admin sees draft", draft, adminUser, true},
 		{"student sees own submitted", sub, student, true},
+		{"course instructor sees submitted", sub, courseInst, true},
 		{"other student never", sub, otherStu, false},
 		{"other instructor never", sub, otherInst, false},
-		{"staff sees submitted", sub, staffUser, true},
+		{"staff never", sub, staffUser, false},
 	}
 	for _, c := range checks {
 		if got := CanView(c.r, c.a); got != c.want {
@@ -184,27 +206,37 @@ func TestCanView(t *testing.T) {
 	}
 }
 
+func TestReporterHiddenFromReportedStudent(t *testing.T) {
+	r := peerReport(models.ReportSubmitted)
+	if !HidesReporter(r, student) {
+		t.Fatal("reported student must not see the fellow student who reported")
+	}
+	if HidesReporter(r, courseInst) || HidesReporter(r, peer) {
+		t.Fatal("instructor and reporter see the reporter")
+	}
+	if HidesReporter(instReport(models.ReportConfirmed), student) {
+		t.Fatal("an instructor's blacklist names the instructor")
+	}
+	if !HidesStudentSide(r, peer) || HidesStudentSide(r, courseInst) {
+		t.Fatal("only a student reporter is kept from the reported student's explanations")
+	}
+}
+
 func TestResponseKinds(t *testing.T) {
-	if k, d := ResponseKindFor(report(models.ReportUnderReview), student, false); d != nil || k != models.ResponseExplanation {
+	if k, d := ResponseKindFor(peerReport(models.ReportUnderReview), student); d != nil || k != models.ResponseExplanation {
 		t.Fatalf("student explanation: %s %v", k, d)
 	}
-	if _, d := ResponseKindFor(report(models.ReportUnderReview), otherStu, false); d == nil || !d.Forbidden {
+	if _, d := ResponseKindFor(peerReport(models.ReportUnderReview), otherStu); d == nil || !d.Forbidden {
 		t.Fatalf("other student: %v", d)
 	}
-	if _, d := ResponseKindFor(report(models.ReportUnderReview), student, true); d == nil {
-		t.Fatal("reconsideration of an open report must be rejected")
+	if _, d := ResponseKindFor(instReport(models.ReportConfirmed), student); d == nil {
+		t.Fatal("once blacklisted the student appeals instead of explaining")
 	}
-	if k, d := ResponseKindFor(report(models.ReportConfirmed), student, true); d != nil || k != models.ResponseReconsideration {
-		t.Fatalf("reconsideration: %s %v", k, d)
-	}
-	if _, d := ResponseKindFor(report(models.ReportConfirmed), student, false); d == nil {
-		t.Fatal("explanation after the decision must go through reconsideration")
-	}
-	if k, d := ResponseKindFor(report(models.ReportAwaitingResponse), reporter, false); d != nil || k != models.ResponseReporterInfo {
+	if k, d := ResponseKindFor(peerReport(models.ReportAwaitingResponse), peer); d != nil || k != models.ResponseReporterInfo {
 		t.Fatalf("reporter info: %s %v", k, d)
 	}
-	if _, d := ResponseKindFor(report(models.ReportUnderReview), staffUser, false); d == nil {
-		t.Fatal("staff record decisions, not responses")
+	if _, d := ResponseKindFor(peerReport(models.ReportUnderReview), courseInst); d == nil {
+		t.Fatal("the instructor records decisions, not responses")
 	}
 }
 

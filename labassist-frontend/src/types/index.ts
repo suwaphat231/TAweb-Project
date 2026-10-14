@@ -820,9 +820,10 @@ export interface WorkSession {
   hours_per_session: number
 }
 
-// ── Lab Boy performance reports ──────────────────────────────────────────────
-// A report is only an allegation until a reviewer confirms it; only
-// CONFIRMED reports are ever shown as work-performance history.
+// ── Lab Boy reports / blacklist ──────────────────────────────────────────────
+// A Lab Boy may report a fellow Lab Boy of the same course; the course's
+// instructor blacklists (CONFIRMED) or dismisses it, and may also blacklist
+// directly. Only CONFIRMED reports show to other instructors ("เคยโดนรีพอร์ท").
 
 export type ReportStatus =
   | 'DRAFT' | 'SUBMITTED' | 'UNDER_REVIEW' | 'AWAITING_RESPONSE'
@@ -832,22 +833,30 @@ export type ReportCategory =
   | 'ABSENCE' | 'LATE_NOTICE' | 'DUTY_NEGLECT' | 'UNPROFESSIONAL_CONDUCT' | 'OTHER'
 
 export type ReportAction =
-  | 'submit' | 'withdraw' | 'start_review' | 'request_info' | 'confirm'
-  | 'not_substantiated' | 'reopen' | 'decline_reconsideration'
+  | 'submit' | 'blacklist' | 'withdraw' | 'request_info' | 'confirm'
+  | 'not_substantiated' | 'reopen'
 
 export interface LabBoyReport {
   id: number
   application_id: number
   student_id: number
   course_id: number
+  /** 0 when hidden: the reported student never learns which fellow student reported. */
   reporter_id: number
+  /** 'student' for a fellow Lab Boy's report; otherwise the instructor's own. */
+  reporter_role: UserRole | ''
   incident_date: string
   category: ReportCategory
   description: string
   impact?: string
   status: ReportStatus
   submitted_at?: string
-  reconsideration_requested_at?: string
+  /** When it last became CONFIRMED; the 15-day appeal window runs from it. */
+  blacklisted_at?: string
+  /** Last day the "เคยโดนรีพอร์ท" flag shows (YYYY-MM-DD at midnight UTC). */
+  blacklist_until?: string
+  /** Set while it is or was a blacklisting. */
+  penalty_status?: PenaltyStatus
   created_at: string
   updated_at: string
   student_name: string
@@ -866,6 +875,8 @@ export interface ReportEvidence {
   uploaded_by_id: number
   uploaded_by_name: string
   response_id?: number
+  /** The appeal step the file was sent with. */
+  appeal_event_id?: number
   file_name: string
   content_type: string
   size_bytes: number
@@ -914,7 +925,73 @@ export interface ReportDetail {
   can_edit: boolean
   can_add_evidence: boolean
   can_respond: boolean
-  can_request_reconsideration: boolean
+  /** Only for the reported student, the course's instructor and admin. */
+  appeals: AppealView[]
+  appeal_deadline?: string
+  can_appeal: boolean
+  appeal_blocked_reason?: string
+}
+
+// ── Blacklist appeals ────────────────────────────────────────────────────────
+// A blacklisted student may appeal once within 15 days; the course's
+// instructor approves (lifting the blacklist), rejects or asks for more.
+
+export type PenaltyStatus =
+  | 'blacklisted' | 'appeal_pending' | 'appeal_approved' | 'appeal_rejected' | 'appeal_more_info'
+
+export type AppealDecision = 'approve' | 'reject' | 'request_info'
+
+export interface BlacklistAppeal {
+  id: number
+  report_id: number
+  student_id: number
+  blacklisted_at: string
+  reason: string
+  details?: string
+  status: PenaltyStatus
+  decided_at?: string
+  decided_by_id?: number
+  decided_by_name?: string
+  decision_note?: string
+  created_at: string
+  updated_at: string
+  student_name: string
+  student_code: string
+  course_id: number
+  course_code: string
+  course_title: string
+  course_section?: number
+  course_semester?: string
+  course_academic_year?: number
+  /** Times the student has ever been blacklisted, this one included. */
+  blacklist_count: number
+}
+
+export interface BlacklistAppealEvent {
+  id: number
+  appeal_id: number
+  kind: 'SUBMIT' | 'REQUEST_INFO' | 'STUDENT_INFO' | 'APPROVE' | 'REJECT'
+  from_status?: PenaltyStatus
+  to_status: PenaltyStatus
+  note: string
+  actor_id: number
+  actor_name: string
+  actor_role: UserRole | ''
+  created_at: string
+}
+
+export interface AppealView {
+  appeal: BlacklistAppeal
+  events: BlacklistAppealEvent[]
+  can_decide: boolean
+  can_add_info: boolean
+}
+
+export interface AppealPage {
+  data: BlacklistAppeal[]
+  total: number
+  page: number
+  limit: number
 }
 
 export interface ReportPage {
@@ -925,6 +1002,8 @@ export interface ReportPage {
 }
 
 export interface ReportListParams {
+  /** 'students' keeps only reports Lab Boys filed (instructor list). */
+  from?: 'students' | ''
   q?: string
   status?: string
   category?: ReportCategory | ''
@@ -943,6 +1022,33 @@ export interface ReportInput {
   impact: string
 }
 
+/** A fellow Lab Boy a student may report (GET /student/reports/peers). */
+export interface ReportPeer {
+  application_id: number
+  student_name: string
+  student_code: string
+  course_id: number
+  course_code: string
+  course_title: string
+  english_title?: string
+  section: number
+  semester: string
+  academic_year: number
+}
+
+/** A course the student is a Lab Boy of, with its fellow Lab Boys
+ *  (GET /student/reports/courses). */
+export interface ReportCourse {
+  key: string
+  course_code: string
+  course_title: string
+  english_title?: string
+  semester: string
+  academic_year: number
+  my_sections: number[]
+  peers: ReportPeer[]
+}
+
 export interface ConfirmedRecord {
   report_id: number
   category: ReportCategory
@@ -953,6 +1059,7 @@ export interface ConfirmedRecord {
   course_academic_year?: number
   description: string
   confirmed_at: string
+  blacklist_until?: string
   review_reason: string
   student_responded: boolean
 }

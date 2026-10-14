@@ -13,7 +13,7 @@ import type {
   ScheduleGroupMonth, AddGroupMonthPayload, MonthOccurrenceSummary,
   GroupMonthPlan, AddGroupMonthOccurrencePayload, PatchOccurrencePayload, HiringNoticePlanSnapshot,
   LabBoyReport, ReportDetail, ReportPage, ReportListParams, ReportInput, ReportAction, ReportEvidence,
-  ReportResponse, ConfirmedRecord, DocumentWorkflowResponse, CreateWorkflowStepPayload, DocType,
+  ReportResponse, ReportPeer, ReportCourse, ConfirmedRecord, BlacklistAppeal, AppealDecision, AppealPage, DocumentWorkflowResponse, CreateWorkflowStepPayload, DocType,
 } from '../types'
 
 // Keep API calls on the same origin by default. This works both behind the
@@ -456,24 +456,37 @@ function filesForm(files: File[], fields: Record<string, string> = {}) {
   return body
 }
 
+export type ReporterKind = 'instructor' | 'student'
+
 export const reportsApi = {
   mine: (params?: ReportListParams) =>
     api.get<ReportPage>('/instructor/reports', { params: cleanParams(params) }).then((r) => r.data),
-  reviewQueue: (params?: ReportListParams) =>
-    api.get<ReportPage>('/staff/reports', { params: cleanParams(params) }).then((r) => r.data),
   studentReports: (params?: ReportListParams) =>
     api.get<ReportPage>('/student/reports', { params: cleanParams(params) }).then((r) => r.data),
-  create: (data: ReportInput) => api.post<LabBoyReport>('/instructor/reports', data).then((r) => r.data),
-  updateDraft: (id: number, data: ReportInput) =>
-    api.put<LabBoyReport>(`/instructor/reports/${id}`, data).then((r) => r.data),
-  uploadEvidence: (id: number, files: File[]) =>
-    api.post<ReportEvidence[]>(`/instructor/reports/${id}/evidence`, filesForm(files)).then((r) => r.data),
+  studentFiled: (params?: ReportListParams) =>
+    api.get<ReportPage>('/student/reports/filed', { params: cleanParams(params) }).then((r) => r.data),
+  peers: () => api.get<ReportPeer[]>('/student/reports/peers').then((r) => r.data),
+  studentCourses: () => api.get<ReportCourse[]>('/student/reports/courses').then((r) => r.data),
+  create: (data: ReportInput, as: ReporterKind = 'instructor') =>
+    api.post<LabBoyReport>(`/${as}/reports`, data).then((r) => r.data),
+  updateDraft: (id: number, data: ReportInput, as: ReporterKind = 'instructor') =>
+    api.put<LabBoyReport>(`/${as}/reports/${id}`, data).then((r) => r.data),
+  uploadEvidence: (id: number, files: File[], as: ReporterKind = 'instructor') =>
+    api.post<ReportEvidence[]>(`/${as}/reports/${id}/evidence`, filesForm(files)).then((r) => r.data),
   detail: (id: number) => api.get<ReportDetail>(`/reports/${id}`).then((r) => r.data),
-  act: (id: number, action: ReportAction, reason = '') =>
-    api.post<LabBoyReport>(`/reports/${id}/actions`, { action, reason }).then((r) => r.data),
-  respond: (id: number, message: string, files: File[], reconsideration = false) =>
-    api.post<ReportResponse>(`/reports/${id}/responses`,
-      filesForm(files, { message, reconsideration: String(reconsideration) })).then((r) => r.data),
+  /** blacklistUntil (YYYY-MM-DD) applies to blacklist/confirm only. */
+  act: (id: number, action: ReportAction, reason = '', blacklistUntil = '') =>
+    api.post<LabBoyReport>(`/reports/${id}/actions`, { action, reason, blacklist_until: blacklistUntil }).then((r) => r.data),
+  respond: (id: number, message: string, files: File[]) =>
+    api.post<ReportResponse>(`/reports/${id}/responses`, filesForm(files, { message })).then((r) => r.data),
+  submitAppeal: (reportId: number, reason: string, details: string, files: File[]) =>
+    api.post<BlacklistAppeal>(`/reports/${reportId}/appeals`, filesForm(files, { reason, details })).then((r) => r.data),
+  addAppealInfo: (appealId: number, message: string, files: File[]) =>
+    api.post<BlacklistAppeal>(`/appeals/${appealId}/info`, filesForm(files, { message })).then((r) => r.data),
+  decideAppeal: (appealId: number, decision: AppealDecision, note: string) =>
+    api.post<BlacklistAppeal>(`/appeals/${appealId}/decision`, { decision, note }).then((r) => r.data),
+  appeals: (params?: { status?: string; page?: number; limit?: number }) =>
+    api.get<AppealPage>('/instructor/appeals', { params: cleanParams(params) }).then((r) => r.data),
   evidenceFile: (id: number, evidenceId: number) =>
     api.get(`/reports/${id}/evidence/${evidenceId}`, { responseType: 'blob' }).then((r) => r.data as Blob),
   confirmedHistory: (applicationId: number) =>

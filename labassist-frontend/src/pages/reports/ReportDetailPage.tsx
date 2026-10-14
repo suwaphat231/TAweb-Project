@@ -9,6 +9,7 @@ import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Modal } from '../../components/ui/Modal'
 import { Textarea } from '../../components/ui/Textarea'
+import { Input } from '../../components/ui/Input'
 import { PageLoading } from '../../components/ui/PageLoading'
 import { ErrorState } from '../../components/ui/ErrorState'
 import { triggerBrowserDownload } from '../../utils/download'
@@ -16,26 +17,30 @@ import { ReportStatusBadge } from '../../components/reports/ReportStatusBadge'
 import { ReportFormModal } from '../../components/reports/ReportFormModal'
 import { ReportPageHeader } from '../../components/reports/ReportPageHeader'
 import { FilePicker } from '../../components/reports/FilePicker'
+import { AppealSection } from '../../components/reports/AppealSection'
 import { Icon } from '../../components/reports/ReportIcons'
 import {
   categoryLabel, decisionLabel, formatDate, formatDateTime, responseKindLabel, statusInfo,
+  DEFAULT_BLACKLIST_DAYS, isoDateFrom,
 } from '../../components/reports/reportLabels'
 import type { ReportAction, ReportDetail, ReportEvidence } from '../../types'
 
 const MAX_TEXT = 2000
 
 const actionInfo: Record<ReportAction, { label: string; variant: 'primary' | 'outline' | 'success' | 'danger' | 'danger-ghost'; needsReason: boolean; prompt: string }> = {
-  submit:                  { label: 'ส่งรายงาน',                    variant: 'primary', needsReason: false, prompt: 'เมื่อส่งแล้วจะแก้ไขไม่ได้ นักศึกษาจะได้รับแจ้งและสามารถชี้แจงได้' },
-  start_review:            { label: 'รับเรื่องตรวจสอบ',             variant: 'primary', needsReason: false, prompt: 'เริ่มพิจารณารายงานนี้' },
-  request_info:            { label: 'ขอข้อมูลเพิ่มเติม',             variant: 'outline', needsReason: true,  prompt: 'ระบุข้อมูลที่ต้องการจากนักศึกษาหรือผู้รายงาน' },
-  confirm:                 { label: 'ยืนยันรายงาน',                 variant: 'primary', needsReason: true,  prompt: 'ระบุเหตุผลและหลักฐานที่ใช้ยืนยัน — ผลนี้จะแสดงแก่อาจารย์รายวิชาอื่นที่นักศึกษาสมัคร' },
-  not_substantiated:       { label: 'ไม่ยืนยัน (ข้อมูลไม่เพียงพอ)', variant: 'outline', needsReason: true,  prompt: 'ระบุเหตุผลที่ข้อมูลไม่เพียงพอ' },
-  reopen:                  { label: 'นำกลับมาตรวจสอบใหม่',          variant: 'outline', needsReason: true,  prompt: 'ผลเดิมจะยังถูกเก็บไว้ในประวัติ ระบุเหตุผลที่ต้องตรวจสอบใหม่' },
-  decline_reconsideration: { label: 'คงผลเดิม',                     variant: 'outline', needsReason: true,  prompt: 'ระบุเหตุผลที่ไม่รับคำขอทบทวน' },
+  submit:                  { label: 'ส่งให้อาจารย์',                 variant: 'primary', needsReason: false, prompt: 'เมื่อส่งแล้วจะแก้ไขไม่ได้ อาจารย์ประจำวิชาจะพิจารณา นักศึกษาที่ถูกรายงานจะได้รับแจ้งและชี้แจงได้โดยไม่เห็นชื่อคุณ' },
+  blacklist:               { label: 'Blacklist',                    variant: 'danger',  needsReason: false, prompt: 'มีผลทันที อาจารย์รายวิชาอื่นที่นักศึกษาสมัครจะเห็นว่า "เคยโดนรีพอร์ท" นักศึกษาจะได้รับแจ้งและขอทบทวนได้' },
+  confirm:                 { label: 'Blacklist นักศึกษา',            variant: 'danger',  needsReason: true,  prompt: 'ระบุเหตุผล — อาจารย์รายวิชาอื่นที่นักศึกษาสมัครจะเห็นว่า "เคยโดนรีพอร์ท" พร้อมเหตุผลนี้' },
+  not_substantiated:       { label: 'ยกรายงาน (ไม่ Blacklist)',       variant: 'outline', needsReason: true,  prompt: 'ระบุเหตุผลที่ไม่ Blacklist — จะไม่มีผลต่อประวัติของนักศึกษา' },
+  request_info:            { label: 'ขอข้อมูลเพิ่มเติม',             variant: 'outline', needsReason: true,  prompt: 'ระบุข้อมูลที่ต้องการจากนักศึกษาที่ถูกรายงานหรือผู้รายงาน' },
+  reopen:                  { label: 'นำกลับมาพิจารณาใหม่',           variant: 'outline', needsReason: true,  prompt: 'ผลเดิมจะยังถูกเก็บไว้ในประวัติ และระหว่างพิจารณาจะไม่แสดงว่าเคยโดนรีพอร์ท ระบุเหตุผล' },
   withdraw:                { label: 'ถอนรายงาน',                    variant: 'danger-ghost', needsReason: true, prompt: 'ระบุเหตุผลที่ถอนรายงาน — ประวัติการดำเนินการจะยังถูกเก็บไว้' },
 }
 
-const ACTION_ORDER: ReportAction[] = ['submit', 'start_review', 'confirm', 'not_substantiated', 'request_info', 'reopen', 'decline_reconsideration', 'withdraw']
+const ACTION_ORDER: ReportAction[] = ['submit', 'blacklist', 'confirm', 'not_substantiated', 'request_info', 'reopen', 'withdraw']
+
+// Actions that blacklist the student, so they also take an end date.
+const BLACKLISTING: ReportAction[] = ['blacklist', 'confirm']
 
 function Section({ title, children, extra, count }: { title: string; children: ReactNode; extra?: ReactNode; count?: number }) {
   return (
@@ -72,7 +77,7 @@ export default function ReportDetailPage() {
   const [reason, setReason] = useState('')
   const [message, setMessage] = useState('')
   const [responseFiles, setResponseFiles] = useState<File[]>([])
-  const [reconsiderOpen, setReconsiderOpen] = useState(false)
+  const [blacklistUntil, setBlacklistUntil] = useState(isoDateFrom(DEFAULT_BLACKLIST_DAYS))
   const [evidenceFiles, setEvidenceFiles] = useState<File[]>([])
   const [editing, setEditing] = useState(false)
 
@@ -85,11 +90,12 @@ export default function ReportDetailPage() {
 
   function refresh() {
     qc.invalidateQueries({ queryKey: ['report-detail', reportId] })
-    for (const k of ['instructor-reports', 'staff-reports', 'student-reports']) qc.invalidateQueries({ queryKey: [k] })
+    for (const k of ['instructor-reports', 'instructor-appeals', 'student-reports', 'student-filed-reports']) qc.invalidateQueries({ queryKey: [k] })
   }
 
   const actMut = useMutation({
-    mutationFn: ({ action, why }: { action: ReportAction; why: string }) => reportsApi.act(reportId, action, why),
+    mutationFn: ({ action, why }: { action: ReportAction; why: string }) =>
+      reportsApi.act(reportId, action, why, BLACKLISTING.includes(action) ? blacklistUntil : ''),
     onSuccess: (_, v) => {
       showToast(`${actionInfo[v.action].label} เรียบร้อยแล้ว`, 'success')
       setPendingAction(null)
@@ -100,13 +106,11 @@ export default function ReportDetailPage() {
   })
 
   const respondMut = useMutation({
-    mutationFn: ({ reconsideration }: { reconsideration: boolean }) =>
-      reportsApi.respond(reportId, message.trim(), responseFiles, reconsideration),
-    onSuccess: (_, v) => {
-      showToast(v.reconsideration ? 'ส่งคำขอทบทวนแล้ว' : 'ส่งข้อความแล้ว', 'success')
+    mutationFn: () => reportsApi.respond(reportId, message.trim(), responseFiles),
+    onSuccess: () => {
+      showToast('ส่งข้อความแล้ว', 'success')
       setMessage('')
       setResponseFiles([])
-      setReconsiderOpen(false)
       refresh()
     },
     onError: async (err) => showToast(await getApiErrorMessage(err, 'ส่งไม่สำเร็จ'), 'error'),
@@ -137,13 +141,15 @@ export default function ReportDetailPage() {
 
   const d: ReportDetail = data
   const r = d.report
-  const isStudent = user?.role === 'student'
+  // The reported student, as opposed to a fellow Lab Boy who filed it.
+  const isSubject = user?.role === 'student' && r.student_id === user.id
+  const byStudent = r.reporter_role === 'student'
   const actions = ACTION_ORDER.filter((a) => d.allowed_actions.includes(a))
   const filesByResponse = new Map<number, ReportEvidence[]>()
   for (const e of d.evidence) {
     if (e.response_id) filesByResponse.set(e.response_id, [...(filesByResponse.get(e.response_id) ?? []), e])
   }
-  const reporterFiles = d.evidence.filter((e) => !e.response_id)
+  const reporterFiles = d.evidence.filter((e) => !e.response_id && !e.appeal_event_id)
   const messageValid = message.trim().length > 0 && message.trim().length <= MAX_TEXT
 
   function evidenceLinks(list: ReportEvidence[]) {
@@ -168,40 +174,36 @@ export default function ReportDetailPage() {
   }
 
   const crumbs = user?.role === 'student'
-    ? [{ label: 'รายงานของฉัน', to: '/student/reports' }]
-    : user?.role === 'instructor' || (user?.role === 'admin' && r.reporter_id === user.id)
-      ? [{ label: 'บันทึกการปฏิบัติงาน', to: '/instructor/reports' }, { label: r.course_code, to: `/instructor/reports/courses/${r.course_id}` }]
-      : [{ label: 'ตรวจสอบรายงาน', to: '/staff/reports' }]
-  const isOpen = !['CONFIRMED', 'NOT_SUBSTANTIATED', 'WITHDRAWN'].includes(r.status)
+    ? isSubject
+      ? [{ label: 'รายงาน / Blacklist', to: '/student/reports?tab=about' }]
+      : [{ label: 'รายงาน / Blacklist', to: '/student/reports' },
+          { label: r.course_code, to: `/student/reports/courses/${encodeURIComponent(`${r.course_code}__${r.course_semester}__${r.course_academic_year}`)}` }]
+    : [{ label: 'Blacklist', to: '/instructor/reports' }, { label: r.course_code, to: `/instructor/reports/courses/${r.course_id}` }]
+  const isOpen = !['DRAFT', 'CONFIRMED', 'NOT_SUBSTANTIATED', 'WITHDRAWN'].includes(r.status)
 
   return (
     <div style={{ maxWidth: 1180, margin: '0 auto' }}>
       <ReportPageHeader
         crumbs={[...crumbs, { label: `รายงาน #${r.id}` }]}
         title={categoryLabel[r.category]}
-        subtitle={<>{isStudent ? 'รายงานเกี่ยวกับคุณ' : `${r.student_name} (${r.student_code || '—'})`} · {r.course_code} {r.course_title} · เกิดเหตุ {formatDate(r.incident_date)}</>}
+        subtitle={<>{isSubject ? 'รายงานเกี่ยวกับคุณ' : `${r.student_name} (${r.student_code || '—'})`} · {r.course_code} {r.course_title} · เกิดเหตุ {formatDate(r.incident_date)}</>}
       />
 
       {isOpen && (
         <div role="note" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', background: 'var(--blue-bg)', border: '1px solid #BFDBFE', borderRadius: 10, padding: '12px 14px', fontSize: 14, color: 'var(--ink-700)', marginBottom: 16, lineHeight: 1.6 }}>
           <Icon name="alert" size={18} style={{ color: 'var(--primary)', marginTop: 2 }} />
-          รายงานนี้ยังไม่ผ่านการตรวจสอบ จึงไม่ใช่ข้อสรุปว่านักศึกษากระทำผิด และจะไม่แสดงเป็นประวัติแก่อาจารย์รายวิชาอื่น
-        </div>
-      )}
-      {r.status === 'CONFIRMED' && r.reconsideration_requested_at && (
-        <div role="note" style={{ display: 'flex', gap: 10, alignItems: 'center', background: 'var(--amber-bg)', border: '1px solid #FDE68A', borderRadius: 10, padding: '12px 14px', fontSize: 14, color: '#92400E', fontWeight: 600, marginBottom: 16 }}>
-          <Icon name="clock" size={18} />
-          นักศึกษาขอทบทวนผลเมื่อ {formatDateTime(r.reconsideration_requested_at)} — รอผู้ตรวจสอบพิจารณา
+          รายงานนี้รออาจารย์ประจำวิชาพิจารณา จึงยังไม่ใช่ข้อสรุปว่านักศึกษากระทำผิด และจะไม่แสดงว่า "เคยโดนรีพอร์ท" แก่อาจารย์รายวิชาอื่นจนกว่าจะถูก Blacklist
         </div>
       )}
 
       <div className="report-layout">
         <div className="report-main">
+          <AppealSection detail={d} isSubject={isSubject} onChanged={refresh} renderFiles={evidenceLinks} />
           <Section title="รายละเอียดเหตุการณ์">
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 16, paddingBottom: 16, marginBottom: 16, borderBottom: '1px solid var(--line-soft)' }}>
-              {!isStudent && <Field label="นักศึกษา" value={<>{r.student_name}<div style={{ color: 'var(--ink-500)', fontSize: 13 }}>{r.student_code}</div></>} />}
+              {!isSubject && <Field label="นักศึกษาที่ถูกรายงาน" value={<>{r.student_name}<div style={{ color: 'var(--ink-500)', fontSize: 13 }}>{r.student_code}</div></>} />}
               <Field label="รายวิชา" value={<>{r.course_code}{r.course_section ? ` · Sec ${r.course_section}` : ''}<div style={{ color: 'var(--ink-500)', fontSize: 13 }}>{r.course_title}{r.course_semester ? ` (${r.course_semester}/${r.course_academic_year})` : ''}</div></>} />
-              <Field label="ผู้รายงาน" value={r.reporter_name} />
+              <Field label="ผู้รายงาน" value={<>{r.reporter_name}{!isSubject && <div style={{ color: 'var(--ink-500)', fontSize: 13 }}>{byStudent ? 'Lab Boy ในรายวิชาเดียวกัน' : 'อาจารย์ประจำวิชา'}</div>}</>} />
               <Field label="วันที่เกิดเหตุ" value={formatDate(r.incident_date)} />
               <Field label="ส่งรายงานเมื่อ" value={formatDateTime(r.submitted_at)} />
             </div>
@@ -245,7 +247,7 @@ export default function ReportDetailPage() {
             {d.can_respond && (
               <div style={{ marginTop: 16, borderTop: '1px solid var(--line-soft)', paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <Textarea
-                  label={isStudent ? 'ส่งคำชี้แจง' : 'เพิ่มข้อมูลสำหรับผู้ตรวจสอบ'}
+                  label={isSubject ? 'ส่งคำชี้แจง' : 'เพิ่มข้อมูลให้อาจารย์ประจำวิชา'}
                   rows={4}
                   value={message}
                   maxLength={MAX_TEXT}
@@ -254,17 +256,17 @@ export default function ReportDetailPage() {
                 />
                 <FilePicker files={responseFiles} onChange={setResponseFiles} label="แนบไฟล์ประกอบ" />
                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                  <Button disabled={!messageValid} loading={respondMut.isPending && !reconsiderOpen} onClick={() => respondMut.mutate({ reconsideration: false })}>
-                    {isStudent ? 'ส่งคำชี้แจง' : 'ส่งข้อมูล'}
+                  <Button disabled={!messageValid} loading={respondMut.isPending} onClick={() => respondMut.mutate()}>
+                    {isSubject ? 'ส่งคำชี้แจง' : 'ส่งข้อมูล'}
                   </Button>
                 </div>
               </div>
             )}
           </Section>
 
-          <Section title="ผลการตรวจสอบ" count={d.reviews.length}>
+          <Section title="ผลการพิจารณาของอาจารย์" count={d.reviews.length}>
             {d.reviews.length === 0 ? (
-              <div style={{ fontSize: 14, color: 'var(--ink-400)' }}>ยังไม่มีผลการตรวจสอบ</div>
+              <div style={{ fontSize: 14, color: 'var(--ink-400)' }}>ยังไม่มีผลการพิจารณา</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {d.reviews.map((rv) => (
@@ -284,20 +286,14 @@ export default function ReportDetailPage() {
             <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-500)', marginBottom: 8 }}>สถานะปัจจุบัน</div>
             <ReportStatusBadge status={r.status} />
             <p style={{ fontSize: 13, color: 'var(--ink-600)', marginTop: 10, lineHeight: 1.6 }}>{statusInfo[r.status].hint}</p>
-            {(actions.length > 0 || d.can_edit || d.can_request_reconsideration) && (
+            {(actions.length > 0 || d.can_edit) && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--line-soft)' }}>
                 {d.can_edit && <Button variant="outline" style={{ width: '100%', minHeight: 40 }} onClick={() => setEditing(true)}>แก้ไขร่าง</Button>}
                 {actions.map((a) => (
-                  <Button key={a} variant={actionInfo[a].variant} style={{ width: '100%', minHeight: 40 }} onClick={() => { setReason(''); setPendingAction(a) }}>
+                  <Button key={a} variant={actionInfo[a].variant} style={{ width: '100%', minHeight: 40 }} onClick={() => { setReason(''); setBlacklistUntil(isoDateFrom(DEFAULT_BLACKLIST_DAYS)); setPendingAction(a) }}>
                     {actionInfo[a].label}
                   </Button>
                 ))}
-                {d.can_request_reconsideration && (
-                  <>
-                    <Button variant="outline" style={{ width: '100%', minHeight: 40 }} onClick={() => { setMessage(''); setResponseFiles([]); setReconsiderOpen(true) }}>ขอทบทวนผล</Button>
-                    <span style={{ fontSize: 12, color: 'var(--ink-500)', lineHeight: 1.5 }}>หากเห็นว่าผลการตรวจสอบไม่ถูกต้อง ยื่นคำขอทบทวนพร้อมเหตุผลและหลักฐานได้</span>
-                  </>
-                )}
               </div>
             )}
           </Card>
@@ -329,6 +325,7 @@ export default function ReportDetailPage() {
       {editing && (
         <ReportFormModal
           existing={r}
+          as={byStudent ? 'student' : 'instructor'}
           existingEvidence={d.evidence}
           target={{
             applicationId: r.application_id, studentName: r.student_name, studentCode: r.student_code,
@@ -343,9 +340,9 @@ export default function ReportDetailPage() {
         footer={pendingAction && <>
           <Button variant="outline" onClick={() => setPendingAction(null)} disabled={actMut.isPending}>ยกเลิก</Button>
           <Button
-            variant={pendingAction === 'withdraw' ? 'danger' : 'primary'}
+            variant={['withdraw', 'blacklist', 'confirm'].includes(pendingAction) ? 'danger' : 'primary'}
             loading={actMut.isPending}
-            disabled={actionInfo[pendingAction].needsReason && !reason.trim()}
+            disabled={(actionInfo[pendingAction].needsReason && !reason.trim()) || (BLACKLISTING.includes(pendingAction) && !blacklistUntil)}
             onClick={() => actMut.mutate({ action: pendingAction, why: reason.trim() })}
           >ยืนยัน</Button>
         </>}
@@ -353,6 +350,11 @@ export default function ReportDetailPage() {
         {pendingAction && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <p style={{ fontSize: 14, color: 'var(--ink-700)', lineHeight: 1.6 }}>{actionInfo[pendingAction].prompt}</p>
+            {BLACKLISTING.includes(pendingAction) && (
+              <Input label="Blacklist มีผลถึงวันที่ *" type="date" min={isoDateFrom(1)} max={isoDateFrom(730)} value={blacklistUntil}
+                onChange={(e) => setBlacklistUntil(e.target.value)}
+                hint="หลังวันนี้ อาจารย์รายวิชาอื่นจะไม่เห็นว่าเคยโดนรีพอร์ทแล้ว นักศึกษายื่นอุทธรณ์ได้ภายใน 15 วัน" />
+            )}
             {actionInfo[pendingAction].needsReason && (
               <Textarea label="เหตุผล *" rows={4} value={reason} maxLength={1000} onChange={(e) => setReason(e.target.value)} />
             )}
@@ -360,17 +362,6 @@ export default function ReportDetailPage() {
         )}
       </Modal>
 
-      <Modal isOpen={reconsiderOpen} onClose={() => !respondMut.isPending && setReconsiderOpen(false)} title="ขอทบทวนผลการตรวจสอบ" size="md"
-        footer={<>
-          <Button variant="outline" onClick={() => setReconsiderOpen(false)} disabled={respondMut.isPending}>ยกเลิก</Button>
-          <Button disabled={!messageValid} loading={respondMut.isPending} onClick={() => respondMut.mutate({ reconsideration: true })}>ส่งคำขอทบทวน</Button>
-        </>}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <Textarea label="เหตุผลที่ขอทบทวน *" rows={5} value={message} maxLength={MAX_TEXT} onChange={(e) => setMessage(e.target.value)} />
-          <FilePicker files={responseFiles} onChange={setResponseFiles} label="แนบหลักฐาน" />
-        </div>
-      </Modal>
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { reportsApi } from '../../services/api'
 import { FilterChips } from '../../components/ui/FilterChips'
 import { SkeletonCard } from '../../components/ui/Skeleton'
@@ -10,25 +11,50 @@ import { useReportCourses } from '../../components/reports/useReportCourses'
 import { displayCourseTitle } from '../../utils/courseDisplay'
 import { ReportPageHeader } from '../../components/reports/ReportPageHeader'
 import { Icon } from '../../components/reports/ReportIcons'
+import { AppealList } from '../../components/reports/AppealList'
 
-const TABS = [
-  { value: 'courses', label: 'รายวิชาของฉัน' },
-  { value: 'all', label: 'รายงานทั้งหมดที่ส่ง' },
-]
+type Tab = 'courses' | 'inbox' | 'appeals' | 'all'
 
 const STATUS_OPTIONS = [
   { value: '', label: 'ทั้งหมด' },
   { value: 'DRAFT', label: 'ฉบับร่าง' },
-  { value: 'SUBMITTED,UNDER_REVIEW,AWAITING_RESPONSE', label: 'อยู่ระหว่างดำเนินการ' },
-  { value: 'CONFIRMED', label: 'ยืนยันแล้ว' },
-  { value: 'NOT_SUBSTANTIATED', label: 'ไม่ยืนยัน' },
+  { value: 'SUBMITTED,UNDER_REVIEW,AWAITING_RESPONSE', label: 'รอพิจารณา' },
+  { value: 'CONFIRMED', label: 'Blacklist แล้ว' },
+  { value: 'NOT_SUBSTANTIATED', label: 'ยกรายงาน' },
   { value: 'WITHDRAWN', label: 'ถอนแล้ว' },
+]
+
+// Reports Lab Boys sent about each other: pending ones first, since they
+// wait on this instructor's decision.
+const INBOX_STATUS_OPTIONS = [
+  { value: 'SUBMITTED,UNDER_REVIEW,AWAITING_RESPONSE', label: 'รอพิจารณา' },
+  { value: 'CONFIRMED', label: 'Blacklist แล้ว' },
+  { value: 'NOT_SUBSTANTIATED', label: 'ยกรายงาน' },
+  { value: 'WITHDRAWN', label: 'ถอนแล้ว' },
+  { value: '', label: 'ทั้งหมด' },
 ]
 
 export default function InstructorReports() {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
-  const tab = params.get('tab') === 'all' ? 'all' : 'courses'
+  const tabParam = params.get('tab')
+  const tab: Tab = tabParam === 'all' || tabParam === 'inbox' || tabParam === 'appeals' ? tabParam : 'courses'
+  const { data: pending } = useQuery({
+    queryKey: ['instructor-reports', 'pending-count'],
+    queryFn: () => reportsApi.mine({ from: 'students', status: 'SUBMITTED,UNDER_REVIEW,AWAITING_RESPONSE', limit: 1 }),
+  })
+  const pendingCount = pending?.total ?? 0
+  const { data: pendingAppeals } = useQuery({
+    queryKey: ['instructor-appeals', 'pending-count'],
+    queryFn: () => reportsApi.appeals({ status: 'appeal_pending,appeal_more_info', limit: 1 }),
+  })
+  const appealCount = pendingAppeals?.total ?? 0
+  const tabs = [
+    { value: 'courses', label: 'รายวิชาของฉัน' },
+    { value: 'inbox', label: pendingCount ? `รายงานจาก Lab Boy (${pendingCount} รอพิจารณา)` : 'รายงานจาก Lab Boy' },
+    { value: 'appeals', label: appealCount ? `อุทธรณ์ (${appealCount} รอพิจารณา)` : 'อุทธรณ์' },
+    { value: 'all', label: 'รายงานทั้งหมด' },
+  ]
   const [search, setSearch] = useState('')
   const { data: groups = [], isLoading, isError, refetch } = useReportCourses()
 
@@ -46,16 +72,30 @@ export default function InstructorReports() {
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto' }}>
       <ReportPageHeader
-        title="บันทึกการปฏิบัติงาน Lab Boy"
-        subtitle="เลือกรายวิชาเพื่อดูรายชื่อ Lab Boy และรายงานพฤติกรรมการปฏิบัติงาน รายงานจะถูกตรวจสอบโดยเจ้าหน้าที่ก่อน และไม่ตัดสิทธิ์การสมัครของนักศึกษาโดยอัตโนมัติ"
+        title="Blacklist Lab Boy"
+        subtitle="เลือกรายวิชาเพื่อ Blacklist Lab Boy ได้ทันที หรือพิจารณารายงานที่ Lab Boy ในรายวิชาส่งมา นักศึกษาที่ถูก Blacklist จะแสดงว่า &quot;เคยโดนรีพอร์ท&quot; แก่อาจารย์รายวิชาอื่นที่สมัคร จนถึงวันสิ้นสุดที่กำหนด โดยไม่ถูกตัดสิทธิ์การสมัคร นักศึกษายื่นอุทธรณ์ได้ภายใน 15 วัน และท่านเป็นผู้พิจารณา"
       />
 
       <div style={{ marginBottom: 16 }}>
-        <FilterChips options={TABS} value={tab} onChange={(v) => setParams(v === 'all' ? { tab: 'all' } : {}, { replace: true })} />
+        <FilterChips options={tabs} value={tab} onChange={(v) => setParams(v === 'courses' ? {} : { tab: v }, { replace: true })} />
       </div>
 
-      {tab === 'all' ? (
+      {tab === 'appeals' ? (
+        <AppealList />
+      ) : tab === 'inbox' ? (
         <ReportList
+          key="inbox"
+          queryKey="instructor-reports"
+          fetchPage={reportsApi.mine}
+          fixedParams={{ from: 'students' }}
+          statusOptions={INBOX_STATUS_OPTIONS}
+          courseOptions={courseOptions}
+          showReporter
+          emptyText="ไม่มีรายงานจาก Lab Boy ในสถานะนี้"
+        />
+      ) : tab === 'all' ? (
+        <ReportList
+          key="all"
           queryKey="instructor-reports"
           fetchPage={reportsApi.mine}
           statusOptions={STATUS_OPTIONS}

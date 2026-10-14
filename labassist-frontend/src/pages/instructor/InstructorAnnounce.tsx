@@ -14,6 +14,7 @@ import { COURSE_FORM_EMPTY, splitRequirements, joinRequirements } from './_cours
 import { displayCourseTitle } from '../../utils/courseDisplay'
 import type { CreateCoursePayload, CourseStatus, Course } from '../../types'
 import { formatSchedule } from '../../utils/schedule'
+import { isRecruitmentExcludedCourse } from '../../utils/recruitmentCourse'
 
 const STATUS_OPTIONS = [
   { value: 'open',         label: 'เปิดรับสมัคร' },
@@ -151,7 +152,7 @@ export default function InstructorAnnounce() {
   // Draft rows are just unopened sections from the Excel import — the
   // instructor picks among them via SectionCatalogPicker when creating a
   // posting, so they don't need to also clutter this list until opened.
-  const visibleCourses = courses.filter((c) => c.status !== 'draft')
+  const visibleCourses = courses.filter((c) => c.status !== 'draft' && !isRecruitmentExcludedCourse(c))
 
   return (
     <div>

@@ -524,8 +524,11 @@ export default function InstructorSelect() {
                             <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--ink-900)' }}>{row.student_name}</div>
                             <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{row.student_code || '—'}</div>
                             {!!row.confirmed_record_count && (
-                              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--primary-700)', marginTop: 2 }}>
-                                มีประวัติที่ยืนยันแล้ว {row.confirmed_record_count} รายการ
+                              <div
+                                title="เคยถูกอาจารย์ประจำวิชา Blacklist — เปิดโปรไฟล์เพื่อดูรายละเอียด"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: 'var(--red)', background: 'var(--red-bg)', border: '1px solid #FECACA', borderRadius: 999, padding: '1px 8px', marginTop: 4 }}
+                              >
+                                เคยโดนรีพอร์ท {row.confirmed_record_count} ครั้ง
                               </div>
                             )}
                           </div>

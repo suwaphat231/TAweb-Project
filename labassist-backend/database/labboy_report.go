@@ -40,7 +40,20 @@ func enrichReport(r models.LabBoyReport) models.LabBoyReport {
 		r.CourseSemester = c.Semester
 		r.CourseYear = c.AcademicYear
 	}
+	r.PenaltyStatus = penaltyFor(r)
 	return r
+}
+
+// penaltyFor looks up r's latest appeal for models.PenaltyOf.
+func penaltyFor(r models.LabBoyReport) models.PenaltyStatus {
+	if r.BlacklistedAt == nil && r.Status != models.ReportConfirmed {
+		return "" // never blacklisted: no appeal to look up
+	}
+	var a models.BlacklistAppeal
+	if DB.Where("report_id = ?", r.ID).Order("id DESC").First(&a).Error != nil {
+		return models.PenaltyOf(r, nil)
+	}
+	return models.PenaltyOf(r, &a)
 }
 
 func userName(id uint) string {
@@ -206,26 +219,27 @@ type ReportTransition struct {
 	Action string
 	// Review is saved when a reviewer made a decision.
 	Review *models.ReviewDecision
-	// ClearReconsideration resets the student's pending reconsideration
-	// request (when a reviewer reopens or declines it).
-	ClearReconsideration bool
-	Notifications        []models.Notification
+	// BlacklistUntil is the end date stored when the report becomes
+	// CONFIRMED (blacklisted); BlacklistedAt is stamped then too.
+	BlacklistUntil *time.Time
+	Notifications  []models.Notification
 }
 
 // ApplyReportTransition moves a report from t.From to t.To in one
 // transaction: the status update only succeeds if the report is still in
 // t.From (so two reviewers clicking at once cannot both win), and the
 // timeline, review, audit row and notifications are saved with it or not at
-// all. From == To is allowed for decisions that do not change the status
-// (declining a reconsideration request); then no timeline row is written.
+// all.
 func ApplyReportTransition(t ReportTransition) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
 		updates := map[string]any{"status": t.To, "updated_at": time.Now()}
-		if t.To == models.ReportSubmitted && t.From == models.ReportDraft {
+		// Leaving DRAFT by submitting or by an instructor's direct blacklist.
+		if t.From == models.ReportDraft && t.To != models.ReportWithdrawn {
 			updates["submitted_at"] = time.Now()
 		}
-		if t.ClearReconsideration {
-			updates["reconsideration_requested_at"] = nil
+		if t.To == models.ReportConfirmed {
+			updates["blacklisted_at"] = time.Now()
+			updates["blacklist_until"] = t.BlacklistUntil
 		}
 		res := tx.Model(&models.LabBoyReport{}).Where("id = ? AND status = ?", t.ReportID, t.From).Updates(updates)
 		if res.Error != nil {
@@ -278,8 +292,6 @@ type NewReportResponse struct {
 	// ResumeReview moves AWAITING_RESPONSE back to UNDER_REVIEW now that the
 	// requested information has arrived.
 	ResumeReview bool
-	// RequestReconsideration flags a CONFIRMED report for another look.
-	RequestReconsideration bool
 }
 
 // AddReportResponse saves an append-only response with its files, and the
@@ -292,9 +304,6 @@ func AddReportResponse(n NewReportResponse) (models.LabBoyReportResponse, error)
 			return err
 		}
 		if r.Status != n.ExpectStatus {
-			return ErrStaleReport
-		}
-		if n.RequestReconsideration && r.ReconsiderationRequestedAt != nil {
 			return ErrStaleReport
 		}
 		resp.ID = 0
@@ -313,15 +322,6 @@ func AddReportResponse(n NewReportResponse) (models.LabBoyReportResponse, error)
 		}
 		if err := writeReportAudit(tx, r.ID, "add_response", resp.AuthorID, "", fmt.Sprintf("%s (%d files)", resp.Kind, len(n.Files)), ""); err != nil {
 			return err
-		}
-		if n.RequestReconsideration {
-			if err := tx.Model(&models.LabBoyReport{}).Where("id = ?", r.ID).
-				Update("reconsideration_requested_at", time.Now()).Error; err != nil {
-				return err
-			}
-			if err := writeReportAudit(tx, r.ID, "request_reconsideration", resp.AuthorID, "", "", resp.Message); err != nil {
-				return err
-			}
 		}
 		if n.ResumeReview && r.Status == models.ReportAwaitingResponse {
 			if err := tx.Model(&models.LabBoyReport{}).Where("id = ?", r.ID).
@@ -446,21 +446,33 @@ func ReportStatusHistory(reportID uint) ([]models.LabBoyReportStatusHistory, err
 	return rows, nil
 }
 
+// ReportViewer scopes a list to what an instructor may see: reports they
+// filed, plus non-draft reports in the courses they teach (every course for
+// admin).
+type ReportViewer struct {
+	UserID     uint
+	AllCourses bool
+	CourseIDs  []uint
+}
+
 // ReportFilter narrows ListReports. Scope fields (ReporterID, StudentID,
-// ExcludeDraft) are set by the handler from the caller's account, never
-// from the request.
+// VisibleTo, ExcludeDraft) are set by the handler from the caller's account,
+// never from the request.
 type ReportFilter struct {
 	ReporterID   *uint
 	StudentID    *uint
+	VisibleTo    *ReportViewer
 	ExcludeDraft bool
-	Statuses     []models.ReportStatus
-	Category     models.ReportCategory
-	CourseID     uint
-	Search       string
-	DateFrom     *time.Time
-	DateTo       *time.Time
-	Page         int
-	Limit        int
+	// FiledByStudents keeps only reports a fellow Lab Boy filed.
+	FiledByStudents bool
+	Statuses        []models.ReportStatus
+	Category        models.ReportCategory
+	CourseID        uint
+	Search          string
+	DateFrom        *time.Time
+	DateTo          *time.Time
+	Page            int
+	Limit           int
 }
 
 // ListReports returns one page of reports matching f, newest activity first,
@@ -473,8 +485,22 @@ func ListReports(f ReportFilter) ([]models.LabBoyReport, int64, error) {
 	if f.StudentID != nil {
 		q = q.Where("labboy_reports.student_id = ?", *f.StudentID)
 	}
+	if v := f.VisibleTo; v != nil {
+		switch {
+		case v.AllCourses:
+			q = q.Where("labboy_reports.reporter_id = ? OR labboy_reports.status <> ?", v.UserID, models.ReportDraft)
+		case len(v.CourseIDs) > 0:
+			q = q.Where("labboy_reports.reporter_id = ? OR (labboy_reports.status <> ? AND labboy_reports.course_id IN ?)",
+				v.UserID, models.ReportDraft, v.CourseIDs)
+		default:
+			q = q.Where("labboy_reports.reporter_id = ?", v.UserID)
+		}
+	}
 	if f.ExcludeDraft {
 		q = q.Where("labboy_reports.status <> ?", models.ReportDraft)
+	}
+	if f.FiledByStudents {
+		q = q.Where("labboy_reports.reporter_role = ?", models.RoleStudent)
 	}
 	if len(f.Statuses) > 0 {
 		q = q.Where("labboy_reports.status IN ?", f.Statuses)
@@ -511,12 +537,28 @@ func ListReports(f ReportFilter) ([]models.LabBoyReport, int64, error) {
 	return rows, total, nil
 }
 
-// ConfirmedRecordsForStudent returns only CONFIRMED reports — the history
+// activeBlacklist matches CONFIRMED reports whose end date has not passed —
+// the only ones shown as "เคยโดนรีพอร์ท". Rows from before end dates
+// existed have none and stay shown.
+func activeBlacklist(q *gorm.DB) *gorm.DB {
+	return q.Where("status = ? AND (blacklist_until IS NULL OR blacklist_until >= ?)",
+		models.ReportConfirmed, BangkokToday().Format("2006-01-02"))
+}
+
+// BangkokToday is today's date in Asia/Bangkok, at midnight UTC — the same
+// shape as the DATE columns it is compared with.
+func BangkokToday() time.Time {
+	now := time.Now().In(time.FixedZone("Asia/Bangkok", 7*60*60))
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+// ConfirmedRecordsForStudent returns only active blacklistings — the history
 // another course's instructor may see. Anything still under review, not
-// substantiated or withdrawn is never included.
+// substantiated, withdrawn, lifted on appeal or past its end date is never
+// included.
 func ConfirmedRecordsForStudent(studentID uint) ([]models.ConfirmedRecord, error) {
 	var reports []models.LabBoyReport
-	if err := DB.Where("student_id = ? AND status = ?", studentID, models.ReportConfirmed).
+	if err := activeBlacklist(DB.Where("student_id = ?", studentID)).
 		Order("incident_date DESC").Find(&reports).Error; err != nil {
 		return nil, err
 	}
@@ -533,6 +575,7 @@ func ConfirmedRecordsForStudent(studentID uint) ([]models.ConfirmedRecord, error
 			CourseYear:     r.CourseYear,
 			Description:    r.Description,
 			ConfirmedAt:    r.UpdatedAt,
+			BlacklistUntil: r.BlacklistUntil,
 		}
 		// The latest CONFIRM decision carries the reviewer's reasoning and
 		// the actual confirmation time.
@@ -560,13 +603,128 @@ func ConfirmedRecordCounts(studentIDs []uint) (map[uint]int, error) {
 		StudentID uint
 		N         int
 	}
-	if err := DB.Model(&models.LabBoyReport{}).Select("student_id, COUNT(*) AS n").
-		Where("status = ? AND student_id IN ?", models.ReportConfirmed, studentIDs).
+	if err := activeBlacklist(DB.Model(&models.LabBoyReport{})).Select("student_id, COUNT(*) AS n").
+		Where("student_id IN ?", studentIDs).
 		Group("student_id").Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	for _, r := range rows {
 		out[r.StudentID] = r.N
+	}
+	return out, nil
+}
+
+// ManagedCourseIDs lists the courses an instructor teaches according to the
+// official class list — the same link InstructorOwnsCourse checks.
+func ManagedCourseIDs(instructorID uint) ([]uint, error) {
+	var ids []uint
+	err := DB.Model(&models.CourseInstructor{}).
+		Where("instructor_id = ? AND source = 'imported' AND archived_at IS NULL", instructorID).
+		Pluck("course_id", &ids).Error
+	return ids, err
+}
+
+// sameCourseAsMine matches course rows (alias c) of a course — same code and
+// term, any section or meeting time — the student (bound arg) was accepted
+// to as a Lab Boy.
+const sameCourseAsMine = `EXISTS (SELECT 1 FROM applications mine JOIN courses mc ON mc.id = mine.course_id
+	WHERE mine.student_id = ? AND mine.status = 'accepted'
+	AND mc.code = c.code AND mc.semester = c.semester AND mc.academic_year = c.academic_year)`
+
+// IsLabBoyOfCourse is whether the student is an accepted Lab Boy of the
+// same course (code and term) as course — who may report its Lab Boys.
+func IsLabBoyOfCourse(studentID uint, course models.Course) bool {
+	var n int64
+	DB.Table("courses c").Where("c.id = ?", course.ID).Where(sameCourseAsMine, studentID).Count(&n)
+	return n > 0
+}
+
+// ReportPeer is a fellow Lab Boy a student may report.
+type ReportPeer struct {
+	ApplicationID uint   `json:"application_id"`
+	StudentName   string `json:"student_name"`
+	StudentCode   string `json:"student_code"`
+	CourseID      uint   `json:"course_id"`
+	CourseCode    string `json:"course_code"`
+	CourseTitle   string `json:"course_title"`
+	EnglishTitle  string `json:"english_title"`
+	Section       int    `json:"section"`
+	Semester      string `json:"semester"`
+	AcademicYear  int    `json:"academic_year"`
+}
+
+// LabBoyPeers lists the other accepted Lab Boys of every course the student
+// is an accepted Lab Boy of.
+func LabBoyPeers(studentID uint) ([]ReportPeer, error) {
+	out := make([]ReportPeer, 0)
+	err := DB.Table("applications a").
+		Select(`a.id AS application_id, u.full_name AS student_name, COALESCE(u.student_id, '') AS student_code,
+			c.id AS course_id, c.code AS course_code, c.title AS course_title, c.english_title, c.section,
+			c.semester, c.academic_year`).
+		Joins("JOIN courses c ON c.id = a.course_id").
+		Joins("JOIN users u ON u.id = a.student_id").
+		Where("a.status = ? AND a.student_id <> ?", models.AppAccepted, studentID).
+		Where(sameCourseAsMine, studentID).
+		Order("c.academic_year DESC, c.semester DESC, c.code, c.section, u.full_name").
+		Scan(&out).Error
+	return out, err
+}
+
+// ReportCourse is one course (code and term, all sections) the student is an
+// accepted Lab Boy of, with the fellow Lab Boys they may report in it.
+type ReportCourse struct {
+	Key          string       `json:"key"`
+	CourseCode   string       `json:"course_code"`
+	CourseTitle  string       `json:"course_title"`
+	EnglishTitle string       `json:"english_title"`
+	Semester     string       `json:"semester"`
+	AcademicYear int          `json:"academic_year"`
+	MySections   []int        `json:"my_sections"`
+	Peers        []ReportPeer `json:"peers"`
+}
+
+func reportCourseKey(code, semester string, year int) string {
+	return fmt.Sprintf("%s__%s__%d", code, semester, year)
+}
+
+// LabBoyReportCourses lists every course the student is an accepted Lab Boy
+// of — even one with no other Lab Boys — each with its fellow Lab Boys.
+func LabBoyReportCourses(studentID uint) ([]ReportCourse, error) {
+	var mine []struct {
+		Code, Title, EnglishTitle, Semester string
+		AcademicYear, Section               int
+	}
+	if err := DB.Table("applications a").
+		Select("c.code, c.title, c.english_title, c.semester, c.academic_year, c.section").
+		Joins("JOIN courses c ON c.id = a.course_id").
+		Where("a.student_id = ? AND a.status = ?", studentID, models.AppAccepted).
+		Order("c.academic_year DESC, c.semester DESC, c.code, c.section").
+		Scan(&mine).Error; err != nil {
+		return nil, err
+	}
+	out := make([]ReportCourse, 0)
+	index := map[string]int{}
+	for _, m := range mine {
+		key := reportCourseKey(m.Code, m.Semester, m.AcademicYear)
+		i, ok := index[key]
+		if !ok {
+			i = len(out)
+			index[key] = i
+			out = append(out, ReportCourse{Key: key, CourseCode: m.Code, CourseTitle: m.Title, EnglishTitle: m.EnglishTitle,
+				Semester: m.Semester, AcademicYear: m.AcademicYear, MySections: []int{}, Peers: []ReportPeer{}})
+		}
+		if n := len(out[i].MySections); n == 0 || out[i].MySections[n-1] != m.Section {
+			out[i].MySections = append(out[i].MySections, m.Section)
+		}
+	}
+	peers, err := LabBoyPeers(studentID)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range peers {
+		if i, ok := index[reportCourseKey(p.CourseCode, p.Semester, p.AcademicYear)]; ok {
+			out[i].Peers = append(out[i].Peers, p)
+		}
 	}
 	return out, nil
 }

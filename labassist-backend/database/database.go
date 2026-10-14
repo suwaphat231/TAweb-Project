@@ -1497,6 +1497,8 @@ func migrateApplicationData(db *gorm.DB) error {
 		&models.LabBoyReportEvidence{},
 		&models.LabBoyReportReview{},
 		&models.LabBoyReportStatusHistory{},
+		&models.BlacklistAppeal{},
+		&models.BlacklistAppealEvent{},
 	)
 }
 

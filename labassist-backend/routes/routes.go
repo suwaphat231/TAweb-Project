@@ -49,13 +49,18 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 		authed.POST("/auth/password/forgot", authH.ForgotPassword)
 		authed.POST("/auth/password/reset", authH.ResetPassword)
 
-		// Lab Boy performance reports shared by every role. The route only
+		// Lab Boy reports / blacklist shared by every role. The route only
 		// requires a login; each handler checks the caller against the
-		// report itself (reporter / the student / reviewer / admin).
+		// report itself (reporter / the student / course instructor / admin).
 		authed.GET("/reports/:id", reportH.Detail)
 		authed.POST("/reports/:id/actions", reportH.Act)
 		authed.POST("/reports/:id/responses", reportH.Respond)
 		authed.GET("/reports/:id/evidence/:evidenceId", reportH.DownloadEvidence)
+		// Appeals against a blacklisting: filed by the blacklisted student,
+		// decided by the course's instructor; each handler checks the caller.
+		authed.POST("/reports/:id/appeals", reportH.SubmitAppeal)
+		authed.POST("/appeals/:id/info", reportH.AddAppealInfo)
+		authed.POST("/appeals/:id/decision", reportH.DecideAppeal)
 
 		// Student
 		studentGroup := authed.Group("")
@@ -95,7 +100,15 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			studentGroup.GET("/student/profile/student-info", studentH.GetStudentInfo)
 			studentGroup.POST("/student/profile/student-info/confirm", studentH.ConfirmStudentInfo)
 			studentGroup.GET("/student/profile/student-info/file", studentH.GetStudentInfoFile)
+			// Reports about me, and reports I file about a fellow Lab Boy
+			// of the same course (sent to its instructor).
 			studentGroup.GET("/student/reports", reportH.MyReports)
+			studentGroup.GET("/student/reports/filed", reportH.FiledReports)
+			studentGroup.GET("/student/reports/peers", reportH.Peers)
+			studentGroup.GET("/student/reports/courses", reportH.ReportCourses)
+			studentGroup.POST("/student/reports", reportH.CreateReport)
+			studentGroup.PUT("/student/reports/:id", reportH.UpdateDraft)
+			studentGroup.POST("/student/reports/:id/evidence", reportH.UploadEvidence)
 		}
 
 		// Instructor
@@ -119,8 +132,10 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			instructor.GET("/instructor/notifications", teacherH.MyNotifications)
 			instructor.PUT("/instructor/notifications/read-all", teacherH.MarkAllRead)
 			instructor.PUT("/instructor/notifications/:id/read", teacherH.MarkRead)
-			// Lab Boy performance reports (filed by the course's instructor)
+			// Lab Boy reports / blacklist: filed or blacklisted by the
+			// course's instructor, plus Lab Boys' reports awaiting a decision
 			instructor.GET("/instructor/reports", reportH.ListMine)
+			instructor.GET("/instructor/appeals", reportH.ListAppeals)
 			instructor.POST("/instructor/reports", reportH.CreateReport)
 			instructor.PUT("/instructor/reports/:id", reportH.UpdateDraft)
 			instructor.POST("/instructor/reports/:id/evidence", reportH.UploadEvidence)
@@ -148,7 +163,6 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			staffGroup.GET("/staff/profile", staffH.GetProfile)
 			staffGroup.PUT("/staff/profile", staffH.UpdateProfile)
 			staffGroup.GET("/staff/reviews", staffH.ListReviews)
-			staffGroup.GET("/staff/reports", reportH.ReviewQueue)
 			staffGroup.PUT("/staff/reviews/:courseId/verify", staffH.VerifyForm)
 			staffGroup.PUT("/staff/reviews/:courseId/return", staffH.ReturnForm)
 			staffGroup.GET("/staff/documents", staffH.ListDocuments)
