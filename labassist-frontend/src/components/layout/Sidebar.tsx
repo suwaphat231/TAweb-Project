@@ -55,7 +55,7 @@ const navMap: Record<UserRole, NavItem[]> = {
     { to: '/instructor/home',     label: 'หน้าหลัก',           icon: 'home' },
     { to: '/instructor/courses',  label: 'วิชาของฉัน',       icon: 'book' },
     { to: '/instructor/announce', label: 'จัดการประกาศ',     icon: 'megaphone' },
-    { to: '/instructor/reports',  label: 'Blacklist', icon: 'clipboard', match: ['/instructor/reports/', '/reports/'] },
+    { to: '/instructor/reports',  label: 'รายงานนักศึกษา', icon: 'clipboard', match: ['/instructor/reports/', '/reports/'] },
     { to: '/instructor/profile',  label: 'ข้อมูลส่วนตัว',    icon: 'user' },
   ],
   staff: [

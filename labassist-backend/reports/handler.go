@@ -337,6 +337,12 @@ func (h *Handler) list(c *gin.Context, scope func(f *database.ReportFilter)) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
+	actor := actorFrom(c)
+	for i := range rows {
+		if hidesReporter(rows[i], actor) {
+			anonymizeReport(&rows[i])
+		}
+	}
 	c.JSON(http.StatusOK, ReportPage{Data: rows, Total: total, Page: f.Page, Limit: f.Limit})
 }
 
@@ -436,7 +442,7 @@ func (h *Handler) Detail(c *gin.Context) {
 	}
 	_, respondDenied := ResponseKindFor(r, actor, false)
 	_, reconsDenied := ResponseKindFor(r, actor, true)
-	c.JSON(http.StatusOK, ReportDetail{
+	detail := ReportDetail{
 		Report:                    r,
 		Evidence:                  evidence,
 		Responses:                 responses,
@@ -447,7 +453,11 @@ func (h *Handler) Detail(c *gin.Context) {
 		CanAddEvidence:            CanAddEvidence(r, actor),
 		CanRespond:                respondDenied == nil,
 		CanRequestReconsideration: reconsDenied == nil,
-	})
+	}
+	if hidesReporter(r, actor) {
+		anonymizeDetail(&detail)
+	}
+	c.JSON(http.StatusOK, detail)
 }
 
 // ActionRequest is the body for a workflow step.
