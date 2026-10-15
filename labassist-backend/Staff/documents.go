@@ -359,6 +359,19 @@ func (h *Handler) UpdateDocumentSchedule(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if body.SessionsPerMonth < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "sessions_per_month must not be negative"})
+		return
+	}
+	existing, ok := database.StaffDocumentByID(uint(id))
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+		return
+	}
+	if existing.Type != models.DocHiringNotice {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "schedule can only be set on hiring_notice documents"})
+		return
+	}
 	doc, ok := database.UpdateStaffDocumentSchedule(uint(id), body.WorkSchedule, body.SessionsPerMonth)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})

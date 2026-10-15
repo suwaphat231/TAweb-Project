@@ -163,6 +163,29 @@ func (h *Handler) UpdateCase(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	var parsedStart, parsedEnd *time.Time
+	if body.WorkStartDate != nil && *body.WorkStartDate != "" {
+		t, err := time.Parse("2006-01-02", *body.WorkStartDate)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "work_start_date format must be YYYY-MM-DD"})
+			return
+		}
+		parsedStart = &t
+	}
+	if body.WorkEndDate != nil && *body.WorkEndDate != "" {
+		t, err := time.Parse("2006-01-02", *body.WorkEndDate)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "work_end_date format must be YYYY-MM-DD"})
+			return
+		}
+		parsedEnd = &t
+	}
+	if parsedStart != nil && parsedEnd != nil && !parsedStart.Before(*parsedEnd) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "work_start_date must be before work_end_date"})
+		return
+	}
+
 	sc, ok := database.UpdateStaffCase(uint(id), func(sc *models.StaffCase) {
 		if body.HoursPerSession != nil {
 			sc.HoursPerSession = *body.HoursPerSession
@@ -170,17 +193,11 @@ func (h *Handler) UpdateCase(c *gin.Context) {
 		if body.RatePerHour != nil {
 			sc.RatePerHour = *body.RatePerHour
 		}
-		if body.WorkStartDate != nil && *body.WorkStartDate != "" {
-			t, err := time.Parse("2006-01-02", *body.WorkStartDate)
-			if err == nil {
-				sc.WorkStartDate = &t
-			}
+		if parsedStart != nil {
+			sc.WorkStartDate = parsedStart
 		}
-		if body.WorkEndDate != nil && *body.WorkEndDate != "" {
-			t, err := time.Parse("2006-01-02", *body.WorkEndDate)
-			if err == nil {
-				sc.WorkEndDate = &t
-			}
+		if parsedEnd != nil {
+			sc.WorkEndDate = parsedEnd
 		}
 	})
 	if !ok {
