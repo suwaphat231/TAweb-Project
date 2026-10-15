@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"labassist/database"
 	"labassist/models"
+	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -32,7 +34,7 @@ var columnKeywords = []struct {
 	{"schedule", []string{"เวลา", "ตาราง"}, false},
 	{"instructor", []string{"ผู้สอน", "อาจารย์ผู้สอน"}, false},
 	{"code", []string{"รหัสวิชา", "รหัสรายวิชา", "รายวิชา"}, false},
-	{"section", []string{"กลุ่ม"}, true},
+	{"section", []string{"กลุ่ม", "กลุ่มเรียน", "ตอนเรียน", "หมู่", "หมู่เรียน", "sec", "sec.", "section", "sect"}, true},
 	{"capacity", []string{"รับ"}, true},
 	{"enrolled", []string{"ลงทะเบียนแล้ว"}, false},
 	{"title", []string{"ชื่อวิชา", "ชื่อรายวิชา"}, false},
@@ -273,6 +275,15 @@ func (h *Handler) ImportCourses(c *gin.Context) {
 			return
 		}
 	}
+	// Without a section column every row would land in section 0, so Sec 2's
+	// meeting times would collide with Sec 1's slots and be dropped as
+	// "already in the system". The classlist lists a code's sections in
+	// order, so number them by how often the code has appeared instead.
+	_, hasSectionCol := colIdx["section"]
+	if !hasSectionCol {
+		log.Printf("course import: no section column in header %q; numbering sections by row order", rows[headerRow])
+	}
+	codeSeen := map[string]int{}
 
 	instructors, err := database.ListUsers(string(models.RoleInstructor), "", 1000, 0)
 	if err != nil {
@@ -346,7 +357,11 @@ func (h *Handler) ImportCourses(c *gin.Context) {
 		// Each meeting time of a section is its own course (slot), so a row
 		// listing several times is compared/created one time at a time.
 		// Identical -> report as duplicate; different -> let the admin choose.
-		section := getInt(row, "section")
+		section := parseSection(get(row, "section"))
+		if !hasSectionCol {
+			codeSeen[code]++
+			section = codeSeen[code]
+		}
 		for slot, schedule := range database.SplitScheduleDays(get(row, "schedule")) {
 			if existing, found := database.FindCourseSlot(code, semester, academicYear, section, slot); found {
 				newFields := ImportCourseFields{
@@ -457,4 +472,13 @@ func (h *Handler) ResolveImportConflicts(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"updated": updated})
+}
+
+var leadingNumberRe = regexp.MustCompile(`\d+`)
+
+// parseSection reads a section cell that may be written as "1", "1.0" or
+// "Sec 1" — the first run of digits is the section number.
+func parseSection(cell string) int {
+	n, _ := strconv.Atoi(leadingNumberRe.FindString(cell))
+	return n
 }

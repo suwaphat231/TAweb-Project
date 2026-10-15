@@ -840,7 +840,7 @@ export interface LabBoyReport {
   application_id: number
   student_id: number
   course_id: number
-  reporter_id: number
+  reporter_id?: number  // omitted for the student the report is about
   incident_date: string
   category: ReportCategory
   description: string
@@ -863,7 +863,7 @@ export interface LabBoyReport {
 export interface ReportEvidence {
   id: number
   report_id: number
-  uploaded_by_id: number
+  uploaded_by_id?: number
   uploaded_by_name: string
   response_id?: number
   file_name: string
@@ -875,7 +875,7 @@ export interface ReportEvidence {
 export interface ReportResponse {
   id: number
   report_id: number
-  author_id: number
+  author_id?: number
   author_name: string
   author_role: UserRole
   kind: 'EXPLANATION' | 'RECONSIDERATION' | 'REPORTER_INFO'
@@ -898,7 +898,7 @@ export interface ReportStatusHistory {
   report_id: number
   from_status?: ReportStatus
   to_status: ReportStatus
-  actor_id: number
+  actor_id?: number
   actor_name: string
   reason?: string
   created_at: string

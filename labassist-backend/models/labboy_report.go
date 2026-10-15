@@ -19,7 +19,7 @@ type LabBoyReport struct {
 	ApplicationID uint           `gorm:"not null;index" json:"application_id"`
 	StudentID     uint           `gorm:"not null;index:idx_lbr_student_status" json:"student_id"`
 	CourseID      uint           `gorm:"not null;index" json:"course_id"`
-	ReporterID    uint           `gorm:"not null;index" json:"reporter_id"`
+	ReporterID    uint           `gorm:"not null;index" json:"reporter_id,omitempty"`
 	IncidentDate  time.Time      `gorm:"type:date;not null;index" json:"incident_date"`
 	Category      ReportCategory `gorm:"type:enum('ABSENCE','LATE_NOTICE','DUTY_NEGLECT','UNPROFESSIONAL_CONDUCT','OTHER');not null;index" json:"category"`
 	Description   string         `gorm:"type:text;not null" json:"description"`
@@ -83,7 +83,7 @@ func (c ReportCategory) Valid() bool {
 type LabBoyReportEvidence struct {
 	ID           uint `gorm:"primaryKey" json:"id"`
 	ReportID     uint `gorm:"not null;index" json:"report_id"`
-	UploadedByID uint `gorm:"not null" json:"uploaded_by_id"`
+	UploadedByID uint `gorm:"not null" json:"uploaded_by_id,omitempty"`
 	// ResponseID links a student's file to the response it was sent with.
 	ResponseID  *uint     `gorm:"index" json:"response_id,omitempty"`
 	FileName    string    `gorm:"size:255;not null" json:"file_name"`
@@ -114,7 +114,7 @@ const (
 type LabBoyReportResponse struct {
 	ID        uint               `gorm:"primaryKey" json:"id"`
 	ReportID  uint               `gorm:"not null;index" json:"report_id"`
-	AuthorID  uint               `gorm:"not null" json:"author_id"`
+	AuthorID  uint               `gorm:"not null" json:"author_id,omitempty"`
 	Kind      ReportResponseKind `gorm:"type:enum('EXPLANATION','RECONSIDERATION','REPORTER_INFO');not null" json:"kind"`
 	Message   string             `gorm:"type:text;not null" json:"message"`
 	CreatedAt time.Time          `json:"created_at"`
@@ -157,7 +157,7 @@ type LabBoyReportStatusHistory struct {
 	ReportID   uint          `gorm:"not null;index" json:"report_id"`
 	FromStatus *ReportStatus `gorm:"size:30" json:"from_status,omitempty"`
 	ToStatus   ReportStatus  `gorm:"size:30;not null" json:"to_status"`
-	ActorID    uint          `gorm:"not null" json:"actor_id"`
+	ActorID    uint          `gorm:"not null" json:"actor_id,omitempty"`
 	Reason     string        `gorm:"type:text" json:"reason,omitempty"`
 	CreatedAt  time.Time     `json:"created_at"`
 
