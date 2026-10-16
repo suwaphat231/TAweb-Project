@@ -227,7 +227,7 @@ func CoursesTaughtBy(instructorID uint, fullName string, isAdmin bool) ([]models
 // CoreCourseCatalog returns every core_courses code, deduped (the same code
 // can appear once per program — see models.CoreCourse), code ascending. This
 // is the department's required-course reference list (seeded from
-// migrations/allcourse.sql), not the imported class-postings in the courses
+// seed/allcourse.sql), not the imported class-postings in the courses
 // table — it's what backs the "type a code, see suggestions" helper when an
 // admin adds a course by hand instead of importing it from Excel.
 func CoreCourseCatalog() ([]models.CoreCourse, error) {

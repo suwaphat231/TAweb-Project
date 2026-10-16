@@ -58,7 +58,7 @@ type TranscriptOCRResponse struct {
 
 // UploadTranscript godoc
 // @Summary      แนบไฟล์ใบเกรดเพื่อให้ระบบ OCR อ่านและบันทึกผล
-// @Description  ระบบจะอ่านเกรดเฉพาะรายวิชาในตาราง core_courses ของสาขานักศึกษา (ดู database/migrations/allcourse.sql)
+// @Description  ระบบจะอ่านเกรดเฉพาะรายวิชาในตาราง core_courses ของสาขานักศึกษา (ดู database/seed/allcourse.sql)
 // @Tags         student
 // @Accept       mpfd
 // @Produce      json

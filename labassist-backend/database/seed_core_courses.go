@@ -7,7 +7,7 @@ import (
 	"labassist/models"
 )
 
-//go:embed migrations/allcourse.sql
+//go:embed seed/allcourse.sql
 var coreCourseSeedSQL string
 
 // seedCoreCourses loads the course catalog the OCR feature matches against.

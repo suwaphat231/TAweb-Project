@@ -18,7 +18,7 @@ const (
 // CS department's 517121), hence the unique key is (program, code) rather
 // than code alone.
 //
-// Rows are seeded from database/migrations/allcourse.sql — see
+// Rows are seeded from database/seed/allcourse.sql — see
 // database/seed_core_courses.go.
 type CoreCourse struct {
 	ID      uint   `gorm:"primaryKey" json:"id"`

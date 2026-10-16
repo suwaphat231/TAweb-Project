@@ -245,7 +245,7 @@ TAweb-test/
 │   ├── Dockerfile
 │   ├── config/           — Environment config
 │   ├── database/
-│   │   └── migrations/   — 001_create_users.sql, allcourse.sql
+│   │   └── seed/         — allcourse.sql, classlist.sql, user.sql (embedded seed data)
 │   ├── handlers/         — HTTP handlers (auth, courses, applications, admin)
 │   ├── middleware/        — Auth JWT, CORS, activity logger
 │   ├── models/           — GORM models (User, Course, Application)

@@ -30,7 +30,7 @@ var gormLogger = logger.New(
 	},
 )
 
-//go:embed Docker/user.sql
+//go:embed seed/user.sql
 var userSeedSQL string
 
 // DB is the MySQL connection backing all persistent application data.
@@ -193,7 +193,7 @@ func Connect(cfg *config.Config) error {
 		if err := DB.Exec(userSeedSQL).Error; err != nil {
 			return fmt.Errorf("seed users from user.sql: %w", err)
 		}
-		log.Println("Seeded users table from database/user.sql")
+		log.Println("Seeded users table from database/seed/user.sql")
 	}
 
 	if err := seedMockApplicants(); err != nil {

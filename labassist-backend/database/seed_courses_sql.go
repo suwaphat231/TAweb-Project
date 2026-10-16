@@ -16,7 +16,7 @@ import (
 // with no seat limit.
 const unlimitedCapacity = 9999
 
-//go:embed data/classlist.sql
+//go:embed seed/classlist.sql
 var classlistSQL string
 
 // seedCoursesFromClasslist executes the embedded classlist SQL to create the
