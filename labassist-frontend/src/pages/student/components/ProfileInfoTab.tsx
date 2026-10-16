@@ -188,24 +188,33 @@ export function ProfileInfoTab() {
           </div>
           {profileLoading ? (
             <Skeleton lines={4} height={16} />
+          ) : !isEditing ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <InfoRow label="ชื่อ-นามสกุล" value={p?.full_name} />
+              <InfoRow label="รหัสนักศึกษา" value={p?.student_id} />
+              <InfoRow label="ภาควิชา" value={p?.faculty} />
+              <InfoRow label="อีเมล (ใช้สำหรับเข้าสู่ระบบ)" value={p?.email} />
+              <InfoRow label="Username" value={p?.username} />
+              <InfoRow label="รหัสผ่าน" value={p?.has_password ? '••••••••' : 'ยังไม่ได้ตั้งรหัสผ่าน'} />
+            </div>
           ) : (
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <Input
-                readOnly={!isEditing || updateMut.isPending}
+                readOnly={updateMut.isPending}
                 label="ชื่อ-นามสกุล *"
                 value={form.full_name}
                 onChange={(e) => setDraft((f) => ({ ...f, full_name: e.target.value }))}
                 required
               />
               <Input
-                readOnly={!isEditing || updateMut.isPending}
+                readOnly={updateMut.isPending}
                 label="รหัสนักศึกษา"
                 value={form.student_id}
                 onChange={(e) => setDraft((f) => ({ ...f, student_id: e.target.value }))}
                 placeholder="กรอกรหัสนักศึกษาของคุณ"
               />
               {/* <Select
-                disabled={!isEditing || updateMut.isPending}
+                disabled={updateMut.isPending}
                 label="ชั้นปี"
                 value={form.year}
                 onChange={(e) => setDraft((f) => ({ ...f, year: e.target.value }))}
@@ -219,7 +228,7 @@ export function ProfileInfoTab() {
               />
               */}
               <Select
-                disabled={!isEditing || updateMut.isPending}
+                disabled={updateMut.isPending}
                 label="ภาควิชา"
                 value={form.faculty}
                 onChange={(e) => setDraft((f) => ({ ...f, faculty: e.target.value }))}
@@ -230,13 +239,13 @@ export function ProfileInfoTab() {
                 ]}
               />
               <Input
-                readOnly={!isEditing || updateMut.isPending}
+                readOnly={updateMut.isPending}
                 label="อีเมล (ใช้สำหรับเข้าสู่ระบบ)"
                 value={p?.email ?? ''}
                 disabled
               />
               <Input
-                readOnly={!isEditing || updateMut.isPending}
+                readOnly={updateMut.isPending}
                 label="Username"
                 autoComplete="username"
                 value={form.username}
@@ -250,7 +259,7 @@ export function ProfileInfoTab() {
                   ) : (
                     <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>ยังไม่ได้ตั้งรหัสผ่าน</span>
                   )}
-                  <Button type="button" variant="outline" size="sm" disabled={!isEditing} onClick={() => setPasswordOpen(true)}>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setPasswordOpen(true)}>
                     {p?.has_password ? 'เปลี่ยนรหัสผ่าน' : 'สร้างรหัสผ่าน'}
                   </Button>
                 </div>
@@ -279,6 +288,17 @@ export function ProfileInfoTab() {
         hasPassword={!!p?.has_password}
         onSaved={() => qc.invalidateQueries({ queryKey: ['student-profile'] })}
       />
+    </div>
+  )
+}
+
+function InfoRow({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-500)' }}>{label}</span>
+      <span style={{ fontSize: 14, color: value ? 'var(--ink-900)' : 'var(--ink-400)', wordBreak: 'break-all' }}>
+        {value || '—'}
+      </span>
     </div>
   )
 }
