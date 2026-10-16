@@ -64,7 +64,11 @@ func (h *Handler) GenerateOccurrences(c *gin.Context) {
 	}
 
 	// Collect calendar dates that cancel work in the date range.
-	calDates := database.ListCalendarDates(uint(id), sc.Semester, sc.AcademicYear, &startDate, &endDate)
+	calDates, err := database.ListCalendarDates(uint(id), sc.Semester, sc.AcademicYear, &startDate, &endDate)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	cancelledDates := make(map[string]uint)
 	for _, cd := range calDates {
 		if cd.AffectsWork != nil && *cd.AffectsWork {
@@ -106,7 +110,11 @@ func (h *Handler) ListOccurrences(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	occurrences := database.WorkOccurrencesForCase(uint(id))
+	occurrences, err := database.WorkOccurrencesForCase(uint(id))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, occurrences)
 }
 

@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { staffApi, applicationsAPI, coursesAPI } from '../../services/api'
-import { buildCourseOffering, buildWorkflowItems } from './staffCourseUtils'
+import { buildCourseOffering } from './staffCourseUtils'
 import { DocumentWorkflow } from './components/DocumentWorkflow'
 import { SelectedStudentsPanel } from './components/SelectedStudentsPanel'
 import type { CalendarDate, CalendarDateType } from '../../types'
+import { formatSchedule } from '../../utils/schedule'
 type Tab = 'documents' | 'info' | 'students' | 'history' | 'holidays'
 
 const DATE_TYPE_LABELS: Record<CalendarDateType, string> = {
@@ -72,11 +73,6 @@ export default function StaffCourseDetail() {
     [allDocs, review],
   )
 
-  const workflowItems = useMemo(
-    () => review ? buildWorkflowItems(courseDocs, review.status === 'verified') : [],
-    [courseDocs, review],
-  )
-
   const courseRef = review ? `${review.course_code} ตอน ${review.section}` : ''
 
   // Load course details for schedule/credits
@@ -118,6 +114,7 @@ export default function StaffCourseDetail() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['staff-reviews'] })
       qc.invalidateQueries({ queryKey: ['staff-documents'] })
+      qc.invalidateQueries({ queryKey: ['document-workflow'] })
     },
   })
 
@@ -203,7 +200,7 @@ export default function StaffCourseDetail() {
               <span>ภาคเรียน {offering.semester} / {offering.academicYear}</span>
               {courseDetail?.credits && <span>หน่วยกิต {courseDetail.credits}</span>}
               {(courseDetail?.schedule ?? offering.schedule) && (
-                <span>{courseDetail?.schedule ?? offering.schedule}</span>
+                <span>{formatSchedule(courseDetail?.schedule ?? offering.schedule, { separator: ' / ' })}</span>
               )}
             </div>
           </div>
@@ -280,7 +277,6 @@ export default function StaffCourseDetail() {
                 ขั้นตอนการดำเนินงาน
               </div>
               <DocumentWorkflow
-                items={workflowItems}
                 courseId={offering.courseId}
                 courseRef={courseRef}
                 onDocumentCreated={() => setDocRefreshKey((k) => k + 1)}
@@ -321,8 +317,8 @@ export default function StaffCourseDetail() {
                   <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-400)', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 }}>
                     ตารางเรียน
                   </div>
-                  <div style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.6 }}>
-                    {courseDetail?.schedule ?? offering.schedule}
+                  <div style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.6, whiteSpace: 'pre-line' }}>
+                    {formatSchedule(courseDetail?.schedule ?? offering.schedule)}
                   </div>
                 </div>
               )}
@@ -366,7 +362,7 @@ export default function StaffCourseDetail() {
               <InfoRow label="หน่วยกิต" value={courseDetail?.credits ?? '—'} />
               <InfoRow label="ภาคเรียน" value={`${offering.semester}`} />
               <InfoRow label="ปีการศึกษา" value={`${offering.academicYear}`} />
-              <InfoRow label="ตารางเรียน" value={courseDetail?.schedule ?? '—'} />
+              <InfoRow label="ตารางเรียน" value={formatSchedule(courseDetail?.schedule, { separator: ' / ' }) || '—'} />
               <InfoRow label="ห้องเรียน" value={offering.room ?? '—'} />
               <InfoRow label="สถานะแบบฟอร์ม" value={review.status === 'verified' ? 'ผ่านการตรวจสอบ' : review.status === 'returned' ? 'ส่งกลับแก้ไข' : 'รอตรวจสอบ'} />
               <InfoRow label="จำนวน Lab Boy (ที่ยืนยัน / ทั้งหมด)" value={`${offering.labboyAccepted} / ${offering.labboySlots} คน`} />

@@ -9,15 +9,14 @@ import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { ErrorState } from '../../components/ui/ErrorState'
 import { Avatar } from '../../components/ui/Avatar'
-import { getInitials } from '../../utils/initials'
 import { CourseCard } from '../../components/course/CourseCard'
 import { useApplyLabboy } from '../../hooks/useApplyLabboy'
-import { groupCourseSections, getAppliedSection } from '../../utils/courseGrouping'
+import { groupCourseSections, getAppliedSections } from '../../utils/courseGrouping'
 import { cleanCourseTitle } from '../../utils/courseTitle'
 
 export default function StudentHome() {
   const { user } = useAuth()
-  const { openApply, modal } = useApplyLabboy()
+  const { openApply, modal, scheduleConfirmed } = useApplyLabboy()
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['student-dashboard'],
     queryFn: studentApi.dashboard,
@@ -41,8 +40,8 @@ export default function StudentHome() {
         gap: 20,
         color: '#fff',
       }}>
-        <Avatar initials={getInitials(user?.full_name ?? '?')} color="blue" size={64}
-          style={{ background: 'rgba(255,255,255,0.2)', border: '2px solid rgba(255,255,255,0.35)', flexShrink: 0 }} />
+        <Avatar size={64}
+          style={{ background: 'rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.85)', border: '2px solid rgba(255,255,255,0.35)', flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 22, fontWeight: 700 }}>สวัสดี, {user?.full_name}</div>
           <div style={{ fontSize: 14, opacity: 0.8, marginTop: 4 }}>
@@ -50,6 +49,23 @@ export default function StudentHome() {
           </div>
         </div>
       </div>
+
+      {scheduleConfirmed === false && (
+        <div style={{
+          display: 'flex', alignItems: 'flex-start', gap: 10, margin: '16px 0',
+          padding: '12px 16px', borderRadius: 8,
+          background: 'var(--amber-bg)', color: 'var(--amber)', fontSize: 13,
+        }}>
+          <span aria-hidden="true" style={{ fontSize: 16, lineHeight: 1 }}>!</span>
+          <div>
+            <div style={{ fontWeight: 700, marginBottom: 3 }}>กรุณากรอกตารางเรียนก่อนสมัคร Lab Boy</div>
+            <div>กรอกและบันทึกข้อมูลตารางเรียนในหน้าโปรไฟล์ก่อนจึงจะสมัครรายวิชาได้</div>
+            <Link to="/student/profile" style={{ display: 'inline-block', marginTop: 6, color: 'var(--primary)', fontWeight: 700 }}>
+              ไปกรอกตารางเรียน
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Stat cards */}
       {isLoading ? (
@@ -86,8 +102,9 @@ export default function StudentHome() {
                 <CourseCard
                   key={group.key}
                   group={group}
-                  appliedSection={getAppliedSection(group, myApps)}
+                  appliedSections={getAppliedSections(group, myApps)}
                   onApply={openApply}
+                  scheduleRequired={scheduleConfirmed === false}
                 />
               ))}
             </div>

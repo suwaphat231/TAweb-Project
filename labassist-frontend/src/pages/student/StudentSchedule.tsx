@@ -6,6 +6,7 @@ import { ErrorState } from '../../components/ui/ErrorState'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { cleanCourseTitle } from '../../utils/courseTitle'
 import type { WorkSession, LabBoyAssignment } from '../../types'
+import { formatSchedule } from '../../utils/schedule'
 
 // ── Timetable constants ───────────────────────────────────────────────────────
 
@@ -87,12 +88,7 @@ function parseScheduleLines(
 
 // Summarise schedule string to human-readable Thai day+time for AssignmentCard.
 function formatScheduleDisplay(schedule: string): string {
-  if (!schedule?.trim()) return 'ไม่ระบุเวลา'
-  const slots = parseScheduleLines(schedule, '', '', 0)
-  if (slots.length > 0) {
-    return slots.map(s => `${THAI_DAYS_SHORT[s.dayIndex]} ${s.timeStart}–${s.timeEnd}`).join('  /  ')
-  }
-  return schedule.split('\n')[0]
+  return formatSchedule(schedule, { separator: '  /  ' }) || 'ไม่ระบุเวลา'
 }
 
 const SESSION_PALETTE = [

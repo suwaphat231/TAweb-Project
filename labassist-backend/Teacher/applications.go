@@ -1,6 +1,7 @@
 package teacher
 
 import (
+	"errors"
 	"labassist/database"
 	"labassist/models"
 	"net/http"
@@ -177,6 +178,69 @@ func (h *Handler) CancelAcceptance(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, txRes.Updated)
+}
+
+// ResolveWithdrawRequest is the request body for deciding a Lab Boy's
+// withdrawal request.
+type ResolveWithdrawRequest struct {
+	Approve *bool `json:"approve" binding:"required" example:"true"`
+}
+
+// ResolveWithdraw godoc
+// @Summary      อนุมัติ/ไม่อนุมัติคำขอถอนของ Lab Boy ที่ผ่านการคัดเลือกแล้ว
+// @Description  อนุมัติ: ใบสมัครเปลี่ยนเป็นถอนแล้วและคืนที่นั่ง Lab Boy — ไม่อนุมัติ: ยกเลิกคำขอ นักศึกษายังเป็น Lab Boy ต่อ
+// @Tags         instructor
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path  int                     true  "Application ID"
+// @Param        body  body  ResolveWithdrawRequest  true  "ผลการพิจารณา"
+// @Success      200   {object}  models.Application
+// @Failure      400   {object}  handlers.ErrorResponse
+// @Failure      403   {object}  handlers.ErrorResponse
+// @Failure      404   {object}  handlers.ErrorResponse
+// @Router       /instructor/applications/{id}/withdraw-request [put]
+func (h *Handler) ResolveWithdraw(c *gin.Context) {
+	reviewerID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
+	id, _ := strconv.Atoi(c.Param("id"))
+
+	var body ResolveWithdrawRequest
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	app, ok := database.ApplicationByID(uint(id))
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+		return
+	}
+	course, ok := database.CourseByID(app.CourseID)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "course not found"})
+		return
+	}
+	if role.(string) == "instructor" && !ownsCourse(c, course) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+
+	updated, err := database.ResolveWithdrawRequest(uint(id), *body.Approve, reviewerID.(uint))
+	if err != nil {
+		switch {
+		case errors.Is(err, database.ErrNoWithdrawRequest):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ใบสมัครนี้ไม่มีคำขอถอนที่รอพิจารณา"})
+		case errors.Is(err, database.ErrPostingArchived):
+			c.JSON(http.StatusConflict, gin.H{"error": "รอบรับสมัครนี้ถูกเก็บเป็นประวัติแล้ว"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot save application"})
+		}
+		return
+	}
+
+	database.CreateNotifications([]models.Notification{withdrawDecisionNotification(updated, course, *body.Approve)})
+	c.JSON(http.StatusOK, updated)
 }
 
 // GradeProof godoc

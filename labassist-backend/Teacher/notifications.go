@@ -36,6 +36,21 @@ func acceptanceRevokedNotification(app models.Application, course models.Course)
 	}
 }
 
+// withdrawDecisionNotification tells an accepted Lab Boy whether the
+// instructor approved their withdrawal request.
+func withdrawDecisionNotification(app models.Application, course models.Course, approved bool) models.Notification {
+	cid := course.ID
+	n := models.Notification{UserID: app.StudentID, CourseID: &cid}
+	if approved {
+		n.Title = fmt.Sprintf("อนุมัติคำขอถอน Lab Boy — %s", course.Code)
+		n.Body = fmt.Sprintf("อาจารย์อนุมัติคำขอถอนจากการเป็น Lab Boy วิชา %s (%s) แล้ว", course.Title, course.Code)
+	} else {
+		n.Title = fmt.Sprintf("ไม่อนุมัติคำขอถอน Lab Boy — %s", course.Code)
+		n.Body = fmt.Sprintf("อาจารย์ไม่อนุมัติคำขอถอนจากการเป็น Lab Boy วิชา %s (%s) คุณยังเป็น Lab Boy ของวิชานี้อยู่", course.Title, course.Code)
+	}
+	return n
+}
+
 // NotifyCourse godoc
 // @Summary      ส่งแจ้งเตือนนักศึกษาที่ผ่านการคัดเลือก
 // @Tags         instructor
@@ -59,7 +74,11 @@ func (h *Handler) NotifyCourse(c *gin.Context) {
 		return
 	}
 
-	accepted := database.AcceptedStudentsForCourse(uint(courseID))
+	accepted, err := database.AcceptedStudentsForCourse(uint(courseID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	if len(accepted) == 0 {
 		c.JSON(http.StatusOK, gin.H{"sent": 0, "message": "ไม่มีนักศึกษาที่ผ่านการคัดเลือก"})
 		return
@@ -83,7 +102,11 @@ func (h *Handler) NotifyCourse(c *gin.Context) {
 // @Router       /instructor/notifications [get]
 func (h *Handler) MyNotifications(c *gin.Context) {
 	userID, _ := c.Get("user_id")
-	notifs := database.UserNotifications(userID.(uint))
+	notifs, err := database.UserNotifications(userID.(uint))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, notifs)
 }
 
@@ -98,7 +121,10 @@ func (h *Handler) MyNotifications(c *gin.Context) {
 func (h *Handler) MarkRead(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	id, _ := strconv.Atoi(c.Param("id"))
-	database.MarkNotifRead(uint(id), userID.(uint))
+	if err := database.MarkNotifRead(uint(id), userID.(uint)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -111,6 +137,9 @@ func (h *Handler) MarkRead(c *gin.Context) {
 // @Router       /instructor/notifications/read-all [put]
 func (h *Handler) MarkAllRead(c *gin.Context) {
 	userID, _ := c.Get("user_id")
-	database.MarkAllNotifsRead(userID.(uint))
+	if err := database.MarkAllNotifsRead(userID.(uint)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

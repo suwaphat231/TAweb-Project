@@ -19,6 +19,7 @@ import (
 var templateFS embed.FS
 
 var trPattern = regexp.MustCompile(`(?s)<w:tr\b.*?</w:tr>`)
+var pPattern = regexp.MustCompile(`(?s)<w:p\b[^>]*>.*?</w:p>`)
 
 // RowGroup expands a single template <w:tr> (identified by Anchor, a token
 // that appears exactly once inside it) into one row per entry in Rows, each
@@ -32,7 +33,10 @@ type RowGroup struct {
 type RenderInput struct {
 	TemplateFile string
 	RowGroups    []RowGroup
-	Scalars      map[string]string
+	// ParagraphGroups work like RowGroups for a single <w:p> (a list of
+	// lines outside any table, e.g. the memo's numbered student names).
+	ParagraphGroups []RowGroup
+	Scalars         map[string]string
 }
 
 // Render loads the named embedded template, expands any row groups, applies
@@ -79,6 +83,13 @@ func Render(in RenderInput) ([]byte, error) {
 	for _, group := range in.RowGroups {
 		var err error
 		docXML, err = expandRows(docXML, group.Anchor, group.Rows)
+		if err != nil {
+			return nil, fmt.Errorf("docxgen: %s: %w", in.TemplateFile, err)
+		}
+	}
+	for _, group := range in.ParagraphGroups {
+		var err error
+		docXML, err = expandParagraphs(docXML, group.Anchor, group.Rows)
 		if err != nil {
 			return nil, fmt.Errorf("docxgen: %s: %w", in.TemplateFile, err)
 		}
@@ -195,6 +206,31 @@ func expandRows(docXML, anchor string, rows []map[string]string) (string, error)
 		b.WriteString(rowXML)
 	}
 	return docXML[:rowStart] + b.String() + docXML[rowEnd:], nil
+}
+
+// expandParagraphs is expandRows for a single paragraph: the <w:p> holding
+// anchor is replaced by one clone per entry in rows.
+func expandParagraphs(docXML, anchor string, rows []map[string]string) (string, error) {
+	start, end := -1, -1
+	for _, m := range pPattern.FindAllStringIndex(docXML, -1) {
+		if strings.Contains(docXML[m[0]:m[1]], anchor) {
+			start, end = m[0], m[1]
+			break
+		}
+	}
+	if start < 0 {
+		return "", fmt.Errorf("paragraph anchor %q not found", anchor)
+	}
+	tmpl := docXML[start:end]
+	var b strings.Builder
+	for _, row := range rows {
+		p := tmpl
+		for token, val := range row {
+			p = strings.ReplaceAll(p, token, escapeXML(val))
+		}
+		b.WriteString(p)
+	}
+	return docXML[:start] + b.String() + docXML[end:], nil
 }
 
 func escapeXML(s string) string {

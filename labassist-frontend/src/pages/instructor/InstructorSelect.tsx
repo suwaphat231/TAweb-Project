@@ -8,12 +8,13 @@ import { Select } from '../../components/ui/Select'
 import { FilterChips } from '../../components/ui/FilterChips'
 import { Modal } from '../../components/ui/Modal'
 import { Avatar } from '../../components/ui/Avatar'
-import { getInitials } from '../../utils/initials'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { useToast } from '../../hooks/useToast'
+import { ConfirmedHistory } from '../../components/reports/ConfirmedHistory'
 import { displayCourseTitle } from '../../utils/courseDisplay'
 import { groupCourseSections, groupSectionsByTime } from '../../utils/courseGrouping'
 import type { Application } from '../../types'
+import { formatSchedule } from '../../utils/schedule'
 
 const statusOptions = [
   { value: '', label: 'ทุกสถานะ' },
@@ -138,6 +139,19 @@ export default function InstructorSelect() {
       setProfileTarget(null)
       setNoteText('')
       showToast(vars.status === 'accepted' ? 'รับผู้สมัครและแจ้งเตือนนักศึกษาเรียบร้อยแล้ว' : 'ปฏิเสธผู้สมัครเรียบร้อยแล้ว', 'success')
+    },
+    onError: (err: { response?: { data?: { error?: string } } }) =>
+      showToast(err?.response?.data?.error ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'),
+  })
+
+  const resolveWithdrawMut = useMutation({
+    mutationFn: ({ id, approve }: { id: number; approve: boolean }) =>
+      instructorApi.resolveWithdraw(id, approve),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['applicants', courseId] })
+      qc.invalidateQueries({ queryKey: ['instructor-courses'] })
+      setProfileTarget(null)
+      showToast(vars.approve ? 'อนุมัติการถอนเรียบร้อยแล้ว' : 'ไม่อนุมัติการถอน นักศึกษายังเป็น Lab Boy ต่อ', 'success')
     },
     onError: (err: { response?: { data?: { error?: string } } }) =>
       showToast(err?.response?.data?.error ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'),
@@ -296,7 +310,7 @@ export default function InstructorSelect() {
                     }}
                   >
                     <div style={{ fontSize: 13, fontWeight: 600, color: active ? 'var(--primary)' : 'var(--ink-900)', whiteSpace: 'pre-line' }}>
-                      {s.schedule || `Sec ${s.section}`}
+                      {formatSchedule(s.schedule) || `Sec ${s.section}`}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 2 }}>
                       {s.schedule && s.section ? `Sec ${s.section} · ` : ''}{s.applicant_count ?? 0} ผู้สมัคร · รับ {s.labboy_accepted}/{s.labboy_slots}
@@ -388,7 +402,7 @@ export default function InstructorSelect() {
                   <div>
                     <div style={{ fontSize: 11, color: 'var(--ink-400)', fontWeight: 600, marginBottom: 2 }}>กำลังดู</div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>
-                      Sec {selectedCourse.section}{selectedCourse.schedule ? ` · ${selectedCourse.schedule}` : ''}
+                      Sec {selectedCourse.section}{selectedCourse.schedule ? ` · ${formatSchedule(selectedCourse.schedule, { separator: ' / ' })}` : ''}
                     </div>
                   </div>
                 </>
@@ -505,10 +519,15 @@ export default function InstructorSelect() {
                       {/* Student */}
                       <td style={{ padding: '14px 16px', cursor: 'pointer' }} onClick={() => openProfile(row)}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <Avatar initials={getInitials(row.student_name)} color="blue" size={34} />
+                          <Avatar size={34} />
                           <div>
                             <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--ink-900)' }}>{row.student_name}</div>
                             <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{row.student_code || '—'}</div>
+                            {!!row.confirmed_record_count && (
+                              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--primary-700)', marginTop: 2 }}>
+                                มีประวัติที่ยืนยันแล้ว {row.confirmed_record_count} รายการ
+                              </div>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -539,6 +558,11 @@ export default function InstructorSelect() {
                       {/* Status */}
                       <td style={{ padding: '14px 16px' }}>
                         <StatusBadge value={row.status} />
+                        {row.withdraw_requested && (
+                          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)', marginTop: 4 }}>
+                            ขอถอน · รออนุมัติ
+                          </div>
+                        )}
                       </td>
 
                       {/* ── Actions ── */}
@@ -556,8 +580,28 @@ export default function InstructorSelect() {
                             />
                           )}
 
+                          {/* Withdraw request — approve/deny */}
+                          {row.withdraw_requested && (
+                            <>
+                              <ActionBtn
+                                color="red"
+                                onClick={(e) => { e.stopPropagation(); resolveWithdrawMut.mutate({ id: row.id, approve: true }) }}
+                                disabled={resolveWithdrawMut.isPending}
+                                icon={<CheckIcon size={11} />}
+                                label="อนุมัติถอน"
+                              />
+                              <ActionBtn
+                                color="green"
+                                onClick={(e) => { e.stopPropagation(); resolveWithdrawMut.mutate({ id: row.id, approve: false }) }}
+                                disabled={resolveWithdrawMut.isPending}
+                                icon={<XIcon size={11} />}
+                                label="ไม่อนุมัติ"
+                              />
+                            </>
+                          )}
+
                           {/* Reject — red soft pill */}
-                          {(row.status === 'pending' || row.status === 'accepted') && (
+                          {(row.status === 'pending' || row.status === 'accepted') && !row.withdraw_requested && (
                             <ActionBtn
                               color="red"
                               onClick={(e) => { e.stopPropagation(); reviewMut.mutate({ id: row.id, status: 'rejected' }) }}
@@ -780,9 +824,29 @@ export default function InstructorSelect() {
             {profileTarget.status === 'rejected' && <StatusBanner color="#FEF2F2" border="#FECACA" icon="❌" text="ไม่ผ่านการคัดเลือก" textColor="#DC2626" />}
             {profileTarget.status === 'pending'  && <StatusBanner color="#FFFBEB" border="#FDE68A" icon="⏳" text="รอการพิจารณา" textColor="#B45309" />}
             {profileTarget.status === 'withdrawn'&& <StatusBanner color="var(--bg)" border="var(--line)" icon="↩️" text="ถอนใบสมัครแล้ว" textColor="var(--ink-500)" />}
+            {profileTarget.withdraw_requested && (
+              <div style={{ background: 'var(--amber-bg)', borderRadius: 10, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--amber)' }}>
+                  นักศึกษาขอถอนจากการเป็น Lab Boy — รอการอนุมัติ
+                  {profileTarget.withdraw_requested_at && (
+                    <span style={{ fontWeight: 400 }}>
+                      {' '}· {new Date(profileTarget.withdraw_requested_at).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  )}
+                </div>
+                {profileTarget.withdrawal_reason && (
+                  <div style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.6 }}>
+                    เหตุผล: {profileTarget.withdrawal_reason}
+                  </div>
+                )}
+              </div>
+            )}
+            {profileTarget.status === 'withdrawn' && profileTarget.withdrawal_reason && (
+              <div style={{ fontSize: 13, color: 'var(--ink-700)' }}>เหตุผลที่ถอน: {profileTarget.withdrawal_reason}</div>
+            )}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-              <Avatar initials={getInitials(profileTarget.student_name)} color="blue" size={56} />
+              <Avatar size={56} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink-900)' }}>{profileTarget.student_name}</div>
                 <div style={{ fontSize: 13, color: 'var(--ink-500)', marginTop: 2 }}>{profileTarget.student_code || '—'}</div>
@@ -796,10 +860,12 @@ export default function InstructorSelect() {
               <ProfileInfo label="เกรดที่เคยได้ในวิชานี้" value={profileTarget.grade || '—'} />
               <ProfileInfo
                 label="Sec / เวลาเรียนที่สมัคร"
-                value={profileTarget.course_section ? `Sec ${profileTarget.course_section}${profileTarget.course_schedule ? ` · ${profileTarget.course_schedule}` : ''}` : '—'}
+                value={profileTarget.course_section ? `Sec ${profileTarget.course_section}${profileTarget.course_schedule ? ` · ${formatSchedule(profileTarget.course_schedule, { separator: ' / ' })}` : ''}` : '—'}
               />
               <ProfileInfo label="วันที่สมัคร" value={new Date(profileTarget.applied_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })} />
             </div>
+
+            <ConfirmedHistory applicationId={profileTarget.id} count={profileTarget.confirmed_record_count ?? 0} />
 
             {/* Grade proof */}
             {selectedCourse?.require_grade_proof && (
@@ -867,7 +933,27 @@ export default function InstructorSelect() {
             )}
 
             {/* Modal action buttons */}
-            {profileTarget.status !== 'withdrawn' && (
+            {profileTarget.withdraw_requested && (
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 4, borderTop: '1px solid var(--line-soft)' }}>
+                <Button
+                  variant="outline"
+                  loading={resolveWithdrawMut.isPending && resolveWithdrawMut.variables?.approve === false}
+                  disabled={resolveWithdrawMut.isPending}
+                  onClick={() => resolveWithdrawMut.mutate({ id: profileTarget.id, approve: false })}
+                >
+                  ไม่อนุมัติการถอน
+                </Button>
+                <Button
+                  variant="danger"
+                  loading={resolveWithdrawMut.isPending && resolveWithdrawMut.variables?.approve === true}
+                  disabled={resolveWithdrawMut.isPending}
+                  onClick={() => resolveWithdrawMut.mutate({ id: profileTarget.id, approve: true })}
+                >
+                  อนุมัติการถอน
+                </Button>
+              </div>
+            )}
+            {profileTarget.status !== 'withdrawn' && !profileTarget.withdraw_requested && (
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 4, borderTop: '1px solid var(--line-soft)' }}>
                 {(profileTarget.status === 'pending' || profileTarget.status === 'accepted') && (
                   <Button

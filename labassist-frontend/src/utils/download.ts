@@ -8,5 +8,6 @@ export function triggerBrowserDownload(blob: Blob, filename: string) {
   document.body.appendChild(a)
   a.click()
   a.remove()
-  URL.revokeObjectURL(url)
+  // Let the browser start consuming the blob before releasing its object URL.
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }

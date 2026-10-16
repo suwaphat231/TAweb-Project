@@ -43,6 +43,12 @@ type Application struct {
 	ReviewedByID *uint      `json:"reviewed_by_id,omitempty"`
 	ReviewedBy   *User      `gorm:"foreignKey:ReviewedByID;references:ID" json:"-"`
 	Note         *string    `gorm:"type:text" json:"note,omitempty"`
+	WithdrawalReason *string  `gorm:"type:text" json:"withdrawal_reason,omitempty"`
+	// WithdrawRequested marks an accepted Lab Boy who asked to withdraw.
+	// The application stays accepted (keeping its slot) until the instructor
+	// approves the request, which turns it withdrawn; rejecting clears it.
+	WithdrawRequested   bool       `gorm:"not null;default:false" json:"withdraw_requested,omitempty"`
+	WithdrawRequestedAt *time.Time `json:"withdraw_requested_at,omitempty"`
 	// Cancelled marks a rejection that came from the instructor undoing an
 	// accept clicked by mistake. The instructor's list shows no status for
 	// it and can accept again; the student sees it as still pending (see
@@ -80,10 +86,11 @@ type Application struct {
 	CourseSchedule     string  `gorm:"-" json:"course_schedule,omitempty"`
 	ReviewedByName     string  `gorm:"-" json:"reviewed_by_name,omitempty"`
 
-	// Blacklists holds the student's active blacklist entries. Only the
-	// instructor applicants endpoint fills it in — student-facing responses
-	// must never carry it.
-	Blacklists []Blacklist `gorm:"-" json:"blacklists,omitempty"`
+	// ConfirmedRecordCount is how many of the student's Lab Boy performance
+	// reports have been CONFIRMED by a reviewer. Only the instructor
+	// applicants endpoint fills it in — student-facing responses must never
+	// carry it. Reports still under review are never counted.
+	ConfirmedRecordCount int `gorm:"-" json:"confirmed_record_count,omitempty"`
 }
 
 func (Application) TableName() string { return "applications" }
@@ -121,6 +128,7 @@ type ApplicationHistory struct {
 	ReviewedAt    *time.Time  `json:"reviewed_at,omitempty"`
 	ReviewedByID  *uint       `json:"reviewed_by_id,omitempty"`
 	Note          *string     `gorm:"type:text" json:"note,omitempty"`
+	WithdrawalReason *string  `gorm:"type:text" json:"withdrawal_reason,omitempty"`
 	OcrWarning    *string     `gorm:"type:text" json:"ocr_warning,omitempty"`
 	// GradeProofData is included so the instructor can still view proof
 	// from a rejected round when reconsidering.

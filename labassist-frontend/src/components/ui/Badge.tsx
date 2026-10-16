@@ -15,9 +15,11 @@ interface BadgeProps {
   variant: BadgeVariant
   children: ReactNode
   showDot?: boolean
+  /** Let long text wrap onto several lines instead of overflowing. */
+  wrap?: boolean
 }
 
-export function Badge({ variant, children, showDot }: BadgeProps) {
+export function Badge({ variant, children, showDot, wrap }: BadgeProps) {
   const { bg, color, border } = variantMap[variant]
   return (
     <span style={{
@@ -27,7 +29,7 @@ export function Badge({ variant, children, showDot }: BadgeProps) {
       borderRadius: 'var(--radius-pill)',
       border: `1px solid ${border}`,
       display: 'inline-flex', alignItems: 'center', gap: 5,
-      lineHeight: '20px', whiteSpace: 'nowrap',
+      lineHeight: '20px', whiteSpace: wrap ? 'normal' : 'nowrap',
     }}>
       {showDot && <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />}
       {children}

@@ -2,7 +2,11 @@ package models
 
 import "time"
 
-// Blacklist is an instructor's warning about a student who worked as their
+// Blacklist is the legacy, pre-review version of LabBoyReport. It is no
+// longer read or written; the model is kept only so AutoMigrate leaves the
+// existing blacklists table (and any history in it) in place.
+//
+// Blacklist was an instructor's warning about a student who worked as their
 // Lab Boy (no-show, abandoned work, ...). It never blocks the student from
 // applying — every instructor just sees the flag on that student's future
 // applications and on the shared blacklist page. Students never see it.

@@ -68,8 +68,9 @@ export default function LoginPage() {
     try {
       await loginWithCredentials(username, password)
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } }).response?.data?.error
-      setError(msg || 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง')
+      const res = (err as { response?: { data?: { error?: string } } }).response
+      // No response means the API is down or unreachable, not a bad password.
+      setError(res?.data?.error || (res ? 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' : 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบว่า backend ทำงานอยู่'))
     } finally {
       setLoading(false)
     }

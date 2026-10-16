@@ -22,7 +22,11 @@ func NewCourseHandler() *CourseHandler { return &CourseHandler{} }
 // @Failure      500     {object}  ErrorResponse
 // @Router       /courses [get]
 func (h *CourseHandler) List(c *gin.Context) {
-	courses := database.ListCourses(c.Query("status"), c.Query("q"), nil)
+	courses, err := database.ListCourses(c.Query("status"), c.Query("q"), nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, courses)
 }
 

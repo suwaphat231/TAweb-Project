@@ -6,17 +6,39 @@ import type {
   AdminStats, CourseStatus, Transcript, Notification,
   CreateUserPayload, UpdateUserPayload, ImportCoursesResponse, ImportCourseFields,
   FormReview, StaffDocument, CreateStaffDocumentPayload, TranscriptOCRResult, CoreCourse, WorkDaySlot,
-  WorkSession, ClassSchedule, ClassScheduleImageResult, TermSchedule, TermOption, ScheduleSlot, TermScheduleStatus,
+  WorkSession, TermSchedule, TermOption, ScheduleSlot, TermScheduleStatus,
   LabBoyAssignment, CourseRelation, StudentInfoUploadResult,
   StaffCaseResponse, ScheduleGroup, CalendarDate, WorkOccurrence, MonthlyPeriodResponse, StaffAuditLog,
   UpdateCasePayload, AddScheduleGroupPayload, UpdateScheduleGroupPayload, CreateCalendarDatePayload, GenerateOccurrencesPayload,
   ScheduleGroupMonth, AddGroupMonthPayload, MonthOccurrenceSummary,
   GroupMonthPlan, AddGroupMonthOccurrencePayload, PatchOccurrencePayload, HiringNoticePlanSnapshot,
+  LabBoyReport, ReportDetail, ReportPage, ReportListParams, ReportInput, ReportAction, ReportEvidence,
+  ReportResponse, ConfirmedRecord, DocumentWorkflowResponse, CreateWorkflowStepPayload, DocType,
 } from '../types'
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1'
+// Keep API calls on the same origin by default. This works both behind the
+// frontend nginx proxy and through Vite's /api proxy, and avoids pointing
+// browsers on other computers at their own localhost.
+const BASE_URL = import.meta.env.VITE_API_URL || '/api/v1'
 
 export const api = axios.create({ baseURL: BASE_URL, withCredentials: false })
+
+export async function getApiErrorMessage(error: unknown, fallback: string): Promise<string> {
+  const response = (error as { response?: { data?: unknown } })?.response
+  const data = response?.data
+  if (data instanceof Blob) {
+    try {
+      const parsed = JSON.parse(await data.text()) as { error?: unknown }
+      if (typeof parsed.error === 'string' && parsed.error) return parsed.error
+    } catch {
+      // Keep the caller's fallback for non-JSON error bodies.
+    }
+  } else if (data && typeof data === 'object' && 'error' in data) {
+    const message = (data as { error?: unknown }).error
+    if (typeof message === 'string' && message) return message
+  }
+  return fallback
+}
 
 api.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token
@@ -61,6 +83,14 @@ export const authApi = {
     api.post<{ token: string; user: User }>('/auth/dev-login', { username }).then((r) => r.data),
   me: () => api.get<{ user: User }>('/auth/me').then((r) => r.data.user),
   logout: () => api.post('/auth/logout'),
+  setPassword: (data: { new_password: string }) =>
+    api.post<{ message: string }>('/auth/password/set', data).then((r) => r.data),
+  changePassword: (data: { current_password: string; new_password: string }) =>
+    api.post<{ message: string }>('/auth/password/change', data).then((r) => r.data),
+  forgotPassword: () =>
+    api.post<{ email: string }>('/auth/password/forgot').then((r) => r.data),
+  resetPassword: (data: { code: string; new_password: string }) =>
+    api.post<{ message: string }>('/auth/password/reset', data).then((r) => r.data),
 }
 
 export const coursesAPI = {
@@ -77,13 +107,16 @@ export const coursesAPI = {
 export const applicationsAPI = {
   getMyApplications: () => api.get<Application[]>('/student/applications').then((r) => r.data),
   apply: (data: ApplyPayload) => api.post<Application>('/student/applications', data).then((r) => r.data),
-  withdraw: (id: number) => api.put<Application>(`/student/applications/${id}/withdraw`).then((r) => r.data),
+  withdraw: (id: number, reason: string) =>
+    api.put<Application>(`/student/applications/${id}/withdraw`, { reason }).then((r) => r.data),
   getCourseApplicants: (courseId: number) =>
     api.get<Application[]>(`/instructor/courses/${courseId}/applicants`).then((r) => r.data),
   review: (id: number, data: ReviewPayload) =>
     api.put<Application>(`/instructor/applications/${id}/review`, data).then((r) => r.data),
   bulkReview: (data: BulkReviewPayload) =>
     api.put<BulkReviewResult>('/instructor/applications/bulk-review', data).then((r) => r.data),
+  resolveWithdraw: (id: number, approve: boolean) =>
+    api.put<Application>(`/instructor/applications/${id}/withdraw-request`, { approve }).then((r) => r.data),
   uploadGradeProof: (applicationId: number, file: File) => {
     const formData = new FormData()
     formData.append('file', file)
@@ -198,18 +231,11 @@ export const studentApi = {
   gradeProof: applicationsAPI.gradeProof,
   workSchedule: () => api.get<WorkSession[]>('/student/work-schedule').then((r) => r.data),
   laboyAssignments: () => api.get<LabBoyAssignment[]>('/student/labboy-assignments').then((r) => r.data),
-  // Image evidence upload — no OCR, no slot extraction.
-  uploadScheduleImage: (file: File) => {
-    const formData = new FormData()
-    formData.append('file', file)
-    return api.post<ClassScheduleImageResult>('/student/profile/class-schedule', formData).then((r) => r.data)
-  },
-  getClassSchedule: () => api.get<ClassSchedule>('/student/profile/class-schedule').then((r) => r.data),
-  getClassScheduleImage: () =>
-    api.get('/student/profile/class-schedule/file', { responseType: 'blob' }).then((r) => r.data as Blob),
   // Per-term manual schedule
   getTermSchedule: (semester: string, academicYear: number) =>
     api.get<TermSchedule>('/student/profile/term-schedule', { params: { semester, academic_year: academicYear } }).then((r) => r.data),
+  termScheduleStatus: () =>
+    api.get<{ confirmed: boolean }>('/student/profile/term-schedule/status').then((r) => r.data.confirmed),
   saveTermSchedule: (data: { semester: string; academic_year: number; slots: ScheduleSlot[]; status: TermScheduleStatus }) =>
     api.put<TermSchedule>('/student/profile/term-schedule', data).then((r) => r.data),
   getAvailableTerms: () =>
@@ -257,6 +283,7 @@ export const instructorApi = {
   applicants: applicationsAPI.getCourseApplicants,
   review: applicationsAPI.review,
   bulkReview: applicationsAPI.bulkReview,
+  resolveWithdraw: applicationsAPI.resolveWithdraw,
   gradeProof: applicationsAPI.instructorGradeProof,
   notifyCourse: notificationApi.notifyCourse,
   confirmSchedule: (courseId: number) =>
@@ -268,7 +295,7 @@ export const instructorApi = {
   markNotificationRead: (id: number) => api.put(`/instructor/notifications/${id}/read`).then((r) => r.data),
   markAllNotificationsRead: () => api.put('/instructor/notifications/read-all').then((r) => r.data),
   profile: () => api.get<User>('/instructor/profile').then((r) => r.data),
-  updateProfile: (data: { full_name?: string; email?: string; faculty?: string }) =>
+  updateProfile: (data: { full_name?: string; email?: string; faculty?: string; username?: string }) =>
     api.put<User>('/instructor/profile', data).then((r) => r.data),
 }
 export const staffApi = {
@@ -289,8 +316,13 @@ export const staffApi = {
     api.get<StaffDocument[]>('/staff/documents', { params }).then((r) => r.data),
   createDocument: (data: CreateStaffDocumentPayload) =>
     api.post<StaffDocument>('/staff/documents', data).then((r) => r.data),
-  deleteDocument: (id: number) =>
-    api.delete(`/staff/documents/${id}`).then((r) => r.data),
+  // Cancels the document (kept for history, hidden from the list).
+  deleteDocument: (id: number, reason?: string) =>
+    api.delete(`/staff/documents/${id}`, { params: reason ? { reason } : undefined }).then((r) => r.data),
+  documentWorkflow: (courseId: number) =>
+    api.get<DocumentWorkflowResponse>(`/staff/courses/${courseId}/document-workflow`).then((r) => r.data),
+  createWorkflowStep: (courseId: number, type: DocType, data: CreateWorkflowStepPayload = {}) =>
+    api.post<StaffDocument>(`/staff/courses/${courseId}/document-workflow/${type}`, data).then((r) => r.data),
   updateDocumentStatus: (id: number, status: string) =>
     api.put<StaffDocument>(`/staff/documents/${id}/status`, { status }).then((r) => r.data),
   updateDocumentSchedule: (id: number, data: { work_schedule?: WorkDaySlot[]; sessions_per_month?: number }) =>
@@ -409,3 +441,41 @@ export const staffApi = {
     api.delete(`/staff/occurrences/${id}`),
 }
 export const adminApi = adminAPI
+
+// Lab Boy performance reports. Every call is re-authorized on the server
+// against the report itself; the UI only hides what the server would refuse.
+function cleanParams(p?: ReportListParams) {
+  if (!p) return undefined
+  return Object.fromEntries(Object.entries(p).filter(([, v]) => v !== '' && v !== undefined && v !== 0))
+}
+
+function filesForm(files: File[], fields: Record<string, string> = {}) {
+  const body = new FormData()
+  for (const [k, v] of Object.entries(fields)) body.append(k, v)
+  for (const f of files) body.append('files', f)
+  return body
+}
+
+export const reportsApi = {
+  mine: (params?: ReportListParams) =>
+    api.get<ReportPage>('/instructor/reports', { params: cleanParams(params) }).then((r) => r.data),
+  reviewQueue: (params?: ReportListParams) =>
+    api.get<ReportPage>('/staff/reports', { params: cleanParams(params) }).then((r) => r.data),
+  studentReports: (params?: ReportListParams) =>
+    api.get<ReportPage>('/student/reports', { params: cleanParams(params) }).then((r) => r.data),
+  create: (data: ReportInput) => api.post<LabBoyReport>('/instructor/reports', data).then((r) => r.data),
+  updateDraft: (id: number, data: ReportInput) =>
+    api.put<LabBoyReport>(`/instructor/reports/${id}`, data).then((r) => r.data),
+  uploadEvidence: (id: number, files: File[]) =>
+    api.post<ReportEvidence[]>(`/instructor/reports/${id}/evidence`, filesForm(files)).then((r) => r.data),
+  detail: (id: number) => api.get<ReportDetail>(`/reports/${id}`).then((r) => r.data),
+  act: (id: number, action: ReportAction, reason = '') =>
+    api.post<LabBoyReport>(`/reports/${id}/actions`, { action, reason }).then((r) => r.data),
+  respond: (id: number, message: string, files: File[], reconsideration = false) =>
+    api.post<ReportResponse>(`/reports/${id}/responses`,
+      filesForm(files, { message, reconsideration: String(reconsideration) })).then((r) => r.data),
+  evidenceFile: (id: number, evidenceId: number) =>
+    api.get(`/reports/${id}/evidence/${evidenceId}`, { responseType: 'blob' }).then((r) => r.data as Blob),
+  confirmedHistory: (applicationId: number) =>
+    api.get<ConfirmedRecord[]>(`/instructor/applications/${applicationId}/performance-records`).then((r) => r.data),
+}

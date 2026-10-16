@@ -177,7 +177,10 @@ func withLeadingPageBreak(block string) string {
 }
 
 func renderWorkReport(doc models.StaffDocument, course models.Course) ([]byte, error) {
-	occs, _ := planOccurrences(doc)
+	occs, _, err := planOccurrences(doc)
+	if err != nil {
+		return nil, err
+	}
 	sessions := approvalMemoSessions(occs)
 
 	// Legacy documents carry only day numbers for one month.

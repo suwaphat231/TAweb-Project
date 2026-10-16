@@ -30,7 +30,9 @@ func seedCoursesFromClasslist() error {
 	}
 
 	var count int64
-	DB.Model(&models.Course{}).Count(&count)
+	if err := DB.Model(&models.Course{}).Count(&count).Error; err != nil {
+		return fmt.Errorf("count courses: %w", err)
+	}
 	if count > 0 {
 		return nil
 	}
@@ -93,7 +95,21 @@ func seedCoursesFromClasslist() error {
 		}
 	}
 
-	users := ListUsers(string(models.RoleInstructor), "", 1000, 0)
+	users, err := ListUsers(string(models.RoleInstructor), "", 1000, 0)
+	if err != nil {
+		return fmt.Errorf("load instructors: %w", err)
+	}
+
+	// A section can list different meeting times on different rows (e.g.
+	// 517494 sec 4), which stay separate groups above. Slots must still be
+	// unique per section, so number them across all of the section's groups.
+	type sectionKey struct {
+		code     string
+		section  int
+		semester int
+		year     int
+	}
+	nextSlot := map[sectionKey]int{}
 
 	for _, k := range order {
 		r := merged[k]
@@ -123,7 +139,10 @@ func seedCoursesFromClasslist() error {
 		}
 
 		// One row per meeting time so each time is opened/applied to on its own.
-		for slot, line := range SplitScheduleDays(r.Schedule) {
+		sk := sectionKey{k.code, k.section, k.semester, k.year}
+		for _, line := range SplitScheduleDays(r.Schedule) {
+			slot := nextSlot[sk]
+			nextSlot[sk]++
 			course := CreateCourse(models.Course{
 				Code:           r.SubjectCode,
 				Title:          title,
@@ -155,7 +174,7 @@ func seedCoursesFromClasslist() error {
 // duplicate course referenced from any of them has real activity attached and
 // is never merged away.
 var courseRefTables = []string{
-	"applications", "application_history", "blacklists",
+	"applications", "application_history", "blacklists", "labboy_reports",
 	"form_reviews", "notifications", "staff_documents",
 }
 
@@ -246,7 +265,7 @@ func mergeDuplicateCourses() error {
 // referenced keeps its row so existing applications stay valid.
 func splitMultiTimeCourses() error {
 	var courses []models.Course
-	if err := DB.Where("slot = 0 AND schedule LIKE ?", "%\n%").Order("id ASC").Find(&courses).Error; err != nil {
+	if err := DB.Where("slot = 0 AND (schedule LIKE ? OR schedule LIKE ?)", "%\n%", "%,%").Order("id ASC").Find(&courses).Error; err != nil {
 		return fmt.Errorf("load courses: %w", err)
 	}
 
@@ -254,16 +273,12 @@ func splitMultiTimeCourses() error {
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		for _, c := range courses {
 			lines := SplitScheduleDays(c.Schedule)
-			if len(lines) < 2 || courseReferenced(tx, c.ID) {
+			if len(lines) < 2 {
 				continue
 			}
-			var recruiting int64
-			if err := tx.Model(&models.Posting{}).Where("course_id = ? AND status <> ?", c.ID, models.StatusDraft).Count(&recruiting).Error; err != nil {
-				return err
-			}
-			if recruiting > 0 {
-				continue
-			}
+
+			var sourcePosting models.Posting
+			hasSourcePosting := tx.Where("course_id = ? AND is_active = true", c.ID).First(&sourcePosting).Error == nil
 
 			var links []models.CourseInstructor
 			if err := tx.Where("course_id = ?", c.ID).Find(&links).Error; err != nil {
@@ -277,7 +292,6 @@ func splitMultiTimeCourses() error {
 				nc.ID = 0
 				nc.Slot = slot + 1
 				nc.Schedule = line
-				nc.Status = models.StatusDraft
 				if err := tx.Omit(clause.Associations).Create(&nc).Error; err != nil {
 					return err
 				}
@@ -288,7 +302,15 @@ func splitMultiTimeCourses() error {
 						return err
 					}
 				}
-				if err := syncPostingTx(tx, nc); err != nil {
+				if hasSourcePosting {
+					newPosting := sourcePosting
+					newPosting.ID = 0
+					newPosting.CourseID = nc.ID
+					newPosting.LabBoyAccepted = 0
+					if err := tx.Create(&newPosting).Error; err != nil {
+						return err
+					}
+				} else if err := syncPostingTx(tx, nc); err != nil {
 					return err
 				}
 			}

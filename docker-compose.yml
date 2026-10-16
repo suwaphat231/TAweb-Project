@@ -31,8 +31,11 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      # OCR is optional (profile "ocr"); the backend starts without it and only
+      # the document-upload OCR features are unavailable.
       ocr-service:
         condition: service_started
+        required: false
     environment:
       DB_HOST: mysql
       DB_PORT: 3306
@@ -46,8 +49,13 @@ services:
       CLIENT_URL: ${CLIENT_URL:-http://localhost:3000}
       PORT: 8080
       OCR_SERVICE_URL: http://ocr-service:8000
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
     ports:
-      - "9000:8080"
+      - "8080:8080"
 
   frontend:
     build:
@@ -65,6 +73,8 @@ services:
       - "3000:80"
 
   ocr-service:
+    # Not started by default. Run with: docker compose --profile ocr up -d
+    profiles: ["ocr"]
     build:
       context: ./labassist-ocr
     container_name: labassist-ocr

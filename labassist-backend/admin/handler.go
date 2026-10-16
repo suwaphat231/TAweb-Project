@@ -9,6 +9,7 @@ import (
 	"labassist/models"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,14 +19,16 @@ import (
 // instructors fill in their own email themselves (via Google sign-in, wired
 // up separately) rather than having an admin type it in for them.
 type CreateUserRequest struct {
-	FullName string          `json:"full_name" binding:"required" example:"John Doe"`
-	Role     models.UserRole `json:"role" binding:"required" example:"instructor"`
+	FullName   string          `json:"full_name" binding:"required" example:"สมชาย ใจดี"`
+	FullNameEn string          `json:"full_name_en" example:"Somchai Jaidee"`
+	Role       models.UserRole `json:"role" binding:"required" example:"instructor"`
 }
 
 // UpdateUserRequest is the request body for editing a user's name/role
 type UpdateUserRequest struct {
-	FullName *string          `json:"full_name,omitempty" example:"John Doe"`
-	Role     *models.UserRole `json:"role,omitempty" example:"instructor"`
+	FullName   *string          `json:"full_name,omitempty" example:"สมชาย ใจดี"`
+	FullNameEn *string          `json:"full_name_en,omitempty" example:"Somchai Jaidee"`
+	Role       *models.UserRole `json:"role,omitempty" example:"instructor"`
 }
 
 // UpdateUserStatusRequest is the request body for updating user active status
@@ -62,15 +65,27 @@ func NewHandler() *Handler { return &Handler{} }
 // @Success      200  {object}  AdminStatsResponse
 // @Router       /admin/stats [get]
 func (h *Handler) Stats(c *gin.Context) {
-	stats := AdminStatsResponse{
-		TotalUsers:           database.CountUsers(),
-		TotalStudents:        database.CountUsersByRole(models.RoleStudent),
-		TotalInstructors:     database.CountUsersByRole(models.RoleInstructor),
-		TotalCourses:         database.CountCourses(),
-		OpenCourses:          database.CountOpenCourses(),
-		TotalApplications:    database.CountApplications(),
-		AcceptedApplications: database.CountApplicationsByStatus(models.AppAccepted),
-		PendingApplications:  database.CountApplicationsByStatus(models.AppPending),
+	var stats AdminStatsResponse
+	counts := []struct {
+		dst   *int64
+		count func() (int64, error)
+	}{
+		{&stats.TotalUsers, database.CountUsers},
+		{&stats.TotalStudents, func() (int64, error) { return database.CountUsersByRole(models.RoleStudent) }},
+		{&stats.TotalInstructors, func() (int64, error) { return database.CountUsersByRole(models.RoleInstructor) }},
+		{&stats.TotalCourses, database.CountCourses},
+		{&stats.OpenCourses, database.CountOpenCourses},
+		{&stats.TotalApplications, database.CountApplications},
+		{&stats.AcceptedApplications, func() (int64, error) { return database.CountApplicationsByStatus(models.AppAccepted) }},
+		{&stats.PendingApplications, func() (int64, error) { return database.CountApplicationsByStatus(models.AppPending) }},
+	}
+	for _, ct := range counts {
+		n, err := ct.count()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
+		*ct.dst = n
 	}
 	c.JSON(http.StatusOK, stats)
 }
@@ -94,7 +109,11 @@ func (h *Handler) Users(c *gin.Context) {
 		limit = 100
 	}
 
-	users := database.ListUsers(c.Query("role"), c.Query("search"), limit, offset)
+	users, err := database.ListUsers(c.Query("role"), c.Query("search"), limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, users)
 }
 
@@ -116,8 +135,9 @@ func (h *Handler) CreateUser(c *gin.Context) {
 	}
 
 	user, err := database.CreateUser(models.User{
-		FullName: body.FullName,
-		Role:     body.Role,
+		FullName:   body.FullName,
+		FullNameEn: strings.TrimSpace(body.FullNameEn),
+		Role:       body.Role,
 	})
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "could not create user"})
@@ -148,6 +168,9 @@ func (h *Handler) UpdateUser(c *gin.Context) {
 	updated, ok := database.UpdateUser(uint(id), func(u *models.User) {
 		if body.FullName != nil {
 			u.FullName = *body.FullName
+		}
+		if body.FullNameEn != nil {
+			u.FullNameEn = strings.TrimSpace(*body.FullNameEn)
 		}
 		if body.Role != nil {
 			u.Role = *body.Role
@@ -208,7 +231,11 @@ func (h *Handler) Logs(c *gin.Context) {
 	}
 	offset := (page - 1) * limit
 
-	logs, total := database.ListActivityLogs(c.Query("user_id"), c.Query("method"), offset, limit)
+	logs, total, err := database.ListActivityLogs(c.Query("user_id"), c.Query("method"), offset, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"data":  logs,
@@ -235,7 +262,11 @@ func (h *Handler) InstructorCourses(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		return
 	}
-	courses := database.CoursesTaughtBy(user.ID, user.FullName, false)
+	courses, err := database.CoursesTaughtBy(user.ID, user.FullName, false)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, courses)
 }
 
@@ -248,7 +279,12 @@ func (h *Handler) InstructorCourses(c *gin.Context) {
 // @Success      200  {array}   models.CoreCourse
 // @Router       /admin/core-courses [get]
 func (h *Handler) CoreCourseCatalog(c *gin.Context) {
-	c.JSON(http.StatusOK, database.CoreCourseCatalog())
+	catalog, err := database.CoreCourseCatalog()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, catalog)
 }
 
 // DeleteCoursesByTerm godoc

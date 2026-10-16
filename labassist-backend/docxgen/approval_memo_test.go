@@ -1,6 +1,7 @@
 package docxgen
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -164,5 +165,22 @@ func TestRenderApprovalMemo_RoundsFractionalHours(t *testing.T) {
 		if !strings.Contains(xml, want) {
 			t.Errorf("expected %q in output", want)
 		}
+	}
+}
+
+func TestRenderApprovalMemo_IncompleteData(t *testing.T) {
+	course := models.Course{Code: "517121", Title: "ทักษะการเขียนโปรแกรมคอมพิวเตอร์ 1", Section: 1}
+	// No snapshot and no Staff Case: there are no work sessions to request.
+	doc := models.StaffDocument{
+		Type:   models.DocApprovalMemo,
+		Roster: []models.RosterEntry{{StudentName: "นายสมชาย ใจดี", StudentCode: "650710001"}},
+	}
+	if _, err := renderApprovalMemo(doc, course); !errors.Is(err, ErrIncompleteDocumentData) {
+		t.Fatalf("no sessions: err = %v", err)
+	}
+	doc.Roster = nil
+	doc.DataSnapshot = `{"occurrences":[{"date":"2025-12-03","start_time":"10:20","end_time":"12:20","status":"scheduled"}],"rate_per_hour_baht":50}`
+	if _, err := renderApprovalMemo(doc, course); !errors.Is(err, ErrIncompleteDocumentData) {
+		t.Fatalf("no students: err = %v", err)
 	}
 }

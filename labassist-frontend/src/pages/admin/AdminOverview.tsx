@@ -10,7 +10,6 @@ import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { Avatar } from '../../components/ui/Avatar'
-import { getInitials } from '../../utils/initials'
 import { useToast } from '../../hooks/useToast'
 import type { UserRole } from '../../types'
 
@@ -132,7 +131,7 @@ export default function AdminOverview() {
                 padding: '12px 16px',
                 borderBottom: i < users.length - 1 ? '1px solid var(--line-soft)' : 'none',
               }}>
-                <Avatar initials={getInitials(u.full_name)} color="blue" size={36} />
+                <Avatar size={36} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {u.full_name}

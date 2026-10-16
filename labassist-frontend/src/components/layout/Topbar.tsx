@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../../hooks/useAuth'
 import { Avatar } from '../ui/Avatar'
-import { getInitials } from '../../utils/initials'
-import { notificationApi, instructorApi } from '../../services/api'
+import { notificationApi, instructorApi, authApi } from '../../services/api'
 import type { Notification } from '../../types'
 
 interface Props {
@@ -36,6 +35,113 @@ const routeMeta: Record<string, { title: string; breadcrumb: string }> = {
 function formatTime(iso: string) {
   const d = new Date(iso)
   return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+}
+
+const ROLE_LABEL: Record<string, string> = {
+  student: 'นักศึกษา', instructor: 'อาจารย์', staff: 'เจ้าหน้าที่', admin: 'ผู้ดูแลระบบ',
+}
+
+const PROFILE_PATH: Record<string, string> = {
+  student: '/student/profile', instructor: '/instructor/profile', staff: '/staff/profile',
+}
+
+// Avatar button with a small account menu: who is signed in, a shortcut to
+// the profile page and "ออกจากระบบ" (same flow as the sidebar's logout).
+function UserMenu() {
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
+  const [isOpen, setIsOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!isOpen) return
+    function onMouseDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setIsOpen(false)
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setIsOpen(false)
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [isOpen])
+
+  if (!user) return null
+  const profilePath = PROFILE_PATH[user.role]
+
+  async function handleLogout() {
+    setIsOpen(false)
+    try { await authApi.logout() } catch { /* ignore */ }
+    logout()
+    navigate('/login')
+  }
+
+  const itemStyle: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+    padding: '10px 16px', minHeight: 40, background: 'none', border: 'none',
+    fontSize: 14, textAlign: 'left', cursor: 'pointer',
+  }
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        onClick={() => setIsOpen((v) => !v)}
+        aria-label="เมนูบัญชีผู้ใช้"
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
+        style={{
+          background: 'none', border: 'none', padding: 2, borderRadius: '50%', cursor: 'pointer',
+          display: 'flex', boxShadow: isOpen ? '0 0 0 2px var(--primary)' : 'none',
+          transition: 'box-shadow .15s',
+        }}
+      >
+        <Avatar src={user.avatar_url} size={32} />
+      </button>
+
+      {isOpen && (
+        <div role="menu" style={{
+          position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+          width: 240, background: 'var(--bg-card)', borderRadius: 12,
+          border: '1px solid var(--line)', boxShadow: 'var(--shadow-lg)',
+          zIndex: 200, overflow: 'hidden',
+        }}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--line-soft)' }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {user.full_name}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 2 }}>{ROLE_LABEL[user.role] ?? user.role}</div>
+          </div>
+          {profilePath && (
+            <button
+              role="menuitem"
+              className="user-menu-item"
+              onClick={() => { setIsOpen(false); navigate(profilePath) }}
+              style={{ ...itemStyle, color: 'var(--ink-700)' }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+              </svg>
+              ข้อมูลส่วนตัว
+            </button>
+          )}
+          <button
+            role="menuitem"
+            className="user-menu-item"
+            onClick={handleLogout}
+            style={{ ...itemStyle, color: 'var(--red)', borderTop: profilePath ? '1px solid var(--line-soft)' : undefined }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+            ออกจากระบบ
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function NotificationBell() {
@@ -272,10 +378,8 @@ export function Topbar({ title, breadcrumb, actions, onHamburgerClick }: Props) 
         {/* Divider */}
         <div style={{ width: 1, height: 20, background: 'var(--line)' }} />
 
-        {/* Avatar */}
-        {user && (
-          <Avatar initials={getInitials(user.full_name)} src={user.avatar_url} color="blue" size={32} />
-        )}
+        {/* Avatar → account menu (profile, logout) */}
+        <UserMenu />
       </div>
     </header>
   )

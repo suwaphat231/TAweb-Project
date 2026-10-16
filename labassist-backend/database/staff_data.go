@@ -69,6 +69,11 @@ func UpsertFormReview(courseID, reviewerID uint, status models.ReviewStatus, not
 	return result, err
 }
 
+// ReviewForPosting is reviewByPostingID for other packages.
+func ReviewForPosting(postingID, courseID uint) models.FormReview {
+	return reviewByPostingID(postingID, courseID)
+}
+
 // reviewByPostingID returns the existing review for a posting or a synthetic pending one.
 func reviewByPostingID(postingID, courseID uint) models.FormReview {
 	var r models.FormReview
@@ -81,9 +86,11 @@ func reviewByPostingID(postingID, courseID uint) models.FormReview {
 // ListFormReviews returns all active postings with labboy slots, each
 // enriched with their current review status. If statusFilter is non-empty
 // only that status is returned.
-func ListFormReviews(statusFilter, search string) []models.FormReview {
+func ListFormReviews(statusFilter, search string) ([]models.FormReview, error) {
 	var postings []models.Posting
-	DB.Where("is_active = true AND lab_boy_slots > 0").Order("id DESC").Find(&postings)
+	if err := DB.Where("is_active = true AND lab_boy_slots > 0").Order("id DESC").Find(&postings).Error; err != nil {
+		return nil, err
+	}
 
 	out := make([]models.FormReview, 0, len(postings))
 	for _, p := range postings {
@@ -102,7 +109,7 @@ func ListFormReviews(statusFilter, search string) []models.FormReview {
 		}
 		out = append(out, r)
 	}
-	return out
+	return out, nil
 }
 
 // --- StaffDocument ---
@@ -125,55 +132,28 @@ func StaffDocumentByID(id uint) (models.StaffDocument, bool) {
 	return d, true
 }
 
-// DeleteStaffDocument removes a staff document by ID. Returns false if not found.
-func DeleteStaffDocument(id uint) bool {
-	result := DB.Delete(&models.StaffDocument{}, id)
-	return result.Error == nil && result.RowsAffected > 0
-}
-
 // ListStaffDocuments returns documents filtered by type and/or status, newest first.
-func ListStaffDocuments(typeFilter, statusFilter, search string) []models.StaffDocument {
+// Cancelled documents (what "delete" now does) are left out unless asked for
+// by status, so the list looks the same as before deletes became soft.
+func ListStaffDocuments(typeFilter, statusFilter, search string) ([]models.StaffDocument, error) {
 	query := DB.Order("created_at DESC")
 	if typeFilter != "" {
 		query = query.Where("type = ?", typeFilter)
 	}
 	if statusFilter != "" {
 		query = query.Where("status = ?", statusFilter)
+	} else {
+		query = query.Where("status <> ?", models.DocCancelled)
 	}
 	if search != "" {
 		q := "%" + strings.ToLower(search) + "%"
 		query = query.Where("LOWER(name) LIKE ? OR LOWER(course_ref) LIKE ?", q, q)
 	}
 	var out []models.StaffDocument
-	query.Find(&out)
-	return out
-}
-
-// UpdateStaffDocumentStatus changes the status of a document by ID.
-// Uses SELECT FOR UPDATE so concurrent calls on the same row are serialized,
-// and only the status column is written (not the full row).
-func UpdateStaffDocumentStatus(id uint, status models.DocStatus) (models.StaffDocument, bool) {
-	var result models.StaffDocument
-	err := DB.Transaction(func(tx *gorm.DB) error {
-		var d models.StaffDocument
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&d, id).Error; err != nil {
-			return err
-		}
-		if d.Status == status {
-			result = d
-			return nil
-		}
-		if err := tx.Model(&d).Update("status", status).Error; err != nil {
-			return err
-		}
-		d.Status = status
-		result = d
-		return nil
-	})
-	if err != nil {
-		return models.StaffDocument{}, false
+	if err := query.Find(&out).Error; err != nil {
+		return nil, err
 	}
-	return result, true
+	return out, nil
 }
 
 // UpdateStaffDocumentSchedule replaces the work_schedule and sessions_per_month

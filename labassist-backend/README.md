@@ -10,6 +10,13 @@
 
 ## Setup
 
+### Quick start (dev)
+```bash
+./dev.sh
+```
+สร้าง `.env` ให้อัตโนมัติถ้ายังไม่มี (สุ่ม `JWT_SECRET`, เปิด `DEV_LOGIN=true`), เปิด MySQL
+แล้วรัน `go run main.go` — ไม่ต้องทำขั้นตอนด้านล่างเอง
+
 ### 1. ติดตั้ง dependencies
 ```bash
 go mod download

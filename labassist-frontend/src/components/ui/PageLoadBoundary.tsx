@@ -8,6 +8,7 @@ export class PageLoadBoundary extends Component<{ children: ReactNode }, { faile
     return { failed: true }
   }
 
+
   render() {
     if (this.state.failed) {
       return (

@@ -1,17 +1,19 @@
 import type { Course } from '../../types'
-import { groupSectionsByTime, timeOptionSecLabel, type CourseGroup } from '../../utils/courseGrouping'
+import { groupSectionsByTime, scheduleDayLabel, timeOptionSecLabel, type CourseGroup } from '../../utils/courseGrouping'
 import { cleanCourseTitle } from '../../utils/courseTitle'
 import { Card } from '../ui/Card'
 import { StatusBadge, Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
+import { formatSchedule } from '../../utils/schedule'
 
 interface Props {
   group: CourseGroup
   onApply?: (group: CourseGroup) => void
-  appliedSection?: Course
+  appliedSections?: Course[]
+  scheduleRequired?: boolean
 }
 
-export function CourseCard({ group, onApply, appliedSection }: Props) {
+export function CourseCard({ group, onApply, appliedSections = [], scheduleRequired = false }: Props) {
   const allFull = group.totalSlots > 0 && group.totalAccepted >= group.totalSlots
   // A group conflicts when every section the student could take has a schedule
   // conflict. If even one section is conflict-free, the card stays actionable.
@@ -23,6 +25,18 @@ export function CourseCard({ group, onApply, appliedSection }: Props) {
     ? new Date(group.deadline).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
     : null
   const timeOptions = groupSectionsByTime(group.sections)
+  // Students may apply to several times of one course; once some are applied,
+  // keep offering the others that still have room and fit their schedule.
+  const appliedIds = new Set(appliedSections.map((s) => s.id))
+  const canApplyMore = timeOptions.some((opt) =>
+    !opt.sections.some((s) => appliedIds.has(s.id)) &&
+    opt.sections.some((s) => !(s.labboy_slots > 0 && s.labboy_accepted >= s.labboy_slots) && !s.conflict_day),
+  )
+  // Name the applied day/time — two days of one course are often the same
+  // Sec, so "Sec 1" alone wouldn't tell the student which day they took.
+  const appliedLabel = Array.from(new Set(
+    appliedSections.map((s) => scheduleDayLabel(s.schedule) || (s.section ? `Sec ${s.section}` : '')).filter(Boolean),
+  )).join(' · ')
 
   function handleApply() {
     onApply?.(group)
@@ -87,14 +101,14 @@ export function CourseCard({ group, onApply, appliedSection }: Props) {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
             </svg>
-            <span style={{ whiteSpace: 'pre-line' }}>{timeOptions[0].schedule}</span>
+            <span style={{ whiteSpace: 'pre-line' }}>{formatSchedule(timeOptions[0].schedule)}</span>
           </div>
         )}
         {timeOptions.length > 1 && (
           <div style={{ fontSize: 12, color: 'var(--ink-500)', marginBottom: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
             {timeOptions.map((opt) => (
               <div key={opt.key} style={{ display: 'flex', gap: 5 }}>
-                {opt.schedule ? <span style={{ whiteSpace: 'pre-line' }}>{opt.schedule}</span> : <span style={{ fontWeight: 600 }}>{timeOptionSecLabel(opt)}</span>}
+                {opt.schedule ? <span style={{ whiteSpace: 'pre-line' }}>{formatSchedule(opt.schedule)}</span> : <span style={{ fontWeight: 600 }}>{timeOptionSecLabel(opt)}</span>}
               </div>
             ))}
           </div>
@@ -122,8 +136,15 @@ export function CourseCard({ group, onApply, appliedSection }: Props) {
       <div style={{ paddingTop: 4, borderTop: '1px solid var(--line-soft)' }}>
         {group.status === 'closed' || group.status === 'draft' ? (
           <Badge variant="gray">ปิดรับ</Badge>
-        ) : appliedSection ? (
-          <Badge variant="green">สมัครแล้ว{appliedSection.section ? ` (Sec ${appliedSection.section})` : ''}</Badge>
+        ) : appliedSections.length > 0 ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+            <Badge variant="green" wrap>สมัครแล้ว{appliedLabel ? ` (${appliedLabel})` : ''}</Badge>
+            {canApplyMore && (
+              <Button size="sm" variant="outline" disabled={scheduleRequired} onClick={handleApply}>
+                {scheduleRequired ? 'กรอกตารางเรียนก่อน' : 'สมัครเวลาอื่นเพิ่ม'}
+              </Button>
+            )}
+          </div>
         ) : conflictDay ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--amber)', flexShrink: 0 }}>
@@ -135,6 +156,10 @@ export function CourseCard({ group, onApply, appliedSection }: Props) {
           </div>
         ) : allFull ? (
           <Button size="sm" variant="outline" disabled style={{ cursor: 'not-allowed' }}>เต็มแล้ว</Button>
+        ) : scheduleRequired ? (
+          <Button size="sm" variant="outline" disabled style={{ cursor: 'not-allowed' }}>
+            กรอกตารางเรียนก่อน
+          </Button>
         ) : (
           <Button size="sm" onClick={handleApply}>สมัคร Lab Boy</Button>
         )}

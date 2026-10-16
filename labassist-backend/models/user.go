@@ -49,7 +49,10 @@ type User struct {
 	Username     *string `gorm:"uniqueIndex;size:100" json:"username"`
 	PasswordHash *string `gorm:"size:255" json:"-"`
 	FullName     string  `gorm:"size:200;not null" json:"full_name"`
-	AvatarURL    string  `gorm:"type:mediumtext" json:"avatar_url,omitempty"`
+	// FullNameEn is the English spelling of the name, set by an admin. It
+	// defaults to '' so AutoMigrate can add the column to existing rows.
+	FullNameEn string `gorm:"size:200;not null;default:''" json:"full_name_en"`
+	AvatarURL  string `gorm:"type:mediumtext" json:"avatar_url,omitempty"`
 	// Email has no gorm uniqueIndex tag: admin-created accounts start with a
 	// blank email (filled in later via Google sign-in), so uniqueness is
 	// enforced instead by a functional index that ignores empty strings — see
@@ -73,3 +76,13 @@ type User struct {
 }
 
 func (User) TableName() string { return "users" }
+
+// MarshalJSON adds has_password so the client can offer "create password"
+// instead of "change password" without ever seeing the hash.
+func (u User) MarshalJSON() ([]byte, error) {
+	type plain User
+	return json.Marshal(struct {
+		plain
+		HasPassword bool `json:"has_password"`
+	}{plain(u), u.PasswordHash != nil && *u.PasswordHash != ""})
+}

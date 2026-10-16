@@ -3,6 +3,7 @@ package database
 import (
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 	"sort"
 	"strconv"
@@ -81,7 +82,9 @@ func courseWithInstructor(c models.Course) models.Course {
 	if p, ok := ActivePostingForCourse(c.ID); ok {
 		applyPostingToCourse(p, &c)
 	}
-	c.ApplicantCount = countNonWithdrawnApplications(c.ID)
+	// Per-row enrichment has no error path; a failed count shows as 0 and the
+	// failure itself is logged by gormLogger.
+	c.ApplicantCount, _ = countNonWithdrawnApplications(c.ID)
 	c = closeIfPastDeadline(c)
 	if c.InstructorID != nil {
 		if u, ok := UserByID(*c.InstructorID); ok {
@@ -91,12 +94,14 @@ func courseWithInstructor(c models.Course) models.Course {
 	return c
 }
 
-func countNonWithdrawnApplications(courseID uint) int {
+func countNonWithdrawnApplications(courseID uint) (int, error) {
 	var n int64
 	if p, ok := ActivePostingForCourse(courseID); ok {
-		DB.Model(&models.Application{}).Where("posting_id = ? AND status <> ?", p.ID, models.AppWithdrawn).Count(&n)
+		if err := DB.Model(&models.Application{}).Where("posting_id = ? AND status <> ?", p.ID, models.AppWithdrawn).Count(&n).Error; err != nil {
+			return 0, err
+		}
 	}
-	return int(n)
+	return int(n), nil
 }
 
 func enrichApplication(a models.Application) models.Application {
@@ -207,31 +212,37 @@ func UserByStudentID(studentID string) (models.User, bool) {
 	return u, true
 }
 
-func ListUsers(role, search string, limit, offset int) []models.User {
+func ListUsers(role, search string, limit, offset int) ([]models.User, error) {
 	q := DB.Model(&models.User{}).Order("id DESC")
 	if role != "" {
 		q = q.Where("role = ?", role)
 	}
 	if search != "" {
 		s := "%" + strings.ToLower(search) + "%"
-		q = q.Where("LOWER(full_name) LIKE ? OR LOWER(email) LIKE ?", s, s)
+		q = q.Where("LOWER(full_name) LIKE ? OR LOWER(full_name_en) LIKE ? OR LOWER(email) LIKE ?", s, s, s)
 	}
 	out := make([]models.User, 0)
-	q.Offset(offset).Limit(limit).Find(&out)
-	return out
+	if err := q.Offset(offset).Limit(limit).Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func CreateUser(u models.User) (models.User, error) {
 	if u.Username != nil {
 		var count int64
-		DB.Model(&models.User{}).Where("username = ?", *u.Username).Count(&count)
+		if err := DB.Model(&models.User{}).Where("username = ?", *u.Username).Count(&count).Error; err != nil {
+			return models.User{}, err
+		}
 		if count > 0 {
 			return models.User{}, ErrConflict
 		}
 	}
 	if u.Email != "" {
 		var count int64
-		DB.Model(&models.User{}).Where("email = ?", u.Email).Count(&count)
+		if err := DB.Model(&models.User{}).Where("email = ?", u.Email).Count(&count).Error; err != nil {
+			return models.User{}, err
+		}
 		if count > 0 {
 			return models.User{}, ErrConflict
 		}
@@ -239,7 +250,13 @@ func CreateUser(u models.User) (models.User, error) {
 	u.ID = 0
 	u.IsActive = true
 	if err := DB.Create(&u).Error; err != nil {
-		return models.User{}, ErrConflict
+		// A concurrent insert can still hit the unique index after the checks
+		// above; anything else is a real database failure, not a conflict.
+		var mysqlErr *mysqldriver.MySQLError
+		if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+			return models.User{}, ErrConflict
+		}
+		return models.User{}, err
 	}
 	return u, nil
 }
@@ -256,21 +273,21 @@ func UpdateUser(id uint, fn func(u *models.User)) (models.User, bool) {
 	return u, true
 }
 
-func CountUsers() int64 {
+func CountUsers() (int64, error) {
 	var n int64
-	DB.Model(&models.User{}).Count(&n)
-	return n
+	err := DB.Model(&models.User{}).Count(&n).Error
+	return n, err
 }
 
-func CountUsersByRole(role models.UserRole) int64 {
+func CountUsersByRole(role models.UserRole) (int64, error) {
 	var n int64
-	DB.Model(&models.User{}).Where("role = ?", role).Count(&n)
-	return n
+	err := DB.Model(&models.User{}).Where("role = ?", role).Count(&n).Error
+	return n, err
 }
 
 // --- Courses (MySQL-backed via DB, see database/connection.go) ---
 
-func ListCourses(status, q string, hasLab *bool) []models.Course {
+func ListCourses(status, q string, hasLab *bool) ([]models.Course, error) {
 	query := DB.Order("id DESC")
 	if hasLab != nil {
 		query = query.Where("has_lab = ?", *hasLab)
@@ -280,7 +297,9 @@ func ListCourses(status, q string, hasLab *bool) []models.Course {
 		query = query.Where("LOWER(code) LIKE ? OR LOWER(title) LIKE ?", s, s)
 	}
 	var rows []models.Course
-	query.Find(&rows)
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, err
+	}
 	out := make([]models.Course, 0, len(rows))
 	for _, c := range rows {
 		enriched := courseWithInstructor(c)
@@ -289,7 +308,7 @@ func ListCourses(status, q string, hasLab *bool) []models.Course {
 		}
 		out = append(out, enriched)
 	}
-	return out
+	return out, nil
 }
 
 func CourseByID(id uint) (models.Course, bool) {
@@ -301,7 +320,7 @@ func CourseByID(id uint) (models.Course, bool) {
 }
 
 // InstructorCourses returns courses the instructor owns via the M:N table.
-func InstructorCourses(instructorID uint, fullName string, isAdmin bool, hasLab *bool) []models.Course {
+func InstructorCourses(instructorID uint, fullName string, isAdmin bool, hasLab *bool) ([]models.Course, error) {
 	query := DB.Table("courses").Order("courses.id DESC")
 	if !isAdmin {
 		query = query.Joins(
@@ -313,14 +332,14 @@ func InstructorCourses(instructorID uint, fullName string, isAdmin bool, hasLab 
 		query = query.Where("courses.has_lab = ?", *hasLab)
 	}
 	var rows []models.Course
-	query.Find(&rows)
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, err
+	}
 	out := make([]models.Course, 0, len(rows))
 	for _, c := range rows {
-		cc := courseWithInstructor(c)
-		cc.ApplicantCount = countNonWithdrawnApplications(c.ID)
-		out = append(out, cc)
+		out = append(out, courseWithInstructor(c))
 	}
-	return out
+	return out, nil
 }
 
 func CreateCourse(c models.Course) models.Course {
@@ -371,12 +390,6 @@ func UpdateCourse(id uint, fn func(c *models.Course)) (models.Course, bool) {
 	return courseWithInstructor(c), true
 }
 
-func AdjustCourseAccepted(courseID uint, role models.RoleApplied, delta int) {
-	// Atomic increment/decrement directly on the posting — courses no longer
-	// stores the accepted count (it's a gorm:"-" field populated from posting).
-	syncPostingAcceptedTx(DB, courseID, delta)
-}
-
 // --- Recruitment posting persistence ---
 
 // postingFromCourse builds a Posting value from a course's recruitment fields.
@@ -398,7 +411,7 @@ func postingFromCourse(c models.Course) models.Posting {
 
 // syncPostingTx creates or updates the active posting for the course inside
 // the given DB handle (which may be a transaction). LabBoyAccepted is
-// intentionally omitted — use syncPostingAcceptedTx for that field.
+// intentionally omitted — ReviewApplicationTx adjusts that counter atomically.
 func syncPostingTx(tx *gorm.DB, c models.Course) error {
 	p := postingFromCourse(c)
 	var existing models.Posting
@@ -412,14 +425,6 @@ func syncPostingTx(tx *gorm.DB, c models.Course) error {
 		return err
 	}
 	return tx.Create(&p).Error
-}
-
-// syncPostingAcceptedTx mirrors an atomic lab_boy_accepted delta onto the
-// active posting, matching the concurrent-safe update applied to courses.
-func syncPostingAcceptedTx(tx *gorm.DB, courseID uint, delta int) {
-	tx.Model(&models.Posting{}).
-		Where("course_id = ? AND is_active = true", courseID).
-		UpdateColumn("lab_boy_accepted", gorm.Expr("lab_boy_accepted + ?", delta))
 }
 
 // ActivePostingForCourse returns the current recruitment round for a course.
@@ -543,31 +548,33 @@ func DeleteCoursesByTerm(semester string, academicYear int) int {
 	return deleted
 }
 
-func CountCourses() int64 {
+func CountCourses() (int64, error) {
 	var n int64
-	DB.Model(&models.Course{}).Count(&n)
-	return n
+	err := DB.Model(&models.Course{}).Count(&n).Error
+	return n, err
 }
 
-func CountOpenCourses() int64 {
+func CountOpenCourses() (int64, error) {
 	var n int64
-	DB.Model(&models.Posting{}).
+	err := DB.Model(&models.Posting{}).
 		Where("status IN ? AND is_active = true", []models.CourseStatus{models.StatusOpen, models.StatusClosingSoon}).
-		Count(&n)
-	return n
+		Count(&n).Error
+	return n, err
 }
 
-func RecentOpenCourses(limit int) []models.Course {
+func RecentOpenCourses(limit int) ([]models.Course, error) {
 	var postings []models.Posting
-	DB.Where("status IN ? AND is_active = true", []models.CourseStatus{models.StatusOpen, models.StatusClosingSoon}).
-		Order("id DESC").Limit(limit).Find(&postings)
+	if err := DB.Where("status IN ? AND is_active = true", []models.CourseStatus{models.StatusOpen, models.StatusClosingSoon}).
+		Order("id DESC").Limit(limit).Find(&postings).Error; err != nil {
+		return nil, err
+	}
 	out := make([]models.Course, 0, len(postings))
 	for _, p := range postings {
 		if c, ok := CourseByID(p.CourseID); ok {
 			out = append(out, c)
 		}
 	}
-	return out
+	return out, nil
 }
 
 // NormalizeInstructorName strips common Thai academic title prefixes (full
@@ -635,9 +642,11 @@ func InstructorOwnsCourse(c models.Course, instructorID uint, _ string, isAdmin 
 }
 
 // InstructorsForCourse returns the instructor account linked to the course.
-func InstructorsForCourse(c models.Course) []models.User {
+func InstructorsForCourse(c models.Course) ([]models.User, error) {
 	var instructors []models.User
-	DB.Where("role = ?", models.RoleInstructor).Find(&instructors)
+	if err := DB.Where("role = ?", models.RoleInstructor).Find(&instructors).Error; err != nil {
+		return nil, err
+	}
 
 	out := make([]models.User, 0, 1)
 	for _, u := range instructors {
@@ -645,7 +654,7 @@ func InstructorsForCourse(c models.Course) []models.User {
 			out = append(out, u)
 		}
 	}
-	return out
+	return out, nil
 }
 
 // CourseRelation pairs a CourseInstructor junction row with its full Course
@@ -659,17 +668,18 @@ type CourseRelation struct {
 
 // MyCourseRelations returns every active (non-archived) course-instructor link
 // for the given instructor, with the full Course embedded.
-func MyCourseRelations(instructorID uint) []CourseRelation {
+func MyCourseRelations(instructorID uint) ([]CourseRelation, error) {
 	var rows []models.CourseInstructor
-	DB.Where("instructor_id = ? AND archived_at IS NULL", instructorID).
-		Order("id DESC").Find(&rows)
+	if err := DB.Where("instructor_id = ? AND archived_at IS NULL", instructorID).
+		Order("id DESC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
 	out := make([]CourseRelation, 0, len(rows))
 	for _, r := range rows {
 		course, ok := CourseByID(r.CourseID)
 		if !ok {
 			continue
 		}
-		course.ApplicantCount = countNonWithdrawnApplications(r.CourseID)
 		out = append(out, CourseRelation{
 			ID:        r.ID,
 			Course:    course,
@@ -677,14 +687,14 @@ func MyCourseRelations(instructorID uint) []CourseRelation {
 			CreatedAt: r.CreatedAt,
 		})
 	}
-	return out
+	return out, nil
 }
 
 // CourseCandidates returns courses the instructor is not yet linked to,
 // optionally filtered by semester, academic_year, and a search string.
 // Courses without any instructor (nil InstructorID) are excluded — they are
 // catalog placeholders, not real class sections.
-func CourseCandidates(instructorID uint, semester string, academicYear int, search string) []models.Course {
+func CourseCandidates(instructorID uint, semester string, academicYear int, search string) ([]models.Course, error) {
 	query := DB.Table("courses").
 		Where("courses.instructor_id IS NOT NULL").
 		Where("courses.id NOT IN (SELECT course_id FROM course_instructors WHERE instructor_id = ? AND archived_at IS NULL)", instructorID).
@@ -700,12 +710,14 @@ func CourseCandidates(instructorID uint, semester string, academicYear int, sear
 		query = query.Where("courses.code LIKE ? OR courses.title LIKE ?", like, like)
 	}
 	var rows []models.Course
-	query.Find(&rows)
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, err
+	}
 	out := make([]models.Course, 0, len(rows))
 	for _, c := range rows {
 		out = append(out, courseWithInstructor(c))
 	}
-	return out
+	return out, nil
 }
 
 // AddCourseRelation creates or un-archives a self_added course-instructor link.
@@ -754,7 +766,7 @@ func RemoveCourseRelation(relationID, instructorID uint) bool {
 // CoursesTaughtBy returns the instructor's courses deduplicated by code,
 // excluding courses with zero lab hours. Backed by the M:N course_instructors
 // table so only explicitly linked courses appear (nil-instructor gap closed).
-func CoursesTaughtBy(instructorID uint, fullName string, isAdmin bool) []models.Course {
+func CoursesTaughtBy(instructorID uint, fullName string, isAdmin bool) ([]models.Course, error) {
 	query := DB.Table("courses").Order("courses.id DESC")
 	if !isAdmin {
 		query = query.Joins(
@@ -763,7 +775,9 @@ func CoursesTaughtBy(instructorID uint, fullName string, isAdmin bool) []models.
 		)
 	}
 	var rows []models.Course
-	query.Find(&rows)
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, err
+	}
 
 	seenCode := make(map[string]bool, len(rows))
 	out := make([]models.Course, 0)
@@ -777,7 +791,7 @@ func CoursesTaughtBy(instructorID uint, fullName string, isAdmin bool) []models.
 		seenCode[c.Code] = true
 		out = append(out, courseWithInstructor(c))
 	}
-	return out
+	return out, nil
 }
 
 // CoreCourseCatalog returns every core_courses code, deduped (the same code
@@ -786,9 +800,11 @@ func CoursesTaughtBy(instructorID uint, fullName string, isAdmin bool) []models.
 // migrations/allcourse.sql), not the imported class-postings in the courses
 // table — it's what backs the "type a code, see suggestions" helper when an
 // admin adds a course by hand instead of importing it from Excel.
-func CoreCourseCatalog() []models.CoreCourse {
+func CoreCourseCatalog() ([]models.CoreCourse, error) {
 	var rows []models.CoreCourse
-	DB.Order("code ASC").Find(&rows)
+	if err := DB.Order("code ASC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
 
 	seenCode := make(map[string]bool, len(rows))
 	out := make([]models.CoreCourse, 0, len(rows))
@@ -799,7 +815,7 @@ func CoreCourseCatalog() []models.CoreCourse {
 		seenCode[c.Code] = true
 		out = append(out, c)
 	}
-	return out
+	return out, nil
 }
 
 // TaughtCourseSections returns all sections for a given code/semester/year
@@ -807,7 +823,7 @@ func CoreCourseCatalog() []models.CoreCourse {
 // section-picker — sections always come from the imported classlist. Backed by
 // the M:N table so unmatched-import nil-instructor rows are no longer exposed
 // to arbitrary instructors.
-func TaughtCourseSections(instructorID uint, fullName string, isAdmin bool, code, semester string, academicYear int) []models.Course {
+func TaughtCourseSections(instructorID uint, fullName string, isAdmin bool, code, semester string, academicYear int) ([]models.Course, error) {
 	query := DB.Table("courses").
 		Where("(courses.code = ? OR courses.code LIKE ?) AND courses.semester = ? AND courses.academic_year = ?",
 			code, code+"-%", semester, academicYear).
@@ -819,15 +835,15 @@ func TaughtCourseSections(instructorID uint, fullName string, isAdmin bool, code
 		)
 	}
 	var rows []models.Course
-	query.Find(&rows)
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, err
+	}
 
 	out := make([]models.Course, 0, len(rows))
 	for _, c := range rows {
-		cc := courseWithInstructor(c)
-		cc.ApplicantCount = countNonWithdrawnApplications(c.ID)
-		out = append(out, cc)
+		out = append(out, courseWithInstructor(c))
 	}
-	return out
+	return out, nil
 }
 
 // --- Transcripts (MySQL-backed via DB) ---
@@ -872,13 +888,17 @@ func TranscriptByUserID(userID uint) (models.Transcript, bool) {
 
 // --- Applications ---
 
-func ApplicantsForCourse(courseID uint, roleFilter, statusFilter, search string) []models.Application {
+func ApplicantsForCourse(courseID uint, roleFilter, statusFilter, search string) ([]models.Application, error) {
 	posting, ok := ActivePostingForCourse(courseID)
 	if !ok {
-		return []models.Application{}
+		return []models.Application{}, nil
+	}
+	rows, err := applicationRows("posting_id = ?", posting.ID)
+	if err != nil {
+		return nil, err
 	}
 	out := make([]models.Application, 0)
-	for _, a := range applicationRows("posting_id = ?", posting.ID) {
+	for _, a := range rows {
 		if roleFilter != "" && string(a.RoleApplied) != roleFilter {
 			continue
 		}
@@ -895,23 +915,30 @@ func ApplicantsForCourse(courseID uint, roleFilter, statusFilter, search string)
 		out = append(out, enriched)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].StudentGPA > out[j].StudentGPA })
-	return out
+	return out, nil
 }
 
-func StudentApplications(studentID uint) []models.Application {
+func StudentApplications(studentID uint) ([]models.Application, error) {
+	rows, err := applicationRows("student_id = ?", studentID)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]models.Application, 0)
-	for _, a := range applicationRows("student_id = ?", studentID) {
+	for _, a := range rows {
 		if a.StudentID != studentID {
 			continue
 		}
 		out = append(out, enrichApplication(a).StudentView())
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].AppliedAt.After(out[j].AppliedAt) })
-	return out
+	return out, nil
 }
 
-func RecentStudentApplications(studentID uint, limit int) []models.Application {
-	all := StudentApplications(studentID)
+func RecentStudentApplications(studentID uint, limit int) ([]models.Application, error) {
+	all, err := StudentApplications(studentID)
+	if err != nil {
+		return nil, err
+	}
 	active := all[:0]
 	for _, a := range all {
 		if a.PostingActive && a.Status != models.AppWithdrawn {
@@ -919,17 +946,17 @@ func RecentStudentApplications(studentID uint, limit int) []models.Application {
 		}
 	}
 	if len(active) > limit {
-		return active[:limit]
+		return active[:limit], nil
 	}
-	return active
+	return active, nil
 }
 
-func CountAppliedByStudent(studentID uint) int64 {
+func CountAppliedByStudent(studentID uint) (int64, error) {
 	var n int64
-	DB.Model(&models.Application{}).
+	err := DB.Model(&models.Application{}).
 		Joins("JOIN postings ON postings.id = applications.posting_id AND postings.is_active = true").
-		Where("student_id = ? AND applications.status <> ?", studentID, models.AppWithdrawn).Count(&n)
-	return n
+		Where("student_id = ? AND applications.status <> ?", studentID, models.AppWithdrawn).Count(&n).Error
+	return n, err
 }
 
 func ApplicationByID(id uint) (models.Application, bool) {
@@ -999,6 +1026,7 @@ func CreateApplication(a models.Application) (models.Application, error) {
 				ReviewedAt:         existing.ReviewedAt,
 				ReviewedByID:       existing.ReviewedByID,
 				Note:               existing.Note,
+				WithdrawalReason:   existing.WithdrawalReason,
 				OcrWarning:         existing.OcrWarning,
 				GradeProofFileName: existing.GradeProofFileName,
 				GradeProofData:     existing.GradeProofData,
@@ -1060,7 +1088,7 @@ var ErrAlreadyWithdrawn = errors.New("already withdrawn")
 // WithdrawApplication atomically sets the application to withdrawn and, if it
 // was previously accepted, decrements the course's accepted-slot counter — all
 // within a single transaction so concurrent withdrawals cannot double-decrement.
-func WithdrawApplication(id, studentID uint) (models.Application, error) {
+func WithdrawApplication(id, studentID uint, reason string) (models.Application, error) {
 	var a models.Application
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -1080,8 +1108,21 @@ func WithdrawApplication(id, studentID uint) (models.Application, error) {
 				return ErrWithdrawalClosed
 			}
 		}
+		// An accepted Lab Boy only files a request; the instructor decides
+		// in ResolveWithdrawRequest, so the slot stays taken until then.
+		if a.Status == models.AppAccepted {
+			if a.WithdrawRequested {
+				return ErrWithdrawAlreadyRequested
+			}
+			now := time.Now()
+			a.WithdrawRequested = true
+			a.WithdrawRequestedAt = &now
+			a.WithdrawalReason = &reason
+			return tx.Omit(clause.Associations).Save(&a).Error
+		}
 		prevStatus := a.Status
 		a.Status = models.AppWithdrawn
+		a.WithdrawalReason = &reason
 		// The student saw a cancelled acceptance as pending, so withdrawing
 		// it must leave them free to re-apply like any other withdrawal.
 		a.Cancelled = false
@@ -1090,6 +1131,62 @@ func WithdrawApplication(id, studentID uint) (models.Application, error) {
 		}
 		if prevStatus == models.AppAccepted {
 			return tx.Model(&models.Posting{}).Where("id = ?", a.PostingID).
+				UpdateColumn("lab_boy_accepted", gorm.Expr("GREATEST(0, lab_boy_accepted - 1)")).Error
+		}
+		return nil
+	})
+	if err != nil {
+		return models.Application{}, err
+	}
+	return enrichApplication(a), nil
+}
+
+// ErrWithdrawAlreadyRequested is returned by WithdrawApplication when an
+// accepted student's withdrawal request is still awaiting the instructor.
+var ErrWithdrawAlreadyRequested = errors.New("withdraw already requested")
+
+// ErrNoWithdrawRequest is returned by ResolveWithdrawRequest when the
+// application has no pending withdrawal request.
+var ErrNoWithdrawRequest = errors.New("no pending withdraw request")
+
+// ErrPostingArchived is returned when the application's posting has been
+// archived, which makes it read-only.
+var ErrPostingArchived = errors.New("posting archived")
+
+// ResolveWithdrawRequest approves or rejects an accepted Lab Boy's pending
+// withdrawal request. Approving withdraws the application and hands its slot
+// back; rejecting clears the request and leaves the student accepted.
+func ResolveWithdrawRequest(appID uint, approve bool, reviewerID uint) (models.Application, error) {
+	var a models.Application
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&a, appID).Error; err != nil {
+			return err
+		}
+		if a.Status != models.AppAccepted || !a.WithdrawRequested {
+			return ErrNoWithdrawRequest
+		}
+		var posting models.Posting
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&posting, a.PostingID).Error; err != nil {
+			return err
+		}
+		if !posting.IsActive {
+			return ErrPostingArchived
+		}
+		now := time.Now()
+		a.WithdrawRequested = false
+		a.ReviewedAt = &now
+		a.ReviewedByID = &reviewerID
+		if approve {
+			a.Status = models.AppWithdrawn
+		} else {
+			a.WithdrawRequestedAt = nil
+			a.WithdrawalReason = nil
+		}
+		if err := tx.Omit(clause.Associations).Save(&a).Error; err != nil {
+			return err
+		}
+		if approve {
+			return tx.Model(&posting).
 				UpdateColumn("lab_boy_accepted", gorm.Expr("GREATEST(0, lab_boy_accepted - 1)")).Error
 		}
 		return nil
@@ -1156,6 +1253,10 @@ func ReviewApplicationTx(appID uint, newStatus models.AppStatus, applyFields fun
 		}
 
 		applyFields(&app)
+		// Leaving accepted settles any pending withdrawal request.
+		if app.Status != models.AppAccepted {
+			app.WithdrawRequested = false
+		}
 		if err := tx.Omit(clause.Associations).Save(&app).Error; err != nil {
 			return err
 		}
@@ -1220,16 +1321,16 @@ func BulkUpdateApplications(ids []uint, fn func(a *models.Application)) int64 {
 	return int64(len(rows))
 }
 
-func CountApplications() int64 {
+func CountApplications() (int64, error) {
 	var n int64
-	DB.Model(&models.Application{}).Count(&n)
-	return n
+	err := DB.Model(&models.Application{}).Count(&n).Error
+	return n, err
 }
 
-func CountApplicationsByStatus(status models.AppStatus) int64 {
+func CountApplicationsByStatus(status models.AppStatus) (int64, error) {
 	var n int64
-	DB.Model(&models.Application{}).Where("status = ?", status).Count(&n)
-	return n
+	err := DB.Model(&models.Application{}).Where("status = ?", status).Count(&n).Error
+	return n, err
 }
 
 // --- Notifications ---
@@ -1248,41 +1349,51 @@ func CreateNotifications(notifs []models.Notification) int {
 	return len(notifs)
 }
 
-func UserNotifications(userID uint) []models.Notification {
+func UserNotifications(userID uint) ([]models.Notification, error) {
 	out := make([]models.Notification, 0)
-	DB.Where("user_id = ?", userID).Order("id DESC").Find(&out)
-	return out
+	if err := DB.Where("user_id = ?", userID).Order("id DESC").Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
-func MarkNotifRead(id, userID uint) {
-	DB.Model(&models.Notification{}).Where("id = ? AND user_id = ?", id, userID).Update("is_read", true)
+func MarkNotifRead(id, userID uint) error {
+	return DB.Model(&models.Notification{}).Where("id = ? AND user_id = ?", id, userID).Update("is_read", true).Error
 }
 
-func MarkAllNotifsRead(userID uint) {
-	DB.Model(&models.Notification{}).Where("user_id = ?", userID).Update("is_read", true)
+func MarkAllNotifsRead(userID uint) error {
+	return DB.Model(&models.Notification{}).Where("user_id = ?", userID).Update("is_read", true).Error
 }
 
-func AcceptedStudentsForCourse(courseID uint) []models.Application {
+func AcceptedStudentsForCourse(courseID uint) ([]models.Application, error) {
 	posting, ok := ActivePostingForCourse(courseID)
 	if !ok {
-		return []models.Application{}
+		return []models.Application{}, nil
 	}
-	out := make([]models.Application, 0)
-	for _, a := range applicationRows("posting_id = ? AND status = ?", posting.ID, models.AppAccepted) {
+	rows, err := applicationRows("posting_id = ? AND status = ?", posting.ID, models.AppAccepted)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]models.Application, 0, len(rows))
+	for _, a := range rows {
 		out = append(out, enrichApplication(a))
 	}
-	return out
+	return out, nil
 }
 
 // --- Activity logs ---
 
+// CreateActivityLog is best-effort: a failed audit write must not fail the
+// request it describes, so the error is logged rather than returned.
 func CreateActivityLog(l models.ActivityLog) {
 	l.ID = 0
 	l.CreatedAt = time.Now()
-	DB.Create(&l)
+	if err := DB.Create(&l).Error; err != nil {
+		log.Printf("create activity log (%s %s): %v", l.Method, l.Path, err)
+	}
 }
 
-func ListActivityLogs(userID, method string, offset, limit int) ([]models.ActivityLog, int64) {
+func ListActivityLogs(userID, method string, offset, limit int) ([]models.ActivityLog, int64, error) {
 	q := DB.Model(&models.ActivityLog{})
 	if userID != "" {
 		q = q.Where("user_id = ?", userID)
@@ -1291,25 +1402,33 @@ func ListActivityLogs(userID, method string, offset, limit int) ([]models.Activi
 		q = q.Where("method = ?", method)
 	}
 	var total int64
-	q.Count(&total)
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 	out := make([]models.ActivityLog, 0)
-	q.Order("id DESC").Offset(offset).Limit(limit).Find(&out)
-	return out, total
+	if err := q.Order("id DESC").Offset(offset).Limit(limit).Find(&out).Error; err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
 }
 
-func applicationRows(query string, args ...interface{}) []models.Application {
+func applicationRows(query string, args ...interface{}) ([]models.Application, error) {
 	rows := make([]models.Application, 0)
-	DB.Where(query, args...).Order("id").Find(&rows)
-	return rows
+	if err := DB.Where(query, args...).Order("id").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
 }
 
 // ApplicationHistoryForApplication returns all archived rounds for an
 // application, newest first. Each entry represents one rejected or withdrawn
 // round the student re-applied from.
-func ApplicationHistoryForApplication(applicationID uint) []models.ApplicationHistory {
+func ApplicationHistoryForApplication(applicationID uint) ([]models.ApplicationHistory, error) {
 	var rows []models.ApplicationHistory
-	DB.Where("application_id = ?", applicationID).Order("archived_at DESC").Find(&rows)
-	return rows
+	if err := DB.Where("application_id = ?", applicationID).Order("archived_at DESC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
 }
 
 // migrateWorkOccurrenceDedup removes duplicate (schedule_group_id, scheduled_date)
@@ -1373,6 +1492,11 @@ func migrateApplicationData(db *gorm.DB) error {
 		&models.MonthlyPeriod{},
 		&models.StaffAuditLog{},
 		&models.ScheduleGroupMonth{},
+		&models.LabBoyReport{},
+		&models.LabBoyReportResponse{},
+		&models.LabBoyReportEvidence{},
+		&models.LabBoyReportReview{},
+		&models.LabBoyReportStatusHistory{},
 	)
 }
 

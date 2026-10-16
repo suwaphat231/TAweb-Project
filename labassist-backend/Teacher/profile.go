@@ -4,6 +4,7 @@ import (
 	"labassist/database"
 	"labassist/models"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -13,6 +14,10 @@ type UpdateInstructorProfileRequest struct {
 	FullName *string `json:"full_name,omitempty" example:"ผู้ช่วยศาสตราจารย์ ดร.สมชาย ใจดี"`
 	Email    *string `json:"email,omitempty" example:"somchai@su.ac.th"`
 	Faculty  *string `json:"faculty,omitempty" example:"ภาควิชาวิทยาการคอมพิวเตอร์"`
+	// Username is the login name used by /auth/login. Passwords are changed
+	// through /auth/password/* instead, which verify the current password or
+	// an emailed code.
+	Username *string `json:"username,omitempty" example:"somchai"`
 }
 
 // GetInstructorProfile godoc
@@ -46,7 +51,22 @@ func (h *Handler) UpdateInstructorProfile(c *gin.Context) {
 		return
 	}
 
+	var username *string
+	if body.Username != nil {
+		trimmed := strings.TrimSpace(*body.Username)
+		if trimmed != "" {
+			if other, found := database.UserByUsername(trimmed); found && other.ID != userID.(uint) {
+				c.JSON(http.StatusConflict, gin.H{"error": "ชื่อผู้ใช้นี้ถูกใช้แล้ว"})
+				return
+			}
+			username = &trimmed
+		}
+	}
+
 	updated, ok := database.UpdateUser(userID.(uint), func(u *models.User) {
+		if username != nil {
+			u.Username = username
+		}
 		if body.FullName != nil {
 			u.FullName = *body.FullName
 		}

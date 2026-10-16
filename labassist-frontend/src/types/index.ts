@@ -6,6 +6,7 @@ export interface User {
   id: number
   username: string
   full_name: string
+  full_name_en?: string
   avatar_url?: string
   email: string
   role: UserRole
@@ -15,6 +16,8 @@ export interface User {
   faculty?: string
   year?: number
   is_active: boolean
+  /** False for accounts that have only signed in with Google. */
+  has_password?: boolean
   created_at: string
   transcript_grades?: Record<string, string>
   transcript_status?: 'pass' | 'needs_review' | 'fail'
@@ -145,6 +148,11 @@ export interface Application {
   reviewed_at?: string
   reviewed_by_name?: string
   note?: string
+  withdrawal_reason?: string
+  withdraw_requested?: boolean
+  withdraw_requested_at?: string
+  /** Number of CONFIRMED performance reports — only set on the instructor applicants list. */
+  confirmed_record_count?: number
 }
 
 export interface AuthState {
@@ -185,11 +193,13 @@ export interface BulkReviewResult {
 
 export interface CreateUserPayload {
   full_name: string
+  full_name_en?: string
   role: UserRole
 }
 
 export interface UpdateUserPayload {
   full_name?: string
+  full_name_en?: string
   role?: UserRole
 }
 
@@ -218,7 +228,7 @@ export interface CreateCoursePayload {
 export interface ApplyPayload {
   course_id: number
   role_applied: 'labboy'
-  grade?: string
+  grade: string
 }
 
 export interface Transcript {
@@ -343,6 +353,8 @@ export interface StaffDocument {
   dean_name?: string
   staff_officer_name?: string
   version?: number
+  superseded_by_id?: number
+  based_on_document_id?: number
   created_at: string
 }
 
@@ -456,6 +468,7 @@ export interface StudentInfoDocument {
   ocr_curriculum?: string
   ocr_faculty?: string
   ocr_campus?: string
+  ocr_student_status?: string
   confidence: number
   confirmed_at?: string
   created_at: string
@@ -476,6 +489,7 @@ export interface StudentInfoComparison {
   curriculum: StudentInfoFieldStr
   faculty: StudentInfoFieldStr
   campus: StudentInfoFieldStr
+  student_status: StudentInfoFieldStr
 }
 
 export interface StudentInfoUploadResult {
@@ -488,23 +502,6 @@ export interface ScheduleSlot {
   day: string        // MON TUE WED THU FRI SAT SUN
   start_time: string // HH:MM
   end_time: string   // HH:MM
-}
-
-/** Stored class schedule image evidence for a student. */
-export interface ClassSchedule {
-  id: number
-  user_id: number
-  file_name: string
-  /** Legacy OCR slots — may be present from earlier uploads, not confirmed. */
-  slots: ScheduleSlot[]
-  updated_at: string
-}
-
-/** Result of POST /student/profile/class-schedule (image evidence upload, no OCR). */
-export interface ClassScheduleImageResult {
-  id: number
-  file_name: string
-  updated_at: string
 }
 
 /** Status of a student's term schedule entry. */
@@ -821,4 +818,189 @@ export interface WorkSession {
   work_time_start: string
   work_time_end: string
   hours_per_session: number
+}
+
+// ── Lab Boy performance reports ──────────────────────────────────────────────
+// A report is only an allegation until a reviewer confirms it; only
+// CONFIRMED reports are ever shown as work-performance history.
+
+export type ReportStatus =
+  | 'DRAFT' | 'SUBMITTED' | 'UNDER_REVIEW' | 'AWAITING_RESPONSE'
+  | 'CONFIRMED' | 'NOT_SUBSTANTIATED' | 'WITHDRAWN'
+
+export type ReportCategory =
+  | 'ABSENCE' | 'LATE_NOTICE' | 'DUTY_NEGLECT' | 'UNPROFESSIONAL_CONDUCT' | 'OTHER'
+
+export type ReportAction =
+  | 'submit' | 'withdraw' | 'start_review' | 'request_info' | 'confirm'
+  | 'not_substantiated' | 'reopen' | 'decline_reconsideration'
+
+export interface LabBoyReport {
+  id: number
+  application_id: number
+  student_id: number
+  course_id: number
+  reporter_id?: number  // omitted for the student the report is about
+  incident_date: string
+  category: ReportCategory
+  description: string
+  impact?: string
+  status: ReportStatus
+  submitted_at?: string
+  reconsideration_requested_at?: string
+  created_at: string
+  updated_at: string
+  student_name: string
+  student_code: string
+  reporter_name: string
+  course_code: string
+  course_title: string
+  course_section?: number
+  course_semester?: string
+  course_academic_year?: number
+}
+
+export interface ReportEvidence {
+  id: number
+  report_id: number
+  uploaded_by_id?: number
+  uploaded_by_name: string
+  response_id?: number
+  file_name: string
+  content_type: string
+  size_bytes: number
+  created_at: string
+}
+
+export interface ReportResponse {
+  id: number
+  report_id: number
+  author_id?: number
+  author_name: string
+  author_role: UserRole
+  kind: 'EXPLANATION' | 'RECONSIDERATION' | 'REPORTER_INFO'
+  message: string
+  created_at: string
+}
+
+export interface ReportReview {
+  id: number
+  report_id: number
+  reviewer_id: number
+  reviewer_name: string
+  decision: 'REQUEST_INFO' | 'CONFIRM' | 'NOT_SUBSTANTIATED' | 'REOPEN' | 'DECLINE_RECONSIDERATION'
+  reason: string
+  created_at: string
+}
+
+export interface ReportStatusHistory {
+  id: number
+  report_id: number
+  from_status?: ReportStatus
+  to_status: ReportStatus
+  actor_id?: number
+  actor_name: string
+  reason?: string
+  created_at: string
+}
+
+export interface ReportDetail {
+  report: LabBoyReport
+  evidence: ReportEvidence[]
+  responses: ReportResponse[]
+  reviews: ReportReview[]
+  history: ReportStatusHistory[]
+  allowed_actions: ReportAction[]
+  can_edit: boolean
+  can_add_evidence: boolean
+  can_respond: boolean
+  can_request_reconsideration: boolean
+}
+
+export interface ReportPage {
+  data: LabBoyReport[]
+  total: number
+  page: number
+  limit: number
+}
+
+export interface ReportListParams {
+  q?: string
+  status?: string
+  category?: ReportCategory | ''
+  course_id?: number
+  date_from?: string
+  date_to?: string
+  page?: number
+  limit?: number
+}
+
+export interface ReportInput {
+  application_id: number
+  incident_date: string
+  category: ReportCategory
+  description: string
+  impact: string
+}
+
+export interface ConfirmedRecord {
+  report_id: number
+  category: ReportCategory
+  incident_date: string
+  course_code: string
+  course_title: string
+  course_semester?: string
+  course_academic_year?: number
+  description: string
+  confirmed_at: string
+  review_reason: string
+  student_responded: boolean
+}
+
+// ── Staff per-course document workflow (GET /staff/courses/:id/document-workflow) ──
+
+export interface WorkflowCourse {
+  course_id: number
+  posting_id: number
+  code: string
+  title: string
+  english_title?: string
+  section: number
+  semester: string
+  academic_year: number
+  instructors: string[]
+  labboy_count: number
+  review_status: ReviewStatus
+  staff_case_id?: number
+  plan_status?: string
+}
+
+export interface WorkflowStepView {
+  step: number
+  type: DocType
+  label: string
+  /** The step's current (not cancelled / superseded) document. */
+  document?: StaffDocument
+  /** Earlier versions and cancelled documents of this step. */
+  history: StaffDocument[]
+  can_create: boolean
+  blocked_reasons: string[]
+  /** Why the existing document no longer matches its source data. */
+  stale_reasons: string[]
+  has_template: boolean
+}
+
+export interface DocumentWorkflowResponse {
+  course: WorkflowCourse
+  steps: WorkflowStepView[]
+  monthly_documents: StaffDocument[]
+}
+
+export interface CreateWorkflowStepPayload {
+  replace?: boolean
+  reason?: string
+  note?: string
+  ref_number?: string
+  dept_head_name?: string
+  staff_officer_name?: string
 }

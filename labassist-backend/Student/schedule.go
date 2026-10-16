@@ -17,7 +17,11 @@ import (
 // @Router       /student/work-schedule [get]
 func (h *Handler) WorkSchedule(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
-	sessions := database.WorkScheduleForStudent(studentID.(uint))
+	sessions, err := database.WorkScheduleForStudent(studentID.(uint))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, sessions)
 }
 
@@ -30,6 +34,10 @@ func (h *Handler) WorkSchedule(c *gin.Context) {
 // @Router       /student/labboy-assignments [get]
 func (h *Handler) LabBoyAssignments(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
-	assignments := database.LabBoyAssignmentsForStudent(studentID.(uint))
+	assignments, err := database.LabBoyAssignmentsForStudent(studentID.(uint))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, assignments)
 }

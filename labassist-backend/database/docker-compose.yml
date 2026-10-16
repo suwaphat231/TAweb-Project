@@ -4,7 +4,8 @@ services:
       context: ./Docker
       dockerfile: dockerfile
     container_name: TA_mysql
-    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
+    # Allow the app account to create consistency triggers with binary logging on.
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci", "--log-bin-trust-function-creators=1"]
     environment:
       MYSQL_DATABASE: ${DB_NAME:-labassist}
       MYSQL_USER: ${DB_USER:-labassist}

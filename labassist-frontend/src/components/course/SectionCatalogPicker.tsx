@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { instructorApi } from '../../services/api'
 import { groupSectionsByTime, timeOptionSecLabel } from '../../utils/courseGrouping'
+import { formatSchedule } from '../../utils/schedule'
 
 interface Props {
   code: string
@@ -71,7 +72,7 @@ export function SectionCatalogPicker({ code, semester, academicYear, selectedIds
                 <input type="checkbox" checked={isSelected} disabled={alreadyOpen} onChange={() => toggle(draftIds, !isSelected)} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-900)', whiteSpace: 'pre-line' }}>
-                    {opt.schedule || secLabel}
+                    {formatSchedule(opt.schedule) || secLabel}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>
                  

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { staffApi, applicationsAPI } from '../../services/api'
+import { getApiErrorMessage, staffApi, applicationsAPI } from '../../services/api'
 import { Modal } from '../../components/ui/Modal'
 import { Select } from '../../components/ui/Select'
 import { Input } from '../../components/ui/Input'
@@ -13,7 +13,7 @@ import type { DocType, DocStatus, StaffDocument, CreateStaffDocumentPayload } fr
 
 const TYPE_LABELS: Record<DocType, string> = {
   hiring_notice:    'แบบฟอร์มแจ้งความประสงค์',
-  approval_memo:    'บันทึกขออนุมัติจ้าง',
+  approval_memo:    'บันทึกขออนุมัติจ้างนักศึกษาปฏิบัติงาน',
   lab_notice:       'แบบแจ้งนักศึกษาช่วยคุมรายวิชา',
   work_report:      'รายงานผลการปฏิบัติงาน',
   payment_evidence: 'หลักฐานการจ่ายเงิน',
@@ -22,10 +22,10 @@ const TYPE_LABELS: Record<DocType, string> = {
 const TYPE_STEP: Record<DocType, string> = {
   hiring_notice:    'ขั้นตอนที่ 1',
   approval_memo:    'ขั้นตอนที่ 2',
-  lab_notice:       'ขั้นตอนที่ 3',
-  work_report:      'ขั้นตอนที่ 4',
-  payment_evidence: 'ขั้นตอนที่ 5',
-  payment_request:  'ขั้นตอนที่ 6',
+  lab_notice:       '—',
+  work_report:      'ขั้นตอนที่ 3',
+  payment_evidence: 'ขั้นตอนที่ 4',
+  payment_request:  'ขั้นตอนที่ 5',
 }
 const TYPE_COLOR: Record<DocType, string> = {
   hiring_notice:    '#7C3AED',
@@ -61,7 +61,7 @@ const THAI_MONTHS = [
   'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
 ]
 
-const NEEDS_COURSE_TYPES: DocType[] = ['hiring_notice', 'payment_evidence', 'payment_request', 'work_report']
+const NEEDS_COURSE_TYPES: DocType[] = ['hiring_notice', 'approval_memo', 'payment_evidence', 'payment_request', 'work_report']
 const LINE_ITEM_TYPES: DocType[] = ['payment_evidence', 'payment_request', 'work_report']
 
 const nowBE = new Date().getFullYear() + 543
@@ -178,7 +178,7 @@ export default function StaffDocs() {
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response?.status
       if (status === 501) showToast('เอกสารประเภทนี้ยังไม่รองรับการสร้างไฟล์', 'info')
-      else showToast('ดาวน์โหลดไม่สำเร็จ', 'error')
+      else showToast(await getApiErrorMessage(err, 'ดาวน์โหลดไม่สำเร็จ'), 'error')
     } finally {
       setDownloadingId(null)
     }
@@ -200,7 +200,7 @@ export default function StaffDocs() {
         return
       }
       payload.course_id = courseId
-      payload.excluded_student_ids = Array.from(excludedIds)
+      if (isLineItem) payload.excluded_student_ids = Array.from(excludedIds)
 
       if (isLineItem) {
         payload.month = Number(form.month)
@@ -391,10 +391,10 @@ export default function StaffDocs() {
             options={[
               { value: '', label: '— เลือกประเภท —' },
               { value: 'hiring_notice',    label: 'ขั้นตอนที่ 1 — แบบฟอร์มแจ้งความประสงค์จ้าง' },
-              { value: 'approval_memo',    label: 'ขั้นตอนที่ 3 — บันทึกขออนุมัติจ้าง' },
-              { value: 'work_report',      label: 'ขั้นตอนที่ 4 — รายงานผลการปฏิบัติงาน' },
-              { value: 'payment_evidence', label: 'ขั้นตอนที่ 5 — หลักฐานการจ่ายเงิน' },
-              { value: 'payment_request',  label: 'ขั้นตอนที่ 6 — บันทึกขอเบิกจ่าย' },
+              { value: 'approval_memo',    label: 'ขั้นตอนที่ 2 — บันทึกขออนุมัติจ้างนักศึกษาปฏิบัติงาน' },
+              { value: 'work_report',      label: 'ขั้นตอนที่ 3 — รายงานผลการปฏิบัติงาน' },
+              { value: 'payment_evidence', label: 'ขั้นตอนที่ 4 — หลักฐานการจ่ายเงิน' },
+              { value: 'payment_request',  label: 'ขั้นตอนที่ 5 — บันทึกขอเบิกจ่าย' },
             ]}
             required
           />
@@ -433,7 +433,14 @@ export default function StaffDocs() {
             </div>
           )}
 
-          {needsCourse && courseId && (
+          {needsCourse && courseId && !isLineItem && (
+            <p style={{ fontSize: 13, color: 'var(--ink-500)', lineHeight: 1.6 }}>
+              เอกสารต้นภาคเรียนใช้รายชื่อนักศึกษาที่ผ่านการคัดเลือกทั้งหมดและแผนปฏิบัติงานจากระบบ
+              (เหมือนการสร้างจากหน้ารายวิชา) และสร้างได้ฉบับเดียวต่อรายวิชา
+            </p>
+          )}
+
+          {needsCourse && courseId && isLineItem && (
             <div>
               <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)', display: 'block', marginBottom: 6 }}>
                 รายชื่อนักศึกษา (ผ่านการคัดเลือก)

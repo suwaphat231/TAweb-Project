@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -44,6 +45,11 @@ type ApprovalMemoInput struct {
 }
 
 const approvalMemoTemplate = "approval_memo.docx"
+
+// ErrIncompleteDocumentData is returned when a document lacks the data its
+// template needs (no students or no payable work sessions), so handlers can
+// answer with a clear message instead of rendering a half-empty memo.
+var ErrIncompleteDocumentData = errors.New("docxgen: document data is incomplete")
 
 // RenderApprovalMemo fills the approval memo template: page 1 is the memo
 // body with one numbered line per student, page 2 is an attendance table
@@ -143,25 +149,6 @@ func paragraphBounds(docXML, anchor string) (int, int, bool) {
 		return 0, 0, false
 	}
 	return start, at + endRel + len("</w:p>"), true
-}
-
-// expandParagraphs is expandRows for a paragraph: the <w:p> containing anchor
-// is replaced by one clone per entry in rows.
-func expandParagraphs(docXML, anchor string, rows []map[string]string) (string, error) {
-	start, end, ok := paragraphBounds(docXML, anchor)
-	if !ok {
-		return "", fmt.Errorf("paragraph anchor %q not found", anchor)
-	}
-	tmpl := docXML[start:end]
-	var b strings.Builder
-	for _, row := range rows {
-		p := tmpl
-		for token, val := range row {
-			p = strings.ReplaceAll(p, token, escapeXML(val))
-		}
-		b.WriteString(p)
-	}
-	return docXML[:start] + b.String() + docXML[end:], nil
 }
 
 // replaceParagraph swaps the whole <w:p> containing anchor for raw XML.
@@ -364,7 +351,10 @@ func buildAttendanceTable(students []ApprovalMemoStudent, sessions []ApprovalMem
 // renderApprovalMemo maps a stored approval_memo document onto
 // RenderApprovalMemo, preferring the schedule frozen at creation time.
 func renderApprovalMemo(doc models.StaffDocument, course models.Course) ([]byte, error) {
-	occs, rateBaht := planOccurrences(doc)
+	occs, rateBaht, err := planOccurrences(doc)
+	if err != nil {
+		return nil, err
+	}
 	if rateBaht <= 0 {
 		rateBaht = float64(database.DefaultHourlyRateSatang) / 100.0
 	}
@@ -374,12 +364,19 @@ func renderApprovalMemo(doc models.StaffDocument, course models.Course) ([]byte,
 		students = append(students, ApprovalMemoStudent{Name: r.StudentName, Code: r.StudentCode})
 	}
 
+	sessions := approvalMemoSessions(occs)
+	// Every memo needs its students; the approval memo itself also needs the
+	// work dates it asks to be paid for (lab_notice may be issued before them).
+	if len(students) == 0 || (doc.Type == models.DocApprovalMemo && len(sessions) == 0) {
+		return nil, fmt.Errorf("%w: needs students and payable work sessions", ErrIncompleteDocumentData)
+	}
+
 	return RenderApprovalMemo(ApprovalMemoInput{
 		RefNumber:        doc.RefNumber,
 		MemoDate:         doc.CreatedAt,
 		CourseLine:       approvalMemoCourseLine(course),
 		Students:         students,
-		Sessions:         approvalMemoSessions(occs),
+		Sessions:         sessions,
 		RateBaht:         rateBaht,
 		StaffOfficerName: doc.StaffOfficerName,
 	})
@@ -387,7 +384,7 @@ func renderApprovalMemo(doc models.StaffDocument, course models.Course) ([]byte,
 
 // planOccurrences returns the work plan a document was issued against: the
 // frozen snapshot when present, otherwise the Staff Case's live occurrences.
-func planOccurrences(doc models.StaffDocument) (occs []models.OccurrenceSnapshot, rateBaht float64) {
+func planOccurrences(doc models.StaffDocument) (occs []models.OccurrenceSnapshot, rateBaht float64, err error) {
 	if doc.DataSnapshot != "" {
 		var ds models.DocumentDataSnapshot
 		if err := json.Unmarshal([]byte(doc.DataSnapshot), &ds); err == nil {
@@ -395,7 +392,11 @@ func planOccurrences(doc models.StaffDocument) (occs []models.OccurrenceSnapshot
 		}
 	}
 	if occs == nil && doc.StaffCaseID != nil {
-		for _, o := range database.WorkOccurrencesForCase(*doc.StaffCaseID) {
+		live, err := database.WorkOccurrencesForCase(*doc.StaffCaseID)
+		if err != nil {
+			return nil, 0, fmt.Errorf("load work occurrences: %w", err)
+		}
+		for _, o := range live {
 			occs = append(occs, models.OccurrenceSnapshot{
 				Date:      o.ScheduledDate.Format("2006-01-02"),
 				StartTime: o.StartTime,
@@ -407,7 +408,7 @@ func planOccurrences(doc models.StaffDocument) (occs []models.OccurrenceSnapshot
 			rateBaht = float64(sc.RatePerHour) / 100.0
 		}
 	}
-	return occs, rateBaht
+	return occs, rateBaht, nil
 }
 
 // approvalMemoSessions keeps the payable (scheduled / completed) sessions in

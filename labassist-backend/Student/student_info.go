@@ -31,6 +31,7 @@ type ocrStudentInfoResponse struct {
 	Curriculum     *string `json:"curriculum"`
 	Faculty        *string `json:"faculty"`
 	Campus         *string `json:"campus"`
+	StudentStatus  *string `json:"student_status"`
 	Confidence     float64 `json:"confidence"`
 }
 
@@ -43,7 +44,8 @@ type StudentInfoFieldStr struct {
 
 // StudentInfoComparison is the field-by-field comparison between OCR result
 // and the student's current profile. Fields without a profile counterpart
-// (education_level, curriculum, campus, full_name_en) always have Current=nil.
+// (education_level, curriculum, campus, student_status, full_name_en) always
+// have Current=nil.
 type StudentInfoComparison struct {
 	StudentID      StudentInfoFieldStr `json:"student_id"`
 	FullNameTh     StudentInfoFieldStr `json:"full_name_th"`
@@ -52,6 +54,7 @@ type StudentInfoComparison struct {
 	Curriculum     StudentInfoFieldStr `json:"curriculum"`
 	Faculty        StudentInfoFieldStr `json:"faculty"`
 	Campus         StudentInfoFieldStr `json:"campus"`
+	StudentStatus  StudentInfoFieldStr `json:"student_status"`
 }
 
 // StudentInfoUploadResponse is returned by both the upload and GET endpoints.
@@ -80,6 +83,7 @@ var (
 	reTextCurriculum = regexp.MustCompile(`หลักสูตร[:\s：]*([^\n]{2,200})`)
 	reTextFaculty    = regexp.MustCompile(`(?:ภาควิชา|คณะ\s)[:\s：]*([^\n]{2,200})`)
 	reTextCampus     = regexp.MustCompile(`วิทยาเขต[:\s：]*([^\n]{2,100})`)
+	reTextStatus     = regexp.MustCompile(`(?:สถานภาพ(?:นักศึกษา)?|สถานะนักศึกษา)[:\s：]*([^\n]{2,100})`)
 )
 
 // ── Magic-byte helpers ────────────────────────────────────────────────────────
@@ -182,6 +186,7 @@ func parseTextLayerFields(text string) *ocrStudentInfoResponse {
 	r.Curriculum = setStr(reTextCurriculum)
 	r.Faculty = setStr(reTextFaculty)
 	r.Campus = setStr(reTextCampus)
+	r.StudentStatus = setStr(reTextStatus)
 	return r
 }
 
@@ -273,6 +278,11 @@ func buildComparison(doc models.StudentInfoDocument, user models.User) StudentIn
 		},
 		Campus: StudentInfoFieldStr{
 			OCR:     doc.OcrCampus,
+			Current: nil,
+			Match:   false,
+		},
+		StudentStatus: StudentInfoFieldStr{
+			OCR:     doc.OcrStudentStatus,
 			Current: nil,
 			Match:   false,
 		},
@@ -442,6 +452,7 @@ func (h *Handler) UploadStudentInfo(c *gin.Context) {
 		Curriculum:     ocrResult.Curriculum,
 		Faculty:        ocrResult.Faculty,
 		Campus:         ocrResult.Campus,
+		StudentStatus:  ocrResult.StudentStatus,
 		Confidence:     ocrResult.Confidence,
 	})
 	if dbErr != nil {

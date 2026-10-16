@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"labassist/database"
 	"labassist/models"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,8 +20,12 @@ type ApplyRequest struct {
 	RoleApplied models.RoleApplied `json:"role_applied" binding:"required,oneof=labboy" example:"labboy"`
 	// Grade is the letter grade the student got when they previously took
 	// this course, so the instructor can check it against the posting's
-	// minimum-grade requirement.
-	Grade *string `json:"grade,omitempty" binding:"omitempty,oneof=A B+ B C+ C D+ D F" example:"A"`
+	// minimum-grade requirement. Required — Apply rejects a missing grade.
+	Grade *string `json:"grade" binding:"omitempty,oneof=A B+ B C+ C D+ D F" example:"A"`
+}
+
+type WithdrawRequest struct {
+	Reason string `json:"reason" binding:"required" example:"มีตารางเรียนชนกับเวลาปฏิบัติงาน"`
 }
 
 // UpdateProfileRequest is the request body for updating student profile
@@ -29,6 +34,9 @@ type UpdateProfileRequest struct {
 	StudentID *string `json:"student_id,omitempty" example:"640710112"`
 	Year      *int    `json:"year,omitempty" binding:"omitempty,min=0,max=4" example:"3"`
 	Faculty   *string `json:"faculty,omitempty" example:"วิทยาการคอมพิวเตอร์"`
+	// Username is the login name used by /auth/login. Passwords are changed
+	// through /auth/password/* instead.
+	Username *string `json:"username,omitempty" example:"somchai"`
 }
 
 // StudentDashboard godoc
@@ -42,10 +50,27 @@ func (h *Handler) StudentDashboard(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
 	sid := studentID.(uint)
 
-	recentApps := database.RecentStudentApplications(sid, 5)
-	recentCourses := enrichConflicts(sid, database.RecentOpenCourses(3))
-	openCount := database.CountOpenCourses()
-	appliedCount := database.CountAppliedByStudent(sid)
+	recentApps, err := database.RecentStudentApplications(sid, 5)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	openCourses, err := database.RecentOpenCourses(3)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	recentCourses := enrichConflicts(sid, openCourses)
+	openCount, err := database.CountOpenCourses()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	appliedCount, err := database.CountAppliedByStudent(sid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"recent_applications": recentApps,
@@ -63,7 +88,11 @@ func (h *Handler) StudentDashboard(c *gin.Context) {
 // @Router       /student/applications [get]
 func (h *Handler) MyApplications(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
-	apps := database.StudentApplications(studentID.(uint))
+	apps, err := database.StudentApplications(studentID.(uint))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, apps)
 }
 
@@ -86,6 +115,10 @@ func (h *Handler) Apply(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if body.Grade == nil || *body.Grade == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาระบุเกรดที่เคยได้ในวิชานี้"})
+		return
+	}
 
 	course, ok := database.CourseByID(body.CourseID)
 	if !ok {
@@ -94,6 +127,18 @@ func (h *Handler) Apply(c *gin.Context) {
 	}
 	if course.Status != models.StatusOpen && course.Status != models.StatusClosingSoon {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "course is not accepting applications"})
+		return
+	}
+	hasSchedule, err := database.HasConfirmedTermSchedule(studentID.(uint))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	if !hasSchedule {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":             "กรุณากรอกและบันทึกตารางเรียนในหน้าโปรไฟล์ก่อนสมัคร Lab Boy",
+			"schedule_required": true,
+		})
 		return
 	}
 
@@ -129,7 +174,13 @@ func (h *Handler) Apply(c *gin.Context) {
 	// Notify the instructor account linked to this course.
 	if applicant, ok := database.UserByID(studentID.(uint)); ok {
 		notifs := make([]models.Notification, 0, 1)
-		for _, ins := range database.InstructorsForCourse(course) {
+		// The application is already saved, so a failed lookup only skips
+		// the notification instead of failing the request.
+		instructors, err := database.InstructorsForCourse(course)
+		if err != nil {
+			log.Printf("notify instructors of course %d: %v", course.ID, err)
+		}
+		for _, ins := range instructors {
 			notifs = append(notifs, models.Notification{
 				UserID:   ins.ID,
 				CourseID: &body.CourseID,
@@ -149,6 +200,7 @@ func (h *Handler) Apply(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id  path  int  true  "Application ID"
+// @Param        body  body  WithdrawRequest  true  "เหตุผลที่ถอนใบสมัคร"
 // @Success      200  {object}  models.Application
 // @Failure      400  {object}  handlers.ErrorResponse
 // @Failure      404  {object}  handlers.ErrorResponse
@@ -156,8 +208,22 @@ func (h *Handler) Apply(c *gin.Context) {
 func (h *Handler) Withdraw(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
 	id, _ := strconv.Atoi(c.Param("id"))
+	var body WithdrawRequest
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาระบุเหตุผลที่ถอนใบสมัคร"})
+		return
+	}
+	reason := strings.TrimSpace(body.Reason)
+	if reason == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาระบุเหตุผลที่ถอนใบสมัคร"})
+		return
+	}
+	if len([]rune(reason)) > 1000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "เหตุผลต้องมีความยาวไม่เกิน 1000 ตัวอักษร"})
+		return
+	}
 
-	updated, err := database.WithdrawApplication(uint(id), studentID.(uint))
+	updated, err := database.WithdrawApplication(uint(id), studentID.(uint), reason)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
@@ -171,8 +237,36 @@ func (h *Handler) Withdraw(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "ไม่สามารถถอนใบสมัครได้หลังจากอาจารย์ปิดรับสมัครแล้ว"})
 			return
 		}
+		if errors.Is(err, database.ErrWithdrawAlreadyRequested) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ส่งคำขอถอนไปแล้ว กรุณารออาจารย์พิจารณา"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot save application"})
 		return
+	}
+
+	// An accepted Lab Boy's withdrawal waits for the instructor's approval.
+	if updated.WithdrawRequested {
+		if course, ok := database.CourseByID(updated.CourseID); ok {
+			if applicant, ok := database.UserByID(studentID.(uint)); ok {
+				notifs := make([]models.Notification, 0, 1)
+				// The withdrawal request is already saved, so a failed lookup
+				// only skips the notification instead of failing the request.
+				instructors, err := database.InstructorsForCourse(course)
+				if err != nil {
+					log.Printf("notify instructors of course %d: %v", course.ID, err)
+				}
+				for _, ins := range instructors {
+					notifs = append(notifs, models.Notification{
+						UserID:   ins.ID,
+						CourseID: &course.ID,
+						Title:    "มีคำขอถอนจาก Lab Boy",
+						Body:     fmt.Sprintf("นักศึกษา %s ขอถอนจากการเป็น Lab Boy วิชา %s (%s) เหตุผล: %s", applicant.FullName, course.Title, course.Code, reason),
+					})
+				}
+				database.CreateNotifications(notifs)
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, updated)
@@ -197,7 +291,11 @@ func (h *Handler) ApplicationHistory(c *gin.Context) {
 		return
 	}
 
-	history := database.ApplicationHistoryForApplication(uint(id))
+	history, err := database.ApplicationHistoryForApplication(uint(id))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, history)
 }
 
@@ -250,7 +348,22 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 		}
 	}
 
+	var username *string
+	if body.Username != nil {
+		trimmed := strings.TrimSpace(*body.Username)
+		if trimmed != "" {
+			if other, found := database.UserByUsername(trimmed); found && other.ID != studentID.(uint) {
+				c.JSON(http.StatusConflict, gin.H{"error": "ชื่อผู้ใช้นี้ถูกใช้แล้ว"})
+				return
+			}
+			username = &trimmed
+		}
+	}
+
 	updated, ok := database.UpdateUser(studentID.(uint), func(u *models.User) {
+		if username != nil {
+			u.Username = username
+		}
 		if body.FullName != nil {
 			u.FullName = *body.FullName
 		}

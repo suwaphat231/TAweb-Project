@@ -18,14 +18,21 @@ type ScheduleGroupResponse struct {
 	AssignedStudents []LabBoyInfo `json:"assigned_students"`
 }
 
-func enrichScheduleGroup(sg models.ScheduleGroup, postingID uint) ScheduleGroupResponse {
+func enrichScheduleGroup(sg models.ScheduleGroup, postingID uint) (ScheduleGroupResponse, error) {
 	resp := ScheduleGroupResponse{ScheduleGroup: sg}
-	assignedIDs := database.GroupStudentIDs(sg.ID)
+	assignedIDs, err := database.GroupStudentIDs(sg.ID)
+	if err != nil {
+		return resp, err
+	}
+	accepted, err := database.AcceptedStudentsForPosting(postingID)
+	if err != nil {
+		return resp, err
+	}
 	idSet := make(map[uint]bool, len(assignedIDs))
 	for _, id := range assignedIDs {
 		idSet[id] = true
 	}
-	for _, app := range database.AcceptedStudentsForPosting(postingID) {
+	for _, app := range accepted {
 		if idSet[app.StudentID] {
 			resp.AssignedStudents = append(resp.AssignedStudents, LabBoyInfo{
 				StudentID:   app.StudentID,
@@ -34,7 +41,7 @@ func enrichScheduleGroup(sg models.ScheduleGroup, postingID uint) ScheduleGroupR
 			})
 		}
 	}
-	return resp
+	return resp, nil
 }
 
 // StaffCaseResponse is the enriched staff case returned to the frontend.
@@ -58,7 +65,7 @@ type LabBoyInfo struct {
 	StudentName string `json:"student_name"`
 }
 
-func enrichStaffCase(sc models.StaffCase) StaffCaseResponse {
+func enrichStaffCase(sc models.StaffCase) (StaffCaseResponse, error) {
 	resp := StaffCaseResponse{StaffCase: sc}
 
 	if p, ok := database.PostingByIDExported(sc.PostingID); ok {
@@ -71,7 +78,11 @@ func enrichStaffCase(sc models.StaffCase) StaffCaseResponse {
 			resp.CourseScheduleSlots = ParseThaiSchedule(c.Schedule)
 			resp.InstructorName = c.InstructorName
 		}
-		for _, app := range database.AcceptedStudentsForPosting(sc.PostingID) {
+		accepted, err := database.AcceptedStudentsForPosting(sc.PostingID)
+		if err != nil {
+			return resp, err
+		}
+		for _, app := range accepted {
 			resp.LabBoys = append(resp.LabBoys, LabBoyInfo{
 				StudentID:   app.StudentID,
 				StudentCode: app.StudentCode,
@@ -90,7 +101,7 @@ func enrichStaffCase(sc models.StaffCase) StaffCaseResponse {
 	default:
 		resp.NextTask = ""
 	}
-	return resp
+	return resp, nil
 }
 
 // ListCases godoc
@@ -103,10 +114,19 @@ func enrichStaffCase(sc models.StaffCase) StaffCaseResponse {
 // @Router /staff/cases [get]
 func (h *Handler) ListCases(c *gin.Context) {
 	statusFilter := c.Query("status")
-	cases := database.ListStaffCases(statusFilter)
+	cases, err := database.ListStaffCases(statusFilter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	out := make([]StaffCaseResponse, 0, len(cases))
 	for _, sc := range cases {
-		out = append(out, enrichStaffCase(sc))
+		r, err := enrichStaffCase(sc)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
+		out = append(out, r)
 	}
 	c.JSON(http.StatusOK, out)
 }
@@ -131,7 +151,12 @@ func (h *Handler) GetCase(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "staff case not found"})
 		return
 	}
-	c.JSON(http.StatusOK, enrichStaffCase(sc))
+	resp, err := enrichStaffCase(sc)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 type updateCaseRequest struct {
@@ -194,7 +219,12 @@ func (h *Handler) UpdateCase(c *gin.Context) {
 		Action:      "case_updated",
 		ActorID:     staffID.(uint),
 	})
-	c.JSON(http.StatusOK, enrichStaffCase(sc))
+	resp, err := enrichStaffCase(sc)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // LockPlan godoc
@@ -241,7 +271,12 @@ func (h *Handler) LockPlan(c *gin.Context) {
 		Action:      "plan_locked",
 		ActorID:     uid,
 	})
-	c.JSON(http.StatusOK, enrichStaffCase(sc))
+	resp, err := enrichStaffCase(sc)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // GetCaseAuditLog godoc
@@ -258,7 +293,11 @@ func (h *Handler) GetCaseAuditLog(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	logs := database.StaffAuditLogsForCase(uint(id))
+	logs, err := database.StaffAuditLogsForCase(uint(id))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, logs)
 }
 
@@ -281,10 +320,19 @@ func (h *Handler) GetCaseScheduleGroups(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "staff case not found"})
 		return
 	}
-	groups := database.ScheduleGroupsForCase(uint(id))
+	groups, err := database.ScheduleGroupsForCase(uint(id))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	out := make([]ScheduleGroupResponse, 0, len(groups))
 	for _, sg := range groups {
-		out = append(out, enrichScheduleGroup(sg, sc.PostingID))
+		r, err := enrichScheduleGroup(sg, sc.PostingID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
+		out = append(out, r)
 	}
 	c.JSON(http.StatusOK, out)
 }
@@ -487,7 +535,12 @@ func (h *Handler) UpdateScheduleGroup(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "schedule group not found or already locked"})
 		return
 	}
-	c.JSON(http.StatusOK, enrichScheduleGroup(sg, sc.PostingID))
+	resp, err := enrichScheduleGroup(sg, sc.PostingID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 type initCaseRequest struct {
@@ -534,7 +587,12 @@ func (h *Handler) InitCase(c *gin.Context) {
 
 	// Check if a case already exists; if so return it (idempotent).
 	if existing, ok := database.StaffCaseByPostingID(posting.ID); ok {
-		c.JSON(http.StatusOK, enrichStaffCase(existing))
+		resp, err := enrichStaffCase(existing)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
+		c.JSON(http.StatusOK, resp)
 		return
 	}
 
@@ -543,7 +601,12 @@ func (h *Handler) InitCase(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot create staff case: " + err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, enrichStaffCase(sc))
+	resp, err := enrichStaffCase(sc)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusCreated, resp)
 }
 
 // LockScheduleGroup godoc
@@ -622,7 +685,11 @@ func (h *Handler) AssignGroupStudents(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	groups := database.ScheduleGroupsForCase(uint(caseID))
+	groups, err := database.ScheduleGroupsForCase(uint(caseID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	var found models.ScheduleGroup
 	for _, sg := range groups {
 		if sg.ID == uint(groupID) {
@@ -638,7 +705,12 @@ func (h *Handler) AssignGroupStudents(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot assign students"})
 		return
 	}
-	c.JSON(http.StatusOK, enrichScheduleGroup(found, sc.PostingID))
+	resp, err := enrichScheduleGroup(found, sc.PostingID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 type generateGroupOccurrencesRequest struct {
@@ -675,7 +747,11 @@ func (h *Handler) GenerateGroupOccurrences(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "staff case not found"})
 		return
 	}
-	groups := database.ScheduleGroupsForCase(uint(caseID))
+	groups, err := database.ScheduleGroupsForCase(uint(caseID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	var sg models.ScheduleGroup
 	for _, g := range groups {
 		if g.ID == uint(groupID) {
@@ -706,7 +782,11 @@ func (h *Handler) GenerateGroupOccurrences(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "end_date must be on or after start_date"})
 		return
 	}
-	calDates := database.ListCalendarDates(uint(caseID), sc.Semester, sc.AcademicYear, &startDate, &endDate)
+	calDates, err := database.ListCalendarDates(uint(caseID), sc.Semester, sc.AcademicYear, &startDate, &endDate)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	cancelledDates := make(map[string]uint)
 	for _, cd := range calDates {
 		if cd.AffectsWork != nil && *cd.AffectsWork {
@@ -753,7 +833,11 @@ func (h *Handler) ListGroupOccurrences(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid group id"})
 		return
 	}
-	occurrences := database.WorkOccurrencesForGroup(uint(groupID))
+	occurrences, err := database.WorkOccurrencesForGroup(uint(groupID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, occurrences)
 }
 
@@ -774,7 +858,11 @@ func (h *Handler) ListGroupMonths(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid group id"})
 		return
 	}
-	months := database.ListScheduleGroupMonths(uint(groupID))
+	months, err := database.ListScheduleGroupMonths(uint(groupID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	c.JSON(http.StatusOK, months)
 }
 
@@ -922,7 +1010,11 @@ func (h *Handler) GenerateGroupMonthOccurrences(c *gin.Context) {
 	}
 
 	// Resolve the schedule group.
-	groups := database.ScheduleGroupsForCase(uint(caseID))
+	groups, err := database.ScheduleGroupsForCase(uint(caseID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	var sg models.ScheduleGroup
 	for _, g := range groups {
 		if g.ID == uint(groupID) {
@@ -940,7 +1032,11 @@ func (h *Handler) GenerateGroupMonthOccurrences(c *gin.Context) {
 	}
 
 	// Load the month entry.
-	months := database.ListScheduleGroupMonths(uint(groupID))
+	months, err := database.ListScheduleGroupMonths(uint(groupID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	var sgMonth *models.ScheduleGroupMonth
 	for i, m := range months {
 		if m.Year == year && m.Month == month {
@@ -976,7 +1072,11 @@ func (h *Handler) GenerateGroupMonthOccurrences(c *gin.Context) {
 	if sgMonth.MonthEndDate != nil {
 		endDate = *sgMonth.MonthEndDate
 	}
-	calDates := database.ListCalendarDates(uint(caseID), sc.Semester, sc.AcademicYear, &startDate, &endDate)
+	calDates, err := database.ListCalendarDates(uint(caseID), sc.Semester, sc.AcademicYear, &startDate, &endDate)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	cancelledDates := make(map[string]uint)
 	for _, cd := range calDates {
 		if cd.AffectsWork != nil && *cd.AffectsWork {
@@ -1040,7 +1140,11 @@ func (h *Handler) GetGroupMonthSummary(c *gin.Context) {
 		return
 	}
 
-	groups := database.ScheduleGroupsForCase(uint(caseID))
+	groups, err := database.ScheduleGroupsForCase(uint(caseID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	var sg models.ScheduleGroup
 	for _, g := range groups {
 		if g.ID == uint(groupID) {
@@ -1053,12 +1157,21 @@ func (h *Handler) GetGroupMonthSummary(c *gin.Context) {
 		return
 	}
 
-	occs := database.WorkOccurrencesForGroupInMonth(uint(groupID), year, month)
+	occs, err := database.WorkOccurrencesForGroupInMonth(uint(groupID), year, month)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
 	effectiveRate := sg.RatePerHourSatang
 	if effectiveRate == 0 {
 		effectiveRate = sc.RatePerHour
 	}
-	labBoyCount := len(database.GroupStudentIDs(uint(groupID)))
+	assigned, err := database.GroupStudentIDs(uint(groupID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	labBoyCount := len(assigned)
 	summary := database.ComputeMonthOccurrenceSummary(occs, year, month, effectiveRate, labBoyCount)
 	c.JSON(http.StatusOK, summary)
 }

@@ -226,6 +226,22 @@ func ensureForeignKeys(db *gorm.DB) error {
 		// M:N course-instructor junction.
 		{"course_instructors", "course_id", "courses", "id", "CASCADE"},
 		{"course_instructors", "instructor_id", "users", "id", "CASCADE"},
+		// Lab Boy performance reports: RESTRICT everywhere so deleting a
+		// user, course or application can never silently erase a report or
+		// its review history.
+		{"labboy_reports", "application_id", "applications", "id", "RESTRICT"},
+		{"labboy_reports", "student_id", "users", "id", "RESTRICT"},
+		{"labboy_reports", "course_id", "courses", "id", "RESTRICT"},
+		{"labboy_reports", "reporter_id", "users", "id", "RESTRICT"},
+		{"labboy_report_responses", "report_id", "labboy_reports", "id", "RESTRICT"},
+		{"labboy_report_responses", "author_id", "users", "id", "RESTRICT"},
+		{"labboy_report_evidence", "report_id", "labboy_reports", "id", "RESTRICT"},
+		{"labboy_report_evidence", "uploaded_by_id", "users", "id", "RESTRICT"},
+		{"labboy_report_evidence", "response_id", "labboy_report_responses", "id", "RESTRICT"},
+		{"labboy_report_reviews", "report_id", "labboy_reports", "id", "RESTRICT"},
+		{"labboy_report_reviews", "reviewer_id", "users", "id", "RESTRICT"},
+		{"labboy_report_status_history", "report_id", "labboy_reports", "id", "RESTRICT"},
+		{"labboy_report_status_history", "actor_id", "users", "id", "RESTRICT"},
 	}
 	for _, s := range specs {
 		name := fmt.Sprintf("fk_%s_%s", s.table, s.column)

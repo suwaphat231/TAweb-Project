@@ -18,6 +18,7 @@ type StudentInfoOCR struct {
 	Curriculum     *string
 	Faculty        *string
 	Campus         *string
+	StudentStatus  *string
 	Confidence     float64
 }
 
@@ -35,6 +36,7 @@ func UpsertStudentInfoDocument(userID uint, fileName string, fileData []byte, oc
 		OcrCurriculum:     ocr.Curriculum,
 		OcrFaculty:        ocr.Faculty,
 		OcrCampus:         ocr.Campus,
+		OcrStudentStatus:  ocr.StudentStatus,
 		Confidence:        ocr.Confidence,
 		ConfirmedAt:       nil,
 	}
@@ -44,7 +46,7 @@ func UpsertStudentInfoDocument(userID uint, fileName string, fileData []byte, oc
 			"file_name", "file_data",
 			"ocr_student_id", "ocr_full_name_th", "ocr_full_name_en",
 			"ocr_education_level", "ocr_curriculum", "ocr_faculty", "ocr_campus",
-			"confidence", "confirmed_at", "updated_at",
+			"ocr_student_status", "confidence", "confirmed_at", "updated_at",
 		}),
 	}).Create(&doc).Error; err != nil {
 		return models.StudentInfoDocument{}, err
@@ -58,7 +60,7 @@ func StudentInfoDocumentByUserID(userID uint) (models.StudentInfoDocument, bool)
 	var doc models.StudentInfoDocument
 	cols := "id, user_id, file_name, " +
 		"ocr_student_id, ocr_full_name_th, ocr_full_name_en, " +
-		"ocr_education_level, ocr_curriculum, ocr_faculty, ocr_campus, " +
+		"ocr_education_level, ocr_curriculum, ocr_faculty, ocr_campus, ocr_student_status, " +
 		"confidence, confirmed_at, created_at, updated_at"
 	if err := DB.Select(cols).Where("user_id = ?", userID).First(&doc).Error; err != nil {
 		return models.StudentInfoDocument{}, false

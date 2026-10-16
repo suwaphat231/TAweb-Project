@@ -21,6 +21,8 @@ func TestRejectInvalidStudentRequestsBeforeDatabaseAccess(t *testing.T) {
 		{"negative year", `{"year":-1}`, h.UpdateProfile},
 		{"blank name", `{"full_name":"   "}`, h.UpdateProfile},
 		{"invalid grade", `{"course_id":1,"role_applied":"labboy","grade":"Z"}`, h.Apply},
+		{"missing grade", `{"course_id":1,"role_applied":"labboy"}`, h.Apply},
+		{"blank grade", `{"course_id":1,"role_applied":"labboy","grade":""}`, h.Apply},
 		{"invalid role", `{"course_id":1,"role_applied":"admin"}`, h.Apply},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

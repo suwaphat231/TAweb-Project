@@ -27,7 +27,7 @@ func TestPersistenceAcrossConnections(t *testing.T) {
 		DB = db
 	}
 	open()
-	if err := DB.AutoMigrate(&models.User{}, &models.Course{}, &models.Transcript{}); err != nil {
+	if err := DB.AutoMigrate(&models.User{}, &models.Course{}, &models.Transcript{}, &models.CourseInstructor{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := migrateApplicationData(DB); err != nil {
@@ -66,12 +66,20 @@ func TestPersistenceAcrossConnections(t *testing.T) {
 	if CreateNotifications([]models.Notification{{UserID: student.ID, Title: "Accepted", Body: "Saved"}}) != 1 {
 		t.Fatal("save notification")
 	}
-	n := UserNotifications(student.ID)[0]
-	MarkNotifRead(n.ID, student.ID+1)
-	if UserNotifications(student.ID)[0].IsRead {
+	notifs, err := UserNotifications(student.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := notifs[0]
+	if err := MarkNotifRead(n.ID, student.ID+1); err != nil {
+		t.Fatal(err)
+	}
+	if notifs, err = UserNotifications(student.ID); err != nil || notifs[0].IsRead {
 		t.Fatal("another user marked notification")
 	}
-	MarkNotifRead(n.ID, student.ID)
+	if err := MarkNotifRead(n.ID, student.ID); err != nil {
+		t.Fatal(err)
+	}
 	CreateActivityLog(models.ActivityLog{UserID: &student.ID, Method: "POST", Path: "/persistence-test", StatusCode: 200})
 	sqlDB, _ := DB.DB()
 	if err := sqlDB.Close(); err != nil {
@@ -93,13 +101,24 @@ func TestPersistenceAcrossConnections(t *testing.T) {
 	if _, ok := ApplicationByIDForStudent(app.ID, student.ID+1); ok {
 		t.Fatal("another user read application")
 	}
-	if len(StudentApplications(student.ID)) != 1 || len(AcceptedStudentsForCourse(course.ID)) != 1 {
+	studentApps, err := StudentApplications(student.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted, err := AcceptedStudentsForCourse(course.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(studentApps) != 1 || len(accepted) != 1 {
 		t.Fatal("listing lost")
 	}
-	if !UserNotifications(student.ID)[0].IsRead {
+	if notifs, err = UserNotifications(student.ID); err != nil || !notifs[0].IsRead {
 		t.Fatal("read state lost")
 	}
-	logs, total := ListActivityLogs("", "POST", 0, 10)
+	logs, total, err := ListActivityLogs("", "POST", 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if total < 1 || logs[0].Path != "/persistence-test" {
 		t.Fatal("activity lost")
 	}
@@ -112,7 +131,7 @@ func TestPersistenceAcrossConnections(t *testing.T) {
 	if saved, ok := ApplicationByID(app.ID); !ok || saved.PostingID != app.PostingID {
 		t.Fatal("reset lost historical application")
 	}
-	if len(ApplicantsForCourse(course.ID, "", "", "")) != 0 {
+	if applicants, err := ApplicantsForCourse(course.ID, "", "", ""); err != nil || len(applicants) != 0 {
 		t.Fatal("old applications leaked into new round")
 	}
 	newApp, err := CreateApplication(models.Application{StudentID: student.ID, CourseID: course.ID, RoleApplied: models.RoleLabBoy})
@@ -139,7 +158,7 @@ func TestPersistenceAcrossConnections(t *testing.T) {
 	if current.LabBoySlots != 0 || current.RequireGradeProof || current.Deadline != nil {
 		t.Fatalf("zero values were not saved: %+v", current)
 	}
-	if _, err := WithdrawApplication(app.ID, student.ID); err != nil {
+	if _, err := WithdrawApplication(app.ID, student.ID, "ตารางเรียนชน"); err != nil {
 		t.Fatal(err)
 	}
 	current, _ = ActivePostingForCourse(course.ID)

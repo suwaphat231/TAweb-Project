@@ -5,7 +5,6 @@ import { useAuth } from '../../hooks/useAuth'
 import { Input } from '../../components/ui/Input'
 import { Button } from '../../components/ui/Button'
 import { Avatar } from '../../components/ui/Avatar'
-import { getInitials } from '../../utils/initials'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../hooks/useToast'
 
@@ -71,7 +70,7 @@ export default function StaffProfile() {
           ) : (
             <>
               <div style={{ position: 'relative', flexShrink: 0 }}>
-                <Avatar initials={getInitials(p?.full_name ?? '?')} color="blue" size={64} />
+                <Avatar size={64} />
                 <span style={{
                   position: 'absolute', bottom: 2, right: 2, width: 14, height: 14,
                   borderRadius: '50%', background: 'var(--green)', border: '2.5px solid #fff',

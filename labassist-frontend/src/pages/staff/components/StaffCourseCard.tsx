@@ -1,4 +1,5 @@
 import type { CourseOffering, CourseDocStatus } from '../../../types'
+import { formatSchedule } from '../../../utils/schedule'
 
 const STATUS_BADGE: Record<CourseDocStatus, string> = {
   waiting:     'badge badge-amber',
@@ -80,7 +81,7 @@ export function StaffCourseCard({ offering, onAction }: Props) {
       {/* Meta */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', fontSize: 12, color: 'var(--ink-500)' }}>
         <span>ภาค {offering.semester} / {offering.academicYear}</span>
-        {offering.schedule && <span>{offering.schedule}</span>}
+        {offering.schedule && <span>{formatSchedule(offering.schedule, { separator: ' / ' })}</span>}
         {offering.room && <span>ห้อง {offering.room}</span>}
       </div>
 

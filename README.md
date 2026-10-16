@@ -42,6 +42,21 @@ git clone <repo-url>
 cd TAweb-test
 ```
 
+### เริ่มเร็ว (เครื่องใหม่ / Codespace)
+
+```bash
+./setup-env.sh                       # สร้าง .env (JWT_SECRET, DEV_LOGIN, demo accounts) — Codespace รันให้อัตโนมัติ
+cd labassist-backend && ./dev.sh     # MySQL + API :8080
+cd labassist-frontend && npm run dev # UI :5173 (อีก terminal)
+```
+
+Login ด้วย `demo_std01` / `parinya` / `admin` รหัส `password123` หรือปุ่ม dev login ได้ทันที
+ทั้งจาก `localhost:5173` และ URL ของ Codespace (`https://<name>-5173.app.github.dev`)
+
+**Google Sign-In บน Codespace:** Google ไม่รองรับ wildcard origin ต้องเพิ่ม URL
+`https://<codespace-name>-5173.app.github.dev` ใน Authorized JavaScript origins ของ OAuth client
+(Google Cloud Console) ทุกครั้งที่สร้าง Codespace ใหม่ หรือเปิดผ่าน VS Code desktop ที่ forward เป็น `http://localhost:5173`
+
 ### 2. Database
 
 ```bash
@@ -103,7 +118,8 @@ cd labassist-frontend
 สร้างไฟล์ `.env.local`:
 
 ```env
-VITE_API_URL=http://localhost:8080/api/v1
+# Use the same-origin path when the frontend proxy serves /api to the backend.
+VITE_API_URL=/api/v1
 VITE_GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
 ```
 
@@ -112,6 +128,9 @@ npm install
 npm run dev
 # UI พร้อมใช้งานที่ http://localhost:5173
 ```
+
+เมื่อต้องการเปิดจากคอมพิวเตอร์เครื่องอื่น ให้รัน `npm run dev -- --host 0.0.0.0`
+และใช้ URL ของเครื่องที่รัน frontend แทน `localhost` โดยต้องเปิด backend ให้เข้าถึงได้จากเครื่องนั้นด้วย
 
 ---
 

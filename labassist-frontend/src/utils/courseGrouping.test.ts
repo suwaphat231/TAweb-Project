@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getAppliedSection, groupCourseSections, groupSectionsByTime, timeOptionSecLabel } from './courseGrouping'
+import { getAppliedSection, getAppliedSections, groupCourseSections, groupSectionsByTime, scheduleDayLabel, timeOptionSecLabel } from './courseGrouping'
 import type { Application, Course } from '../types'
 
 describe('applications across recruitment rounds', () => {
@@ -25,6 +25,18 @@ describe('applications across recruitment rounds', () => {
     expect(getAppliedSection(group, [oldApplication, {
       ...oldApplication, id: 2, posting_id: 20, posting_active: true, status: 'pending',
     }])).toBe(course)
+  })
+
+  it('returns every section applied to when the student picked several times', () => {
+    const sec2 = { ...course, id: 2, section: 2 }
+    const sec3 = { ...course, id: 3, section: 3 }
+    const multi = groupCourseSections([course, sec2, sec3])[0]
+    const current = { ...oldApplication, posting_active: true, status: 'pending' } satisfies Application
+    expect(getAppliedSections(multi, [
+      { ...current, id: 2, course_id: 1 },
+      { ...current, id: 3, course_id: 3 },
+      { ...current, id: 4, course_id: 2, status: 'withdrawn' },
+    ]).map((s) => s.id)).toEqual([1, 3])
   })
 })
 
@@ -68,5 +80,22 @@ describe('groupSectionsByTime', () => {
 
   it('keeps sections without a schedule apart', () => {
     expect(groupSectionsByTime([{ ...base, id: 1, section: 1 }, { ...base, id: 2, section: 2 }])).toHaveLength(2)
+  })
+})
+
+describe('scheduleDayLabel', () => {
+  it('names the day in Thai and drops the room', () => {
+    expect(scheduleDayLabel('Tu 13:00 - 16:35 1227/1,1227/2 ป.1')).toBe('อังคาร 13:00–16:35')
+  })
+  it('reads Thai day abbreviations', () => {
+    expect(scheduleDayLabel('พฤ 13:00-16:00')).toBe('พฤหัส 13:00–16:00')
+    expect(scheduleDayLabel('อ 9:00-12:00')).toBe('อังคาร 09:00–12:00')
+  })
+  it('shares the day name across periods on the same day', () => {
+    expect(scheduleDayLabel('We 08:30 - 10:15 1227 ป.1\nWe 10:20 - 12:05 1227 ป.1')).toBe('พุธ 08:30–10:15, 10:20–12:05')
+  })
+  it('keeps unrecognised text and handles empty schedules', () => {
+    expect(scheduleDayLabel('TBA')).toBe('TBA')
+    expect(scheduleDayLabel(undefined)).toBe('')
   })
 })
