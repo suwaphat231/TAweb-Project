@@ -15,7 +15,7 @@ import (
 	"strings"
 )
 
-//go:embed templates/payment_evidence.docx templates/payment_request.docx templates/work_report.docx templates/lab_boy_hiring_notice.docx
+//go:embed templates/payment_evidence.docx templates/payment_request.docx templates/work_report.docx templates/lab_boy_hiring_notice.docx templates/approval_memo.docx
 var templateFS embed.FS
 
 var trPattern = regexp.MustCompile(`(?s)<w:tr\b.*?</w:tr>`)

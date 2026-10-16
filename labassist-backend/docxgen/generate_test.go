@@ -142,18 +142,47 @@ func TestRenderWorkReport_TwoRowGroups(t *testing.T) {
 	if got := strings.Count(xml, "TESTSTUDENT_MARKER"); got != 4 {
 		t.Errorf("expected 4 name rows, found %d", got)
 	}
-	if got := strings.Count(xml, "517122-165"); got != 3 {
-		t.Errorf("expected course code in all 3 session rows, found %d", got)
+	for _, d := range []string{"3 ธ.ค. 2568", "17 ธ.ค. 2568", "24 ธ.ค. 2568"} {
+		if !strings.Contains(xml, d) {
+			t.Errorf("missing session date %s", d)
+		}
+	}
+	// The course is described once per month page, as on the paper form.
+	if got := strings.Count(xml, "517122-165"); got != 1 {
+		t.Errorf("expected course code once, found %d", got)
 	}
 }
 
-func TestRenderDocument_NoTemplateForApprovalMemo(t *testing.T) {
-	// approval_memo has no CourseID, so RenderDocument must return
-	// ErrNoTemplate before ever attempting a database lookup.
-	doc := models.StaffDocument{Type: models.DocApprovalMemo}
+func TestRenderDocument_NoTemplateForUnknownType(t *testing.T) {
+	// No CourseID here, so RenderDocument must return ErrNoTemplate before
+	// ever attempting a database lookup.
+	doc := models.StaffDocument{Type: models.DocType("unknown")}
 	_, _, err := RenderDocument(doc)
 	if err != ErrNoTemplate {
 		t.Fatalf("expected ErrNoTemplate, got %v", err)
+	}
+}
+
+func TestRenderDocument_LabNoticeUsesApprovalMemoTemplate(t *testing.T) {
+	// Step 3 (lab_notice) is issued on the approval memo template.
+	doc := models.StaffDocument{
+		Type:   models.DocLabNotice,
+		Name:   "lab notice",
+		Roster: []models.RosterEntry{{StudentName: "นายทดสอบ ระบบ", StudentCode: "660710999"}},
+	}
+	data, filename, err := RenderDocument(doc)
+	if err != nil {
+		t.Fatalf("RenderDocument(lab_notice): %v", err)
+	}
+	if filename != "lab notice.docx" {
+		t.Errorf("filename = %q", filename)
+	}
+	xml := assertValidDocx(t, data)
+	if !strings.Contains(xml, "660710999") {
+		t.Error("student code missing from rendered lab_notice")
+	}
+	if !strings.Contains(xml, "ขออนุมัติจ้างนักศึกษาปฏิบัติงาน") {
+		t.Error("lab_notice not rendered from the approval memo template")
 	}
 }
 

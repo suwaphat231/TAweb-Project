@@ -32,6 +32,7 @@ func TestWorkReportPreservesFractionalHours(t *testing.T) {
 	doc := models.StaffDocument{
 		Period:       &models.DocumentPeriod{Month: 10, Year: 2569},
 		SessionDates: []int{6}, HoursPerSession: 2.5,
+		WorkTimeStart: "13:00", WorkTimeEnd: "15:30",
 		Roster: []models.RosterEntry{{StudentName: "Fractional hours"}},
 	}
 	data, err := renderWorkReport(doc, sampleCourse())
@@ -39,7 +40,7 @@ func TestWorkReportPreservesFractionalHours(t *testing.T) {
 		t.Fatal(err)
 	}
 	xml := assertValidDocx(t, data)
-	for _, value := range []string{"รวม 2.5 ชั่วโมง", "6 ต.ค. 2569"} {
+	for _, value := range []string{"13.00 – 15.30 น.", "6 ต.ค. 2569"} {
 		if !strings.Contains(xml, value) {
 			t.Errorf("generated document is missing %s", value)
 		}
