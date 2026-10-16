@@ -184,7 +184,8 @@ export function DocumentWorkflow({
   }
 
   const views = workflow.steps
-  const isMemo = createTarget?.view.type === 'approval_memo'
+  // approval_memo and lab_notice share the memo template and its header fields.
+  const isMemo = createTarget?.view.type === 'approval_memo' || createTarget?.view.type === 'lab_notice'
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -380,7 +381,7 @@ export function DocumentWorkflow({
             {isMemo && (
               <>
                 <Input label="ที่ (เลขที่บันทึก)" placeholder="อว 8613.7/..." value={form.ref_number ?? ''} maxLength={300} onChange={(e) => setForm((f) => ({ ...f, ref_number: e.target.value }))} />
-                <Input label="ชื่อเจ้าหน้าที่ผู้จัดทำ" value={form.staff_officer_name ?? ''} maxLength={300} onChange={(e) => setForm((f) => ({ ...f, staff_officer_name: e.target.value }))} />
+                <Input label="ชื่อเจ้าหน้าที่ผู้จัดทำ" placeholder="เว้นว่าง = ใช้ชื่อผู้สร้างเอกสาร" value={form.staff_officer_name ?? ''} maxLength={300} onChange={(e) => setForm((f) => ({ ...f, staff_officer_name: e.target.value }))} />
                 <Input label="ชื่อหัวหน้าภาควิชา" value={form.dept_head_name ?? ''} maxLength={300} onChange={(e) => setForm((f) => ({ ...f, dept_head_name: e.target.value }))} />
                 <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>ข้อมูลส่วนหัวบันทึกที่ไม่มีในฐานข้อมูล — เว้นว่างได้และกรอกภายหลังเมื่อมีเลขที่</span>
               </>

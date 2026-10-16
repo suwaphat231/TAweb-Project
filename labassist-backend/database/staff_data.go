@@ -163,6 +163,9 @@ func UpdateStaffDocumentSchedule(id uint, schedule []models.WorkDaySlot, session
 	if err := DB.First(&doc, id).Error; err != nil {
 		return models.StaffDocument{}, false
 	}
+	if doc.Type != models.DocHiringNotice {
+		return models.StaffDocument{}, false
+	}
 	doc.WorkSchedule = schedule
 	doc.SessionsPerMonth = sessionsPerMonth
 	if err := DB.Model(&doc).Select("work_schedule", "sessions_per_month").Updates(&doc).Error; err != nil {

@@ -143,11 +143,11 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 		return code, d
 	}
 
-	var hiring, memo models.StaffDocument
+	var hiring, memo, notice models.StaffDocument
 
 	t.Run("workflow shows course info and blocks until the form is verified", func(t *testing.T) {
 		w := getWF(t)
-		if w.Course.Code != course.Code || w.Course.Semester != "2" || w.Course.AcademicYear != 2569 || len(w.Steps) != 2 {
+		if w.Course.Code != course.Code || w.Course.Semester != "2" || w.Course.AcademicYear != 2569 || len(w.Steps) != 3 {
 			t.Fatalf("workflow = %+v", w)
 		}
 		if len(w.Course.Instructors) != 1 || !strings.Contains(w.Course.Instructors[0], "Inst") {
@@ -193,7 +193,10 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 		if code != 422 || !strings.Contains(string(raw), "ก่อน") {
 			t.Fatalf("memo before hiring notice: %d %s", code, raw)
 		}
-		expect(t, 400, "POST", wfPath+"/lab_notice", tokStaff, nil)
+		code, raw = call("POST", wfPath+"/lab_notice", tokStaff, nil)
+		if code != 422 || !strings.Contains(string(raw), "ก่อน") {
+			t.Fatalf("lab notice before memo: %d %s", code, raw)
+		}
 		expect(t, 400, "POST", wfPath+"/payment_request", tokStaff, nil)
 		expect(t, 404, "POST", "/staff/courses/999999999/document-workflow/hiring_notice", tokStaff, nil)
 	})
@@ -259,6 +262,24 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 		}
 	})
 
+	t.Run("lab notice is step 3, built on the memo, signed by its creator", func(t *testing.T) {
+		var code int
+		code, notice = create("lab_notice", tokStaff, nil)
+		if code != 201 {
+			t.Fatalf("create lab_notice = %d", code)
+		}
+		if notice.BasedOnDocumentID == nil || *notice.BasedOnDocumentID != memo.ID {
+			t.Fatalf("lab notice based on %v, want memo %d", notice.BasedOnDocumentID, memo.ID)
+		}
+		if notice.StaffOfficerName != staffU.FullName {
+			t.Fatalf("staff officer = %q, want creator %q", notice.StaffOfficerName, staffU.FullName)
+		}
+		code, file := call("GET", fmt.Sprintf("/staff/documents/%d/file", notice.ID), tokStaff, nil)
+		if code != http.StatusOK || string(file[:2]) != "PK" {
+			t.Fatalf("lab notice download = %d, want a .docx", code)
+		}
+	})
+
 	t.Run("documents of one course never appear in another", func(t *testing.T) {
 		code, raw := call("GET", fmt.Sprintf("/staff/courses/%d/document-workflow", other.ID), tokStaff, nil)
 		if code != 200 || strings.Contains(string(raw), fmt.Sprintf(`"id":%d,`, hiring.ID)) {
@@ -268,6 +289,7 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 
 	t.Run("a document another step depends on cannot be cancelled", func(t *testing.T) {
 		expect(t, 409, "DELETE", fmt.Sprintf("/staff/documents/%d", hiring.ID), tokStaff, nil)
+		expect(t, 409, "DELETE", fmt.Sprintf("/staff/documents/%d", memo.ID), tokStaff, nil) // lab notice depends on it
 		expect(t, 403, "DELETE", fmt.Sprintf("/staff/documents/%d", memo.ID), tokInst, nil)
 	})
 
@@ -299,6 +321,8 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 	})
 
 	t.Run("cancel keeps the row and its audit trail", func(t *testing.T) {
+		// Later steps go first: the lab notice is built on the memo.
+		expect(t, 204, "DELETE", fmt.Sprintf("/staff/documents/%d", notice.ID), tokStaff, nil)
 		expect(t, 204, "DELETE", fmt.Sprintf("/staff/documents/%d", memo.ID), tokStaff, nil)
 		saved, ok := database.StaffDocumentByID(memo.ID)
 		if !ok || saved.Status != models.DocCancelled {

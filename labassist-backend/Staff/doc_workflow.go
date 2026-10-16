@@ -33,9 +33,11 @@ func docTypePtr(t models.DocType) *models.DocType { return &t }
 //   - Step 2's title is from the department's sample memo
 //     (บันทึกขออนุมัติ (ป.ตรี)…doc, "เรื่อง ขออนุมัติจ้างนักศึกษาปฏิบัติงาน"),
 //     rendered from approval_memo.docx.
+//   - Step 3 is issued on the same memo template (docxgen renders both).
 var preWorkSteps = []workflowStep{
 	{Step: 1, Type: models.DocHiringNotice, Label: "แบบฟอร์มแจ้งความประสงค์ในการจ้างนักศึกษาช่วยสอนและช่วยคุมปฏิบัติการ"},
 	{Step: 2, Type: models.DocApprovalMemo, Label: "บันทึกข้อความ ขออนุมัติจ้างนักศึกษาปฏิบัติงาน", Requires: docTypePtr(models.DocHiringNotice)},
+	{Step: 3, Type: models.DocLabNotice, Label: "แบบแจ้งนักศึกษาช่วยคุมรายวิชาปฏิบัติการ", Requires: docTypePtr(models.DocApprovalMemo)},
 }
 
 // monthlyDocTypes are created per billing month (GenerateMonthlyDocument),
@@ -98,8 +100,17 @@ type WorkflowResponse struct {
 
 // templateReady lists the step types that can be rendered to .docx today.
 var templateReady = map[models.DocType]bool{
-	models.DocHiringNotice: true, models.DocApprovalMemo: true, models.DocWorkReport: true,
-	models.DocPaymentEvidence: true, models.DocPaymentRequest: true,
+	models.DocHiringNotice: true, models.DocApprovalMemo: true, models.DocLabNotice: true,
+	models.DocWorkReport: true, models.DocPaymentEvidence: true, models.DocPaymentRequest: true,
+}
+
+// memoStaffOfficer is who signs as the preparer of a memo-template document
+// (approval memo, lab notice): the name given, else whoever creates it.
+func memoStaffOfficer(t models.DocType, given, currentUser string) string {
+	if given != "" || (t != models.DocApprovalMemo && t != models.DocLabNotice) {
+		return given
+	}
+	return currentUser
 }
 
 // offering resolves the course and its active posting, answering the
@@ -281,7 +292,7 @@ type CreateWorkflowStepRequest struct {
 	Replace bool   `json:"replace"`
 	Reason  string `json:"reason"`
 	Note    string `json:"note"`
-	// Memo header fields no table holds (only used by the approval memo).
+	// Memo header fields no table holds (approval memo / lab notice only).
 	RefNumber        string `json:"ref_number"`
 	DeptHeadName     string `json:"dept_head_name"`
 	StaffOfficerName string `json:"staff_officer_name"`
@@ -297,7 +308,7 @@ const maxWorkflowTextLen = 300
 // @Produce      json
 // @Security     BearerAuth
 // @Param        courseId  path  int                        true  "Course ID"
-// @Param        type      path  string                     true  "hiring_notice | approval_memo"
+// @Param        type      path  string                     true  "hiring_notice | approval_memo | lab_notice"
 // @Param        body      body  CreateWorkflowStepRequest  false "ตัวเลือก"
 // @Success      201  {object}  models.StaffDocument
 // @Failure      400  {object}  handlers.ErrorResponse
@@ -354,7 +365,7 @@ func createStep(c *gin.Context, step workflowStep, course models.Course, posting
 	doc.Note = body.Note
 	doc.RefNumber = body.RefNumber
 	doc.DeptHeadName = body.DeptHeadName
-	doc.StaffOfficerName = body.StaffOfficerName
+	doc.StaffOfficerName = memoStaffOfficer(step.Type, body.StaffOfficerName, c.GetString("name"))
 
 	created, err := database.CreateWorkflowDocument(database.NewWorkflowDocument{
 		Doc: doc, Requires: step.Requires, Replace: body.Replace, Reason: body.Reason, ActorID: actorID,
