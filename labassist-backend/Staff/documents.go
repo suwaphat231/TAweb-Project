@@ -24,6 +24,17 @@ func roundSatang(baht float64) float64 {
 	return math.Round(baht*100) / 100
 }
 
+// planHoursAndAmount totals one student's hours over the payable
+// (scheduled / completed) sessions of a work plan, and what they earn at rate.
+func planHoursAndAmount(occs []models.OccurrenceSnapshot, rate float64) (hours, amount float64) {
+	for _, o := range occs {
+		if o.Status == string(models.OccurrenceScheduled) || o.Status == string(models.OccurrenceCompleted) {
+			hours += o.Hours
+		}
+	}
+	return roundSatang(hours), roundSatang(hours * rate)
+}
+
 type createDocumentRequest struct {
 	Type      models.DocType `json:"type"    binding:"required"`
 	CourseRef string         `json:"course_ref" binding:"required"`
@@ -77,6 +88,7 @@ type regVerifyRequest struct {
 var docTypeLabel = map[models.DocType]string{
 	models.DocHiringNotice:    "แบบฟอร์มแจ้งความประสงค์จ้าง",
 	models.DocApprovalMemo:    "บันทึกขออนุมัติจ้าง",
+	models.DocLabNotice:       "แบบแจ้งนักศึกษาช่วยคุมรายวิชาปฏิบัติการ",
 	models.DocPaymentEvidence: "หลักฐานการจ่ายเงิน",
 	models.DocPaymentRequest:  "บันทึกขอเบิกจ่าย",
 	models.DocWorkReport:      "รายงานผลการปฏิบัติงานนอกเวลาราชการ",
@@ -91,7 +103,7 @@ func needsRoster(t models.DocType) bool {
 // needsCourse reports whether a document type requires a course_id and
 // builds its student list from that course's accepted applicants.
 func needsCourse(t models.DocType) bool {
-	return t == models.DocHiringNotice || needsRoster(t)
+	return t == models.DocHiringNotice || t == models.DocApprovalMemo || t == models.DocLabNotice || needsRoster(t)
 }
 
 // ListDocuments godoc
@@ -180,7 +192,11 @@ func (h *Handler) CreateDocument(c *gin.Context) {
 		doc.PostingID = &posting.ID
 		doc.CourseID = body.CourseID
 
-		if needsRoster(body.Type) {
+		// The workflow's step 4 sends no line items: the work report then
+		// covers the Staff Case's whole work plan, one page per month.
+		fromPlan := body.Type == models.DocWorkReport && body.StaffCaseID != nil && len(body.SessionDates) == 0
+
+		if needsRoster(body.Type) && !fromPlan {
 			if body.HoursPerSession <= 0 {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "hours_per_session must be greater than zero"})
 				return
@@ -249,7 +265,8 @@ func (h *Handler) CreateDocument(c *gin.Context) {
 			doc.Roster = roster
 			doc.TotalAmount = roundSatang(total)
 		} else {
-			// hiring_notice: student list only, no financial fields.
+			// hiring_notice / approval_memo / lab_notice / plan-based work_report:
+			// student list from the course; amounts (if any) come from the plan.
 			var roster []models.RosterEntry
 			for _, app := range database.AcceptedStudentsForCourse(*body.CourseID) {
 				if excluded[app.StudentID] {
@@ -263,8 +280,16 @@ func (h *Handler) CreateDocument(c *gin.Context) {
 			}
 			doc.Roster = roster
 
+			// The approval memo (and lab_notice, issued on the same template)
+			// is signed by whoever prepares it.
+			usesMemoTemplate := body.Type == models.DocApprovalMemo || body.Type == models.DocLabNotice
+			if usesMemoTemplate && doc.StaffOfficerName == "" {
+				doc.StaffOfficerName = c.GetString("name")
+			}
+
 			// When a Staff Case is linked, derive schedule from confirmed plan data.
-			if body.StaffCaseID != nil {
+			// The approval memo lists every work date, so it needs the plan too.
+			if (body.Type == models.DocHiringNotice || usesMemoTemplate || fromPlan) && body.StaffCaseID != nil {
 				snap := database.BuildHiringNoticeSnapshot(*body.StaffCaseID)
 				if !snap.CanCreate {
 					reason := "แผนปฏิบัติงานยังไม่สมบูรณ์"
@@ -280,11 +305,32 @@ func (h *Handler) CreateDocument(c *gin.Context) {
 				}
 
 				// Freeze a full data snapshot so the document is reproducible.
-				if ds, err := database.BuildDocumentSnapshot(*body.StaffCaseID, len(doc.Roster)); err == nil {
+				ds, err := database.BuildDocumentSnapshot(*body.StaffCaseID, len(doc.Roster))
+				if err == nil {
 					if b, err := json.Marshal(ds); err == nil {
 						doc.DataSnapshot = string(b)
 						doc.SnapshotVersion = ds.SchemaVersion
 					}
+				}
+
+				if fromPlan {
+					rate := ds.RatePerHourBaht
+					if rate <= 0 {
+						rate = float64(database.DefaultHourlyRateSatang) / 100.0
+					}
+					hours, perAmount := planHoursAndAmount(ds.Occurrences, rate)
+					if err != nil || hours <= 0 {
+						c.JSON(http.StatusBadRequest, gin.H{"error": "ยังไม่มีวันปฏิบัติงานในแผน"})
+						return
+					}
+					var total float64
+					for i := range doc.Roster {
+						doc.Roster[i].Hours = hours
+						doc.Roster[i].Amount = perAmount
+						total += perAmount
+					}
+					doc.Rate = rate
+					doc.TotalAmount = roundSatang(total)
 				}
 			}
 		}
