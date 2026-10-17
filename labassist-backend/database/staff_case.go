@@ -1234,32 +1234,21 @@ func BuildHiringNoticeSnapshot(caseID uint) HiringNoticePlanSnapshot {
 		return snap
 	}
 
-	// Build work schedule from all groups' weekly patterns.
-	var workSchedule []models.WorkDaySlot
-	for _, sg := range groups {
-		for _, slot := range groupWeekSlots(sg) {
-			th := weekDayThai[slot.Day]
-			if th == "" {
-				th = slot.Day
-			}
-			workSchedule = append(workSchedule, models.WorkDaySlot{
-				Day:       th,
-				TimeStart: slot.StartTime,
-				TimeEnd:   slot.EndTime,
-			})
-		}
-	}
-	snap.WorkSchedule = workSchedule
-
-	// Count valid occurrences and distinct active months across all groups.
+	// Count valid occurrences and distinct active months across all groups,
+	// and build the weekly schedule from the groups that have work days. A
+	// group with no work days (e.g. left behind by a repeated "add semester")
+	// and a slot repeated across groups would otherwise print twice.
 	totalValid := 0
 	monthKeys := make(map[string]struct{})
+	var workSchedule []models.WorkDaySlot
+	seenSlot := make(map[models.WorkDaySlot]bool)
 	for _, sg := range groups {
 		months, err := ListScheduleGroupMonths(sg.ID)
 		if err != nil {
 			snap.BlockingReasons = append(snap.BlockingReasons, errSnapshotRead)
 			return snap
 		}
+		groupValid := 0
 		for _, m := range months {
 			occs, err := WorkOccurrencesForGroupInMonth(sg.ID, m.Year, m.Month)
 			if err != nil {
@@ -1268,12 +1257,28 @@ func BuildHiringNoticeSnapshot(caseID uint) HiringNoticePlanSnapshot {
 			}
 			for _, o := range occs {
 				if o.Status == models.OccurrenceScheduled || o.Status == models.OccurrenceCompleted {
-					totalValid++
+					groupValid++
 					monthKeys[fmt.Sprintf("%d-%02d", m.Year, m.Month)] = struct{}{}
 				}
 			}
 		}
+		totalValid += groupValid
+		if groupValid == 0 {
+			continue
+		}
+		for _, slot := range groupWeekSlots(sg) {
+			th := weekDayThai[slot.Day]
+			if th == "" {
+				th = slot.Day
+			}
+			ws := models.WorkDaySlot{Day: th, TimeStart: slot.StartTime, TimeEnd: slot.EndTime}
+			if !seenSlot[ws] {
+				seenSlot[ws] = true
+				workSchedule = append(workSchedule, ws)
+			}
+		}
 	}
+	snap.WorkSchedule = workSchedule
 
 	snap.TotalValidDays = totalValid
 	if totalValid == 0 {

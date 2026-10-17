@@ -210,6 +210,11 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+		// Clicking "add whole semester" again used to leave an empty group
+		// with the same weekly slot behind.
+		if _, err := database.UpsertScheduleGroup(models.ScheduleGroup{StaffCaseID: sc.ID, WeekDay: "WED", StartTime: "10:20", EndTime: "12:20"}); err != nil {
+			t.Fatal(err)
+		}
 	})
 
 	t.Run("only staff/admin may create, and steps must go in order", func(t *testing.T) {
@@ -232,6 +237,9 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 		code, d := create("hiring_notice", tokStaff, nil)
 		if code != 201 {
 			t.Fatalf("create hiring = %d", code)
+		}
+		if len(d.WorkSchedule) != 1 {
+			t.Fatalf("weekly work days = %+v, want the one Wednesday slot once", d.WorkSchedule)
 		}
 		hiring = d
 		if hiring.CourseID == nil || *hiring.CourseID != course.ID || hiring.PostingID == nil || len(hiring.Roster) != 2 || hiring.Version != 1 {

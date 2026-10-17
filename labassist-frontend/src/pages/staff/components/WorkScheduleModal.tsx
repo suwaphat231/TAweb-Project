@@ -598,7 +598,11 @@ export function WorkScheduleModal({
     mutationFn: async () => {
       const slots = staffCase?.course_schedule_slots ?? []
       if (slots.length === 0) throw new Error('ไม่พบข้อมูลตารางเรียน')
-      const months = SEMESTER_MONTHS[semester] ?? []
+      // Only months not in the plan yet; with none left, creating a group
+      // would leave an empty duplicate that printed the weekday twice.
+      const months = (SEMESTER_MONTHS[semester] ?? [])
+        .filter(m => !usedMonthKeys.has(`${monthCEYear(m, semester, academicYear)}-${m}`))
+      if (months.length === 0) throw new Error('เพิ่มครบทุกเดือนของภาคเรียนแล้ว')
       const holidaySet = new Set(
         calDates.filter(cd => cd.affects_work).map(cd => cd.date.slice(0, 10)),
       )
@@ -619,7 +623,6 @@ export function WorkScheduleModal({
       try {
         for (const m of months) {
           const ceYear = monthCEYear(m, semester, academicYear)
-          if (usedMonthKeys.has(`${ceYear}-${m}`)) continue
           const dates = candidateDates(ceYear, m, weekdays).filter(d => !holidaySet.has(d))
           await staffApi.addGroupMonth(innerCaseId!, newGroup.id, { year: ceYear, month: m })
           await staffApi.setGroupMonthDates(innerCaseId!, newGroup.id, ceYear, m, dates)
