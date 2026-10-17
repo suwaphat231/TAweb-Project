@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { staffApi } from '../../../services/api'
+import { getApiErrorMessage, staffApi } from '../../../services/api'
 import type {
   StaffCaseResponse, GroupMonthPlan, CalendarDate, UpdateCasePayload,
   GroupWeekDaySlot, CourseScheduleSlot,
@@ -521,7 +521,15 @@ export function WorkScheduleModal({
   // ── Mutations ─────────────────────────────────────────────────────────────────
 
   const initCaseMut = useMutation({
-    mutationFn: () => staffApi.initCase(courseId),
+    // Surface the server's reason (e.g. no accepted Lab Boy yet) instead of
+    // axios's generic "status code 422".
+    mutationFn: async () => {
+      try {
+        return await staffApi.initCase(courseId)
+      } catch (err) {
+        throw new Error(await getApiErrorMessage(err, 'เริ่มต้นระบบตารางงานไม่สำเร็จ'), { cause: err })
+      }
+    },
     onSuccess: (res) => {
       setInnerCaseId(res.id)
       qc.invalidateQueries({ queryKey: ['staff-cases'] })

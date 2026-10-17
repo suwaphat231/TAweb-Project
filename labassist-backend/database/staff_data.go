@@ -29,6 +29,7 @@ func enrichReview(r models.FormReview) models.FormReview {
 		r.CourseCode = c.Code
 		r.CourseTitle = c.Title
 		r.Section = c.Section
+		r.Schedule = c.Schedule
 		r.Semester = c.Semester
 		r.AcademicYear = c.AcademicYear
 		r.InstructorName = c.InstructorName

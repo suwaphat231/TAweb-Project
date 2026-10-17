@@ -72,6 +72,20 @@ func TestDemoSeedSplitsMultiDayCourseIntoOneRowPerDay(t *testing.T) {
 		t.Fatalf("applications tue=%d thu=%d, want 5 and 0", onTuesday, onThursday)
 	}
 
+	// Staff pick a course from the review list, so each day must be its own
+	// entry that says which day it is.
+	reviews, err := ListFormReviews("", "517122")
+	if err != nil {
+		t.Fatal(err)
+	}
+	schedules := map[uint]string{}
+	for _, r := range reviews {
+		schedules[r.CourseID] = r.Schedule
+	}
+	if schedules[demo[0].ID] != "อ 13:00-16:00" || schedules[demo[1].ID] != "พฤ 13:00-16:00" {
+		t.Fatalf("staff review schedules = %v, want one entry per day", schedules)
+	}
+
 	var all []models.Course
 	if err := DB.Find(&all).Error; err != nil {
 		t.Fatal(err)

@@ -298,6 +298,8 @@ export interface FormReview {
   course_code: string
   course_title: string
   section: number
+  /** The meeting day/time; a section meeting on several days has one entry per day. */
+  schedule?: string
   semester: string
   academic_year: number
   instructor_name: string

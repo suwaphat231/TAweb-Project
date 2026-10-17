@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { findStaffReview } from '../../utils/staffOffering'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { staffApi, applicationsAPI, coursesAPI } from '../../services/api'
 import { buildCourseOffering } from './staffCourseUtils'
@@ -42,6 +43,8 @@ export default function StaffCourseDetail() {
     section: string
   }>()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const courseIdParam = searchParams.get('course')
   const [activeTab, setActiveTab] = useState<Tab>('documents')
   const [docRefreshKey, setDocRefreshKey] = useState(0)
 
@@ -56,12 +59,10 @@ export default function StaffCourseDetail() {
   })
 
   // Find the matching review
-  const review = useMemo(() => reviews.find((r) =>
-    String(r.academic_year) === year &&
-    r.semester === semester &&
-    r.course_code === code &&
-    String(r.section) === section,
-  ), [reviews, year, semester, code, section])
+  const review = useMemo(
+    () => findStaffReview(reviews, { year, semester, code, section, courseId: courseIdParam }),
+    [reviews, year, semester, code, section, courseIdParam],
+  )
 
   const offering = useMemo(
     () => review ? buildCourseOffering(review, allDocs) : null,
