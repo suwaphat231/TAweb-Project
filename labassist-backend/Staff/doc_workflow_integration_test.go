@@ -258,6 +258,17 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 	})
 
 	t.Run("concurrent clicks create exactly one approval memo", func(t *testing.T) {
+		// The plan changes after step 1 was issued; the memo must still carry
+		// exactly what step 1 notified, not the live plan.
+		posting, _ := database.ActivePostingForCourse(course.ID)
+		sc, _ := database.StaffCaseByPostingID(posting.ID)
+		groups, err := database.ScheduleGroupsForCase(sc.ID)
+		if err != nil || len(groups) == 0 {
+			t.Fatalf("schedule groups: %v %v", groups, err)
+		}
+		if _, err := database.AddSingleGroupOccurrence(sc.ID, groups[0].ID, time.Date(2026, 12, 23, 0, 0, 0, 0, time.UTC), "10:20", "12:20", nil); err != nil {
+			t.Fatal(err)
+		}
 		var wg sync.WaitGroup
 		codes := make([]int, 4)
 		docs := make([]models.StaffDocument, 4)
@@ -290,6 +301,11 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 		saved, _ := database.StaffDocumentByID(memo.ID)
 		if saved.DataSnapshot == "" || saved.StaffCaseID == nil || len(saved.Roster) != 2 {
 			t.Fatalf("memo not built from stored data: %+v", saved)
+		}
+		step1, _ := database.StaffDocumentByID(hiring.ID)
+		if saved.DataSnapshot != step1.DataSnapshot || saved.SessionsPerMonth != step1.SessionsPerMonth ||
+			fmt.Sprint(saved.WorkSchedule) != fmt.Sprint(step1.WorkSchedule) || fmt.Sprint(saved.Roster) != fmt.Sprint(step1.Roster) {
+			t.Fatalf("memo does not carry step 1's data:\nmemo  %s\nstep1 %s", saved.DataSnapshot, step1.DataSnapshot)
 		}
 		code, file := call("GET", fmt.Sprintf("/staff/documents/%d/file", memo.ID), tokStaff, nil)
 		if code != http.StatusOK || len(file) < 1000 || string(file[:2]) != "PK" {
