@@ -973,6 +973,8 @@ export interface WorkflowCourse {
   review_status: ReviewStatus
   staff_case_id?: number
   plan_status?: string
+  /** True once staff have confirmed the Lab Boy schedule. */
+  schedule_confirmed: boolean
 }
 
 export interface WorkflowStepView {

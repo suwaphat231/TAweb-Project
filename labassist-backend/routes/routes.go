@@ -137,7 +137,6 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			review.PUT("/instructor/applications/:id/withdraw-request", teacherH.ResolveWithdraw)
 			review.PUT("/instructor/applications/bulk-review", teacherH.BulkReview)
 			review.GET("/instructor/applications/:id/grade-proof", teacherH.GradeProof)
-			review.POST("/instructor/courses/:id/confirm-schedule", teacherH.ConfirmSchedule)
 			review.GET("/instructor/applications/:id/performance-records", reportH.ConfirmedHistory)
 		}
 
@@ -160,6 +159,8 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			// Per-course document workflow (hiring notice → approval memo → …)
 			staffGroup.GET("/staff/courses/:courseId/document-workflow", staffH.GetDocumentWorkflow)
 			staffGroup.POST("/staff/courses/:courseId/document-workflow/:type", staffH.CreateWorkflowStep)
+			// Staff (not the instructor) confirm the Lab Boy schedule; this opens the staff case.
+			staffGroup.POST("/staff/courses/:courseId/confirm-schedule", staffH.ConfirmSchedule)
 			staffGroup.PUT("/staff/documents/:id/reg-verify", staffH.RegVerifyRosterEntry)
 
 			// Staff Case management

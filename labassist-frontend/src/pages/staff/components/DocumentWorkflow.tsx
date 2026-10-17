@@ -139,6 +139,16 @@ export function DocumentWorkflow({
     onError: async (err) => showToast(await getApiErrorMessage(err, 'เกิดข้อผิดพลาด กรุณาลองใหม่'), 'error'),
   })
 
+  const confirmScheduleMut = useMutation({
+    mutationFn: () => staffApi.confirmSchedule(courseId),
+    onSuccess: (data) => {
+      showToast(`ยืนยันตารางปฏิบัติงานแล้ว — แจ้งเตือนนักศึกษา ${data.notified} คน`, 'success')
+      qc.invalidateQueries({ queryKey: ['staff-cases'] })
+      refresh()
+    },
+    onError: async (err) => showToast(await getApiErrorMessage(err, 'ยืนยันตารางไม่สำเร็จ'), 'error'),
+  })
+
   const cancelMut = useMutation({
     mutationFn: ({ id, reason }: { id: number; reason: string }) => staffApi.deleteDocument(id, reason),
     onSuccess: () => { showToast('ยกเลิกเอกสารแล้ว (ยังเก็บไว้ในประวัติ)', 'success'); refresh() },
@@ -189,6 +199,26 @@ export function DocumentWorkflow({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+      {!workflow.course.schedule_confirmed && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
+          padding: '12px 16px', marginBottom: 16, borderRadius: 10,
+          background: 'var(--amber-soft, #FFFBEB)', border: '1px solid #FDE68A',
+        }}>
+          <div style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.6 }}>
+            {workflow.course.labboy_count > 0
+              ? <>อาจารย์รับ Lab Boy แล้ว <strong>{workflow.course.labboy_count} คน</strong> — ยืนยันตารางปฏิบัติงานเพื่อเริ่มทำเอกสารและแจ้งเตือนนักศึกษา</>
+              : 'ยังไม่มี Lab Boy ที่อาจารย์รับ — ยืนยันตารางได้หลังอาจารย์รับนักศึกษาแล้ว'}
+          </div>
+          <Button
+            onClick={() => confirmScheduleMut.mutate()}
+            loading={confirmScheduleMut.isPending}
+            disabled={workflow.course.labboy_count === 0}
+          >
+            ยืนยันตารางปฏิบัติงาน
+          </Button>
+        </div>
+      )}
       {views.map((view, idx) => {
         const status = stepStatus(view)
         const cfg = STEP_STATUS_CONFIG[status]

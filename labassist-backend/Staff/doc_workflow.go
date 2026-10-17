@@ -69,7 +69,9 @@ type WorkflowCourse struct {
 	LabBoyCount  int      `json:"labboy_count"`
 	ReviewStatus string   `json:"review_status"`
 	StaffCaseID  *uint    `json:"staff_case_id,omitempty"`
-	PlanStatus   string   `json:"plan_status,omitempty"`
+	// ScheduleConfirmed is true once staff have confirmed the Lab Boy schedule.
+	ScheduleConfirmed bool   `json:"schedule_confirmed"`
+	PlanStatus        string `json:"plan_status,omitempty"`
 }
 
 // WorkflowStepView is one step as the staff UI shows it.
@@ -179,7 +181,7 @@ func preconditions(review models.FormReview, sc *models.StaffCase, accepted []mo
 		reasons = append(reasons, "ยังไม่มีนักศึกษาที่ผ่านการคัดเลือก")
 	}
 	if sc == nil {
-		reasons = append(reasons, "อาจารย์ยังไม่ได้ยืนยันตารางปฏิบัติงาน (ยังไม่มี Staff Case)")
+		reasons = append(reasons, "เจ้าหน้าที่ยังไม่ได้ยืนยันตารางปฏิบัติงาน (ยังไม่มี Staff Case)")
 		return reasons
 	}
 	snap := database.BuildHiringNoticeSnapshot(sc.ID)
@@ -221,6 +223,7 @@ func (h *Handler) GetDocumentWorkflow(c *gin.Context) {
 			EnglishTitle: course.EnglishTitle, Section: course.Section, Semester: course.Semester,
 			AcademicYear: course.AcademicYear, Instructors: instructorNames(course),
 			LabBoyCount: len(accepted), ReviewStatus: string(review.Status),
+			ScheduleConfirmed: posting.LabBoyScheduleConfirmed,
 		},
 		Steps:            []WorkflowStepView{},
 		MonthlyDocuments: []models.StaffDocument{},

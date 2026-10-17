@@ -29,6 +29,8 @@ type workflowResp struct {
 		Semester     string   `json:"semester"`
 		AcademicYear int      `json:"academic_year"`
 		Instructors  []string `json:"instructors"`
+		// ScheduleConfirmed is set once staff confirm the Lab Boy schedule.
+		ScheduleConfirmed bool `json:"schedule_confirmed"`
 	} `json:"course"`
 	Steps []struct {
 		Step           int                    `json:"step"`
@@ -159,16 +161,41 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 		expect(t, 422, "POST", wfPath+"/hiring_notice", tokStaff, nil)
 	})
 
+	confirmPath := fmt.Sprintf("/staff/courses/%d/confirm-schedule", course.ID)
+	t.Run("only staff confirm the lab boy schedule", func(t *testing.T) {
+		expect(t, 404, "POST", fmt.Sprintf("/instructor/courses/%d/confirm-schedule", course.ID), tokInst, nil)
+		expect(t, 403, "POST", confirmPath, tokInst, nil)
+		expect(t, 422, "POST", fmt.Sprintf("/staff/courses/%d/confirm-schedule", other.ID), tokStaff, nil)
+		if getWF(t).Course.ScheduleConfirmed {
+			t.Fatal("schedule reported confirmed before staff confirmed it")
+		}
+	})
+
 	t.Run("missing work plan is reported, not silently created", func(t *testing.T) {
 		expect(t, 200, "PUT", fmt.Sprintf("/staff/reviews/%d/verify", course.ID), tokStaff, nil)
 		code, raw := call("POST", wfPath+"/hiring_notice", tokStaff, nil)
 		if code != 422 || !strings.Contains(string(raw), "Staff Case") {
 			t.Fatalf("no staff case: %d %s", code, raw)
 		}
+		var confirmed struct {
+			Confirmed bool `json:"confirmed"`
+			Notified  int  `json:"notified"`
+		}
+		_ = json.Unmarshal(expect(t, 200, "POST", confirmPath, tokStaff, nil), &confirmed)
+		if !confirmed.Confirmed || confirmed.Notified != 2 {
+			t.Fatalf("confirm = %+v, want confirmed and 2 students notified", confirmed)
+		}
+		_ = json.Unmarshal(expect(t, 200, "POST", confirmPath, tokStaff, nil), &confirmed)
+		if confirmed.Notified != 0 {
+			t.Fatalf("second confirm notified %d students again", confirmed.Notified)
+		}
+		if !getWF(t).Course.ScheduleConfirmed {
+			t.Fatal("workflow does not report the confirmed schedule")
+		}
 		posting, _ := database.ActivePostingForCourse(course.ID)
-		sc, err := database.EnsureStaffCase(posting.ID, course.ID, course.Semester, course.AcademicYear, staffU.ID)
-		if err != nil {
-			t.Fatal(err)
+		sc, ok := database.StaffCaseByPostingID(posting.ID)
+		if !ok {
+			t.Fatal("staff confirmation did not create the staff case")
 		}
 		expect(t, 422, "POST", wfPath+"/hiring_notice", tokStaff, nil) // no schedule group yet
 		g, err := database.UpsertScheduleGroup(models.ScheduleGroup{StaffCaseID: sc.ID, WeekDay: "WED", StartTime: "10:20", EndTime: "12:20"})
