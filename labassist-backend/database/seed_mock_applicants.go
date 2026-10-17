@@ -68,6 +68,8 @@ var mockDemoStudents = []mockDemoStudent{
 // seedMockApplicants sets up the debug demo:
 // one instructor with an open Lab Boy posting (6 slots, section 1) and
 // 5 pre-applied students — leaving the 6th slot open for manual testing.
+// The section meets Tue and Thu, so it is two courses (one per day); the
+// applicants are on the Tuesday one.
 // Duplicate accounts/applications are skipped so restarting is safe.
 func seedMockApplicants() error {
 	if _, ok := UserByUsername(mockDemoStaff.Username); !ok {
@@ -102,42 +104,19 @@ func seedMockApplicants() error {
 		}
 	}
 
-	course, found := FindCourseByKey(mockDemoCourseBase.Code, mockDemoCourseBase.Semester, mockDemoCourseBase.AcademicYear, mockDemoSection.Section)
-	if !found {
-		deadline := time.Now().AddDate(0, 0, 21)
-		newCourse := mockDemoCourseBase
-		newCourse.InstructorID = &instructor.ID
-		newCourse.Section = mockDemoSection.Section
-		newCourse.Schedule = mockDemoSection.Schedule
-		newCourse.Deadline = &deadline
-		course = CreateCourse(newCourse)
-		if course.ID == 0 {
-			return fmt.Errorf("create demo course")
+	// A section meeting on several days is one course per day (slot 0, 1, …),
+	// matching the classlist import. Each day is opened on its own; the
+	// pre-applied students apply to the first day.
+	var course models.Course
+	for slot, schedule := range SplitScheduleDays(mockDemoSection.Schedule) {
+		dayCourse, err := seedDemoCourseSlot(instructor.ID, slot, schedule)
+		if err != nil {
+			return err
 		}
-	} else {
-		// Seed only an untouched draft; retain existing recruitment decisions.
-		course = courseWithInstructor(course)
-		if course.Status == models.StatusDraft {
-			var saved bool
-			course, saved = UpdateCourse(course.ID, func(c *models.Course) {
-				c.InstructorID = &instructor.ID
-				c.Status = models.StatusOpen
-				c.LabBoySlots = mockDemoCourseBase.LabBoySlots
-			})
-			if !saved {
-				return fmt.Errorf("initialize demo posting")
-			}
+		if slot == 0 {
+			course = dayCourse
 		}
 	}
-
-	// Guarantee the instructor has a course_instructors row so InstructorCourses
-	// (which JOINs on that table) can find this course regardless of whether
-	// backfillCourseInstructors ran before or after the demo course was created.
-	DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.CourseInstructor{
-		CourseID:     course.ID,
-		InstructorID: instructor.ID,
-		Source:       models.CourseInstructorImported,
-	})
 
 	for _, s := range mockDemoStudents {
 		student, ok := UserByUsername(s.Username)
@@ -180,6 +159,49 @@ func seedMockApplicants() error {
 	}
 
 	return nil
+}
+
+// seedDemoCourseSlot creates (or initializes, if still an untouched draft) the
+// demo course for one meeting day and links its instructor.
+func seedDemoCourseSlot(instructorID uint, slot int, schedule string) (models.Course, error) {
+	course, found := FindCourseSlot(mockDemoCourseBase.Code, mockDemoCourseBase.Semester, mockDemoCourseBase.AcademicYear, mockDemoSection.Section, slot)
+	if !found {
+		deadline := time.Now().AddDate(0, 0, 21)
+		newCourse := mockDemoCourseBase
+		newCourse.InstructorID = &instructorID
+		newCourse.Section = mockDemoSection.Section
+		newCourse.Slot = slot
+		newCourse.Schedule = schedule
+		newCourse.Deadline = &deadline
+		course = CreateCourse(newCourse)
+		if course.ID == 0 {
+			return course, fmt.Errorf("create demo course slot %d", slot)
+		}
+	} else {
+		// Seed only an untouched draft; retain existing recruitment decisions.
+		course = courseWithInstructor(course)
+		if course.Status == models.StatusDraft {
+			var saved bool
+			course, saved = UpdateCourse(course.ID, func(c *models.Course) {
+				c.InstructorID = &instructorID
+				c.Status = models.StatusOpen
+				c.LabBoySlots = mockDemoCourseBase.LabBoySlots
+			})
+			if !saved {
+				return course, fmt.Errorf("initialize demo posting slot %d", slot)
+			}
+		}
+	}
+
+	// Guarantee the instructor has a course_instructors row so InstructorCourses
+	// (which JOINs on that table) can find this course regardless of whether
+	// backfillCourseInstructors ran before or after the demo course was created.
+	DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.CourseInstructor{
+		CourseID:     course.ID,
+		InstructorID: instructorID,
+		Source:       models.CourseInstructorImported,
+	})
+	return course, nil
 }
 
 // setPassword gives a freshly-created demo account the same login password
