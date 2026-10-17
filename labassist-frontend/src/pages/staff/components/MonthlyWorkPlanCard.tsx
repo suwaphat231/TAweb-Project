@@ -59,6 +59,11 @@ function thaiDayShort(dateStr: string): string {
   return thaiDayShortFn(dateStr)
 }
 
+// Per-day actions (หยุด / เลื่อน / แก้เวลา / ลบ) are hidden for now: holiday
+// clashes will be handled by the instructor choosing a makeup day, which is
+// not designed yet. Set to true to bring the column back.
+const SHOW_DAY_ACTIONS = false
+
 const thCss: React.CSSProperties = {
   padding: '6px 10px', textAlign: 'left',
   fontWeight: 600, color: 'var(--ink-500)', fontSize: 11,
@@ -75,6 +80,7 @@ interface Props {
 }
 
 export function MonthlyWorkPlanCard({ caseId, group, entry, calDates, isReadOnly }: Props) {
+  const showDayActions = SHOW_DAY_ACTIONS && !isReadOnly
   const qc = useQueryClient()
   const { month: sgm, occurrences, summary } = entry
   const slots = parseGroupSlots(group)
@@ -353,7 +359,7 @@ export function MonthlyWorkPlanCard({ caseId, group, entry, calDates, isReadOnly
                     <th style={thCss}>วันที่</th>
                     <th style={thCss}>เวลา</th>
                     <th style={thCss}>สถานะ</th>
-                    {!isReadOnly && <th style={{ ...thCss, textAlign: 'right' }}>จัดการ</th>}
+                    {showDayActions && <th style={{ ...thCss, textAlign: 'right' }}>จัดการ</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -399,7 +405,7 @@ export function MonthlyWorkPlanCard({ caseId, group, entry, calDates, isReadOnly
                               </span>
                             )}
                           </td>
-                          {!isReadOnly && (
+                          {showDayActions && (
                             <td style={{ padding: '7px 10px', textAlign: 'right' }}>
                               {isEditing ? (
                                 <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
@@ -454,7 +460,7 @@ export function MonthlyWorkPlanCard({ caseId, group, entry, calDates, isReadOnly
                         </tr>
                         {isRs && (
                           <tr style={{ borderTop: '1px solid var(--line-soft)' }}>
-                            <td colSpan={isReadOnly ? 3 : 4}
+                            <td colSpan={showDayActions ? 4 : 3}
                               style={{ padding: '8px 10px', background: 'var(--blue-bg)' }}>
                               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--blue)' }}>เลื่อนเป็น:</span>
