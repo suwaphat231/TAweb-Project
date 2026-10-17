@@ -1,11 +1,9 @@
 package staff_test
 
 import (
-	"archive/zip"
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -43,14 +41,6 @@ type workflowResp struct {
 		BlockedReasons []string               `json:"blocked_reasons"`
 		StaleReasons   []string               `json:"stale_reasons"`
 	} `json:"steps"`
-	PaymentMonths []struct {
-		Year        int                   `json:"year"`
-		Month       int                   `json:"month"`
-		Sessions    int                   `json:"sessions"`
-		TotalAmount float64               `json:"total_amount"`
-		Document    *models.StaffDocument `json:"document"`
-	} `json:"payment_months"`
-	MonthlyDocuments []models.StaffDocument `json:"monthly_documents"`
 }
 
 // TestDocumentWorkflowEndToEnd drives the staff document workflow through
@@ -339,65 +329,6 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 		if code != http.StatusOK || string(file[:2]) != "PK" {
 			t.Fatalf("lab notice download = %d, want a .docx", code)
 		}
-	})
-
-	t.Run("step 4 bills each planned month from the approval memo in one click", func(t *testing.T) {
-		payPath := fmt.Sprintf("/staff/courses/%d/payment-requests", course.ID)
-		// The memo's plan (inherited from step 1) has Wed 2, 9, 16 Dec 2026,
-		// 10:20-12:20: 3 sessions x 2 h x 50 baht x 2 Lab Boys.
-		w := getWF(t)
-		if len(w.PaymentMonths) != 1 || w.PaymentMonths[0].Year != 2026 || w.PaymentMonths[0].Month != 12 ||
-			w.PaymentMonths[0].Sessions != 3 || w.PaymentMonths[0].TotalAmount != 600 || w.PaymentMonths[0].Document != nil {
-			t.Fatalf("payment months = %+v", w.PaymentMonths)
-		}
-		expect(t, 403, "POST", payPath, tokInst, map[string]any{"year": 2026, "month": 12})
-		expect(t, 422, "POST", payPath, tokStaff, map[string]any{"year": 2026, "month": 11}) // no work in the plan
-
-		var d models.StaffDocument
-		_ = json.Unmarshal(expect(t, 201, "POST", payPath, tokStaff, map[string]any{"year": 2026, "month": 12}), &d)
-		if d.Type != models.DocPaymentRequest || d.Period == nil || d.Period.Month != 12 || d.Period.Year != 2569 ||
-			d.TotalAmount != 600 || len(d.Roster) != 2 || d.BasedOnDocumentID == nil || *d.BasedOnDocumentID != memo.ID ||
-			d.PriorMemoRef != "อว 8613.7/123" || d.PriorMemoDate == "" || d.StaffOfficerName != staffU.FullName {
-			t.Fatalf("payment request = %+v", d)
-		}
-		expect(t, 409, "POST", payPath, tokStaff, map[string]any{"year": 2026, "month": 12})
-		expect(t, 400, "POST", payPath, tokStaff, map[string]any{"year": 2026, "month": 12, "replace": true})
-
-		w = getWF(t)
-		if w.PaymentMonths[0].Document == nil || w.PaymentMonths[0].Document.ID != d.ID {
-			t.Fatalf("December not linked to its document: %+v", w.PaymentMonths)
-		}
-		for _, m := range w.MonthlyDocuments {
-			if m.ID == d.ID {
-				t.Fatal("step 4 document also listed under monthly documents")
-			}
-		}
-
-		code, file := call("GET", fmt.Sprintf("/staff/documents/%d/file", d.ID), tokStaff, nil)
-		if code != http.StatusOK || string(file[:2]) != "PK" {
-			t.Fatalf("payment request download = %d", code)
-		}
-		zr, _ := zip.NewReader(bytes.NewReader(file), int64(len(file)))
-		var body string
-		for _, f := range zr.File {
-			if f.Name == "word/document.xml" {
-				rc, _ := f.Open()
-				b, _ := io.ReadAll(rc)
-				rc.Close()
-				body = string(b)
-			}
-		}
-		for _, want := range []string{"ธันวาคม", "2569", "600", "อว 8613.7/123"} {
-			if !strings.Contains(body, want) {
-				t.Errorf("payment request document lacks %q", want)
-			}
-		}
-		// Fiscal year 2570 starts 1 Oct 2026, so December 2026 is billed to it.
-		if !strings.Contains(body, "2570") {
-			t.Error("budget year should be fiscal year 2570 for December 2026")
-		}
-		// Later subtests cancel the memo; nothing may depend on it then.
-		expect(t, 204, "DELETE", fmt.Sprintf("/staff/documents/%d", d.ID), tokStaff, nil)
 	})
 
 	t.Run("documents of one course never appear in another", func(t *testing.T) {

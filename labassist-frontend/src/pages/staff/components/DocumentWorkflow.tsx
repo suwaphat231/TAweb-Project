@@ -7,7 +7,6 @@ import type {
 import { getApiErrorMessage, staffApi } from '../../../services/api'
 import { useToast } from '../../../hooks/useToast'
 import { triggerBrowserDownload } from '../../../utils/download'
-import { thaiMonthName } from '../../../utils/thaiDate'
 import { Modal } from '../../../components/ui/Modal'
 import { Input } from '../../../components/ui/Input'
 import { Textarea } from '../../../components/ui/Textarea'
@@ -138,16 +137,6 @@ export function DocumentWorkflow({
       refresh()
     },
     onError: async (err) => showToast(await getApiErrorMessage(err, 'เกิดข้อผิดพลาด กรุณาลองใหม่'), 'error'),
-  })
-
-  const paymentMut = useMutation({
-    mutationFn: (v: { year: number; month: number; replace?: boolean; reason?: string }) =>
-      staffApi.createPaymentRequest(courseId, v),
-    onSuccess: (doc) => {
-      showToast(`สร้าง "${doc.name}" แล้ว`, 'success')
-      refresh()
-    },
-    onError: async (err) => showToast(await getApiErrorMessage(err, 'สร้างบันทึกขอเบิกจ่ายไม่สำเร็จ'), 'error'),
   })
 
   const confirmScheduleMut = useMutation({
@@ -378,53 +367,6 @@ export function DocumentWorkflow({
       })}
 
       <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 4 }}>
-          ขั้นตอนที่ 4 · บันทึกข้อความ ขออนุมัติเบิกจ่ายเงินค่าตอบแทนนักศึกษาปฏิบัติงาน
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--ink-500)', marginBottom: 10 }}>
-          รายเดือน — ดึงรายชื่อ Lab Boy วันปฏิบัติงานตามแผน และเลขที่/วันที่จากบันทึกขออนุมัติจ้าง (ขั้นตอนที่ 2)
-        </div>
-        {workflow.payment_months.length === 0 ? (
-          <div style={{ fontSize: 12, color: 'var(--ink-400)', marginBottom: 16 }}>ต้องสร้างบันทึกขออนุมัติจ้างนักศึกษาปฏิบัติงาน (ขั้นตอนที่ 2) ก่อน</div>
-        ) : (
-          <ul style={{ listStyle: 'none', margin: '0 0 16px', padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {workflow.payment_months.map((pm) => {
-              const d = pm.document
-              const busy = paymentMut.isPending && paymentMut.variables?.year === pm.year && paymentMut.variables?.month === pm.month
-              return (
-                <li key={`${pm.year}-${pm.month}`} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 13, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8 }}>
-                  <span style={{ fontWeight: 600, color: 'var(--ink-900)', minWidth: 120 }}>{thaiMonthName(pm.month)} {pm.year + 543}</span>
-                  <span style={{ color: 'var(--ink-500)' }}>{pm.sessions} ครั้ง · {pm.total_amount.toLocaleString('th-TH')} บาท</span>
-                  {d && <span style={{ color: 'var(--ink-500)' }}>{DOC_STATUS_LABEL[d.status] ?? d.status}</span>}
-                  <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-                    {!d ? (
-                      <button onClick={() => paymentMut.mutate({ year: pm.year, month: pm.month })} disabled={paymentMut.isPending} style={actionBtn('var(--accent)', '#fff')}>
-                        {busy ? 'กำลังสร้าง...' : 'สร้างเอกสาร'}
-                      </button>
-                    ) : (
-                      <>
-                        <button onClick={() => download(d)} disabled={downloadingId === d.id} style={actionBtn('transparent', 'var(--ink-600)', '1px solid var(--line)')}>
-                          {downloadingId === d.id ? 'กำลังโหลด...' : 'ดาวน์โหลด DOCX'}
-                        </button>
-                        <button
-                          onClick={() => {
-                            const reason = window.prompt('เหตุผลที่สร้างฉบับใหม่ (ฉบับเดิมจะเก็บไว้ในประวัติ)')
-                            if (!reason?.trim()) return
-                            paymentMut.mutate({ year: pm.year, month: pm.month, replace: true, reason: reason.trim() })
-                          }}
-                          disabled={paymentMut.isPending}
-                          style={actionBtn('transparent', 'var(--ink-600)', '1px solid var(--line)')}
-                        >
-                          สร้างฉบับใหม่
-                        </button>
-                      </>
-                    )}
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
-        )}
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-400)', letterSpacing: 0.5, marginBottom: 10 }}>เอกสารรายเดือน (สร้างตามรอบเดือนที่ปฏิบัติงาน)</div>
         {workflow.monthly_documents.length === 0 ? (
           <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>ยังไม่มีเอกสารรายเดือน</div>

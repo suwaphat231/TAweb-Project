@@ -68,8 +68,3 @@ export function toDateOnly(value: string | null | undefined): string | null {
   if (!ymd) return null
   return `${ymd.year}-${String(ymd.month).padStart(2, '0')}-${String(ymd.day).padStart(2, '0')}`
 }
-
-/** Thai name of month 1-12 ("" outside that range). */
-export function thaiMonthName(month: number): string {
-  return THAI_MONTHS[month - 1] ?? ''
-}
