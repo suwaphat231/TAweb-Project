@@ -142,3 +142,44 @@ func TestConnectWithResetRebuildsDemoData(t *testing.T) {
 		t.Fatalf("users after reset = %d, want %d", n, seeded)
 	}
 }
+
+func TestResetSchemaRestoresForeignKeyChecksWhenDropFails(t *testing.T) {
+	root, dsn := openResetTestDB(t)
+	if err := root.Exec("CREATE TABLE locked (id INT PRIMARY KEY)").Error; err != nil {
+		t.Fatal(err)
+	}
+	user := fmt.Sprintf("reset_nodrop_%d", time.Now().UnixNano()%1e9)
+	for _, stmt := range []string{
+		"CREATE USER '" + user + "'@'%' IDENTIFIED BY 'nodrop'",
+		"GRANT SELECT ON `" + dsn.DBName + "`.* TO '" + user + "'@'%'",
+	} {
+		if err := root.Exec(stmt).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { root.Exec("DROP USER '" + user + "'@'%'") })
+
+	limited := *dsn
+	limited.User, limited.Passwd = user, "nodrop"
+	db, err := gorm.Open(mysql.Open(limited.FormatDSN()), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.SetMaxOpenConns(1)
+	t.Cleanup(func() { conn.Close() })
+
+	if err := resetSchema(db); err == nil {
+		t.Fatal("drop without privilege reported success")
+	}
+	var checks int
+	if err := db.Raw("SELECT @@FOREIGN_KEY_CHECKS").Scan(&checks).Error; err != nil {
+		t.Fatal(err)
+	}
+	if checks != 1 {
+		t.Fatal("foreign key checks left disabled after a failed drop")
+	}
+}
