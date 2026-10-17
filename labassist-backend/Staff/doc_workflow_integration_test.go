@@ -1,9 +1,11 @@
 package staff_test
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -41,6 +43,7 @@ type workflowResp struct {
 		BlockedReasons []string               `json:"blocked_reasons"`
 		StaleReasons   []string               `json:"stale_reasons"`
 	} `json:"steps"`
+	MonthlyDocuments []models.StaffDocument `json:"monthly_documents"`
 }
 
 // TestDocumentWorkflowEndToEnd drives the staff document workflow through
@@ -149,7 +152,7 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 
 	t.Run("workflow shows course info and blocks until the form is verified", func(t *testing.T) {
 		w := getWF(t)
-		if w.Course.Code != course.Code || w.Course.Semester != "2" || w.Course.AcademicYear != 2569 || len(w.Steps) != 3 {
+		if w.Course.Code != course.Code || w.Course.Semester != "2" || w.Course.AcademicYear != 2569 || len(w.Steps) != 4 {
 			t.Fatalf("workflow = %+v", w)
 		}
 		if len(w.Course.Instructors) != 1 || !strings.Contains(w.Course.Instructors[0], "Inst") {
@@ -229,7 +232,11 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 		if code != 422 || !strings.Contains(string(raw), "ก่อน") {
 			t.Fatalf("lab notice before memo: %d %s", code, raw)
 		}
-		expect(t, 400, "POST", wfPath+"/payment_request", tokStaff, nil)
+		code, raw = call("POST", wfPath+"/payment_request", tokStaff, nil)
+		if code != 422 || !strings.Contains(string(raw), "ก่อน") {
+			t.Fatalf("payment request before memo: %d %s", code, raw)
+		}
+		expect(t, 400, "POST", wfPath+"/work_report", tokStaff, nil)
 		expect(t, 404, "POST", "/staff/courses/999999999/document-workflow/hiring_notice", tokStaff, nil)
 	})
 
@@ -329,6 +336,48 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 		if code != http.StatusOK || string(file[:2]) != "PK" {
 			t.Fatalf("lab notice download = %d, want a .docx", code)
 		}
+	})
+
+	t.Run("step 4 bills every planned month from the approval memo in one click", func(t *testing.T) {
+		code, d := create("payment_request", tokStaff, nil)
+		if code != 201 {
+			t.Fatalf("create payment request = %d", code)
+		}
+		if d.BasedOnDocumentID == nil || *d.BasedOnDocumentID != memo.ID || d.PriorMemoRef != "อว 8613.7/123" ||
+			d.PriorMemoDate != memo.CreatedAt.In(database.BangkokTime).Format("2006-01-02") || len(d.Roster) != 2 || d.StaffOfficerName != staffU.FullName {
+			t.Fatalf("payment request = %+v", d)
+		}
+		w := getWF(t)
+		if w.Steps[3].Document == nil || w.Steps[3].Document.ID != d.ID {
+			t.Fatalf("step 4 = %+v", w.Steps[3])
+		}
+		for _, m := range w.MonthlyDocuments {
+			if m.ID == d.ID {
+				t.Fatal("step 4 document also listed under monthly documents")
+			}
+		}
+		code, file := call("GET", fmt.Sprintf("/staff/documents/%d/file", d.ID), tokStaff, nil)
+		if code != http.StatusOK || string(file[:2]) != "PK" {
+			t.Fatalf("payment request download = %d", code)
+		}
+		zr, _ := zip.NewReader(bytes.NewReader(file), int64(len(file)))
+		var body string
+		for _, f := range zr.File {
+			if f.Name == "word/document.xml" {
+				rc, _ := f.Open()
+				b, _ := io.ReadAll(rc)
+				rc.Close()
+				body = string(b)
+			}
+		}
+		// The memo's plan: Wed 2, 9, 16 Dec 2026, 10:20-12:20, 2 Lab Boys at 50 baht.
+		for _, want := range []string{"ธันวาคม", "หกร้อยบาทถ้วน", "อว 8613.7/123", "2570"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("payment request document lacks %q", want)
+			}
+		}
+		// Later subtests cancel the memo; nothing may depend on it then.
+		expect(t, 204, "DELETE", fmt.Sprintf("/staff/documents/%d", d.ID), tokStaff, nil)
 	})
 
 	t.Run("documents of one course never appear in another", func(t *testing.T) {

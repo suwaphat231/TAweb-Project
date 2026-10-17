@@ -47,6 +47,7 @@ func TestMemoStaffOfficer_DefaultsToCurrentUserForMemoTemplates(t *testing.T) {
 	}{
 		{models.DocApprovalMemo, "", "Current User"},
 		{models.DocLabNotice, "", "Current User"},
+		{models.DocPaymentRequest, "", "Current User"},
 		{models.DocApprovalMemo, "Given Name", "Given Name"},
 		{models.DocHiringNotice, "", ""},
 	} {

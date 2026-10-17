@@ -38,12 +38,16 @@ var preWorkSteps = []workflowStep{
 	{Step: 1, Type: models.DocHiringNotice, Label: "แบบฟอร์มแจ้งความประสงค์ในการจ้างนักศึกษาช่วยสอนและช่วยคุมปฏิบัติการ"},
 	{Step: 2, Type: models.DocApprovalMemo, Label: "บันทึกข้อความ ขออนุมัติจ้างนักศึกษาปฏิบัติงาน", Requires: docTypePtr(models.DocHiringNotice)},
 	{Step: 3, Type: models.DocLabNotice, Label: "แบบแจ้งนักศึกษาช่วยคุมรายวิชาปฏิบัติการ", Requires: docTypePtr(models.DocApprovalMemo)},
+	// Step 4 bills the approval memo's plan: one page per planned month in a
+	// single document, as in the department's sample
+	// (บันทึกขออนุมัติเบิกจ่ายเงิน (ป.ตรี)…doc), rendered from payment_request.docx.
+	{Step: 4, Type: models.DocPaymentRequest, Label: "บันทึกข้อความ ขออนุมัติเบิกจ่ายเงินค่าตอบแทนนักศึกษาปฏิบัติงาน", Requires: docTypePtr(models.DocApprovalMemo)},
 }
 
 // monthlyDocTypes are created per billing month (GenerateMonthlyDocument),
 // so the workflow only lists them.
 var monthlyDocTypes = map[models.DocType]bool{
-	models.DocWorkReport: true, models.DocPaymentEvidence: true, models.DocPaymentRequest: true,
+	models.DocWorkReport: true, models.DocPaymentEvidence: true,
 }
 
 func stepFor(t models.DocType) (workflowStep, bool) {
@@ -109,7 +113,7 @@ var templateReady = map[models.DocType]bool{
 // memoStaffOfficer is who signs as the preparer of a memo-template document
 // (approval memo, lab notice): the name given, else whoever creates it.
 func memoStaffOfficer(t models.DocType, given, currentUser string) string {
-	if given != "" || (t != models.DocApprovalMemo && t != models.DocLabNotice) {
+	if given != "" || (t != models.DocApprovalMemo && t != models.DocLabNotice && t != models.DocPaymentRequest) {
 		return given
 	}
 	return currentUser

@@ -171,7 +171,7 @@ export function DocumentWorkflow({
 
   // Steps built entirely from the previous step's document: one click, no form.
   function oneClick(type: DocType) {
-    return type === 'approval_memo'
+    return type === 'approval_memo' || type === 'payment_request'
   }
 
   function openCreate(view: WorkflowStepView, replace: boolean) {
