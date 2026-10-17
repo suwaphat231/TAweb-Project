@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatThaiDate, formatThaiDateFull, thaiDayShort, toDateOnly } from './thaiDate'
+import { formatThaiDate, formatThaiDateFull, thaiDayShort, thaiMonthName, toDateOnly } from './thaiDate'
 
 describe('formatThaiDate', () => {
   it('formats a plain YYYY-MM-DD date', () => {
@@ -116,5 +116,13 @@ describe('Buddhist year conversion', () => {
     const rfc3339 = '2026-10-01T00:00:00Z'
     expect(formatThaiDate(rfc3339)).not.toContain('NaN')
     expect(formatThaiDate(rfc3339)).not.toContain('undefined')
+  })
+})
+
+describe('thaiMonthName', () => {
+  it('names months 1-12 and nothing else', () => {
+    expect(thaiMonthName(1)).toBe('มกราคม')
+    expect(thaiMonthName(12)).toBe('ธันวาคม')
+    expect(thaiMonthName(13)).toBe('')
   })
 })

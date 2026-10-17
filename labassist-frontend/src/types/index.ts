@@ -994,9 +994,19 @@ export interface WorkflowStepView {
   has_template: boolean
 }
 
+/** Step 4: one month of the approval memo's plan to bill. */
+export interface PaymentMonthView {
+  year: number // CE
+  month: number
+  sessions: number
+  total_amount: number
+  document?: StaffDocument
+}
+
 export interface DocumentWorkflowResponse {
   course: WorkflowCourse
   steps: WorkflowStepView[]
+  payment_months: PaymentMonthView[]
   monthly_documents: StaffDocument[]
 }
 

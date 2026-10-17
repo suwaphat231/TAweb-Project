@@ -41,3 +41,9 @@ func thaiShortDate(day, month, year int) string {
 	}
 	return fmt.Sprintf("%d %s %d", day, abbrev, year)
 }
+
+// ThaiLongDate renders "3 ธันวาคม 2568" for callers outside docxgen.
+func ThaiLongDate(d time.Time) string { return thaiLongDate(d) }
+
+// ThaiMonthName returns the Thai name of month 1-12.
+func ThaiMonthName(month int) string { return thaiMonthName(month) }

@@ -323,6 +323,9 @@ export const staffApi = {
     api.post<{ confirmed: boolean; notified: number; accepted_count: number }>(`/staff/courses/${courseId}/confirm-schedule`).then((r) => r.data),
   documentWorkflow: (courseId: number) =>
     api.get<DocumentWorkflowResponse>(`/staff/courses/${courseId}/document-workflow`).then((r) => r.data),
+  // Step 4: bill one month of the approval memo's plan (year in CE).
+  createPaymentRequest: (courseId: number, data: { year: number; month: number; replace?: boolean; reason?: string }) =>
+    api.post<StaffDocument>(`/staff/courses/${courseId}/payment-requests`, data).then((r) => r.data),
   createWorkflowStep: (courseId: number, type: DocType, data: CreateWorkflowStepPayload = {}) =>
     api.post<StaffDocument>(`/staff/courses/${courseId}/document-workflow/${type}`, data).then((r) => r.data),
   updateDocumentStatus: (id: number, status: string) =>

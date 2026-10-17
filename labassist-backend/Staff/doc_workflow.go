@@ -95,8 +95,11 @@ type WorkflowStepView struct {
 
 // WorkflowResponse is the whole document workflow of one course offering.
 type WorkflowResponse struct {
-	Course           WorkflowCourse         `json:"course"`
-	Steps            []WorkflowStepView     `json:"steps"`
+	Course WorkflowCourse     `json:"course"`
+	Steps  []WorkflowStepView `json:"steps"`
+	// PaymentMonths is step 4: one payment request per month of the
+	// approval memo's plan.
+	PaymentMonths    []PaymentMonthView     `json:"payment_months"`
 	MonthlyDocuments []models.StaffDocument `json:"monthly_documents"`
 }
 
@@ -280,8 +283,10 @@ func (h *Handler) GetDocumentWorkflow(c *gin.Context) {
 		}
 		resp.Steps = append(resp.Steps, v)
 	}
+	resp.PaymentMonths = paymentMonths(docs)
 	for _, d := range docs {
-		if monthlyDocTypes[d.Type] && d.Status != models.DocCancelled {
+		// Payment requests are step 4 (PaymentMonths), not monthly paperwork.
+		if monthlyDocTypes[d.Type] && d.Type != models.DocPaymentRequest && d.Status != models.DocCancelled {
 			resp.MonthlyDocuments = append(resp.MonthlyDocuments, d)
 		}
 	}

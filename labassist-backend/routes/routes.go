@@ -161,6 +161,8 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			staffGroup.POST("/staff/courses/:courseId/document-workflow/:type", staffH.CreateWorkflowStep)
 			// Staff (not the instructor) confirm the Lab Boy schedule; this opens the staff case.
 			staffGroup.POST("/staff/courses/:courseId/confirm-schedule", staffH.ConfirmSchedule)
+			// Step 4: one payment request per month of the approval memo's plan.
+			staffGroup.POST("/staff/courses/:courseId/payment-requests", staffH.CreatePaymentRequest)
 			staffGroup.PUT("/staff/documents/:id/reg-verify", staffH.RegVerifyRosterEntry)
 
 			// Staff Case management
