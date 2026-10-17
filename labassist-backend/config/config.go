@@ -14,6 +14,9 @@ type Config struct {
 	OCRServiceURL  string
 	SeedDemoData   bool
 	DevLogin       bool
+	// ResetDBOnStart drops every table before migrating so each start
+	// begins from freshly seeded demo data. Development only.
+	ResetDBOnStart bool
 
 	DBHost     string
 	DBPort     string
@@ -51,9 +54,23 @@ func Load() (*Config, error) {
 	default:
 		return nil, errors.New("DEV_LOGIN must be true or false")
 	}
+	resetDB := false
+	switch os.Getenv("RESET_DB_ON_START") {
+	case "", "false":
+	case "true":
+		resetDB = true
+	default:
+		return nil, errors.New("RESET_DB_ON_START must be true or false")
+	}
+	// DEV_LOGIN and SEED_DEMO_DATA are never on in production, so requiring
+	// both keeps a stray reset flag from wiping a real database.
+	if resetDB && !(devLogin && seedDemo) {
+		return nil, errors.New("RESET_DB_ON_START=true requires DEV_LOGIN=true and SEED_DEMO_DATA=true")
+	}
 	return &Config{
 		SeedDemoData:   seedDemo,
 		DevLogin:       devLogin,
+		ResetDBOnStart: resetDB,
 		JWTSecret:      secret,
 		Port:           getEnv("PORT", "8080"),
 		GoogleClientID: getEnv("GOOGLE_CLIENT_ID", ""),
