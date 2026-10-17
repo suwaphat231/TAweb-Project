@@ -31,6 +31,11 @@ cp .env.example .env
 #   CLIENT_URL  (URL ของ frontend)
 ```
 
+### รีเซต database ทุกครั้งที่ start (dev เท่านั้น)
+ตั้ง `RESET_DB_ON_START=true` ใน `.env` แล้วสั่ง `docker compose restart backend` (หรือรัน `go run main.go` ใหม่)
+backend จะ drop ทุกตารางแล้ว migrate + seed demo data ใหม่ทั้งหมด — **ข้อมูลทุกอย่างที่ทีมสร้างไว้จะหาย**
+ใช้ได้เฉพาะเมื่อ `DEV_LOGIN=true` และ `SEED_DEMO_DATA=true` (ไม่งั้น backend จะไม่ยอม start) ห้ามใช้กับ DB ที่มีข้อมูลจริง
+
 ### 3. Run
 ```bash
 go run main.go
