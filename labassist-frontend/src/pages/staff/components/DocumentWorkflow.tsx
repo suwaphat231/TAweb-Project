@@ -133,7 +133,7 @@ export function DocumentWorkflow({
   const statusMut = useMutation({
     mutationFn: ({ id, status }: { id: number; status: string }) => staffApi.updateDocumentStatus(id, status),
     onSuccess: (_d, v) => {
-      showToast(v.status === 'signed' ? 'บันทึกลงนามแล้ว' : 'ส่งรอลงนามเรียบร้อย', 'success')
+      showToast(v.status === 'signed' ? 'บันทึกลงนามแล้ว' : 'จัดการเอกสารเรียบร้อย', 'success')
       refresh()
     },
     onError: async (err) => showToast(await getApiErrorMessage(err, 'เกิดข้อผิดพลาด กรุณาลองใหม่'), 'error'),
@@ -169,6 +169,11 @@ export function DocumentWorkflow({
     }
   }
 
+  // Steps built entirely from the previous step's document: one click, no form.
+  function oneClick(type: DocType) {
+    return type === 'approval_memo'
+  }
+
   function openCreate(view: WorkflowStepView, replace: boolean) {
     // The memo header fields default to the step's current document, so a
     // new version only needs what changed.
@@ -194,8 +199,9 @@ export function DocumentWorkflow({
   }
 
   const views = workflow.steps
-  // approval_memo and lab_notice share the memo template and its header fields.
-  const isMemo = createTarget?.view.type === 'approval_memo' || createTarget?.view.type === 'lab_notice'
+  // lab_notice still asks for the memo header fields; the approval memo takes
+  // everything from the hiring notice it is based on.
+  const isMemo = createTarget?.view.type === 'lab_notice'
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -296,12 +302,12 @@ export function DocumentWorkflow({
 
                 {!doc && (
                   <button
-                    onClick={() => openCreate(view, false)}
+                    onClick={() => (oneClick(view.type) ? createMut.mutate({ type: view.type, body: {} }) : openCreate(view, false))}
                     disabled={!view.can_create || createMut.isPending}
                     title={!view.can_create ? view.blocked_reasons[0] : undefined}
                     style={view.can_create ? actionBtn('var(--accent)', '#fff') : disabledBtn}
                   >
-                    สร้างเอกสาร
+                    {createMut.isPending && createMut.variables?.type === view.type ? 'กำลังสร้าง...' : 'สร้างเอกสาร'}
                   </button>
                 )}
                 {doc && (
@@ -313,7 +319,7 @@ export function DocumentWorkflow({
                       </button>
                     )}
                     {(doc.status === 'draft' || doc.status === 'generated' || doc.status === 'approved') && (
-                      <button onClick={() => statusMut.mutate({ id: doc.id, status: 'awaiting_signature' })} disabled={statusMut.isPending} style={actionBtn('var(--amber)', '#fff')}>ส่งรอลงนาม</button>
+                      <button onClick={() => statusMut.mutate({ id: doc.id, status: 'awaiting_signature' })} disabled={statusMut.isPending} style={actionBtn('var(--amber)', '#fff')}>เรียบร้อย</button>
                     )}
                     {doc.status === 'awaiting_signature' && (
                       <button onClick={() => statusMut.mutate({ id: doc.id, status: 'signed' })} disabled={statusMut.isPending} style={actionBtn('var(--green)', '#fff')}>บันทึกลงนามแล้ว</button>
