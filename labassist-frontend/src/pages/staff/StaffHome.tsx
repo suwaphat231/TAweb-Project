@@ -60,7 +60,7 @@ export default function StaffHome() {
   )
 
   function handleCourseAction(offering: CourseOffering) {
-    navigate(`/staff/course/${offering.academicYear}/${offering.semester}/${offering.courseCode}/${offering.sectionNo}`)
+    navigate(`/staff/course/${offering.academicYear}/${offering.semester}/${offering.courseCode}/${offering.sectionNo}?course=${offering.courseId}`)
   }
 
   return (
@@ -137,7 +137,7 @@ export default function StaffHome() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16 }}>
             {filtered.map((offering) => (
               <StaffCourseCard
-                key={`${offering.academicYear}-${offering.semester}-${offering.courseCode}-${offering.sectionNo}`}
+                key={offering.courseId}
                 offering={offering}
                 onAction={handleCourseAction}
               />

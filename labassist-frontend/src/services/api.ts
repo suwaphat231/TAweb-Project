@@ -286,8 +286,6 @@ export const instructorApi = {
   resolveWithdraw: applicationsAPI.resolveWithdraw,
   gradeProof: applicationsAPI.instructorGradeProof,
   notifyCourse: notificationApi.notifyCourse,
-  confirmSchedule: (courseId: number) =>
-    api.post<{ confirmed: boolean; notified: number; accepted_count: number }>(`/instructor/courses/${courseId}/confirm-schedule`).then((r) => r.data),
   // The instructor's own inbox (e.g. "a student just applied") — separate
   // from notifyCourse above, which is the instructor sending notifications
   // out to accepted students.
@@ -319,6 +317,10 @@ export const staffApi = {
   // Cancels the document (kept for history, hidden from the list).
   deleteDocument: (id: number, reason?: string) =>
     api.delete(`/staff/documents/${id}`, { params: reason ? { reason } : undefined }).then((r) => r.data),
+  // Staff confirm the Lab Boy schedule after the instructor accepts; this
+  // opens the staff case and notifies the accepted students.
+  confirmSchedule: (courseId: number) =>
+    api.post<{ confirmed: boolean; notified: number; accepted_count: number }>(`/staff/courses/${courseId}/confirm-schedule`).then((r) => r.data),
   documentWorkflow: (courseId: number) =>
     api.get<DocumentWorkflowResponse>(`/staff/courses/${courseId}/document-workflow`).then((r) => r.data),
   createWorkflowStep: (courseId: number, type: DocType, data: CreateWorkflowStepPayload = {}) =>

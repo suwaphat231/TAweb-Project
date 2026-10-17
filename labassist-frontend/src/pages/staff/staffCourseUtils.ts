@@ -50,6 +50,7 @@ export function buildCourseOffering(review: FormReview, allDocs: StaffDocument[]
     semester: review.semester,
     courseCode: review.course_code,
     sectionNo: review.section,
+    schedule: review.schedule,
     courseTitle: review.course_title,
     instructors: [{ name: review.instructor_name, isMain: true }],
     selectedLabBoys: [],

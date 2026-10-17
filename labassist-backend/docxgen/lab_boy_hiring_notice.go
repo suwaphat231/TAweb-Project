@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -103,6 +104,10 @@ func RenderLabBoyHiringNotice(in LabBoyHiringNoticeInput) ([]byte, error) {
 	if in.TotalSessions > 0 {
 		docXML = injectSummaryLine(docXML, in.TotalSessions, in.LabBoyCount, in.HoursPerSession, in.RateBaht)
 	}
+	// Widen the cells after filling them: injection finds cells by their
+	// template widths, which are too narrow for their Thai labels.
+	docXML = relayoutTable(docXML, "ในแต่ละเดือน", monthlyPlanColumns)
+	docXML = relayoutTable(docXML, "สรุปจำนวนปฏิบัติงาน", summaryLineColumns)
 
 	checkChar := func(selected bool) string {
 		if selected {
@@ -471,6 +476,72 @@ func injectSummaryLine(docXML string, totalSessions, labBoyCount int, hoursPerSe
 	tbl = injectFirstTabCell(tbl, "860", formatThousands(rateBaht))
 	tbl = injectFirstTabCell(tbl, "1260", formatThousands(totalPay))
 	return docXML[:absStart] + tbl + docXML[absEnd:]
+}
+
+// Column widths (twips) for the monthly plan and summary tables. The template's
+// columns are narrower than their labels in TH Sarabun New 16pt (e.g.
+// "พฤศจิกายน", "ครั้ง คือ วันที่ของเดือน"), so Word wrapped them and, with the
+// template's tighter-than-single line spacing, the Thai lines overlapped.
+// Each total equals the template's table width so the page layout is kept.
+var (
+	// เดือน | month | พ.ศ. | year | จำนวน | count | ครั้ง คือ วันที่ของเดือน | dates
+	monthlyPlanColumns = []int{700, 1250, 600, 700, 830, 480, 2150, 2742}
+	// ทั้งหมด | n | ครั้ง x | n | คน x | hours | ชั่วโมง x | rate | บาท | รวมเป็นเงิน | amount | บาท
+	summaryLineColumns = []int{850, 620, 720, 560, 660, 560, 940, 720, 620, 1240, 1600, 828}
+)
+
+var (
+	gridColAttrRe = regexp.MustCompile(`<w:gridCol w:w="\d+"/>`)
+	tcWAttrRe     = regexp.MustCompile(`<w:tcW w:w="\d+" w:type="dxa"/>`)
+	tableRowRe    = regexp.MustCompile(`(?s)<w:tr[ >].*?</w:tr>`)
+	tightLineRe   = regexp.MustCompile(`w:line="(\d+)" w:lineRule="auto"`)
+)
+
+// relayoutTable sets the column widths of the first table after anchor and
+// raises its line spacing to at least single. Rows whose cell count differs
+// from len(cols) (merged cells) keep their widths.
+func relayoutTable(docXML, anchor string, cols []int) string {
+	anchorIdx := strings.Index(docXML, anchor)
+	if anchorIdx < 0 {
+		return docXML
+	}
+	tblRel := strings.Index(docXML[anchorIdx:], "<w:tbl>")
+	if tblRel < 0 {
+		return docXML
+	}
+	start := anchorIdx + tblRel
+	endRel := strings.Index(docXML[start:], "</w:tbl>")
+	if endRel < 0 {
+		return docXML
+	}
+	end := start + endRel
+	tbl := docXML[start:end]
+	if len(gridColAttrRe.FindAllString(tbl, -1)) != len(cols) {
+		return docXML
+	}
+
+	nthCol := func(tag string) func(string) string {
+		i := 0
+		return func(string) string {
+			w := strconv.Itoa(cols[i])
+			i++
+			return strings.Replace(tag, "%d", w, 1)
+		}
+	}
+	tbl = gridColAttrRe.ReplaceAllStringFunc(tbl, nthCol(`<w:gridCol w:w="%d"/>`))
+	tbl = tableRowRe.ReplaceAllStringFunc(tbl, func(row string) string {
+		if len(tcWAttrRe.FindAllString(row, -1)) != len(cols) {
+			return row
+		}
+		return tcWAttrRe.ReplaceAllStringFunc(row, nthCol(`<w:tcW w:w="%d" w:type="dxa"/>`))
+	})
+	tbl = tightLineRe.ReplaceAllStringFunc(tbl, func(m string) string {
+		if n, _ := strconv.Atoi(tightLineRe.FindStringSubmatch(m)[1]); n < 240 {
+			return `w:line="240" w:lineRule="auto"`
+		}
+		return m
+	})
+	return docXML[:start] + tbl + docXML[end:]
 }
 
 // joinInts concatenates a slice of ints with sep.

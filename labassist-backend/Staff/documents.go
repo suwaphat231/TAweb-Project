@@ -79,6 +79,7 @@ type regVerifyRequest struct {
 var docTypeLabel = map[models.DocType]string{
 	models.DocHiringNotice:    "แบบฟอร์มแจ้งความประสงค์จ้าง",
 	models.DocApprovalMemo:    "บันทึกขออนุมัติจ้างนักศึกษาปฏิบัติงาน",
+	models.DocLabNotice:       "แบบแจ้งนักศึกษาช่วยคุมรายวิชาปฏิบัติการ",
 	models.DocPaymentEvidence: "หลักฐานการจ่ายเงิน",
 	models.DocPaymentRequest:  "บันทึกขอเบิกจ่าย",
 	models.DocWorkReport:      "รายงานผลการปฏิบัติงานนอกเวลาราชการ",

@@ -29,6 +29,7 @@ func enrichReview(r models.FormReview) models.FormReview {
 		r.CourseCode = c.Code
 		r.CourseTitle = c.Title
 		r.Section = c.Section
+		r.Schedule = c.Schedule
 		r.Semester = c.Semester
 		r.AcademicYear = c.AcademicYear
 		r.InstructorName = c.InstructorName
@@ -161,6 +162,9 @@ func ListStaffDocuments(typeFilter, statusFilter, search string) ([]models.Staff
 func UpdateStaffDocumentSchedule(id uint, schedule []models.WorkDaySlot, sessionsPerMonth int) (models.StaffDocument, bool) {
 	var doc models.StaffDocument
 	if err := DB.First(&doc, id).Error; err != nil {
+		return models.StaffDocument{}, false
+	}
+	if doc.Type != models.DocHiringNotice {
 		return models.StaffDocument{}, false
 	}
 	doc.WorkSchedule = schedule

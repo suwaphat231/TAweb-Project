@@ -33,15 +33,21 @@ func docTypePtr(t models.DocType) *models.DocType { return &t }
 //   - Step 2's title is from the department's sample memo
 //     (บันทึกขออนุมัติ (ป.ตรี)…doc, "เรื่อง ขออนุมัติจ้างนักศึกษาปฏิบัติงาน"),
 //     rendered from approval_memo.docx.
+//   - Step 3 is issued on the same memo template (docxgen renders both).
 var preWorkSteps = []workflowStep{
 	{Step: 1, Type: models.DocHiringNotice, Label: "แบบฟอร์มแจ้งความประสงค์ในการจ้างนักศึกษาช่วยสอนและช่วยคุมปฏิบัติการ"},
 	{Step: 2, Type: models.DocApprovalMemo, Label: "บันทึกข้อความ ขออนุมัติจ้างนักศึกษาปฏิบัติงาน", Requires: docTypePtr(models.DocHiringNotice)},
+	{Step: 3, Type: models.DocLabNotice, Label: "แบบแจ้งนักศึกษาช่วยคุมรายวิชาปฏิบัติการ", Requires: docTypePtr(models.DocApprovalMemo)},
+	// Step 4 bills the approval memo's plan: one page per planned month in a
+	// single document, as in the department's sample
+	// (บันทึกขออนุมัติเบิกจ่ายเงิน (ป.ตรี)…doc), rendered from payment_request.docx.
+	{Step: 4, Type: models.DocPaymentRequest, Label: "บันทึกข้อความ ขออนุมัติเบิกจ่ายเงินค่าตอบแทนนักศึกษาปฏิบัติงาน", Requires: docTypePtr(models.DocApprovalMemo)},
 }
 
 // monthlyDocTypes are created per billing month (GenerateMonthlyDocument),
 // so the workflow only lists them.
 var monthlyDocTypes = map[models.DocType]bool{
-	models.DocWorkReport: true, models.DocPaymentEvidence: true, models.DocPaymentRequest: true,
+	models.DocWorkReport: true, models.DocPaymentEvidence: true,
 }
 
 func stepFor(t models.DocType) (workflowStep, bool) {
@@ -67,7 +73,9 @@ type WorkflowCourse struct {
 	LabBoyCount  int      `json:"labboy_count"`
 	ReviewStatus string   `json:"review_status"`
 	StaffCaseID  *uint    `json:"staff_case_id,omitempty"`
-	PlanStatus   string   `json:"plan_status,omitempty"`
+	// ScheduleConfirmed is true once staff have confirmed the Lab Boy schedule.
+	ScheduleConfirmed bool   `json:"schedule_confirmed"`
+	PlanStatus        string `json:"plan_status,omitempty"`
 }
 
 // WorkflowStepView is one step as the staff UI shows it.
@@ -98,8 +106,17 @@ type WorkflowResponse struct {
 
 // templateReady lists the step types that can be rendered to .docx today.
 var templateReady = map[models.DocType]bool{
-	models.DocHiringNotice: true, models.DocApprovalMemo: true, models.DocWorkReport: true,
-	models.DocPaymentEvidence: true, models.DocPaymentRequest: true,
+	models.DocHiringNotice: true, models.DocApprovalMemo: true, models.DocLabNotice: true,
+	models.DocWorkReport: true, models.DocPaymentEvidence: true, models.DocPaymentRequest: true,
+}
+
+// memoStaffOfficer is who signs as the preparer of a memo-template document
+// (approval memo, lab notice): the name given, else whoever creates it.
+func memoStaffOfficer(t models.DocType, given, currentUser string) string {
+	if given != "" || (t != models.DocApprovalMemo && t != models.DocLabNotice && t != models.DocPaymentRequest) {
+		return given
+	}
+	return currentUser
 }
 
 // offering resolves the course and its active posting, answering the
@@ -168,7 +185,7 @@ func preconditions(review models.FormReview, sc *models.StaffCase, accepted []mo
 		reasons = append(reasons, "ยังไม่มีนักศึกษาที่ผ่านการคัดเลือก")
 	}
 	if sc == nil {
-		reasons = append(reasons, "อาจารย์ยังไม่ได้ยืนยันตารางปฏิบัติงาน (ยังไม่มี Staff Case)")
+		reasons = append(reasons, "เจ้าหน้าที่ยังไม่ได้ยืนยันตารางปฏิบัติงาน (ยังไม่มี Staff Case)")
 		return reasons
 	}
 	snap := database.BuildHiringNoticeSnapshot(sc.ID)
@@ -210,6 +227,7 @@ func (h *Handler) GetDocumentWorkflow(c *gin.Context) {
 			EnglishTitle: course.EnglishTitle, Section: course.Section, Semester: course.Semester,
 			AcademicYear: course.AcademicYear, Instructors: instructorNames(course),
 			LabBoyCount: len(accepted), ReviewStatus: string(review.Status),
+			ScheduleConfirmed: posting.LabBoyScheduleConfirmed,
 		},
 		Steps:            []WorkflowStepView{},
 		MonthlyDocuments: []models.StaffDocument{},
@@ -281,7 +299,7 @@ type CreateWorkflowStepRequest struct {
 	Replace bool   `json:"replace"`
 	Reason  string `json:"reason"`
 	Note    string `json:"note"`
-	// Memo header fields no table holds (only used by the approval memo).
+	// Memo header fields no table holds (approval memo / lab notice only).
 	RefNumber        string `json:"ref_number"`
 	DeptHeadName     string `json:"dept_head_name"`
 	StaffOfficerName string `json:"staff_officer_name"`
@@ -297,7 +315,7 @@ const maxWorkflowTextLen = 300
 // @Produce      json
 // @Security     BearerAuth
 // @Param        courseId  path  int                        true  "Course ID"
-// @Param        type      path  string                     true  "hiring_notice | approval_memo"
+// @Param        type      path  string                     true  "hiring_notice | approval_memo | lab_notice"
 // @Param        body      body  CreateWorkflowStepRequest  false "ตัวเลือก"
 // @Success      201  {object}  models.StaffDocument
 // @Failure      400  {object}  handlers.ErrorResponse
@@ -354,7 +372,7 @@ func createStep(c *gin.Context, step workflowStep, course models.Course, posting
 	doc.Note = body.Note
 	doc.RefNumber = body.RefNumber
 	doc.DeptHeadName = body.DeptHeadName
-	doc.StaffOfficerName = body.StaffOfficerName
+	doc.StaffOfficerName = memoStaffOfficer(step.Type, body.StaffOfficerName, c.GetString("name"))
 
 	created, err := database.CreateWorkflowDocument(database.NewWorkflowDocument{
 		Doc: doc, Requires: step.Requires, Replace: body.Replace, Reason: body.Reason, ActorID: actorID,

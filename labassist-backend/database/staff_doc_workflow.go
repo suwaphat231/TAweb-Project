@@ -3,6 +3,7 @@ package database
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"labassist/models"
 
@@ -91,6 +92,7 @@ func CreateWorkflowDocument(n NewWorkflowDocument) (models.StaffDocument, error)
 				return ErrPrerequisiteMissing
 			}
 			doc.BasedOnDocumentID = &prev.ID
+			inheritStepData(&doc, prev)
 		}
 		current, exists, err := activeDocTx(tx, postingID, doc.Type)
 		if err != nil {
@@ -119,6 +121,30 @@ func CreateWorkflowDocument(n NewWorkflowDocument) (models.StaffDocument, error)
 		return writeDocAuditTx(tx, doc, "create", n.ActorID, "", fmt.Sprintf("%s v%d", doc.Type, doc.Version), n.Reason)
 	})
 	return doc, err
+}
+
+// BangkokTime is the zone documents are dated in (timestamps are stored in UTC).
+var BangkokTime = time.FixedZone("Asia/Bangkok", 7*60*60)
+
+// inheritStepData makes a step carry exactly what the step it is based on
+// issued — Lab Boy roster, weekly work days, sessions per month and the
+// frozen work plan — so a memo always matches the hiring notice it follows,
+// even if the live plan changed in between.
+func inheritStepData(doc *models.StaffDocument, prev models.StaffDocument) {
+	doc.Roster = prev.Roster
+	doc.WorkSchedule = prev.WorkSchedule
+	doc.SessionsPerMonth = prev.SessionsPerMonth
+	doc.DataSnapshot = prev.DataSnapshot
+	doc.SnapshotVersion = prev.SnapshotVersion
+	// A step built on the approval memo cites it ("ตามบันทึกที่ … ลงวันที่ …");
+	// the date is stored as YYYY-MM-DD and printed in Thai by docxgen.
+	if prev.Type == models.DocApprovalMemo {
+		doc.PriorMemoRef = prev.RefNumber
+		doc.PriorMemoDate = prev.CreatedAt.In(BangkokTime).Format("2006-01-02")
+		if doc.DeptHeadName == "" {
+			doc.DeptHeadName = prev.DeptHeadName
+		}
+	}
 }
 
 func writeDocAuditTx(tx *gorm.DB, d models.StaffDocument, action string, actorID uint, oldValue, newValue, reason string) error {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { staffApi } from '../../../services/api'
+import { getApiErrorMessage, staffApi } from '../../../services/api'
 import type {
   StaffCaseResponse, GroupMonthPlan, CalendarDate, UpdateCasePayload,
   GroupWeekDaySlot, CourseScheduleSlot,
@@ -521,7 +521,15 @@ export function WorkScheduleModal({
   // ── Mutations ─────────────────────────────────────────────────────────────────
 
   const initCaseMut = useMutation({
-    mutationFn: () => staffApi.initCase(courseId),
+    // Surface the server's reason (e.g. no accepted Lab Boy yet) instead of
+    // axios's generic "status code 422".
+    mutationFn: async () => {
+      try {
+        return await staffApi.initCase(courseId)
+      } catch (err) {
+        throw new Error(await getApiErrorMessage(err, 'เริ่มต้นระบบตารางงานไม่สำเร็จ'), { cause: err })
+      }
+    },
     onSuccess: (res) => {
       setInnerCaseId(res.id)
       qc.invalidateQueries({ queryKey: ['staff-cases'] })
@@ -590,7 +598,11 @@ export function WorkScheduleModal({
     mutationFn: async () => {
       const slots = staffCase?.course_schedule_slots ?? []
       if (slots.length === 0) throw new Error('ไม่พบข้อมูลตารางเรียน')
-      const months = SEMESTER_MONTHS[semester] ?? []
+      // Only months not in the plan yet; with none left, creating a group
+      // would leave an empty duplicate that printed the weekday twice.
+      const months = (SEMESTER_MONTHS[semester] ?? [])
+        .filter(m => !usedMonthKeys.has(`${monthCEYear(m, semester, academicYear)}-${m}`))
+      if (months.length === 0) throw new Error('เพิ่มครบทุกเดือนของภาคเรียนแล้ว')
       const holidaySet = new Set(
         calDates.filter(cd => cd.affects_work).map(cd => cd.date.slice(0, 10)),
       )
@@ -611,7 +623,6 @@ export function WorkScheduleModal({
       try {
         for (const m of months) {
           const ceYear = monthCEYear(m, semester, academicYear)
-          if (usedMonthKeys.has(`${ceYear}-${m}`)) continue
           const dates = candidateDates(ceYear, m, weekdays).filter(d => !holidaySet.has(d))
           await staffApi.addGroupMonth(innerCaseId!, newGroup.id, { year: ceYear, month: m })
           await staffApi.setGroupMonthDates(innerCaseId!, newGroup.id, ceYear, m, dates)

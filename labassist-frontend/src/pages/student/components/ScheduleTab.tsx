@@ -44,8 +44,8 @@ const DAY_LABELS: Record<string, string> = {
 }
 
 function semesterLabel(s: string): string {
-  if (s === '1') return 'ภาคต้น'
-  if (s === '2') return 'ภาคปลาย'
+  if (s === '1') return 'ภาคเรียนที่ 1'
+  if (s === '2') return 'ภาคเรียนที่ 2'
   if (s === '3' || s.toLowerCase() === 's') return 'ภาคฤดูร้อน'
   return `ภาคเรียนที่ ${s}`
 }
@@ -61,10 +61,22 @@ function buildTermOptions(terms: TermOption[]): { value: string; label: string }
       { value: `1|${thYear - 1}`, label: `${semesterLabel('1')} ${thYear - 1}` },
     ]
   }
-  return terms.map((t) => ({
-    value: `${t.semester}|${t.academic_year}`,
-    label: `${semesterLabel(t.semester)} ${t.academic_year}`,
-  }))
+
+  const years = [...new Set(terms.map((term) => term.academic_year))]
+  return years.flatMap((academicYear) => {
+    const semesters = new Set(
+      terms
+        .filter((term) => term.academic_year === academicYear)
+        .map((term) => term.semester),
+    )
+    semesters.add('1')
+    semesters.add('2')
+
+    return [...semesters].map((semester) => ({
+      value: `${semester}|${academicYear}`,
+      label: `${semesterLabel(semester)} ${academicYear}`,
+    }))
+  })
 }
 
 interface ValidationErrors {

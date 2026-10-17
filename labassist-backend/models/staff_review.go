@@ -22,9 +22,12 @@ type FormReview struct {
 	UpdatedAt  time.Time    `json:"updated_at"`
 
 	// Enriched from the courses table — never stored
-	CourseCode     string `gorm:"-" json:"course_code"`
-	CourseTitle    string `gorm:"-" json:"course_title"`
-	Section        int    `gorm:"-" json:"section"`
+	CourseCode  string `gorm:"-" json:"course_code"`
+	CourseTitle string `gorm:"-" json:"course_title"`
+	Section     int    `gorm:"-" json:"section"`
+	// Schedule tells apart the days of a section that meets on several days
+	// (one course row per day).
+	Schedule       string `gorm:"-" json:"schedule"`
 	Semester       string `gorm:"-" json:"semester"`
 	AcademicYear   int    `gorm:"-" json:"academic_year"`
 	InstructorName string `gorm:"-" json:"instructor_name"`

@@ -298,6 +298,8 @@ export interface FormReview {
   course_code: string
   course_title: string
   section: number
+  /** The meeting day/time; a section meeting on several days has one entry per day. */
+  schedule?: string
   semester: string
   academic_year: number
   instructor_name: string
@@ -973,6 +975,8 @@ export interface WorkflowCourse {
   review_status: ReviewStatus
   staff_case_id?: number
   plan_status?: string
+  /** True once staff have confirmed the Lab Boy schedule. */
+  schedule_confirmed: boolean
 }
 
 export interface WorkflowStepView {

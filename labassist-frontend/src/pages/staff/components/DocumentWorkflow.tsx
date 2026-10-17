@@ -133,10 +133,20 @@ export function DocumentWorkflow({
   const statusMut = useMutation({
     mutationFn: ({ id, status }: { id: number; status: string }) => staffApi.updateDocumentStatus(id, status),
     onSuccess: (_d, v) => {
-      showToast(v.status === 'signed' ? 'บันทึกลงนามแล้ว' : 'ส่งรอลงนามเรียบร้อย', 'success')
+      showToast(v.status === 'signed' ? 'บันทึกลงนามแล้ว' : 'จัดการเอกสารเรียบร้อย', 'success')
       refresh()
     },
     onError: async (err) => showToast(await getApiErrorMessage(err, 'เกิดข้อผิดพลาด กรุณาลองใหม่'), 'error'),
+  })
+
+  const confirmScheduleMut = useMutation({
+    mutationFn: () => staffApi.confirmSchedule(courseId),
+    onSuccess: (data) => {
+      showToast(`ยืนยันตารางปฏิบัติงานแล้ว — แจ้งเตือนนักศึกษา ${data.notified} คน`, 'success')
+      qc.invalidateQueries({ queryKey: ['staff-cases'] })
+      refresh()
+    },
+    onError: async (err) => showToast(await getApiErrorMessage(err, 'ยืนยันตารางไม่สำเร็จ'), 'error'),
   })
 
   const cancelMut = useMutation({
@@ -157,6 +167,11 @@ export function DocumentWorkflow({
     } finally {
       setDownloadingId(null)
     }
+  }
+
+  // Steps built entirely from the previous step's document: one click, no form.
+  function oneClick(type: DocType) {
+    return type === 'approval_memo' || type === 'payment_request'
   }
 
   function openCreate(view: WorkflowStepView, replace: boolean) {
@@ -184,10 +199,32 @@ export function DocumentWorkflow({
   }
 
   const views = workflow.steps
-  const isMemo = createTarget?.view.type === 'approval_memo'
+  // lab_notice still asks for the memo header fields; the approval memo takes
+  // everything from the hiring notice it is based on.
+  const isMemo = createTarget?.view.type === 'lab_notice'
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+      {!workflow.course.schedule_confirmed && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
+          padding: '12px 16px', marginBottom: 16, borderRadius: 10,
+          background: 'var(--amber-soft, #FFFBEB)', border: '1px solid #FDE68A',
+        }}>
+          <div style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.6 }}>
+            {workflow.course.labboy_count > 0
+              ? <>อาจารย์รับ Lab Boy แล้ว <strong>{workflow.course.labboy_count} คน</strong> — ยืนยันตารางปฏิบัติงานเพื่อเริ่มทำเอกสารและแจ้งเตือนนักศึกษา</>
+              : 'ยังไม่มี Lab Boy ที่อาจารย์รับ — ยืนยันตารางได้หลังอาจารย์รับนักศึกษาแล้ว'}
+          </div>
+          <Button
+            onClick={() => confirmScheduleMut.mutate()}
+            loading={confirmScheduleMut.isPending}
+            disabled={workflow.course.labboy_count === 0}
+          >
+            ยืนยันตารางปฏิบัติงาน
+          </Button>
+        </div>
+      )}
       {views.map((view, idx) => {
         const status = stepStatus(view)
         const cfg = STEP_STATUS_CONFIG[status]
@@ -265,12 +302,12 @@ export function DocumentWorkflow({
 
                 {!doc && (
                   <button
-                    onClick={() => openCreate(view, false)}
+                    onClick={() => (oneClick(view.type) ? createMut.mutate({ type: view.type, body: {} }) : openCreate(view, false))}
                     disabled={!view.can_create || createMut.isPending}
                     title={!view.can_create ? view.blocked_reasons[0] : undefined}
                     style={view.can_create ? actionBtn('var(--accent)', '#fff') : disabledBtn}
                   >
-                    สร้างเอกสาร
+                    {createMut.isPending && createMut.variables?.type === view.type ? 'กำลังสร้าง...' : 'สร้างเอกสาร'}
                   </button>
                 )}
                 {doc && (
@@ -282,7 +319,7 @@ export function DocumentWorkflow({
                       </button>
                     )}
                     {(doc.status === 'draft' || doc.status === 'generated' || doc.status === 'approved') && (
-                      <button onClick={() => statusMut.mutate({ id: doc.id, status: 'awaiting_signature' })} disabled={statusMut.isPending} style={actionBtn('var(--amber)', '#fff')}>ส่งรอลงนาม</button>
+                      <button onClick={() => statusMut.mutate({ id: doc.id, status: 'awaiting_signature' })} disabled={statusMut.isPending} style={actionBtn('var(--amber)', '#fff')}>เรียบร้อย</button>
                     )}
                     {doc.status === 'awaiting_signature' && (
                       <button onClick={() => statusMut.mutate({ id: doc.id, status: 'signed' })} disabled={statusMut.isPending} style={actionBtn('var(--green)', '#fff')}>บันทึกลงนามแล้ว</button>
@@ -380,7 +417,7 @@ export function DocumentWorkflow({
             {isMemo && (
               <>
                 <Input label="ที่ (เลขที่บันทึก)" placeholder="อว 8613.7/..." value={form.ref_number ?? ''} maxLength={300} onChange={(e) => setForm((f) => ({ ...f, ref_number: e.target.value }))} />
-                <Input label="ชื่อเจ้าหน้าที่ผู้จัดทำ" value={form.staff_officer_name ?? ''} maxLength={300} onChange={(e) => setForm((f) => ({ ...f, staff_officer_name: e.target.value }))} />
+                <Input label="ชื่อเจ้าหน้าที่ผู้จัดทำ" placeholder="เว้นว่าง = ใช้ชื่อผู้สร้างเอกสาร" value={form.staff_officer_name ?? ''} maxLength={300} onChange={(e) => setForm((f) => ({ ...f, staff_officer_name: e.target.value }))} />
                 <Input label="ชื่อหัวหน้าภาควิชา" value={form.dept_head_name ?? ''} maxLength={300} onChange={(e) => setForm((f) => ({ ...f, dept_head_name: e.target.value }))} />
                 <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>ข้อมูลส่วนหัวบันทึกที่ไม่มีในฐานข้อมูล — เว้นว่างได้และกรอกภายหลังเมื่อมีเลขที่</span>
               </>
