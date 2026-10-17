@@ -66,3 +66,38 @@ func TestDemoSeedingRequiresExplicitOptIn(t *testing.T) {
 		})
 	}
 }
+
+func TestResetDBOnStartRequiresDevFlags(t *testing.T) {
+	t.Setenv("JWT_SECRET", "0123456789abcdefABCDEF9876543210xy")
+	for _, tc := range []struct {
+		reset, devLogin, seed string
+		enabled, invalid      bool
+	}{
+		{"", "false", "false", false, false},
+		{"false", "true", "true", false, false},
+		{"true", "true", "true", true, false},
+		{"true", "false", "true", false, true},
+		{"true", "true", "false", false, true},
+		{"1", "true", "true", false, true},
+		{"TRUE", "true", "true", false, true},
+	} {
+		t.Run(tc.reset+"/"+tc.devLogin+"/"+tc.seed, func(t *testing.T) {
+			t.Setenv("RESET_DB_ON_START", tc.reset)
+			t.Setenv("DEV_LOGIN", tc.devLogin)
+			t.Setenv("SEED_DEMO_DATA", tc.seed)
+			cfg, err := Load()
+			if tc.invalid {
+				if err == nil || cfg != nil {
+					t.Fatal("unsafe reset configuration accepted")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.ResetDBOnStart != tc.enabled {
+				t.Fatal("unexpected reset setting")
+			}
+		})
+	}
+}

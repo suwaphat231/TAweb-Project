@@ -31,6 +31,17 @@ cp .env.example .env
 #   CLIENT_URL  (URL ของ frontend)
 ```
 
+### รีเซต database ทุกครั้งที่ start (dev เท่านั้น)
+- Docker Compose: ตั้ง `RESET_DB_ON_START=true` ใน `.env` ที่ **root ของ repo** (ไม่ใช่ `labassist-backend/.env`)
+  แล้วสั่ง `docker compose up -d backend` — ห้ามใช้ `docker compose restart` เพราะจะไม่อ่านค่า env ใหม่
+  (ตอนปิดกลับเป็น `false` ก็ต้องใช้ `up -d` เช่นกัน ไม่งั้น container ยังรีเซตทุกครั้ง)
+- `go run main.go`: ตั้งใน `labassist-backend/.env` แล้วรันใหม่
+
+backend จะ drop ทุกตารางแล้ว migrate + seed demo data ใหม่ทั้งหมดทุกครั้งที่ start (รวม restart อัตโนมัติ)
+— **ข้อมูลทุกอย่างที่ทีมสร้างไว้จะหาย** ใช้ได้เฉพาะเมื่อ `DEV_LOGIN=true` และ `SEED_DEMO_DATA=true`
+(ไม่งั้น backend จะไม่ยอม start) — แต่ `docker-compose.yml` ตั้ง default ของสองตัวนี้เป็น `true`
+ดังนั้นถ้าเอา compose ไปใช้กับ production ต้องตั้ง `DEV_LOGIN=false` ให้ชัดเจน ห้ามใช้ flag นี้กับ DB ที่มีข้อมูลจริง
+
 ### 3. Run
 ```bash
 go run main.go

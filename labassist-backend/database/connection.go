@@ -620,6 +620,8 @@ var DB *gorm.DB
 
 // Connect opens the MySQL connection, migrates the users and courses
 // tables, and seeds users from user.sql the first time the table is empty.
+// With RESET_DB_ON_START every table is dropped first, so each start begins
+// from freshly seeded data.
 func Connect(cfg *config.Config) error {
 	dsnConfig := mysqldriver.NewConfig()
 	dsnConfig.User = cfg.DBUser
@@ -660,6 +662,13 @@ func Connect(cfg *config.Config) error {
 		}
 		log.Printf("mysql not ready yet (attempt %d/%d), retrying in %s: %v", attempt, maxAttempts, retryDelay, err)
 		time.Sleep(retryDelay)
+	}
+
+	if cfg.ResetDBOnStart {
+		log.Printf("RESET_DB_ON_START enabled: dropping all tables in %q", cfg.DBName)
+		if err := resetSchema(db); err != nil {
+			return fmt.Errorf("reset schema: %w", err)
+		}
 	}
 
 	if err := db.AutoMigrate(&models.User{}); err != nil {
