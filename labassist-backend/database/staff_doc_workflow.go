@@ -19,6 +19,10 @@ var ErrDocumentExists = errors.New("document already exists for this step")
 // document yet, so this step cannot be created.
 var ErrPrerequisiteMissing = errors.New("previous workflow step has no document")
 
+// ErrPrerequisiteNotSigned means the previous workflow step's document
+// exists but is not signed yet; steps open one at a time, in order.
+var ErrPrerequisiteNotSigned = errors.New("previous workflow step is not signed")
+
 // ErrDocumentInactive means the document was cancelled or superseded and can
 // no longer change.
 var ErrDocumentInactive = errors.New("document is cancelled or superseded")
@@ -35,9 +39,12 @@ func IsActiveDocStatus(s models.DocStatus) bool {
 	return s != models.DocCancelled && s != models.DocSuperseded
 }
 
+// activeDocTx returns the current workflow document of one step. Monthly
+// documents (monthly_period_id set) share the work_report/payment_request
+// types but are never a workflow step.
 func activeDocTx(tx *gorm.DB, postingID uint, t models.DocType) (models.StaffDocument, bool, error) {
 	var d models.StaffDocument
-	err := tx.Where("posting_id = ? AND type = ? AND status NOT IN ?", postingID, t,
+	err := tx.Where("posting_id = ? AND type = ? AND monthly_period_id IS NULL AND status NOT IN ?", postingID, t,
 		[]models.DocStatus{models.DocCancelled, models.DocSuperseded}).
 		Order("version DESC, id DESC").First(&d).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -57,8 +64,8 @@ func StaffDocumentsForPosting(postingID uint) ([]models.StaffDocument, error) {
 // NewWorkflowDocument describes one workflow-step document to create.
 type NewWorkflowDocument struct {
 	Doc models.StaffDocument
-	// Requires is the previous step's type; its active document must exist
-	// and becomes Doc.BasedOnDocumentID.
+	// Requires is the previous step's type; its active document must exist,
+	// be signed, and becomes Doc.BasedOnDocumentID.
 	Requires *models.DocType
 	// Replace allows superseding the step's current active document with a
 	// new version; otherwise an existing one is ErrDocumentExists.
@@ -90,6 +97,9 @@ func CreateWorkflowDocument(n NewWorkflowDocument) (models.StaffDocument, error)
 			}
 			if !ok {
 				return ErrPrerequisiteMissing
+			}
+			if prev.Status != models.DocSigned {
+				return ErrPrerequisiteNotSigned
 			}
 			doc.BasedOnDocumentID = &prev.ID
 			inheritStepData(&doc, prev)
@@ -141,9 +151,9 @@ func inheritStepData(doc *models.StaffDocument, prev models.StaffDocument) {
 	if prev.Type == models.DocApprovalMemo {
 		doc.PriorMemoRef = prev.RefNumber
 		doc.PriorMemoDate = prev.CreatedAt.In(BangkokTime).Format("2006-01-02")
-		if doc.DeptHeadName == "" {
-			doc.DeptHeadName = prev.DeptHeadName
-		}
+	}
+	if doc.DeptHeadName == "" {
+		doc.DeptHeadName = prev.DeptHeadName
 	}
 }
 

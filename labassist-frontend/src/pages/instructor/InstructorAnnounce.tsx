@@ -202,7 +202,7 @@ export default function InstructorAnnounce() {
                     <div style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 2, whiteSpace: 'pre-line' }}>🕐 {formatSchedule(c.schedule)}</div>
                   )}
                   <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>
-                    ภาค {c.semester}/{c.academic_year}
+                    ภาคเรียนที่ {c.semester}
                     &nbsp;·&nbsp;Lab Boy {c.labboy_accepted}/{c.labboy_slots}
                     {c.deadline && (
                       <span style={{ marginLeft: 8, color: 'var(--amber)' }}>

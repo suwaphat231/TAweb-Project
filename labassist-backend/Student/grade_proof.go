@@ -126,6 +126,9 @@ func (h *Handler) UploadGradeProof(c *gin.Context) {
 			if !ocrOK {
 				warnParts = append(warnParts, "OCR ไม่สามารถอ่านเกรดจากรูปได้ — อาจารย์จะตรวจสอบเอง")
 			} else {
+				// Keep the grade on file so later postings of this course can
+				// reuse it without another image.
+				database.SaveTranscriptGrade(app.StudentID, course.Code, ocrGrade)
 				if app.Grade != nil && *app.Grade != ocrGrade {
 					warnParts = append(warnParts, fmt.Sprintf(
 						"เกรดที่กรอก (%s) ต่างจากที่อ่านได้จากรูป (%s)", *app.Grade, ocrGrade,

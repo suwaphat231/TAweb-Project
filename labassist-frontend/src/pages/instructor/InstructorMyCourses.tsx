@@ -174,7 +174,7 @@ export default function InstructorMyCourses() {
                     </div>
                     <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)' }}>{displayCourseTitle(c.title, c.english_title)}</div>
                     <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 2 }}>
-                      ภาค {c.semester}/{c.academic_year}
+                      ภาคเรียนที่ {c.semester}
                       {c.schedule && <span> · 🕐 {formatSchedule(c.schedule, { separator: ' / ' })}</span>}
                     </div>
                   </div>
@@ -292,7 +292,7 @@ export default function InstructorMyCourses() {
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 2 }}>
                         <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--primary)' }}>{course.code}</span>
                         {!!course.section && <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>Sec {course.section}</span>}
-                        <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>ภาค {course.semester}/{course.academic_year}</span>
+                        <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>ภาคเรียนที่ {course.semester}</span>
                       </div>
                       <div style={{ fontSize: 13, color: 'var(--ink-800)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {displayCourseTitle(course.title, course.english_title)}

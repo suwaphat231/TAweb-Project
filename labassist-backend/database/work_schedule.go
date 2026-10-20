@@ -1,34 +1,33 @@
 package database
 
 import (
-	"fmt"
+	"slices"
 	"sort"
-	"time"
+	"strings"
 
 	"labassist/models"
 )
 
-// WorkSession is one lab-assistant session derived from a StaffDocument that
-// includes the student in its roster. DocumentType lets the frontend know
-// which document type generated the session (for display/filtering).
+// WorkSession is one Lab Boy work day from the staff's work plan.
 type WorkSession struct {
-	CourseID        uint           `json:"course_id"`
-	CourseCode      string         `json:"course_code"`
-	CourseTitle     string         `json:"course_title"`
-	CourseSection   int            `json:"course_section"`
-	Semester        string         `json:"semester"`
-	AcademicYear    int            `json:"academic_year"`
-	DocumentID      uint           `json:"document_id"`
-	DocumentType    models.DocType `json:"document_type"`
-	SessionDate     string         `json:"session_date"` // YYYY-MM-DD (CE)
-	WorkDay         string         `json:"work_day"`
-	WorkTimeStart   string         `json:"work_time_start"`
-	WorkTimeEnd     string         `json:"work_time_end"`
-	HoursPerSession float64        `json:"hours_per_session"`
+	CourseID      uint   `json:"course_id"`
+	CourseCode    string `json:"course_code"`
+	CourseTitle   string `json:"course_title"`
+	CourseSection int    `json:"course_section"`
+	Semester      string `json:"semester"`
+	AcademicYear  int    `json:"academic_year"`
+	SessionDate   string `json:"session_date"` // YYYY-MM-DD (CE)
+	WorkDay       string `json:"work_day"`     // MON..SUN
+	WorkTimeStart string `json:"work_time_start"`
+	WorkTimeEnd   string `json:"work_time_end"`
+	// Status is scheduled, completed or absent.
+	Status          models.OccurrenceStatus `json:"status"`
+	IsMakeup        bool                    `json:"is_makeup"`
+	HoursPerSession float64                 `json:"hours_per_session"`
 }
 
 // LabBoyAssignment is a course where the student is an accepted Lab Boy and
-// the instructor has confirmed the work schedule.
+// staff have confirmed the work schedule.
 type LabBoyAssignment struct {
 	CourseID       uint   `json:"course_id"`
 	CourseCode     string `json:"course_code"`
@@ -40,7 +39,7 @@ type LabBoyAssignment struct {
 }
 
 // LabBoyAssignmentsForStudent returns all courses where the student has an
-// accepted application and the instructor has confirmed the schedule.
+// accepted application and staff have confirmed the schedule.
 func LabBoyAssignmentsForStudent(studentUserID uint) ([]LabBoyAssignment, error) {
 	var apps []models.Application
 	if err := DB.Where("student_id = ? AND status = ?", studentUserID, models.AppAccepted).Find(&apps).Error; err != nil {
@@ -83,108 +82,86 @@ func LabBoyAssignmentsForStudent(studentUserID uint) ([]LabBoyAssignment, error)
 	return out, nil
 }
 
-// WorkScheduleForStudent returns every work session found in StaffDocuments
-// where the student (by userID) appears as an accepted Lab Boy in the roster.
-// Sessions are deduplicated by (course, date) — multiple document types can
-// cover the same period — and returned sorted oldest-first.
+// WorkScheduleForStudent returns the student's work days from the work plan
+// of every course where they are an accepted Lab Boy and staff have confirmed
+// the schedule, oldest first. Days cancelled for a holiday are left out; a
+// makeup day shows up as its own session. A schedule group with students
+// assigned covers only them; one without covers every Lab Boy of the course.
 func WorkScheduleForStudent(studentUserID uint) ([]WorkSession, error) {
 	var apps []models.Application
 	if err := DB.Where("student_id = ? AND status = ?", studentUserID, models.AppAccepted).Find(&apps).Error; err != nil {
 		return nil, err
 	}
-	if len(apps) == 0 {
-		return []WorkSession{}, nil
-	}
-
-	// Collect posting IDs from accepted applications (primary path).
-	postingIDs := make([]uint, 0, len(apps))
-	// Also collect legacy course IDs for apps without posting_id (backup).
-	legacyCourseIDs := make([]uint, 0)
-	for _, a := range apps {
-		if a.PostingID != 0 {
-			postingIDs = append(postingIDs, a.PostingID)
-		} else if a.CourseID != 0 {
-			legacyCourseIDs = append(legacyCourseIDs, a.CourseID)
-		}
-	}
-
-	var docs []models.StaffDocument
-	if len(postingIDs) > 0 {
-		if err := DB.Where("posting_id IN ?", postingIDs).Find(&docs).Error; err != nil {
-			return nil, err
-		}
-	}
-	// Legacy fallback: also fetch docs linked by course_id for pre-migration rows.
-	if len(legacyCourseIDs) > 0 {
-		var legacyDocs []models.StaffDocument
-		if err := DB.Where("course_id IN ? AND (posting_id IS NULL OR posting_id = 0)", legacyCourseIDs).Find(&legacyDocs).Error; err != nil {
-			return nil, err
-		}
-		docs = append(docs, legacyDocs...)
-	}
-
-	seen := make(map[string]bool)
 	out := make([]WorkSession, 0)
-
-	for _, doc := range docs {
-		if doc.Period == nil || len(doc.SessionDates) == 0 {
+	for _, app := range apps {
+		p, ok := postingByID(app.PostingID)
+		if !ok || !p.IsActive || !p.LabBoyScheduleConfirmed {
 			continue
 		}
-		inRoster := false
-		for _, entry := range doc.Roster {
-			if entry.StudentID == studentUserID {
-				inRoster = true
-				break
+		sc, ok := StaffCaseByPostingID(p.ID)
+		if !ok {
+			continue
+		}
+		course, ok := CourseByID(p.CourseID)
+		if !ok {
+			continue
+		}
+		groups, err := ScheduleGroupsForCase(sc.ID)
+		if err != nil {
+			return nil, err
+		}
+		mine := make(map[uint]bool, len(groups))
+		groupHours := make(map[uint]float64, len(groups))
+		for _, g := range groups {
+			ids, err := GroupStudentIDs(g.ID)
+			if err != nil {
+				return nil, err
 			}
+			mine[g.ID] = len(ids) == 0 || slices.Contains(ids, studentUserID)
+			groupHours[g.ID] = g.HoursPerSession
 		}
-		if !inRoster {
-			continue
+		var occs []models.WorkOccurrence
+		if err := DB.Where("staff_case_id = ? AND status IN ?", sc.ID, []models.OccurrenceStatus{
+			models.OccurrenceScheduled, models.OccurrenceCompleted, models.OccurrenceAbsent,
+		}).Order("scheduled_date, start_time").Find(&occs).Error; err != nil {
+			return nil, err
 		}
-
-		// Resolve course: prefer posting chain, fall back to direct course_id.
-		var courseID uint
-		if doc.PostingID != nil && *doc.PostingID != 0 {
-			if p, ok := postingByID(*doc.PostingID); ok {
-				courseID = p.CourseID
-			}
-		}
-		if courseID == 0 && doc.CourseID != nil {
-			courseID = *doc.CourseID
-		}
-		if courseID == 0 {
-			continue
-		}
-
-		course, _ := CourseByID(courseID)
-		ceYear := doc.Period.Year - 543
-
-		for _, day := range doc.SessionDates {
-			dateStr := time.Date(ceYear, time.Month(doc.Period.Month), day, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
-			key := fmt.Sprintf("%d_%s", courseID, dateStr)
-			if seen[key] {
+		for _, o := range occs {
+			if o.ScheduleGroupID != nil && !mine[*o.ScheduleGroupID] {
 				continue
 			}
-			seen[key] = true
+			hours := o.ActualHours
+			if hours == 0 && o.ScheduleGroupID != nil {
+				hours = groupHours[*o.ScheduleGroupID]
+			}
+			if hours == 0 {
+				hours = sc.HoursPerSession
+			}
+			if hours == 0 {
+				hours = occurrenceHours(o.StartTime, o.EndTime)
+			}
 			out = append(out, WorkSession{
-				CourseID:        courseID,
+				CourseID:        course.ID,
 				CourseCode:      course.Code,
 				CourseTitle:     course.Title,
 				CourseSection:   course.Section,
 				Semester:        course.Semester,
 				AcademicYear:    course.AcademicYear,
-				DocumentID:      doc.ID,
-				DocumentType:    doc.Type,
-				SessionDate:     dateStr,
-				WorkDay:         doc.WorkDay,
-				WorkTimeStart:   doc.WorkTimeStart,
-				WorkTimeEnd:     doc.WorkTimeEnd,
-				HoursPerSession: doc.HoursPerSession,
+				SessionDate:     o.ScheduledDate.Format("2006-01-02"),
+				WorkDay:         strings.ToUpper(o.ScheduledDate.Weekday().String()[:3]),
+				WorkTimeStart:   o.StartTime,
+				WorkTimeEnd:     o.EndTime,
+				Status:          o.Status,
+				IsMakeup:        o.RescheduledFromOccurrenceID != nil,
+				HoursPerSession: hours,
 			})
 		}
 	}
-
 	sort.SliceStable(out, func(i, j int) bool {
-		return out[i].SessionDate < out[j].SessionDate
+		if out[i].SessionDate != out[j].SessionDate {
+			return out[i].SessionDate < out[j].SessionDate
+		}
+		return out[i].WorkTimeStart < out[j].WorkTimeStart
 	})
 	return out, nil
 }

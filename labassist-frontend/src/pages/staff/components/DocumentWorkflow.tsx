@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import type {
   DocumentWorkflowItem, DocStepStatus, StaffCaseResponse, GroupMonthPlan, StaffDocument,
@@ -8,11 +8,11 @@ import { getApiErrorMessage, staffApi } from '../../../services/api'
 import { useToast } from '../../../hooks/useToast'
 import { triggerBrowserDownload } from '../../../utils/download'
 import { Modal } from '../../../components/ui/Modal'
-import { Input } from '../../../components/ui/Input'
 import { Textarea } from '../../../components/ui/Textarea'
 import { Button } from '../../../components/ui/Button'
 import { DocumentPreviewModal } from './DocumentPreviewModal'
 import { WorkScheduleModal } from './WorkScheduleModal'
+import { StaffMakeupSection } from './StaffMakeupSection'
 
 const STEP_STATUS_CONFIG: Record<DocStepStatus, { label: string; color: string; bg: string }> = {
   not_reached:         { label: 'ยังไม่ถึงขั้นตอน', color: 'var(--ink-400)',  bg: 'var(--line-soft)' },
@@ -94,6 +94,13 @@ export function DocumentWorkflow({
     enabled: !!courseId,
   })
 
+  // Opening the workflow creates the staff case once there are Lab Boys;
+  // reload the case list so the work plan picks it up.
+  const newCaseId = workflow?.course.staff_case_id
+  useEffect(() => {
+    if (newCaseId && !staffCase) qc.invalidateQueries({ queryKey: ['staff-cases'] })
+  }, [newCaseId, staffCase, qc])
+
   const { data: monthlyPlan = [] } = useQuery<GroupMonthPlan[]>({
     queryKey: ['monthly-plan', staffCase?.id],
     queryFn: () => staffApi.getMonthlyPlan(staffCase!.id),
@@ -115,6 +122,7 @@ export function DocumentWorkflow({
   function refresh() {
     qc.invalidateQueries({ queryKey: ['document-workflow', courseId] })
     qc.invalidateQueries({ queryKey: ['staff-documents'] })
+    qc.invalidateQueries({ queryKey: ['case-makeup-days'] })
     onDocumentCreated()
   }
 
@@ -171,7 +179,7 @@ export function DocumentWorkflow({
 
   // Steps built entirely from the previous step's document: one click, no form.
   function oneClick(type: DocType) {
-    return type === 'approval_memo' || type === 'payment_request'
+    return type === 'approval_memo' || type === 'payment_request' || type === 'work_report'
   }
 
   function openCreate(view: WorkflowStepView, replace: boolean) {
@@ -199,34 +207,17 @@ export function DocumentWorkflow({
   }
 
   const views = workflow.steps
-  // lab_notice still asks for the memo header fields; the approval memo takes
-  // everything from the hiring notice it is based on.
-  const isMemo = createTarget?.view.type === 'lab_notice'
+  // Timeline: documents are finished one at a time. The current step is the
+  // first one not signed yet; later steps stay locked until it is.
+  const currentIdx = views.findIndex((v) => v.document?.status !== 'signed')
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      {!workflow.course.schedule_confirmed && (
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
-          padding: '12px 16px', marginBottom: 16, borderRadius: 10,
-          background: 'var(--amber-soft, #FFFBEB)', border: '1px solid #FDE68A',
-        }}>
-          <div style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.6 }}>
-            {workflow.course.labboy_count > 0
-              ? <>อาจารย์รับ Lab Boy แล้ว <strong>{workflow.course.labboy_count} คน</strong> — ยืนยันตารางปฏิบัติงานเพื่อเริ่มทำเอกสารและแจ้งเตือนนักศึกษา</>
-              : 'ยังไม่มี Lab Boy ที่อาจารย์รับ — ยืนยันตารางได้หลังอาจารย์รับนักศึกษาแล้ว'}
-          </div>
-          <Button
-            onClick={() => confirmScheduleMut.mutate()}
-            loading={confirmScheduleMut.isPending}
-            disabled={workflow.course.labboy_count === 0}
-          >
-            ยืนยันตารางปฏิบัติงาน
-          </Button>
-        </div>
-      )}
+      {staffCase?.id && <StaffMakeupSection caseId={staffCase.id} courseId={courseId} />}
       {views.map((view, idx) => {
-        const status = stepStatus(view)
+        const locked = currentIdx >= 0 && idx > currentIdx
+        const isCurrent = idx === currentIdx
+        const status = locked ? 'not_reached' : stepStatus(view)
         const cfg = STEP_STATUS_CONFIG[status]
         const isLast = idx === views.length - 1
         const doc = view.document
@@ -255,9 +246,15 @@ export function DocumentWorkflow({
               </div>
             </div>
 
-            <div style={{ flex: 1, padding: '14px 16px 20px 12px', borderBottom: isLast ? 'none' : '1px solid var(--line-soft)' }}>
+            <div style={{
+              flex: 1, padding: '14px 16px 20px 12px', marginBottom: isCurrent ? 8 : 0,
+              borderBottom: isLast || isCurrent ? 'none' : '1px solid var(--line-soft)',
+              ...(isCurrent ? { background: 'var(--primary-50)', border: '1.5px solid var(--primary-100)', borderRadius: 'var(--radius-card)' } : {}),
+              ...(locked ? { opacity: 0.55 } : {}),
+            }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
                 <div style={{ flex: 1, minWidth: 200 }}>
+                  {isCurrent && <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>ขั้นตอนปัจจุบัน</div>}
                   <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)', lineHeight: 1.4 }}>{view.label}</div>
                   {doc && (
                     <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 3 }}>
@@ -272,6 +269,16 @@ export function DocumentWorkflow({
                 </span>
               </div>
 
+              {locked ? (
+                <div style={{ marginTop: 6, fontSize: 12, color: 'var(--ink-500)' }}>
+                  เปิดให้สร้างเมื่อขั้นตอนที่ {views[idx - 1].step} บันทึกลงนามแล้ว
+                </div>
+              ) : <>
+              {isCurrent && doc && (
+                <div style={{ marginTop: 6, fontSize: 12, color: 'var(--ink-600)' }}>
+                  เมื่อได้รับเอกสารที่ลงนามแล้ว กด "บันทึกลงนามแล้ว" เพื่อเปิดขั้นตอนถัดไป
+                </div>
+              )}
               {!doc && view.blocked_reasons.length > 0 && (
                 <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12, color: 'var(--ink-500)', lineHeight: 1.6 }}>
                   {view.blocked_reasons.map((r, i) => <li key={i}>{r}</li>)}
@@ -361,10 +368,48 @@ export function DocumentWorkflow({
               )}
 
               {isHiringNotice && showWorkDates && workDates.length > 0 && <WorkDatesPanel dates={workDates} />}
+              </>}
             </div>
           </div>
         )
       })}
+
+      {/* Last step: staff confirm the work schedule once every document is signed. */}
+      {(() => {
+        const confirmed = workflow.course.schedule_confirmed
+        const blockers = workflow.course.confirm_blocked_reasons ?? []
+        const ready = !confirmed && blockers.length === 0
+        return (
+          <div style={{
+            marginTop: 16, padding: '16px 18px', borderRadius: 10,
+            border: `1px solid ${confirmed ? '#BBF7D0' : ready ? 'var(--primary-100)' : 'var(--line)'}`,
+            background: confirmed ? 'var(--green-bg)' : ready ? 'var(--primary-50)' : 'var(--line-soft)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-900)' }}>ยืนยันตารางปฏิบัติงาน</div>
+                <div style={{ fontSize: 13, color: confirmed ? 'var(--green)' : 'var(--ink-600)', marginTop: 2 }}>
+                  {confirmed
+                    ? 'ยืนยันแล้ว — นักศึกษาเห็นตารางปฏิบัติงานและได้รับแจ้งเตือนแล้ว'
+                    : ready
+                      ? `เอกสารลงนามครบแล้ว — ยืนยันเพื่อแจ้งตารางปฏิบัติงานให้ Lab Boy ${workflow.course.labboy_count} คน`
+                      : 'ยืนยันได้เมื่อเอกสารทุกขั้นของรายวิชาลงนามเรียบร้อยแล้ว'}
+                </div>
+              </div>
+              {!confirmed && (
+                <Button onClick={() => confirmScheduleMut.mutate()} loading={confirmScheduleMut.isPending} disabled={!ready}>
+                  ยืนยันตารางปฏิบัติงาน
+                </Button>
+              )}
+            </div>
+            {!confirmed && blockers.length > 0 && (
+              <ul style={{ margin: '10px 0 0', paddingLeft: 18, fontSize: 12, color: 'var(--ink-500)', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {blockers.map((r) => <li key={r}>{r}</li>)}
+              </ul>
+            )}
+          </div>
+        )
+      })()}
 
       <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-400)', letterSpacing: 0.5, marginBottom: 10 }}>เอกสารรายเดือน (สร้างตามรอบเดือนที่ปฏิบัติงาน)</div>
@@ -412,14 +457,6 @@ export function DocumentWorkflow({
                   ฉบับปัจจุบันจะถูกเก็บไว้เป็น "มีฉบับใหม่แทน" — ไม่ถูกลบ
                 </div>
                 <Textarea label="เหตุผลที่สร้างฉบับใหม่ *" rows={3} value={form.reason ?? ''} maxLength={300} onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))} />
-              </>
-            )}
-            {isMemo && (
-              <>
-                <Input label="ที่ (เลขที่บันทึก)" placeholder="อว 8613.7/..." value={form.ref_number ?? ''} maxLength={300} onChange={(e) => setForm((f) => ({ ...f, ref_number: e.target.value }))} />
-                <Input label="ชื่อเจ้าหน้าที่ผู้จัดทำ" placeholder="เว้นว่าง = ใช้ชื่อผู้สร้างเอกสาร" value={form.staff_officer_name ?? ''} maxLength={300} onChange={(e) => setForm((f) => ({ ...f, staff_officer_name: e.target.value }))} />
-                <Input label="ชื่อหัวหน้าภาควิชา" value={form.dept_head_name ?? ''} maxLength={300} onChange={(e) => setForm((f) => ({ ...f, dept_head_name: e.target.value }))} />
-                <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>ข้อมูลส่วนหัวบันทึกที่ไม่มีในฐานข้อมูล — เว้นว่างได้และกรอกภายหลังเมื่อมีเลขที่</span>
               </>
             )}
           </div>

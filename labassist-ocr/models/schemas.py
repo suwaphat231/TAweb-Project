@@ -38,4 +38,6 @@ class StudentInfoExtractResult(BaseModel):
     faculty: Optional[str] = None
     campus: Optional[str] = None
     student_status: Optional[str] = None
+    # Which REG box the image shows: "personal", "student", or None if unclear.
+    page_kind: Optional[str] = None
     confidence: float

@@ -701,7 +701,7 @@ export function WorkScheduleModal({
                 {courseCode} · {courseTitle}
               </div>
               <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2 }}>
-                กลุ่ม {sectionNo} · ภาคเรียน {semester}/{academicYear}
+                กลุ่ม {sectionNo} · ภาคเรียนที่ {semester}
                 {' · Lab Boy '}
                 <strong style={{ color: labBoyCount > 0 ? 'var(--green)' : 'var(--red)' }}>
                   {labBoyCount} คน
@@ -873,7 +873,7 @@ export function WorkScheduleModal({
               <div style={{ flex: 1, minWidth: 0 }}>
                 {planLocked ? (
                   <span style={{ fontSize: 12, color: 'var(--green)', fontWeight: 600 }}>
-                    ✓ ยืนยันตารางแล้ว
+                    ✓ ยืนยันแผนปฏิบัติงานแล้ว
                   </span>
                 ) : confirmErrors.length > 0 ? (
                   <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>
@@ -903,7 +903,7 @@ export function WorkScheduleModal({
                     disabled={confirmMut.isPending || confirmErrors.length > 0}
                     className="btn btn-green"
                     title={confirmErrors.length > 0 ? confirmErrors.join(' | ') : undefined}>
-                    {confirmMut.isPending ? 'กำลังยืนยัน...' : 'ยืนยันตารางปฏิบัติงาน'}
+                    {confirmMut.isPending ? 'กำลังยืนยัน...' : 'ยืนยันแผนปฏิบัติงาน'}
                   </button>
                 )}
               </div>

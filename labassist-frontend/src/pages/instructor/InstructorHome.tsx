@@ -398,7 +398,7 @@ export default function InstructorHome() {
                             <div key={o.key} style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2, whiteSpace: 'pre-line' }}>{formatSchedule(o.schedule)}</div>
                           ))}
                           <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 2 }}>
-                            ภาค {c.semester}/{c.academic_year}
+                            ภาคเรียนที่ {c.semester}
                             {deadline && (
                               <span style={{ marginLeft: 6, color: closed ? 'var(--ink-400)' : 'var(--amber)' }}>
                                 · {closed ? 'ปิดรับเมื่อ' : 'เปิดรับถึง'}{' '}

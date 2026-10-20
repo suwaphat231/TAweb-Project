@@ -57,13 +57,15 @@ type User struct {
 	// blank email (filled in later via Google sign-in), so uniqueness is
 	// enforced instead by a functional index that ignores empty strings — see
 	// database/connection.go.
-	Email     string    `gorm:"size:200;not null" json:"email"`
-	Role      UserRole  `gorm:"type:enum('student','instructor','staff','admin');not null" json:"role"`
-	StudentID *string   `gorm:"uniqueIndex;size:20" json:"student_id,omitempty"`
-	GoogleSub *string   `gorm:"uniqueIndex;size:100" json:"google_sub,omitempty"`
-	GPA       *float64  `gorm:"type:decimal(3,2)" json:"gpa,omitempty"`
-	Faculty   *string   `gorm:"size:200" json:"faculty,omitempty"`
-	Year      *int8     `json:"year,omitempty"`
+	Email     string   `gorm:"size:200;not null" json:"email"`
+	Role      UserRole `gorm:"type:enum('student','instructor','staff','admin');not null" json:"role"`
+	StudentID *string  `gorm:"uniqueIndex;size:20" json:"student_id,omitempty"`
+	GoogleSub *string  `gorm:"uniqueIndex;size:100" json:"google_sub,omitempty"`
+	GPA       *float64 `gorm:"type:decimal(3,2)" json:"gpa,omitempty"`
+	Faculty   *string  `gorm:"size:200" json:"faculty,omitempty"`
+	Year      *int8    `json:"year,omitempty"`
+	// Phone is the student's contact number, digits only.
+	Phone     *string   `gorm:"size:20" json:"phone,omitempty"`
 	IsActive  bool      `gorm:"default:true" json:"is_active"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -73,6 +75,9 @@ type User struct {
 	TranscriptMessage    *string    `gorm:"type:text" json:"transcript_message,omitempty"`
 	TranscriptConfidence *float64   `gorm:"type:decimal(5,4)" json:"transcript_confidence,omitempty"`
 	TranscriptUpdatedAt  *time.Time `json:"transcript_updated_at,omitempty"`
+	// TranscriptCourseTitles names the courses in TranscriptGrades, keyed by
+	// code. Filled in by the endpoints that show the grades, not stored.
+	TranscriptCourseTitles map[string]string `gorm:"-" json:"transcript_course_titles,omitempty"`
 }
 
 func (User) TableName() string { return "users" }

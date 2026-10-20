@@ -70,14 +70,19 @@ export function SectionCatalogPicker({ code, semester, academicYear, selectedIds
                 }}
               >
                 <input type="checkbox" checked={isSelected} disabled={alreadyOpen} onChange={() => toggle(draftIds, !isSelected)} />
+                {secLabel && (
+                  <span style={{
+                    flexShrink: 0, fontSize: 12, fontWeight: 700, color: 'var(--primary)',
+                    background: 'var(--primary-50)', borderRadius: 6, padding: '2px 8px',
+                  }}>
+                    {secLabel}
+                  </span>
+                )}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-900)', whiteSpace: 'pre-line' }}>
                     {formatSchedule(opt.schedule) || secLabel}
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>
-                 
-                    {alreadyOpen && <span style={{ marginLeft: opt.schedule && secLabel ? 6 : 0 }}>เปิดรับสมัครแล้ว</span>}
-                  </div>
+                  {alreadyOpen && <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>เปิดรับสมัครแล้ว</div>}
                 </div>
               </label>
             )

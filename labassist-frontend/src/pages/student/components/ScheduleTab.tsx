@@ -50,33 +50,20 @@ function semesterLabel(s: string): string {
   return `ภาคเรียนที่ ${s}`
 }
 
+// One option per semester, labelled without the year. Each semester maps to
+// the newest year that has courses in it (terms arrive newest-year-first), so
+// the saved schedule lines up with the courses students apply to.
 function buildTermOptions(terms: TermOption[]): { value: string; label: string }[] {
-  if (!terms.length) {
-    // Fallback: generate current + previous year
-    const thYear = new Date().getFullYear() + 543
-    return [
-      { value: `2|${thYear}`, label: `${semesterLabel('2')} ${thYear}` },
-      { value: `1|${thYear}`, label: `${semesterLabel('1')} ${thYear}` },
-      { value: `2|${thYear - 1}`, label: `${semesterLabel('2')} ${thYear - 1}` },
-      { value: `1|${thYear - 1}`, label: `${semesterLabel('1')} ${thYear - 1}` },
-    ]
+  const fallbackYear = terms[0]?.academic_year ?? new Date().getFullYear() + 543
+  const yearOf = new Map<string, number>()
+  for (const term of terms) {
+    if (!yearOf.has(term.semester)) yearOf.set(term.semester, term.academic_year)
   }
-
-  const years = [...new Set(terms.map((term) => term.academic_year))]
-  return years.flatMap((academicYear) => {
-    const semesters = new Set(
-      terms
-        .filter((term) => term.academic_year === academicYear)
-        .map((term) => term.semester),
-    )
-    semesters.add('1')
-    semesters.add('2')
-
-    return [...semesters].map((semester) => ({
-      value: `${semester}|${academicYear}`,
-      label: `${semesterLabel(semester)} ${academicYear}`,
-    }))
-  })
+  const semesters = [...new Set(['1', '2', ...yearOf.keys()])].sort()
+  return semesters.map((semester) => ({
+    value: `${semester}|${yearOf.get(semester) ?? fallbackYear}`,
+    label: semesterLabel(semester),
+  }))
 }
 
 interface ValidationErrors {
@@ -178,9 +165,11 @@ export function ScheduleTab() {
   const [noClass, setNoClass] = useState(false)
   const [confirmed, setConfirmed] = useState(false)
   const [errors, setErrors] = useState<ValidationErrors>({ slots: {}, global: '' })
+  // A saved schedule is shown read-only until the student presses "แก้ไข".
+  const [editing, setEditing] = useState(false)
 
-  // Sync drafts from saved schedule on term change
-  useEffect(() => {
+  // Discards local edits and returns to the saved schedule in read-only mode.
+  const resetToSaved = useCallback(() => {
     if (!savedSchedule) return
     if (savedSchedule.status === 'no_class') {
       setNoClass(true)
@@ -190,8 +179,12 @@ export function ScheduleTab() {
       setDrafts(savedSchedule.slots.map((s) => ({ _id: nextId(), ...s })))
     }
     setConfirmed(false)
+    setEditing(false)
     setErrors({ slots: {}, global: '' })
   }, [savedSchedule])
+
+  // Sync drafts from saved schedule on term change
+  useEffect(() => { resetToSaved() }, [resetToSaved])
 
   // Save mutation
   const saveMut = useMutation({
@@ -202,9 +195,11 @@ export function ScheduleTab() {
         ['term-schedule', parsedTerm?.semester, parsedTerm?.academic_year],
         result,
       )
-      qc.invalidateQueries({ queryKey: ['term-schedule-status'] })
+      qc.invalidateQueries({ queryKey: ['student-courses'] })
+      qc.invalidateQueries({ queryKey: ['student-dashboard'] })
       showToast('บันทึกตารางเรียนเรียบร้อยแล้ว', 'success')
       setConfirmed(false)
+      setEditing(false)
       setErrors({ slots: {}, global: '' })
     },
     onError: (err: unknown) => {
@@ -279,7 +274,12 @@ export function ScheduleTab() {
   const currentSlots = toScheduleSlots(drafts)
   const statusInfo = savedSchedule?.status
   const isSaved = statusInfo === 'set' || statusInfo === 'no_class'
-  const canSave = (noClass || drafts.length > 0) && confirmed && !saveMut.isPending
+  const saveLimit = savedSchedule?.save_limit ?? 3
+  const savesLeft = Math.max(0, saveLimit - (savedSchedule?.save_count ?? 0))
+  // Saved schedules are read-only until the student opts into editing.
+  const locked = isSaved && !editing
+  const formDisabled = locked || saveMut.isPending
+  const canSave = (noClass || drafts.length > 0) && confirmed && savesLeft > 0 && !saveMut.isPending
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -326,8 +326,31 @@ export function ScheduleTab() {
             }}>
               {/* Left: slot form */}
               <div style={{ padding: 24, borderRight: '1px solid var(--line)' }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 4 }}>
-                  ช่วงเวลาที่ติดเรียน
+                <div style={{
+                  display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+                  gap: 12, flexWrap: 'wrap', marginBottom: 4,
+                }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)' }}>
+                    ช่วงเวลาที่ติดเรียน
+                  </div>
+                  {locked && (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={savesLeft === 0}
+                        onClick={() => { setEditing(true); setConfirmed(false) }}
+                      >
+                        แก้ไขตารางเรียน
+                      </Button>
+                      <span style={{ fontSize: 12, color: savesLeft === 0 ? 'var(--red)' : 'var(--ink-500)' }}>
+                        {savesLeft === 0
+                          ? `ใช้สิทธิ์ครบ ${saveLimit} ครั้งแล้ว — ติดต่อเจ้าหน้าที่`
+                          : `แก้ไขได้อีก ${savesLeft} ครั้ง`}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 16 }}>
                   กรอกครั้งเดียว ใช้กับการสมัครทุกวิชา · เวลาแบบ 24 ชม. พิมพ์ <strong>0830</strong> จะได้ <strong>08:30</strong>
@@ -351,7 +374,7 @@ export function ScheduleTab() {
                       setConfirmed(false)
                       setErrors({ slots: {}, global: '' })
                     }}
-                    disabled={saveMut.isPending}
+                    disabled={formDisabled}
                   />
                   เทอมนี้ไม่มีคาบเรียน
                 </label>
@@ -370,22 +393,24 @@ export function ScheduleTab() {
                         slot={slot}
                         index={idx}
                         error={errors.slots[slot._id]}
-                        disabled={saveMut.isPending}
+                        disabled={formDisabled}
                         onChange={changeSlot}
                         onDelete={deleteSlot}
                       />
                     ))}
-                    <div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={addSlot}
-                        disabled={saveMut.isPending}
-                      >
-                        + เพิ่มช่วงเวลา
-                      </Button>
-                    </div>
+                    {!locked && (
+                      <div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={addSlot}
+                          disabled={saveMut.isPending}
+                        >
+                          + เพิ่มช่วงเวลา
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -396,7 +421,7 @@ export function ScheduleTab() {
                     display: 'flex', flexDirection: 'column', gap: 8,
                   }}>
                     <span>ยืนยันว่าเทอมนี้ไม่มีคาบเรียน ระบบจะไม่ตรวจเวลาชนสำหรับภาคเรียนนี้</span>
-                    {drafts.length > 0 && (
+                    {drafts.length > 0 && !locked && (
                       <>
                         <span>
                           ช่วงเวลาที่กรอกไว้ <strong>{drafts.length} ช่วง</strong> ถูกซ่อนไว้ ยังไม่ถูกลบ
@@ -490,63 +515,65 @@ export function ScheduleTab() {
             </div>
           )}
 
-          {/* Save section */}
-          <Card style={{ padding: 24 }}>
-            {errors.global && (
-              <div role="alert" style={{
-                fontSize: 13, color: 'var(--red)', marginBottom: 16,
-                padding: '10px 14px', background: 'var(--red-bg)', borderRadius: 8,
-              }}>
-                {errors.global}
-              </div>
-            )}
-
-            <label style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              fontSize: 14, fontWeight: 600, color: 'var(--ink-900)',
-              cursor: 'pointer', marginBottom: 16,
-            }}>
-              <input
-                type="checkbox"
-                checked={confirmed}
-                onChange={(e) => setConfirmed(e.target.checked)}
-                disabled={saveMut.isPending}
-                style={{ width: 16, height: 16 }}
-              />
-              ฉันตรวจสอบวันและเวลาเรียนแล้ว และยืนยันว่าข้อมูลถูกต้อง
-            </label>
-
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <Button
-                onClick={handleSave}
-                loading={saveMut.isPending}
-                disabled={!canSave}
-              >
-                บันทึกตารางเรียน
-              </Button>
-              {isSaved && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={saveMut.isPending}
-                  onClick={() => {
-                    if (!savedSchedule) return
-                    if (savedSchedule.status === 'no_class') {
-                      setNoClass(true)
-                      setDrafts([])
-                    } else {
-                      setNoClass(false)
-                      setDrafts(savedSchedule.slots.map((s) => ({ _id: nextId(), ...s })))
-                    }
-                    setConfirmed(false)
-                    setErrors({ slots: {}, global: '' })
-                  }}
-                >
-                  ยกเลิกการแก้ไข
-                </Button>
+          {/* Save section — only while entering or editing */}
+          {!locked && (
+            <Card style={{ padding: 24 }}>
+              {errors.global && (
+                <div role="alert" style={{
+                  fontSize: 13, color: 'var(--red)', marginBottom: 16,
+                  padding: '10px 14px', background: 'var(--red-bg)', borderRadius: 8,
+                }}>
+                  {errors.global}
+                </div>
               )}
-            </div>
-          </Card>
+
+              <div style={{
+                fontSize: 13, marginBottom: 16, padding: '10px 14px', borderRadius: 8,
+                background: savesLeft <= 1 ? 'var(--amber-bg)' : 'var(--line-soft)',
+                color: savesLeft <= 1 ? 'var(--amber)' : 'var(--ink-700)',
+              }}>
+                {savesLeft === 0
+                  ? `ใช้สิทธิ์บันทึกครบ ${saveLimit} ครั้งแล้วสำหรับภาคเรียนนี้ — กรุณาติดต่อเจ้าหน้าที่`
+                  : <>กรอกและแก้ไขตารางเรียนได้ภาคเรียนละไม่เกิน {saveLimit} ครั้ง ·
+                    การบันทึกครั้งนี้จะใช้สิทธิ์ 1 ครั้ง (เหลือ <strong>{savesLeft}</strong> ครั้ง)</>}
+              </div>
+
+              <label style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                fontSize: 14, fontWeight: 600, color: 'var(--ink-900)',
+                cursor: 'pointer', marginBottom: 16,
+              }}>
+                <input
+                  type="checkbox"
+                  checked={confirmed}
+                  onChange={(e) => setConfirmed(e.target.checked)}
+                  disabled={saveMut.isPending || savesLeft === 0}
+                  style={{ width: 16, height: 16 }}
+                />
+                ฉันตรวจสอบวันและเวลาเรียนแล้ว และยืนยันว่าข้อมูลถูกต้อง
+              </label>
+
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <Button
+                  onClick={handleSave}
+                  loading={saveMut.isPending}
+                  disabled={!canSave}
+                >
+                  บันทึกตารางเรียน
+                </Button>
+                {isSaved && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={saveMut.isPending}
+                    onClick={resetToSaved}
+                  >
+                    ยกเลิกการแก้ไข
+                  </Button>
+                )}
+              </div>
+            </Card>
+          )}
         </>
       )}
     </div>

@@ -26,7 +26,7 @@ func (h *Handler) WorkSchedule(c *gin.Context) {
 }
 
 // LabBoyAssignments godoc
-// @Summary      รายวิชาที่นักศึกษาได้รับเลือกเป็น Lab Boy และอาจารย์ยืนยันตารางแล้ว
+// @Summary      รายวิชาที่นักศึกษาได้รับเลือกเป็น Lab Boy และเจ้าหน้าที่ยืนยันตารางแล้ว
 // @Tags         student
 // @Produce      json
 // @Security     BearerAuth

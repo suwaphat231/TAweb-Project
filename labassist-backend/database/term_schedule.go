@@ -1,6 +1,18 @@
 package database
 
-import "labassist/models"
+import (
+	"errors"
+	"slices"
+
+	"labassist/models"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+// ErrTermScheduleSaveLimit is returned when a student has already used all
+// MaxTermScheduleSaves saves for a term.
+var ErrTermScheduleSaveLimit = errors.New("term schedule save limit reached")
 
 // TermScheduleByUserTerm returns the stored TermSchedule for a student/semester/year.
 // When none exists, returns a synthetic "unset" record with ID=0 (never persisted).
@@ -14,8 +26,10 @@ func TermScheduleByUserTerm(userID uint, semester string, academicYear int) mode
 			AcademicYear: academicYear,
 			Slots:        []models.ScheduleSlot{},
 			Status:       models.TermScheduleUnset,
+			SaveLimit:    models.MaxTermScheduleSaves,
 		}
 	}
+	ts.SaveLimit = models.MaxTermScheduleSaves
 	return ts
 }
 
@@ -32,21 +46,39 @@ func HasConfirmedTermSchedule(userID uint) (bool, error) {
 }
 
 // UpsertTermSchedule saves or replaces the TermSchedule for one student/term.
+// Each save that changes the schedule uses one of MaxTermScheduleSaves; once
+// they are used up it returns ErrTermScheduleSaveLimit. Re-saving identical
+// data is a no-op and does not count.
 func UpsertTermSchedule(userID uint, semester string, academicYear int, slots []models.ScheduleSlot, status models.TermScheduleStatus) (models.TermSchedule, error) {
 	var ts models.TermSchedule
-	if err := DB.Where("user_id = ? AND semester = ? AND academic_year = ?", userID, semester, academicYear).
-		FirstOrCreate(&ts, models.TermSchedule{
-			UserID:       userID,
-			Semester:     semester,
-			AcademicYear: academicYear,
-		}).Error; err != nil {
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ? AND semester = ? AND academic_year = ?", userID, semester, academicYear).
+			FirstOrCreate(&ts, models.TermSchedule{
+				UserID:       userID,
+				Semester:     semester,
+				AcademicYear: academicYear,
+			}).Error; err != nil {
+			return err
+		}
+		// Lock the row so concurrent saves cannot both pass the limit check.
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&ts, ts.ID).Error; err != nil {
+			return err
+		}
+		if ts.Status == status && slices.Equal(ts.Slots, slots) {
+			return nil
+		}
+		if ts.SaveCount >= models.MaxTermScheduleSaves {
+			return ErrTermScheduleSaveLimit
+		}
+		ts.Slots = slots
+		ts.Status = status
+		ts.SaveCount++
+		return tx.Save(&ts).Error
+	})
+	if err != nil {
 		return models.TermSchedule{}, err
 	}
-	ts.Slots = slots
-	ts.Status = status
-	if err := DB.Save(&ts).Error; err != nil {
-		return models.TermSchedule{}, err
-	}
+	ts.SaveLimit = models.MaxTermScheduleSaves
 	return ts, nil
 }
 
@@ -64,28 +96,4 @@ func DistinctCourseTerms() ([]TermOption, error) {
 		return nil, err
 	}
 	return rows, nil
-}
-
-// BestTermSchedule returns the student's TermSchedule for the given
-// semester/year. If that specific record is missing or unset, it falls back to
-// the most-recently-updated "set" record the student has for any term —
-// catching the common case where the student entered their schedule under the
-// wrong semester label.
-//
-// "no_class" for the exact term is respected as-is: the student explicitly
-// confirmed no classes that semester, so there can be no conflict and we must
-// not override that decision with a schedule from another term.
-func BestTermSchedule(userID uint, semester string, academicYear int) models.TermSchedule {
-	ts := TermScheduleByUserTerm(userID, semester, academicYear)
-	if ts.Status == models.TermScheduleSet || ts.Status == models.TermScheduleNoClass {
-		return ts
-	}
-	// Status is "unset" — no confirmed data for this specific term.
-	// Fall back to the most-recently-updated "set" record across all terms.
-	var fallback models.TermSchedule
-	if DB.Where("user_id = ? AND status = ?", userID, models.TermScheduleSet).
-		Order("updated_at DESC").First(&fallback).Error == nil {
-		return fallback
-	}
-	return ts
 }

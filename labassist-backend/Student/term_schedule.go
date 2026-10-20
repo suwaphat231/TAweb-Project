@@ -1,6 +1,8 @@
 package student
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -78,7 +80,15 @@ func (h *Handler) SaveTermSchedule(c *gin.Context) {
 		}
 	}
 
+	if body.Slots == nil {
+		body.Slots = []models.ScheduleSlot{}
+	}
 	ts, err := database.UpsertTermSchedule(studentID.(uint), body.Semester, body.AcademicYear, body.Slots, body.Status)
+	if errors.Is(err, database.ErrTermScheduleSaveLimit) {
+		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf(
+			"แก้ไขตารางเรียนของภาคเรียนนี้ครบ %d ครั้งแล้ว กรุณาติดต่อเจ้าหน้าที่", models.MaxTermScheduleSaves)})
+		return
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกข้อมูลไม่สำเร็จ"})
 		return

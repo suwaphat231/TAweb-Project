@@ -15,11 +15,15 @@ export interface User {
   gpa?: number
   faculty?: string
   year?: number
+  /** Student's contact number, digits only. */
+  phone?: string
   is_active: boolean
   /** False for accounts that have only signed in with Google. */
   has_password?: boolean
   created_at: string
   transcript_grades?: Record<string, string>
+  /** Course names for transcript_grades, keyed by course code. */
+  transcript_course_titles?: Record<string, string>
   transcript_status?: 'pass' | 'needs_review' | 'fail'
   transcript_message?: string
   transcript_confidence?: number
@@ -88,6 +92,9 @@ export interface Course {
   // Set by /student/courses and /student/dashboard when the course schedule
   // overlaps the student's confirmed term schedule. Empty / absent = no conflict.
   conflict_day?: string
+  // Set by the same endpoints when the student hasn't saved a schedule for
+  // this course's term yet — they can't apply until they do.
+  schedule_missing?: boolean
   created_at: string
 }
 
@@ -143,6 +150,8 @@ export interface Application {
   status: ApplicationStatus
   grade?: string
   has_grade_proof?: boolean
+  /** Grade came from the student's grade-check transcript, standing in for a grade proof image. */
+  grade_from_transcript?: boolean
   require_grade_proof?: boolean
   applied_at: string
   reviewed_at?: string
@@ -219,6 +228,10 @@ export interface CreateCoursePayload {
   // section; opening new sections happens by picking imported rows instead.
   section?: number
   schedule?: string
+  /** Registrar notation "3 (2-2-5)": total (lecture-lab-self study). */
+  credits?: string
+  /** One entry per section; a multi-day schedule is split into one course per day. */
+  sections?: { section: number; schedule: string }[]
   // Admin-only: which instructor this manually-added course belongs to
   // (e.g. one an instructor asked for that never made it into the Excel
   // import). Ignored by the backend for non-admin callers.
@@ -459,10 +472,17 @@ export interface DocumentWorkflowItem {
 
 // ─── Student info OCR ────────────────────────────────────────────────────────
 
+/** The two REG boxes a student attaches: ข้อมูลนักศึกษา and ข้อมูลส่วนตัว. */
+export type StudentInfoKind = 'student' | 'personal'
+
 export interface StudentInfoDocument {
   id: number
   user_id: number
+  /** ข้อมูลนักศึกษา image ('' until attached). */
   file_name: string
+  /** ข้อมูลส่วนตัว image ('' until attached) — source of the names. */
+  personal_file_name: string
+  personal_confidence: number
   ocr_student_id?: string
   ocr_full_name_th?: string
   ocr_full_name_en?: string
@@ -517,6 +537,10 @@ export interface TermSchedule {
   academic_year: number
   slots: ScheduleSlot[]
   status: TermScheduleStatus
+  /** Saves used this term (entering the first time counts as one). */
+  save_count: number
+  /** Max saves allowed per term. */
+  save_limit: number
   updated_at?: string
 }
 
@@ -667,11 +691,44 @@ export interface WorkOccurrence {
   rescheduled_to_start?: string
   rescheduled_to_end?: string
   rescheduled_from_occurrence_id?: number
+  /** Set on a holiday clash the instructor (or staff) chose not to make up. */
+  no_makeup?: boolean
   reason?: string
   actual_hours?: number
   updated_by_id?: number
   updated_at: string
   created_at: string
+}
+
+export type MakeupStatus = 'pending' | 'makeup' | 'no_makeup'
+
+/** A work day that fell on a holiday, with its makeup decision. */
+export interface MakeupDay {
+  occurrence_id: number
+  staff_case_id: number
+  schedule_group_id: number
+  course_id: number
+  course_code: string
+  course_title: string
+  section: number
+  semester: string
+  academic_year: number
+  date: string
+  start_time: string
+  end_time: string
+  holiday_name: string
+  status: MakeupStatus
+  makeup?: WorkOccurrence
+  /** The makeup date must fall in [min_date, max_date] and not in blocked_dates. */
+  min_date: string
+  max_date: string
+  blocked_dates: string[]
+}
+
+export interface MakeupDayPayload {
+  date: string
+  start_time: string
+  end_time: string
 }
 
 export type MonthlyPeriodStatus = 'open' | 'closed'
@@ -812,13 +869,15 @@ export interface WorkSession {
   course_section: number
   semester: string
   academic_year: number
-  document_id: number
-  document_type: DocType
   /** ISO date string YYYY-MM-DD (Common Era) */
   session_date: string
+  /** MON..SUN */
   work_day: string
   work_time_start: string
   work_time_end: string
+  status: 'scheduled' | 'completed' | 'absent'
+  /** A day added to make up for a work day that fell on a holiday. */
+  is_makeup: boolean
   hours_per_session: number
 }
 
@@ -977,6 +1036,8 @@ export interface WorkflowCourse {
   plan_status?: string
   /** True once staff have confirmed the Lab Boy schedule. */
   schedule_confirmed: boolean
+  /** What still blocks confirming the schedule; empty means staff can confirm. */
+  confirm_blocked_reasons: string[]
 }
 
 export interface WorkflowStepView {

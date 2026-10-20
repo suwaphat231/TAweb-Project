@@ -97,7 +97,7 @@ export default function StudentStatus() {
   }
 
   function isAwaitingProof(app: Application) {
-    return app.status === 'pending' && app.require_grade_proof && !app.has_grade_proof
+    return app.status === 'pending' && app.require_grade_proof && !app.has_grade_proof && !app.grade_from_transcript
   }
 
   const filtered = filter ? apps.filter((a) => a.status === filter as ApplicationStatus) : apps

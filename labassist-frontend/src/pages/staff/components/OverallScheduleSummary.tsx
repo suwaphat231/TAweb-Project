@@ -236,7 +236,7 @@ export function OverallScheduleSummary({
           border: '1px solid #86EFAC', borderRadius: 'var(--radius-input)',
         }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--green)' }}>
-            ✓ ยืนยันตารางปฏิบัติงานแล้ว
+            ✓ ยืนยันแผนปฏิบัติงานแล้ว
           </span>
         </div>
       )}

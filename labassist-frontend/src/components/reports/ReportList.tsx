@@ -9,6 +9,7 @@ import { ErrorState } from '../ui/ErrorState'
 import { ReportStatusBadge } from './ReportStatusBadge'
 import { categoryLabel, categoryOptions, formatDate } from './reportLabels'
 import type { LabBoyReport, ReportListParams, ReportPage, ReportCategory } from '../../types'
+import { DateInput } from '../ui/DateInput'
 
 const PAGE_SIZE = 20
 
@@ -97,10 +98,10 @@ export function ReportList({
           </select>
         )}
         <label style={{ fontSize: 12, color: 'var(--ink-500)', display: 'flex', alignItems: 'center', gap: 6 }}>
-          ตั้งแต่ <input type="date" value={dateFrom} onChange={(e) => withReset(setDateFrom)(e.target.value)} style={controlStyle} />
+          ตั้งแต่ <DateInput value={dateFrom} onChange={(e) => withReset(setDateFrom)(e.target.value)} style={controlStyle} />
         </label>
         <label style={{ fontSize: 12, color: 'var(--ink-500)', display: 'flex', alignItems: 'center', gap: 6 }}>
-          ถึง <input type="date" value={dateTo} onChange={(e) => withReset(setDateTo)(e.target.value)} style={controlStyle} />
+          ถึง <DateInput value={dateTo} onChange={(e) => withReset(setDateTo)(e.target.value)} style={controlStyle} />
         </label>
       </div>
 

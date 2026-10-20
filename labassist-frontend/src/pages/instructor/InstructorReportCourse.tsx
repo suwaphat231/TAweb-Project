@@ -86,14 +86,14 @@ export default function InstructorReportCourse() {
   }
 
   const title = displayCourseTitle(group.title, group.english_title)
-  const courseLabel = (a: Application) => `${group.code} ${title} · Sec ${a.course_section ?? '-'} (${group.semester}/${group.academic_year})`
+  const courseLabel = (a: Application) => `${group.code} ${title} · Sec ${a.course_section ?? '-'} (ภาคเรียนที่ ${group.semester})`
 
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto' }}>
       <ReportPageHeader
         crumbs={[{ label: 'รายวิชาทั้งหมด', to: '/instructor/reports' }, { label: group.code }]}
         title={<><span style={{ color: 'var(--primary)' }}>{group.code}</span> {title}</>}
-        subtitle={`ภาค ${group.semester}/${group.academic_year} · กด "รายงานพฤติกรรม" ที่ชื่อนักศึกษาเพื่อบันทึกเหตุการณ์พร้อมเหตุผล`}
+        subtitle={`ภาคเรียนที่ ${group.semester} · กด "รายงานพฤติกรรม" ที่ชื่อนักศึกษาเพื่อบันทึกเหตุการณ์พร้อมเหตุผล`}
       />
 
       <div className="report-stats">

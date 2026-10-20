@@ -2,7 +2,10 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { GoogleLogin } from '@react-oauth/google'
 import { useAuthStore } from '../../store/authStore'
-import type { UserRole } from '../../types'
+import { authApi } from '../../services/api'
+import { signOutOfGoogle } from '../../services/googleAccount'
+import { Avatar, Button, Modal } from '../../components/ui'
+import type { User, UserRole } from '../../types'
 
 const roleRedirect: Record<UserRole, string> = {
   student:    '/student/home',
@@ -47,7 +50,7 @@ const demoAccounts = [
 ]
 
 export default function LoginPage() {
-  const { isAuthenticated, user, loginWithCredentials, loginWithGoogle, loginWithDevAccount } = useAuthStore()
+  const { isAuthenticated, user, login, loginWithCredentials, loginWithDevAccount } = useAuthStore()
   const navigate = useNavigate()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -56,6 +59,10 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [devLoadingFor, setDevLoadingFor] = useState<string | null>(null)
   const [selectedInstructor, setSelectedInstructor] = useState(devInstructors[0].username)
+  // A Google sign-in waits here until the person confirms it is their account,
+  // so nobody continues in a previous person's Google session by mistake.
+  const [pendingGoogle, setPendingGoogle] = useState<{ token: string; user: User } | null>(null)
+  const [googleNotice, setGoogleNotice] = useState('')
 
   useEffect(() => {
     if (isAuthenticated && user) navigate(roleRedirect[user.role] || '/', { replace: true })
@@ -78,12 +85,25 @@ export default function LoginPage() {
 
   async function handleGoogle(credential: string) {
     setError('')
+    setGoogleNotice('')
     try {
-      await loginWithGoogle(credential)
+      const { token, user } = await authApi.google({ credential })
+      setPendingGoogle({ token, user })
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } }).response?.data?.error
       setError(msg || 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ กรุณาลองใหม่')
     }
+  }
+
+  function confirmGoogle() {
+    if (pendingGoogle) login(pendingGoogle.token, pendingGoogle.user)
+    setPendingGoogle(null)
+  }
+
+  function rejectGoogle() {
+    setPendingGoogle(null)
+    signOutOfGoogle()
+    setGoogleNotice('ออกจากบัญชี Google เดิมในแท็บใหม่แล้ว กดปุ่ม Google อีกครั้งแล้วเข้าสู่ระบบด้วยบัญชีของคุณ')
   }
 
   async function handleDevLogin(username: string) {
@@ -184,6 +204,11 @@ export default function LoginPage() {
                   else setError('ไม่ได้รับข้อมูลเข้าสู่ระบบจาก Google กรุณาลองใหม่')
                 }}
                 onError={() => setError('Google Sign-In ล้มเหลว กรุณาลองใหม่')}
+                // Never sign in with whichever account the browser last used,
+                // and hint Google to offer university accounts (GIS calls the
+                // option `hd`; the library's types do not list it).
+                auto_select={false}
+                {...{ hd: 'silpakorn.edu' }}
                 size="large"
                 width={340}
               /> : <p role="status">Google Sign-In ยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแลระบบ</p>}
@@ -191,6 +216,14 @@ export default function LoginPage() {
             <p style={{ fontSize: 11, color: 'var(--ink-400)', textAlign: 'center', marginTop: 10 }}>
               ต้องใช้อีเมลมหาวิทยาลัย (@silpakorn.edu) เท่านั้น
             </p>
+            {googleNotice && (
+              <div role="status" style={{
+                background: 'var(--primary-50)', color: 'var(--ink-700)', border: '1px solid var(--line)',
+                padding: '9px 13px', borderRadius: 8, fontSize: 13, marginTop: 10,
+              }}>
+                {googleNotice}
+              </div>
+            )}
           </div>
 
           {/* Divider */}
@@ -476,6 +509,32 @@ export default function LoginPage() {
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
       `}</style>
+
+      <Modal
+        isOpen={pendingGoogle !== null}
+        onClose={rejectGoogle}
+        title="ใช่บัญชีของคุณไหม?"
+        size="sm"
+        footer={
+          <>
+            <Button type="button" variant="outline" onClick={rejectGoogle}>ไม่ใช่ฉัน</Button>
+            <Button type="button" onClick={confirmGoogle}>ใช่ ดำเนินการต่อ</Button>
+          </>
+        }
+      >
+        {pendingGoogle && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <Avatar src={pendingGoogle.user.avatar_url} size={48} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink-900)' }}>{pendingGoogle.user.full_name}</div>
+              <div style={{ fontSize: 13, color: 'var(--ink-500)', overflowWrap: 'anywhere' }}>{pendingGoogle.user.email}</div>
+              {pendingGoogle.user.student_id && (
+                <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>รหัสนักศึกษา {pendingGoogle.user.student_id}</div>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

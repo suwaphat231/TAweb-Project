@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { studentApi } from '../../../services/api'
 import { useAuth } from '../../../hooks/useAuth'
 import { Card } from '../../../components/ui/Card'
@@ -7,11 +8,14 @@ import { Input } from '../../../components/ui/Input'
 import { Select } from '../../../components/ui/Select'
 import { Button } from '../../../components/ui/Button'
 import { Avatar } from '../../../components/ui/Avatar'
-import { StatusBadge } from '../../../components/ui/Badge'
+import { Badge, type BadgeVariant } from '../../../components/ui/Badge'
 import { Skeleton } from '../../../components/ui/Skeleton'
+import { Icon } from '../../../components/reports/ReportIcons'
 import { useToast } from '../../../hooks/useToast'
 import { StudentInfoVerification } from './StudentInfoVerification'
-import { ChangePasswordModal } from '../../../components/account/ChangePasswordModal'
+import { useStudentInfoDoc } from './useStudentInfoDoc'
+import { isNormalStudentStatus } from '../../../utils/studentStatus'
+import { toDMY } from '../../../utils/thaiDate'
 
 export function ProfileInfoTab() {
   const { user, setUser } = useAuth()
@@ -32,9 +36,10 @@ export function ProfileInfoTab() {
     },
   })
 
-  const [draft, setDraft] = useState<Partial<Record<'full_name' | 'student_id' | 'year' | 'faculty' | 'username', string>>>({})
-  const [passwordOpen, setPasswordOpen] = useState(false)
+  const [draft, setDraft] = useState<Partial<Record<'full_name' | 'full_name_en' | 'student_id' | 'faculty' | 'phone', string>>>({})
   const [isEditing, setIsEditing] = useState(false)
+  const info = useStudentInfoDoc()
+  const cmp = info.doc ? info.cmp : undefined
 
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['student-profile'],
@@ -45,15 +50,15 @@ export function ProfileInfoTab() {
 
   const form = {
     full_name: p?.full_name ?? '',
+    full_name_en: p?.full_name_en ?? '',
     student_id: p?.student_id ?? '',
-    year: String(p?.year ?? ''),
     faculty: p?.faculty ?? '',
-    username: p?.username ?? '',
+    phone: p?.phone ?? '',
     ...draft,
   }
 
   const updateMut = useMutation({
-    mutationFn: (data: { full_name: string; student_id: string; year: number; faculty: string; username: string }) =>
+    mutationFn: (data: { full_name: string; full_name_en: string; student_id: string; faculty: string; phone: string }) =>
       studentApi.updateProfile(data),
     onSuccess: (updated) => {
       setUser(updated)
@@ -72,161 +77,182 @@ export function ProfileInfoTab() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     updateMut.mutate({
-      full_name: form.full_name,
+      full_name: verifiedName ?? form.full_name,
+      full_name_en: verifiedNameEn ?? form.full_name_en.trim(),
       student_id: form.student_id.trim(),
-      year: Number(form.year) || 0,
       faculty: form.faculty,
-      username: form.username,
+      phone: form.phone.trim(),
     })
   }
 
-  const gpa = p?.gpa ?? 0
-  const gpaPercent = Math.min(100, (gpa / 4) * 100)
+  // Once the registrar document is confirmed the name is locked to it.
+  const verifiedName = info.doc?.confirmed_at ? info.doc.ocr_full_name_th?.trim() : undefined
+  const verifiedNameEn = info.doc?.confirmed_at ? info.doc.ocr_full_name_en?.trim() || undefined : undefined
+  const nameMatchesReg = !!verifiedName && !!cmp?.full_name_th.match
+
+  const status = studentStatus(info.doc?.ocr_student_status, info.doc?.confirmed_at, !!info.doc)
+
+  const readiness = [
+    { done: !!(p?.full_name && p?.student_id && p?.faculty && p?.phone), label: 'ข้อมูลส่วนตัวครบ', hint: 'ชื่อ รหัสนักศึกษา ภาควิชา และเบอร์ติดต่อ' },
+    { done: status.variant === 'green', label: 'ยืนยันสถานภาพปกติ', hint: 'แนบรูปข้อมูลส่วนตัวและข้อมูลนักศึกษาจากระบบทะเบียนแล้วกดยืนยัน' },
+    { done: nameMatchesReg, label: 'ชื่อตรงกับระบบทะเบียน', hint: 'ชื่อ-นามสกุลต้องตรงกับเอกสารจากระบบทะเบียน' },
+    { done: Object.keys(p?.transcript_grades ?? {}).length > 0, label: 'ยื่นใบเกรดแล้ว', hint: 'ใช้แทนการแนบรูปเกรดตอนสมัคร', to: '/student/grade-check' },
+  ]
+  const readyCount = readiness.filter((r) => r.done).length
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-      {/* Left: avatar summary card */}
-      <Card style={{ padding: 24, width: 260, flexShrink: 0 }}>
-        {profileLoading ? (
-          <Skeleton height={64} borderRadius={999} width={64} />
-        ) : (
-          <>
-            <div style={{ position: 'relative', width: 72, marginBottom: 14 }}>
-              <Avatar src={p?.avatar_url} size={72} />
-              <span style={{
-                position: 'absolute', bottom: 2, right: 2, width: 14, height: 14,
-                borderRadius: '50%', background: 'var(--green)', border: '2.5px solid #fff',
-              }} />
-            </div>
-            <input
-              ref={avatarInput}
-              type="file"
-              accept="image/jpeg,image/png"
-              aria-label="เลือกรูปโปรไฟล์"
-              hidden
-              onChange={(e) => {
-                const file = e.target.files?.[0]
-                e.target.value = ''
-                if (!file) return
-                if (!['image/jpeg', 'image/png'].includes(file.type) || file.size > 5 * 1024 * 1024) {
-                  showToast('กรุณาเลือกไฟล์ JPG หรือ PNG ขนาดไม่เกิน 5 MB', 'error')
-                  return
-                }
-                avatarMut.mutate(file)
-              }}
-            />
-            <Button
-              type="button" size="sm" variant="ghost"
-              loading={avatarMut.isPending}
-              disabled={!isEditing || updateMut.isPending}
-              onClick={() => avatarInput.current?.click()}
-            >
-              เปลี่ยนรูปโปรไฟล์
-            </Button>
-            <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 6, marginBottom: 14 }}>
-              JPG หรือ PNG ไม่เกิน 5 MB · รูปจะถูกครอปตรงกลางและบันทึกทันที
-            </div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 2 }}>
-              {p?.full_name}
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 10, wordBreak: 'break-all' }}>
-              {p?.email}
-            </div>
-            <StatusBadge value="student" />
-
-            {gpa > 0 && (
-              <div style={{ marginTop: 18 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-500)' }}>GPA</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--primary)' }}>
-                    {gpa.toFixed(2)}
-                  </span>
-                </div>
-                <div style={{ height: 6, borderRadius: 999, background: 'var(--line-soft)', overflow: 'hidden' }}>
-                  <div style={{
-                    height: '100%', borderRadius: 999,
-                    background: gpaPercent >= 75 ? 'var(--green)' : gpaPercent >= 50 ? 'var(--primary)' : 'var(--amber, #F59E0B)',
-                    width: `${gpaPercent}%`,
-                    transition: 'width .5s',
-                  }} />
-                </div>
-                <div style={{ fontSize: 10, color: 'var(--ink-400)', marginTop: 3, textAlign: 'right' }}>
-                  จาก 4.00
-                </div>
+    <div className="profile-layout">
+      {/* Summary */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <Card style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ height: 56, background: 'var(--primary-50)', borderBottom: '1px solid var(--primary-100)' }} aria-hidden="true" />
+          <div style={{ padding: '0 24px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginTop: -44 }}>
+            {profileLoading ? (
+              <Skeleton height={88} width={88} borderRadius={999} />
+            ) : (
+              <div style={{ position: 'relative' }}>
+                <Avatar src={p?.avatar_url} size={88} style={{ border: '4px solid #fff', boxShadow: 'var(--shadow-md)' }} />
+                <button
+                  type="button"
+                  className="profile-avatar-btn"
+                  onClick={() => avatarInput.current?.click()}
+                  disabled={avatarMut.isPending}
+                  aria-label="เปลี่ยนรูปโปรไฟล์ (JPG หรือ PNG ไม่เกิน 5 MB)"
+                  title="เปลี่ยนรูปโปรไฟล์"
+                >
+                  {avatarMut.isPending ? <span className="profile-spinner" aria-hidden="true" /> : <CameraIcon />}
+                </button>
+                <input
+                  ref={avatarInput}
+                  type="file"
+                  accept="image/jpeg,image/png"
+                  aria-label="เลือกรูปโปรไฟล์"
+                  hidden
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    e.target.value = ''
+                    if (!file) return
+                    if (!['image/jpeg', 'image/png'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+                      showToast('กรุณาเลือกไฟล์ JPG หรือ PNG ขนาดไม่เกิน 5 MB', 'error')
+                      return
+                    }
+                    avatarMut.mutate(file)
+                  }}
+                />
               </div>
             )}
-          </>
-        )}
-      </Card>
-
-      {/* Right: edit form */}
-      <div style={{ flex: 1, minWidth: 320 }}>
-        <Card style={{ padding: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 18 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)' }}>
-              ข้อมูลส่วนตัว
-            </div>
-            {!isEditing ? (
-              <Button type="button" size="sm" onClick={() => setIsEditing(true)}>
-                แก้ไขข้อมูลส่วนตัว
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                disabled={updateMut.isPending || avatarMut.isPending}
-                onClick={() => {
-                  setDraft({})
-                  setIsEditing(false)
-                }}
-              >
-                ยกเลิก
-              </Button>
+            {profileLoading ? <div style={{ width: '100%', marginTop: 16 }}><Skeleton lines={2} height={14} /></div> : (
+              <>
+                <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--ink-900)', lineHeight: 1.35, marginTop: 14 }}>{p?.full_name || '—'}</div>
+                {p?.full_name_en && <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>{p.full_name_en}</div>}
+                {p?.student_id && <div style={{ fontSize: 14, color: 'var(--ink-600)', fontVariantNumeric: 'tabular-nums' }}>{p.student_id}</div>}
+                {p?.faculty && <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>{p.faculty}</div>}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', marginTop: 12 }}>
+                  <Badge variant={status.variant} showDot>{status.short}</Badge>                </div>
+              </>
             )}
           </div>
-          {profileLoading ? (
-            <Skeleton lines={4} height={16} />
-          ) : !isEditing ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <InfoRow label="ชื่อ-นามสกุล" value={p?.full_name} />
-              <InfoRow label="รหัสนักศึกษา" value={p?.student_id} />
-              <InfoRow label="ภาควิชา" value={p?.faculty} />
-              <InfoRow label="อีเมล (ใช้สำหรับเข้าสู่ระบบ)" value={p?.email} />
-              <InfoRow label="Username" value={p?.username} />
-              <InfoRow label="รหัสผ่าน" value={p?.has_password ? '••••••••' : 'ยังไม่ได้ตั้งรหัสผ่าน'} />
+        </Card>
+
+        <Card style={{ padding: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+            <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)' }}>ความพร้อมในการสมัคร Lab Boy</h2>
+            <span style={{ fontSize: 13, fontWeight: 700, color: readyCount === readiness.length ? 'var(--green)' : 'var(--ink-500)' }}>
+              {readyCount}/{readiness.length}
+            </span>
+          </div>
+          <div style={{ height: 6, borderRadius: 999, background: 'var(--line-soft)', overflow: 'hidden', marginBottom: 14 }}
+            role="progressbar" aria-valuemin={0} aria-valuemax={readiness.length} aria-valuenow={readyCount} aria-label="ความพร้อมในการสมัคร">
+            <div style={{ height: '100%', width: `${(readyCount / readiness.length) * 100}%`, borderRadius: 999, background: readyCount === readiness.length ? 'var(--green)' : 'var(--primary)' }} />
+          </div>
+          <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {readiness.map((r) => (
+              <li key={r.label} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                <span style={{
+                  width: 22, height: 22, borderRadius: '50%', flexShrink: 0, marginTop: 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: r.done ? 'var(--green)' : '#fff', color: '#fff',
+                  border: r.done ? 'none' : '2px solid var(--line)',
+                }}>
+                  {r.done && <Icon name="check" size={13} />}
+                </span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: r.done ? 'var(--ink-900)' : 'var(--ink-700)' }}>
+                    {r.label}<span className="sr-only">{r.done ? ' (เสร็จแล้ว)' : ' (ยังไม่เสร็จ)'}</span>
+                  </div>
+                  {!r.done && (
+                    <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>
+                      {r.to ? <Link to={r.to} style={{ color: 'var(--primary)', fontWeight: 600 }}>{r.hint} →</Link> : r.hint}
+                    </div>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      </div>
+
+      {/* Personal info + verification document */}
+      <Card style={{ padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+          <SectionTitle icon="user" title="ข้อมูลส่วนตัว" />
+          {!isEditing && !profileLoading && (
+            <Button type="button" size="sm" variant="outline" onClick={() => setIsEditing(true)}>
+              แก้ไขข้อมูล
+            </Button>
+          )}
+        </div>
+
+        {profileLoading ? (
+          <Skeleton lines={4} height={16} />
+        ) : !isEditing ? (
+          <dl className="profile-fields">
+            <InfoRow label="ชื่อ-นามสกุล (ภาษาไทย)" value={p?.full_name} check={cmp?.full_name_th} />
+            <InfoRow label="ชื่อ-นามสกุล (ภาษาอังกฤษ)" value={p?.full_name_en} check={cmp?.full_name_en} />
+            <InfoRow label="รหัสนักศึกษา" value={p?.student_id} check={cmp?.student_id} />
+            <InfoRow label="ภาควิชา" value={p?.faculty} check={cmp?.faculty} />
+            <InfoRow label="เบอร์ติดต่อ" value={formatPhone(p?.phone)} />
+            <InfoRow label="อีเมล (ใช้สำหรับเข้าสู่ระบบ)" value={p?.email} />
+            <div>
+              <dt style={labelStyle}>สถานภาพนักศึกษา</dt>
+              <dd style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+                <Badge variant={status.variant} wrap>{status.label}</Badge>
+                {status.note && <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>{status.note}</span>}
+              </dd>
             </div>
-          ) : (
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          </dl>
+        ) : (
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div className="profile-fields">
               <Input
-                readOnly={updateMut.isPending}
-                label="ชื่อ-นามสกุล *"
-                value={form.full_name}
+                readOnly={updateMut.isPending || !!verifiedName}
+                label="ชื่อ-นามสกุล (ภาษาไทย) *"
+                placeholder="เช่น สมชาย ใจดี"
+                value={verifiedName ?? form.full_name}
                 onChange={(e) => setDraft((f) => ({ ...f, full_name: e.target.value }))}
                 required
+                autoComplete="name"
+                hint={verifiedName ? 'ล็อกตามเอกสารจากระบบทะเบียน — หากชื่อเปลี่ยน ให้แนบเอกสารใหม่' : 'ต้องตรงกับชื่อในระบบทะเบียน ระบบจะตรวจจากเอกสารที่แนบ'}
+              />
+              <Input
+                readOnly={updateMut.isPending || !!verifiedNameEn}
+                label="ชื่อ-นามสกุล (ภาษาอังกฤษ)"
+                placeholder="เช่น Somchai Jaidee"
+                value={verifiedNameEn ?? form.full_name_en}
+                onChange={(e) => setDraft((f) => ({ ...f, full_name_en: e.target.value }))}
+                autoComplete="off"
+                lang="en"
+                hint={verifiedNameEn ? 'ล็อกตามเอกสารจากระบบทะเบียน' : 'ตัวอักษรภาษาอังกฤษตามที่ระบบทะเบียนสะกด'}
               />
               <Input
                 readOnly={updateMut.isPending}
                 label="รหัสนักศึกษา"
                 value={form.student_id}
-                onChange={(e) => setDraft((f) => ({ ...f, student_id: e.target.value }))}
-                placeholder="กรอกรหัสนักศึกษาของคุณ"
+                onChange={(e) => setDraft((f) => ({ ...f, student_id: toStudentIdDigits(e.target.value) }))}
+                placeholder="เช่น 660710260"
+                inputMode="numeric"
+                maxLength={10}
               />
-              {/* <Select
-                disabled={updateMut.isPending}
-                label="ชั้นปี"
-                value={form.year}
-                onChange={(e) => setDraft((f) => ({ ...f, year: e.target.value }))}
-                options={[ 
-                  { value: '', label: '— เลือกชั้นปี —' },
-                  { value: '1', label: 'ปีที่ 1' },
-                  { value: '2', label: 'ปีที่ 2' },
-                  { value: '3', label: 'ปีที่ 3' },
-                  { value: '4', label: 'ปีที่ 4' },
-                ]}
-              />
-              */}
               <Select
                 disabled={updateMut.isPending}
                 label="ภาควิชา"
@@ -240,65 +266,131 @@ export function ProfileInfoTab() {
               />
               <Input
                 readOnly={updateMut.isPending}
+                label="เบอร์ติดต่อ"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                value={form.phone}
+                onChange={(e) => setDraft((f) => ({ ...f, phone: e.target.value }))}
+                placeholder="08xxxxxxxx"
+              />
+              <Input
                 label="อีเมล (ใช้สำหรับเข้าสู่ระบบ)"
                 value={p?.email ?? ''}
                 disabled
               />
-              <Input
-                readOnly={updateMut.isPending}
-                label="Username"
-                autoComplete="username"
-                value={form.username}
-                onChange={(e) => setDraft((f) => ({ ...f, username: e.target.value }))}
-              />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>รหัสผ่าน</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  {p?.has_password ? (
-                    <span style={{ fontSize: 14, color: 'var(--ink-500)', letterSpacing: 2 }}>••••••••</span>
-                  ) : (
-                    <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>ยังไม่ได้ตั้งรหัสผ่าน</span>
-                  )}
-                  <Button type="button" variant="outline" size="sm" onClick={() => setPasswordOpen(true)}>
-                    {p?.has_password ? 'เปลี่ยนรหัสผ่าน' : 'สร้างรหัสผ่าน'}
-                  </Button>
-                </div>
-              </div>
-              {isEditing && (
-                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                  <Button
-                    type="submit"
-                    loading={updateMut.isPending}
-                    disabled={avatarMut.isPending}
-                  >
-                    บันทึกการเปลี่ยนแปลง
-                  </Button>
-                </div>
-              )}
-            </form>
-          )}
-        </Card>
-      </div>
-      </div>
-      <StudentInfoVerification />
-      <ChangePasswordModal
-        key={p?.has_password ? 'change' : 'create'}
-        isOpen={passwordOpen}
-        onClose={() => setPasswordOpen(false)}
-        hasPassword={!!p?.has_password}
-        onSaved={() => qc.invalidateQueries({ queryKey: ['student-profile'] })}
-      />
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--ink-500)' }}>
+              ชื่อ-นามสกุลและสถานภาพนักศึกษายึดตามเอกสารจากระบบทะเบียนที่แนบด้านล่าง
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={updateMut.isPending}
+                onClick={() => {
+                  setDraft({})
+                  setIsEditing(false)
+                }}
+              >
+                ยกเลิก
+              </Button>
+              <Button type="submit" loading={updateMut.isPending} disabled={avatarMut.isPending}>
+                บันทึกการเปลี่ยนแปลง
+              </Button>
+            </div>
+          </form>
+        )}
+
+        <div style={{ marginTop: 24, padding: 20, borderRadius: 12, background: 'var(--line-soft)' }}>
+          <SectionTitle icon="file" title="เอกสารยืนยันจากระบบทะเบียน" inset
+            hint="แนบรูปจากระบบทะเบียน 2 รูป (PDF, JPG หรือ PNG) — ต้องมีสถานภาพปกติจึงจะสมัคร Lab Boy ได้" />
+          <StudentInfoVerification info={info} />
+        </div>
+      </Card>
     </div>
   )
 }
 
-function InfoRow({ label, value }: { label: string; value?: string | null }) {
+type FieldCheck = { ocr?: string | null; current?: string | null; match: boolean }
+
+const labelStyle: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: 'var(--ink-500)' }
+
+function InfoRow({ label, value, check }: { label: string; value?: string | null; check?: FieldCheck }) {
+  const checked = !!(check?.ocr && check.current)
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-500)' }}>{label}</span>
-      <span style={{ fontSize: 14, color: value ? 'var(--ink-900)' : 'var(--ink-400)', wordBreak: 'break-all' }}>
-        {value || '—'}
-      </span>
+    <div>
+      <dt style={labelStyle}>{label}</dt>
+      <dd style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+        <span style={{ fontSize: 15, color: value ? 'var(--ink-900)' : 'var(--ink-400)', wordBreak: 'break-all' }}>
+          {value || '—'}
+        </span>
+        {checked && (check?.match
+          ? <Badge variant="green"><Icon name="check" size={12} /> ตรงกับเอกสาร</Badge>
+          : <Badge variant="amber" wrap>ต่างจากเอกสาร: {check?.ocr}</Badge>)}
+      </dd>
     </div>
   )
+}
+
+function SectionTitle({ icon, title, hint, inset }: { icon: 'user' | 'file'; title: string; hint?: string; inset?: boolean }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flex: 1, minWidth: 220 }}>
+      <span style={{ width: 36, height: 36, borderRadius: 8, background: inset ? '#fff' : 'var(--primary-50)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <Icon name={icon} size={18} />
+      </span>
+      <div>
+        <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink-900)', lineHeight: 1.4 }}>{title}</h2>
+        {hint && <p style={{ fontSize: 13, color: 'var(--ink-500)' }}>{hint}</p>}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * สถานภาพนักศึกษา comes only from the confirmed registrar document; a
+ * student cannot type it. Only สถานภาพปกติ may apply for Lab Boy.
+ */
+function studentStatus(status: string | undefined, confirmedAt: string | undefined, hasDoc: boolean): {
+  variant: BadgeVariant; short: string; label: string; note?: string
+} {
+  if (status && confirmedAt) {
+    const normal = isNormalStudentStatus(status)
+    return {
+      variant: normal ? 'green' : 'red',
+      short: `สถานภาพ ${status}`,
+      label: status,
+      note: `ยืนยันจากเอกสารเมื่อ ${toDMY(confirmedAt.slice(0, 10))}${normal ? '' : ' · สมัคร Lab Boy ได้เฉพาะสถานภาพปกติ'}`,
+    }
+  }
+  if (hasDoc) return { variant: 'amber', short: 'รอยืนยันสถานภาพ', label: 'รอยืนยันข้อมูลจากเอกสารด้านล่าง' }
+  return { variant: 'gray', short: 'ยังไม่ยืนยันสถานภาพ', label: 'ยังไม่ได้ยืนยัน — แนบเอกสารด้านล่างเพื่อยืนยันสถานภาพ' }
+}
+
+function CameraIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+      <circle cx="12" cy="13" r="4" />
+    </svg>
+  )
+}
+
+/**
+ * Keeps only digits, turning Thai digits (๐-๙) into 0-9. Typing with the Thai
+ * keyboard layout otherwise slips in marks like "ุ" (the 6 key).
+ */
+function toStudentIdDigits(value: string): string {
+  return value
+    .replace(/[๐-๙]/g, (d) => String(d.charCodeAt(0) - 0x0e50))
+    .replace(/\D/g, '')
+    .slice(0, 10)
+}
+
+/** "0812345678" → "081-234-5678" for display. */
+function formatPhone(phone?: string): string {
+  if (!phone) return ''
+  if (phone.length === 10) return `${phone.slice(0, 3)}-${phone.slice(3, 6)}-${phone.slice(6)}`
+  if (phone.length === 9) return `${phone.slice(0, 2)}-${phone.slice(2, 5)}-${phone.slice(5)}`
+  return phone
 }

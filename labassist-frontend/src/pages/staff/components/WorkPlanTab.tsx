@@ -7,6 +7,7 @@ import type {
 } from '../../../types'
 import MonthlyPlanSection from './MonthlyPlanSection'
 import PlanSummaryPanel from './PlanSummaryPanel'
+import { DateInput } from '../../../components/ui/DateInput'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -487,13 +488,13 @@ export default function WorkPlanTab({ staffCase }: Props) {
             </div>
             <div>
               <label className="block text-xs mb-1" style={{ color: 'var(--ink-500)' }}>วันที่เริ่ม</label>
-              <input type="date" value={settingsForm.work_start_date}
+              <DateInput value={settingsForm.work_start_date}
                 onChange={(e) => setSettingsForm({ ...settingsForm, work_start_date: e.target.value })}
                 className="form-input w-full" />
             </div>
             <div>
               <label className="block text-xs mb-1" style={{ color: 'var(--ink-500)' }}>วันที่สิ้นสุด</label>
-              <input type="date" value={settingsForm.work_end_date}
+              <DateInput value={settingsForm.work_end_date}
                 onChange={(e) => setSettingsForm({ ...settingsForm, work_end_date: e.target.value })}
                 className="form-input w-full" />
             </div>
@@ -719,13 +720,13 @@ export default function WorkPlanTab({ staffCase }: Props) {
                         <div className="flex gap-3 flex-wrap items-end">
                           <div>
                             <label className="block text-xs mb-1" style={{ color: 'var(--ink-600)' }}>วันที่เริ่ม</label>
-                            <input type="date" value={genDates.start_date}
+                            <DateInput value={genDates.start_date}
                               onChange={(e) => setGenDates({ ...genDates, start_date: e.target.value })}
                               className="form-input" />
                           </div>
                           <div>
                             <label className="block text-xs mb-1" style={{ color: 'var(--ink-600)' }}>วันที่สิ้นสุด</label>
-                            <input type="date" value={genDates.end_date}
+                            <DateInput value={genDates.end_date}
                               onChange={(e) => setGenDates({ ...genDates, end_date: e.target.value })}
                               className="form-input" />
                           </div>
@@ -848,7 +849,7 @@ export default function WorkPlanTab({ staffCase }: Props) {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-xs mb-0.5" style={{ color: 'var(--ink-600)' }}>วันที่</label>
-                  <input type="date" value={holidayForm.date}
+                  <DateInput value={holidayForm.date}
                     onChange={(e) => setHolidayForm({ ...holidayForm, date: e.target.value })}
                     className="form-input w-full" />
                 </div>
@@ -984,13 +985,13 @@ function GroupFormFields({
       </div>
       <div>
         <label className="block text-xs mb-1" style={{ color: 'var(--ink-500)' }}>วันที่เริ่ม</label>
-        <input type="date" value={form.work_start_date}
+        <DateInput value={form.work_start_date}
           onChange={(e) => onChange({ ...form, work_start_date: e.target.value })}
           className="form-input w-full" />
       </div>
       <div>
         <label className="block text-xs mb-1" style={{ color: 'var(--ink-500)' }}>วันที่สิ้นสุด</label>
-        <input type="date" value={form.work_end_date}
+        <DateInput value={form.work_end_date}
           onChange={(e) => onChange({ ...form, work_end_date: e.target.value })}
           className="form-input w-full" />
       </div>
@@ -1248,7 +1249,7 @@ function HiringPreviewModal({
             <PreviewRow label="กลุ่มเรียน" value={String(staffCase.section)} />
             <PreviewRow label="ชื่อวิชา" value={staffCase.course_title} />
             <PreviewRow label="อาจารย์" value={staffCase.instructor_name} />
-            <PreviewRow label="ภาคเรียน" value={`${staffCase.semester} / ${staffCase.academic_year}`} />
+            <PreviewRow label="ภาคเรียน" value={`ภาคเรียนที่ ${staffCase.semester}`} />
             <PreviewRow label="Lab Boy" value={`${staffCase.lab_boys?.length ?? 0} คน`} />
           </div>
           {scheduleGroups.map((g) => (

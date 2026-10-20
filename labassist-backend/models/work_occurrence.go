@@ -39,6 +39,12 @@ type WorkOccurrence struct {
 	// RescheduledFromOccurrenceID is set on the new occurrence created after a reschedule.
 	RescheduledFromOccurrenceID *uint `gorm:"index" json:"rescheduled_from_occurrence_id,omitempty"`
 
+	// NoMakeup is set on a cancelled_holiday occurrence when the instructor
+	// (or staff on their behalf) decided the day is not made up. A clash
+	// with neither NoMakeup nor a makeup occurrence (one whose
+	// RescheduledFromOccurrenceID points here) is still waiting for a decision.
+	NoMakeup bool `gorm:"not null;default:false" json:"no_makeup"`
+
 	Reason string `gorm:"size:500" json:"reason,omitempty"`
 
 	// ActualHours overrides the scheduled hours when non-zero (e.g. early finish).

@@ -41,6 +41,26 @@ def clean_code_text(text: str) -> str:
     return re.sub(r'[\s\-\.\,\/]', '', stripped)
 
 
+GRADE_HEADERS = {'เกรด', 'grade'}
+
+
+def box_center_x(box) -> float:
+    return (box[0][0] + box[1][0]) / 2
+
+
+def grade_column_xs(lines) -> list:
+    """หาตำแหน่งแกน X ของหัวคอลัมน์ "เกรด" ในหน้า (อาจมีหลายคอลัมน์ถ้าทรานสคริปต์แบ่งซ้าย-ขวา)
+
+    ต้องตรงทั้งคำ — กัน "คะแนนเกรดรวม" ถูกนับเป็นหัวคอลัมน์เกรด
+    """
+    return [
+        box_center_x(box)
+        for line in lines
+        for box, text, _confidence in line
+        if text.strip().lower() in GRADE_HEADERS
+    ]
+
+
 def parse_transcript(ocr_results, known_codes=None):
     """Step 3 & 4: จัดกลุ่มบรรทัดตามแกน Y, หารหัสวิชา (Anchor) แล้วดึงเกรดที่อยู่ในบรรทัดเดียวกัน
 
@@ -53,6 +73,7 @@ def parse_transcript(ocr_results, known_codes=None):
     count = 0
 
     lines = group_into_lines(ocr_results)
+    header_xs = grade_column_xs(lines)
 
     def accept(candidate: str):
         """คืนรหัสวิชาถ้าใช้เป็น anchor ได้ ไม่งั้นคืน None"""
@@ -85,14 +106,26 @@ def parse_transcript(ocr_results, known_codes=None):
         if subject_code is None:
             continue
 
-        # ไล่หาคอลัมน์เกรดในรายการที่อยู่ถัดจากรหัสวิชาในบรรทัดเดียวกัน (ซ้ายไปขวา)
-        for _box, text, confidence in line[subject_index + 1:]:
-            candidate = normalize_grade(text)
-            if candidate in VALID_GRADES:
-                extracted_grades[subject_code] = candidate
-                total_confidence += confidence
-                count += 1
-                break
+        # รายการที่อยู่ถัดจากรหัสวิชาในบรรทัดเดียวกัน (ซ้ายไปขวา) ที่หน้าตาเป็นเกรด
+        candidates = [
+            (box, normalize_grade(text), confidence)
+            for box, text, confidence in line[subject_index + 1:]
+            if normalize_grade(text) in VALID_GRADES
+        ]
+        if not candidates:
+            continue
+        if header_xs:
+            # เลือกตัวที่อยู่ตรงคอลัมน์ "เกรด" ที่สุด — คอลัมน์หน่วยกิตที่อยู่ก่อนหน้า
+            # อาจถูกอ่านเป็นตัวอักษรที่หน้าตาเหมือนเกรด เช่น "4" -> "a"
+            _box, grade, confidence = min(
+                candidates,
+                key=lambda c: min(abs(box_center_x(c[0]) - x) for x in header_xs),
+            )
+        else:
+            _box, grade, confidence = candidates[0]
+        extracted_grades[subject_code] = grade
+        total_confidence += confidence
+        count += 1
 
     avg_confidence = (total_confidence / count) if count > 0 else 0
     return extracted_grades, avg_confidence

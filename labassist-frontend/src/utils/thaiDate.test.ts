@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatThaiDate, formatThaiDateFull, thaiDayShort, toDateOnly } from './thaiDate'
+import { formatThaiDate, formatThaiDateFull, fromDMY, thaiDayShort, toDateOnly, toDMY } from './thaiDate'
 
 describe('formatThaiDate', () => {
   it('formats a plain YYYY-MM-DD date', () => {
@@ -116,5 +116,23 @@ describe('Buddhist year conversion', () => {
     const rfc3339 = '2026-10-01T00:00:00Z'
     expect(formatThaiDate(rfc3339)).not.toContain('NaN')
     expect(formatThaiDate(rfc3339)).not.toContain('undefined')
+  })
+})
+
+describe('toDMY / fromDMY', () => {
+  it('shows a date as dd/mm/yyyy', () => {
+    expect(toDMY('2026-10-01')).toBe('01/10/2026')
+    expect(toDMY('')).toBe('')
+  })
+
+  it('reads dd/mm/yyyy back, with or without leading zeros', () => {
+    expect(fromDMY('01/10/2026')).toBe('2026-10-01')
+    expect(fromDMY('1/10/2026')).toBe('2026-10-01')
+  })
+
+  it('rejects incomplete or impossible dates', () => {
+    expect(fromDMY('01/10/20')).toBeNull()
+    expect(fromDMY('31/02/2026')).toBeNull()
+    expect(fromDMY('10/2026')).toBeNull()
   })
 })

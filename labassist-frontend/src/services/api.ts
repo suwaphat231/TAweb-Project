@@ -7,12 +7,13 @@ import type {
   CreateUserPayload, UpdateUserPayload, ImportCoursesResponse, ImportCourseFields,
   FormReview, StaffDocument, CreateStaffDocumentPayload, TranscriptOCRResult, CoreCourse, WorkDaySlot,
   WorkSession, TermSchedule, TermOption, ScheduleSlot, TermScheduleStatus,
-  LabBoyAssignment, CourseRelation, StudentInfoUploadResult,
+  LabBoyAssignment, CourseRelation, StudentInfoUploadResult, StudentInfoKind,
   StaffCaseResponse, ScheduleGroup, CalendarDate, WorkOccurrence, MonthlyPeriodResponse, StaffAuditLog,
   UpdateCasePayload, AddScheduleGroupPayload, UpdateScheduleGroupPayload, CreateCalendarDatePayload, GenerateOccurrencesPayload,
   ScheduleGroupMonth, AddGroupMonthPayload, MonthOccurrenceSummary,
   GroupMonthPlan, AddGroupMonthOccurrencePayload, PatchOccurrencePayload, HiringNoticePlanSnapshot,
   LabBoyReport, ReportDetail, ReportPage, ReportListParams, ReportInput, ReportAction, ReportEvidence,
+  MakeupDay, MakeupDayPayload,
   ReportResponse, ConfirmedRecord, DocumentWorkflowResponse, CreateWorkflowStepPayload, DocType,
 } from '../types'
 
@@ -234,8 +235,6 @@ export const studentApi = {
   // Per-term manual schedule
   getTermSchedule: (semester: string, academicYear: number) =>
     api.get<TermSchedule>('/student/profile/term-schedule', { params: { semester, academic_year: academicYear } }).then((r) => r.data),
-  termScheduleStatus: () =>
-    api.get<{ confirmed: boolean }>('/student/profile/term-schedule/status').then((r) => r.data.confirmed),
   saveTermSchedule: (data: { semester: string; academic_year: number; slots: ScheduleSlot[]; status: TermScheduleStatus }) =>
     api.put<TermSchedule>('/student/profile/term-schedule', data).then((r) => r.data),
   getAvailableTerms: () =>
@@ -243,17 +242,18 @@ export const studentApi = {
   courses: (params?: { status?: string; q?: string }) =>
     api.get<Course[]>('/student/courses', { params }).then((r) => r.data),
   // Student info document (OCR)
-  uploadStudentInfo: (file: File) => {
+  uploadStudentInfo: (file: File, kind: StudentInfoKind) => {
     const formData = new FormData()
     formData.append('file', file)
+    formData.append('kind', kind)
     return api.post<StudentInfoUploadResult>('/student/profile/student-info', formData).then((r) => r.data)
   },
   getStudentInfo: () =>
     api.get<StudentInfoUploadResult>('/student/profile/student-info').then((r) => r.data),
   confirmStudentInfo: (applyToProfile: boolean) =>
     api.post<StudentInfoUploadResult>('/student/profile/student-info/confirm', { apply_to_profile: applyToProfile }).then((r) => r.data),
-  getStudentInfoFile: () =>
-    api.get('/student/profile/student-info/file', { responseType: 'blob' }).then((r) => r.data as Blob),
+  getStudentInfoFile: (kind: StudentInfoKind) =>
+    api.get('/student/profile/student-info/file', { params: { kind }, responseType: 'blob' }).then((r) => r.data as Blob),
 }
 export const instructorApi = {
   courses: (params?: { has_lab?: boolean }) =>
@@ -292,6 +292,12 @@ export const instructorApi = {
   notifications: () => api.get<Notification[]>('/instructor/notifications').then((r) => r.data),
   markNotificationRead: (id: number) => api.put(`/instructor/notifications/${id}/read`).then((r) => r.data),
   markAllNotificationsRead: () => api.put('/instructor/notifications/read-all').then((r) => r.data),
+  // Makeup days for work days that fall on a holiday
+  makeupDays: () => api.get<MakeupDay[]>('/instructor/makeup-days').then((r) => r.data),
+  chooseMakeup: (occurrenceId: number, data: MakeupDayPayload) =>
+    api.post<WorkOccurrence>(`/instructor/occurrences/${occurrenceId}/makeup`, data).then((r) => r.data),
+  declineMakeup: (occurrenceId: number) =>
+    api.post<WorkOccurrence>(`/instructor/occurrences/${occurrenceId}/no-makeup`).then((r) => r.data),
   profile: () => api.get<User>('/instructor/profile').then((r) => r.data),
   updateProfile: (data: { full_name?: string; email?: string; faculty?: string; username?: string }) =>
     api.put<User>('/instructor/profile', data).then((r) => r.data),
@@ -396,6 +402,13 @@ export const staffApi = {
     api.put<WorkOccurrence>(`/staff/occurrences/${id}`, { status, reason }).then((r) => r.data),
   rescheduleOccurrence: (id: number, new_date: string, new_start: string, new_end: string, reason?: string) =>
     api.post<WorkOccurrence>(`/staff/occurrences/${id}/reschedule`, { new_date, new_start, new_end, reason }).then((r) => r.data),
+  // Makeup days (chosen on the instructor's behalf)
+  caseMakeupDays: (caseId: number) =>
+    api.get<MakeupDay[]>(`/staff/cases/${caseId}/makeup-days`).then((r) => r.data),
+  chooseMakeup: (occurrenceId: number, data: MakeupDayPayload) =>
+    api.post<WorkOccurrence>(`/staff/occurrences/${occurrenceId}/makeup`, data).then((r) => r.data),
+  declineMakeup: (occurrenceId: number) =>
+    api.post<WorkOccurrence>(`/staff/occurrences/${occurrenceId}/no-makeup`).then((r) => r.data),
 
   // Monthly periods
   listMonthlyPeriods: (caseId: number) =>

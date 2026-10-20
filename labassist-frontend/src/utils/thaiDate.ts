@@ -68,3 +68,24 @@ export function toDateOnly(value: string | null | undefined): string | null {
   if (!ymd) return null
   return `${ymd.year}-${String(ymd.month).padStart(2, '0')}-${String(ymd.day).padStart(2, '0')}`
 }
+
+/**
+ * Format a YYYY-MM-DD date as the dd/mm/yyyy text a date field shows.
+ * Example: "2026-10-01" → "01/10/2026". Empty for an empty or invalid date.
+ */
+export function toDMY(value: string | null | undefined): string {
+  const ymd = parseYMD(value)
+  if (!ymd) return ''
+  return `${String(ymd.day).padStart(2, '0')}/${String(ymd.month).padStart(2, '0')}/${ymd.year}`
+}
+
+/**
+ * Parse dd/mm/yyyy typed into a date field back to YYYY-MM-DD; "1/10/2026"
+ * works too. Returns null until the text is a whole, real date.
+ */
+export function fromDMY(text: string): string | null {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(text.trim())
+  if (!m) return null
+  const iso = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`
+  return parseYMD(iso) ? iso : null
+}
