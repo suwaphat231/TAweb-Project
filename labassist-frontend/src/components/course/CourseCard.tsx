@@ -5,21 +5,25 @@ import { Card } from '../ui/Card'
 import { StatusBadge, Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
 import { formatSchedule } from '../../utils/schedule'
+import { termLabel } from '../../utils/termSchedule'
 
 interface Props {
   group: CourseGroup
   onApply?: (group: CourseGroup) => void
   appliedSections?: Course[]
-  scheduleRequired?: boolean
 }
 
-export function CourseCard({ group, onApply, appliedSections = [], scheduleRequired = false }: Props) {
+export function CourseCard({ group, onApply, appliedSections = [] }: Props) {
   const allFull = group.totalSlots > 0 && group.totalAccepted >= group.totalSlots
   // A group conflicts when every section the student could take has a schedule
   // conflict. If even one section is conflict-free, the card stays actionable.
   const conflictDay = group.sections.every((s) => s.conflict_day)
     ? (group.sections[0]?.conflict_day ?? '')
     : ''
+
+  // The student must save a schedule for this course's own term first.
+  const scheduleRequired = group.sections.some((s) => s.schedule_missing)
+  const scheduleLabel = group.sections[0] ? `กรอกตารางเรียน${termLabel(group.sections[0].semester)}ก่อน` : 'กรอกตารางเรียนก่อน'
 
   const deadline = group.deadline
     ? new Date(group.deadline).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
@@ -141,7 +145,7 @@ export function CourseCard({ group, onApply, appliedSections = [], scheduleRequi
             <Badge variant="green" wrap>สมัครแล้ว{appliedLabel ? ` (${appliedLabel})` : ''}</Badge>
             {canApplyMore && (
               <Button size="sm" variant="outline" disabled={scheduleRequired} onClick={handleApply}>
-                {scheduleRequired ? 'กรอกตารางเรียนก่อน' : 'สมัครเวลาอื่นเพิ่ม'}
+                {scheduleRequired ? scheduleLabel : 'สมัครเวลาอื่นเพิ่ม'}
               </Button>
             )}
           </div>
@@ -158,7 +162,7 @@ export function CourseCard({ group, onApply, appliedSections = [], scheduleRequi
           <Button size="sm" variant="outline" disabled style={{ cursor: 'not-allowed' }}>เต็มแล้ว</Button>
         ) : scheduleRequired ? (
           <Button size="sm" variant="outline" disabled style={{ cursor: 'not-allowed' }}>
-            กรอกตารางเรียนก่อน
+            {scheduleLabel}
           </Button>
         ) : (
           <Button size="sm" onClick={handleApply}>สมัคร Lab Boy</Button>

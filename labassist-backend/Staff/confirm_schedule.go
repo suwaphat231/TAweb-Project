@@ -1,6 +1,7 @@
 package staff
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,7 +14,7 @@ import (
 
 // ConfirmSchedule godoc
 // @Summary      ยืนยันตารางปฏิบัติงาน Lab Boy (เจ้าหน้าที่)
-// @Description  เจ้าหน้าที่ยืนยันตารางปฏิบัติงานหลังอาจารย์รับ Lab Boy แล้ว: สร้าง Staff Case ให้ workflow เอกสารเริ่มได้ และแจ้งเตือนนักศึกษาที่ผ่านการคัดเลือก ยืนยันซ้ำได้โดยไม่แจ้งเตือนซ้ำ
+// @Description  เจ้าหน้าที่ยืนยันตารางปฏิบัติงานได้เมื่อเอกสารทุกขั้นของรายวิชาลงนามแล้ว: นักศึกษาเห็นตารางปฏิบัติงานและได้รับแจ้งเตือน ยืนยันซ้ำได้โดยไม่แจ้งเตือนซ้ำ
 // @Tags         staff
 // @Produce      json
 // @Security     BearerAuth
@@ -28,18 +29,21 @@ func (h *Handler) ConfirmSchedule(c *gin.Context) {
 		return
 	}
 	accepted, err := database.AcceptedStudentsForPosting(posting.ID)
-	if err != nil {
+	docs, err2 := database.StaffDocumentsForPosting(posting.ID)
+	if err := errors.Join(err, err2); err != nil {
 		log.Printf("confirm schedule %d: %v", course.ID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
-	if len(accepted) == 0 {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "ยังไม่มีนักศึกษาที่อาจารย์รับเป็น Lab Boy"})
-		return
-	}
-
 	staffID := c.GetUint("user_id")
 	alreadyConfirmed := posting.LabBoyScheduleConfirmed
+	if blockers := scheduleConfirmBlockers(accepted, docs); !alreadyConfirmed && len(blockers) > 0 {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"error":   "ยืนยันตารางปฏิบัติงานได้เมื่อเอกสารทุกขั้นของรายวิชาลงนามแล้ว",
+			"reasons": blockers,
+		})
+		return
+	}
 	if !alreadyConfirmed {
 		if _, saved := database.UpdateCourse(course.ID, func(cs *models.Course) {
 			cs.LabBoyScheduleConfirmed = true
@@ -63,7 +67,7 @@ func (h *Handler) ConfirmSchedule(c *gin.Context) {
 				UserID:   app.StudentID,
 				CourseID: &cid,
 				Title:    fmt.Sprintf("ตารางปฏิบัติงาน Lab Boy — %s", course.Code),
-				Body:     fmt.Sprintf("เจ้าหน้าที่ยืนยันตารางปฏิบัติงานแล้ว กรุณาตรวจสอบตารางในระบบ วิชา %s (%s) ภาค %s/%d", course.Title, course.Code, course.Semester, course.AcademicYear),
+				Body:     fmt.Sprintf("เจ้าหน้าที่ยืนยันตารางปฏิบัติงานแล้ว กรุณาตรวจสอบตารางในระบบ วิชา %s (%s) ภาคเรียนที่ %s", course.Title, course.Code, course.Semester),
 			})
 		}
 		notified = database.CreateNotifications(notifs)

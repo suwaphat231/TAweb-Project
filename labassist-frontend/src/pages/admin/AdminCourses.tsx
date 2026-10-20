@@ -14,6 +14,19 @@ import { isLabCourse } from '../../utils/labCourse'
 import type { Course } from '../../types'
 import { formatSchedule } from '../../utils/schedule'
 
+// Meeting days for a manually added course, stored in the classlist format
+// ("Tu 13:00 - 16:00", one line per meeting) like the Excel import, so each
+// day becomes its own course row and conflict checks read it the same way.
+const MEETING_DAYS = [
+  { value: 'Mo', label: 'จันทร์' }, { value: 'Tu', label: 'อังคาร' }, { value: 'We', label: 'พุธ' },
+  { value: 'Th', label: 'พฤหัสบดี' }, { value: 'Fr', label: 'ศุกร์' }, { value: 'Sa', label: 'เสาร์' },
+  { value: 'Su', label: 'อาทิตย์' },
+]
+
+interface Meeting { day: string; start: string; end: string }
+
+const emptyMeeting = (): Meeting => ({ day: '', start: '', end: '' })
+
 const SEMESTER_TABS: { label: string; value: string }[] = [
   { label: 'ทั้งหมด', value: '' },
   { label: 'ภาค 1', value: '1' },
@@ -31,10 +44,12 @@ export default function AdminCourses() {
   // This page only manages lab courses, excludes RESEARCH PROJECT I/II, and
   // never mixes semesters — a semester must be picked explicitly (or "ทั้งหมด").
   // A manually-added course (by admin or instructor) has no Excel-derived
-  // `credits` string to parse hours from — labboy_slots > 0 is the same "has
-  // a lab" signal for those, so it isn't silently hidden from this list.
+  // `credits` string to parse hours from, and is added on purpose as a lab
+  // course — even before anyone sets its Lab Boy slots — so it is always
+  // listed (unless its title is an excluded non-lab course). The API lists
+  // newest first, so a course just added sits at the top of its term.
   const visibleCourses = courses.filter((c) =>
-    isLabCourse(c) &&
+    (isLabCourse(c) || (!c.credits?.trim() && isLabCourse({ ...c, labboy_slots: 1 }))) &&
     (semesterFilter === '' || c.semester === semesterFilter)
   )
 
@@ -51,8 +66,39 @@ export default function AdminCourses() {
   const [showAddCourse, setShowAddCourse] = useState(false)
   const emptyAddCourseForm = {
     instructor_id: '', code: '', title: '', semester: '1', academic_year: '2569', labboy_slots: '0',
+    section: '1', credit_total: '', credit_lecture: '', credit_lab: '', credit_self: '',
   }
   const [addCourseForm, setAddCourseForm] = useState(emptyAddCourseForm)
+  const [meetings, setMeetings] = useState<Meeting[]>([emptyMeeting()])
+  const [addCourseError, setAddCourseError] = useState('')
+  const setMeeting = (i: number, patch: Partial<Meeting>) =>
+    setMeetings((ms) => ms.map((m, j) => (j === i ? { ...m, ...patch } : m)))
+  const labHours = addCourseForm.credit_lab === '' ? null : Number(addCourseForm.credit_lab)
+
+  // Checks the parts the browser can't, then returns the credits and
+  // schedule strings to send; sets the error and returns null otherwise.
+  const buildCourseDetails = (): { credits: string; schedule: string } | null => {
+    const { credit_total, credit_lecture, credit_lab, credit_self } = addCourseForm
+    if ([credit_total, credit_lecture, credit_lab, credit_self].some((v) => v === '')) {
+      setAddCourseError('กรุณากรอกหน่วยกิตให้ครบทั้ง 4 ช่อง')
+      return null
+    }
+    for (const m of meetings) {
+      if (!m.day || !m.start || !m.end) {
+        setAddCourseError('กรุณากรอกวันและเวลาเรียนให้ครบทุกแถว')
+        return null
+      }
+      if (m.start >= m.end) {
+        setAddCourseError('เวลาเริ่มเรียนต้องก่อนเวลาเลิกเรียน')
+        return null
+      }
+    }
+    setAddCourseError('')
+    return {
+      credits: `${credit_total} (${credit_lecture}-${credit_lab}-${credit_self})`,
+      schedule: meetings.map((m) => `${m.day} ${m.start} - ${m.end}`).join('\n'),
+    }
+  }
   const [showCodeSuggest, setShowCodeSuggest] = useState(false)
 
   // The department's required-course reference list (core_courses — used for
@@ -168,19 +214,24 @@ export default function AdminCourses() {
   })
 
   const addCourseMut = useMutation({
-    mutationFn: () => adminApi.createCourse({
+    mutationFn: (details: { credits: string; schedule: string }) => adminApi.createCourse({
       instructor_id: Number(addCourseForm.instructor_id),
       code: addCourseForm.code,
       title: addCourseForm.title,
       semester: addCourseForm.semester,
       academic_year: Number(addCourseForm.academic_year),
       labboy_slots: Number(addCourseForm.labboy_slots),
+      credits: details.credits,
+      sections: [{ section: Number(addCourseForm.section), schedule: details.schedule }],
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['all-courses'] })
       setShowAddCourse(false)
+      // Show the new course's term so it appears at the top of the list.
+      setSemesterFilter(addCourseForm.semester)
       setAddCourseForm(emptyAddCourseForm)
-      showToast('เพิ่มวิชาเรียบร้อยแล้ว', 'success')
+      setMeetings([emptyMeeting()])
+      showToast(`เพิ่มวิชา ${addCourseForm.code} เรียบร้อยแล้ว`, 'success')
     },
     onError: (err) => {
       const detail = isAxiosError(err) ? err.response?.data?.error : undefined
@@ -205,7 +256,7 @@ export default function AdminCourses() {
       key: 'instructor_name', header: 'อาจารย์',
       render: (c: Course) => <span style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{c.instructors_raw || c.instructor_name || '—'}</span>,
     },
-    { key: 'term', header: 'เทอม', render: (c: Course) => <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>{c.semester}/{c.academic_year}{c.section ? ` · กลุ่ม ${c.section}` : ''}</span> },
+    { key: 'term', header: 'เทอม', render: (c: Course) => <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>ภาคเรียนที่ {c.semester}{c.section ? ` · กลุ่ม ${c.section}` : ''}</span> },
     {
       key: 'actions', header: '',
       render: (c: Course) => (
@@ -312,7 +363,11 @@ export default function AdminCourses() {
 
       <Modal isOpen={showAddCourse} onClose={() => setShowAddCourse(false)} title="เพิ่มวิชา" size="md">
         <form
-          onSubmit={(e) => { e.preventDefault(); addCourseMut.mutate() }}
+          onSubmit={(e) => {
+            e.preventDefault()
+            const details = buildCourseDetails()
+            if (details) addCourseMut.mutate(details)
+          }}
           style={{ display: 'flex', flexDirection: 'column', gap: 14 }}
         >
           <p style={{ fontSize: 13, color: 'var(--ink-500)' }}>
@@ -330,8 +385,11 @@ export default function AdminCourses() {
           />
           <div style={{ position: 'relative' }}>
             <Input
-              label="รหัสวิชา *" value={addCourseForm.code}
-              onChange={(e) => setAddCourseForm((f) => ({ ...f, code: e.target.value }))}
+              label="รหัสวิชา * (ตัวเลขเท่านั้น)" value={addCourseForm.code}
+              onChange={(e) => setAddCourseForm((f) => ({ ...f, code: e.target.value.replace(/\D/g, '') }))}
+              inputMode="numeric"
+              pattern="[0-9]+"
+              title="รหัสวิชาต้องเป็นตัวเลขเท่านั้น"
               onFocus={() => setShowCodeSuggest(true)}
               onBlur={() => setTimeout(() => setShowCodeSuggest(false), 150)}
               autoComplete="off"
@@ -371,7 +429,66 @@ export default function AdminCourses() {
             onChange={(e) => setAddCourseForm((f) => ({ ...f, title: e.target.value }))}
             required
           />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <fieldset style={{ border: 'none', padding: 0, margin: 0 }}>
+            <legend style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 6 }}>
+              หน่วยกิต * <span style={{ fontWeight: 400, color: 'var(--ink-500)' }}>— เช่น 3 (2-2-5)</span>
+            </legend>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
+              {([
+                ['credit_total', 'หน่วยกิต'], ['credit_lecture', 'บรรยาย'],
+                ['credit_lab', 'ปฏิบัติ'], ['credit_self', 'ศึกษาเอง'],
+              ] as const).map(([key, label]) => (
+                <Input
+                  key={key} label={label} type="number" min={0} max={20} inputMode="numeric"
+                  value={addCourseForm[key]}
+                  onChange={(e) => setAddCourseForm((f) => ({ ...f, [key]: e.target.value }))}
+                />
+              ))}
+            </div>
+            {labHours !== null && labHours < 2 && (
+              <p style={{ fontSize: 12, color: 'var(--amber)', marginTop: 6 }}>
+                ชั่วโมงปฏิบัติน้อยกว่า 2 — ระบบจะถือว่าไม่ใช่วิชาแลป และวิชานี้จะไม่แสดงในรายการ
+              </p>
+            )}
+          </fieldset>
+          <fieldset style={{ border: 'none', padding: 0, margin: 0 }}>
+            <legend style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 6 }}>
+              เวลาเรียน * <span style={{ fontWeight: 400, color: 'var(--ink-500)' }}>— เรียนหลายวัน ระบบจะแยกเป็นวิชาละ 1 วัน</span>
+            </legend>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {meetings.map((m, i) => (
+                <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr auto', gap: 8, alignItems: 'end' }}>
+                  <Select
+                    aria-label={`วันเรียนแถวที่ ${i + 1}`} value={m.day}
+                    onChange={(e) => setMeeting(i, { day: e.target.value })}
+                    options={[{ value: '', label: 'เลือกวัน' }, ...MEETING_DAYS]}
+                  />
+                  <Input aria-label={`เวลาเริ่มแถวที่ ${i + 1}`} type="time" value={m.start}
+                    onChange={(e) => setMeeting(i, { start: e.target.value })} />
+                  <Input aria-label={`เวลาเลิกแถวที่ ${i + 1}`} type="time" value={m.end}
+                    onChange={(e) => setMeeting(i, { end: e.target.value })} />
+                  <Button
+                    type="button" size="sm" variant="ghost" aria-label={`ลบเวลาเรียนแถวที่ ${i + 1}`}
+                    disabled={meetings.length === 1}
+                    onClick={() => setMeetings((ms) => ms.filter((_, j) => j !== i))}
+                  >
+                    ลบ
+                  </Button>
+                </div>
+              ))}
+              <div>
+                <Button type="button" size="sm" variant="outline" onClick={() => setMeetings((ms) => [...ms, emptyMeeting()])}>
+                  + เพิ่มวันเรียน
+                </Button>
+              </div>
+            </div>
+          </fieldset>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <Input
+              label="กลุ่มเรียน *" type="number" min={1} value={addCourseForm.section}
+              onChange={(e) => setAddCourseForm((f) => ({ ...f, section: e.target.value }))}
+              required
+            />
             <Select
               label="ภาคการศึกษา *" value={addCourseForm.semester}
               onChange={(e) => setAddCourseForm((f) => ({ ...f, semester: e.target.value }))}
@@ -383,6 +500,9 @@ export default function AdminCourses() {
               required
             />
           </div>
+          {addCourseError && (
+            <p role="alert" style={{ fontSize: 13, color: 'var(--red)', margin: 0 }}>{addCourseError}</p>
+          )}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
             <Button type="button" variant="ghost" onClick={() => setShowAddCourse(false)}>ยกเลิก</Button>
             <Button type="submit" loading={addCourseMut.isPending}>เพิ่มวิชา</Button>

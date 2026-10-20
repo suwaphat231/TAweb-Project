@@ -25,6 +25,9 @@ func TestRejectInvalidReviewsBeforeDatabaseAccess(t *testing.T) {
 		{"negative slots", `{"code":"517121","title":"Course","semester":"1","academic_year":2569,"labboy_slots":-1}`, h.Create},
 		{"invalid course status", `{"code":"517121","title":"Course","semester":"1","academic_year":2569,"status":"invalid"}`, h.Create},
 		{"invalid deadline", `{"code":"517121","title":"Course","semester":"1","academic_year":2569,"deadline":"2026-02-30"}`, h.Create},
+		{"letters in code", `{"code":"hldjkls","title":"Course","semester":"1","academic_year":2569}`, h.Create},
+		{"mixed code", `{"code":"CS101","title":"Course","semester":"1","academic_year":2569}`, h.Create},
+		{"bad credits", `{"code":"517121","title":"Course","semester":"1","academic_year":2569,"credits":"3-2-2-5"}`, h.Create},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := gin.New()

@@ -40,7 +40,7 @@ export default function InstructorReports() {
 
   const courseOptions = groups.flatMap((g) => g.sections.map((s) => ({
     value: s.id,
-    label: `${g.code} Sec ${s.section ?? '-'} (${g.semester}/${g.academic_year})`,
+    label: `${g.code} Sec ${s.section ?? '-'} (ภาคเรียนที่ ${g.semester})`,
   })))
 
   return (
@@ -95,7 +95,7 @@ export default function InstructorReports() {
                     </span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--primary)' }}>{g.code}</div>
-                      <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>ภาค {g.semester}/{g.academic_year}</div>
+                      <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>ภาคเรียนที่ {g.semester}</div>
                     </div>
                     <Icon name="chevron-right" size={18} style={{ color: 'var(--ink-400)' }} />
                   </div>

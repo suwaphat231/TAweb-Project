@@ -9,6 +9,7 @@ import { GRADE_OPTIONS } from '../utils/grades'
 import { cleanCourseTitle } from '../utils/courseTitle'
 import { getAppliedSections, groupSectionsByTime, timeOptionSecLabel, type CourseGroup } from '../utils/courseGrouping'
 import { formatSchedule } from '../utils/schedule'
+import { termLabel } from '../utils/termSchedule'
 
 // The shared list starts with a "-" (no grade) entry for instructors' minimum
 // grade; students must pick a real grade, so swap it for a prompt.
@@ -46,9 +47,10 @@ export function useApplyLabboy() {
     queryFn: studentApi.applications,
   })
 
-  const { data: scheduleConfirmed } = useQuery({
-    queryKey: ['term-schedule-status'],
-    queryFn: studentApi.termScheduleStatus,
+  // Grades the student submitted on the grade-check page, keyed by course code.
+  const { data: profile } = useQuery({
+    queryKey: ['student-profile'],
+    queryFn: studentApi.profile,
   })
 
   const applyMutation = useMutation({
@@ -91,6 +93,8 @@ export function useApplyLabboy() {
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['my-applications'] })
       qc.invalidateQueries({ queryKey: ['student-dashboard'] })
+      // A grade read from an attached image is kept on the grade-check page.
+      qc.invalidateQueries({ queryKey: ['student-profile'] })
     },
     onError: (err: { response?: { data?: { error?: string }; status?: number } }) => {
       showToast(err?.response?.data?.error ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error')
@@ -137,21 +141,30 @@ export function useApplyLabboy() {
 
   function confirmApply() {
     if (selectedSectionIds.length === 0) return
-    if (scheduleConfirmed !== true) return
-    if (!grade) {
+    if (scheduleMissing) return
+    const finalGrade = storedGrade ?? grade
+    if (!finalGrade) {
       setGradeTouched(true)
       return
     }
     if (requireGradeProof && !gradeProofFile) return
     if (fileError) return
-    applyMutation.mutate({ course_ids: selectedSectionIds, grade, gradeProofFile })
+    applyMutation.mutate({ course_ids: selectedSectionIds, grade: finalGrade, gradeProofFile: requireGradeProof ? gradeProofFile : null })
   }
 
   const selectedSections = applyTarget?.sections.filter((s) => selectedSectionIds.includes(s.id)) ?? []
   // Single-time postings show that one section's schedule/conflict inline.
   const selectedSection = selectedSections.length === 1 ? selectedSections[0] : null
   const timeOptions = applyTarget ? groupSectionsByTime(applyTarget.sections) : []
-  const requireGradeProof = selectedSections.some((s) => s.require_grade_proof)
+  // On postings that require grade proof, a grade already submitted on the
+  // grade-check page is used as is; otherwise the student attaches an image.
+  const storedGrade = applyTarget?.sections.some((s) => s.require_grade_proof)
+    ? profile?.transcript_grades?.[applyTarget.code] || undefined
+    : undefined
+  const requireGradeProof = !storedGrade && selectedSections.some((s) => s.require_grade_proof)
+  // A posting's sections share one term; the student needs a schedule for it.
+  const scheduleMissing = !!applyTarget?.sections.some((s) => s.schedule_missing)
+  const targetTerm = applyTarget?.sections[0] ? termLabel(applyTarget.sections[0].semester) : ''
 
   const modal = (
     <Modal
@@ -173,9 +186,9 @@ export function useApplyLabboy() {
           </div>
         )}
 
-        {scheduleConfirmed === false && (
+        {scheduleMissing && (
           <div style={{ padding: '12px 14px', borderRadius: 8, background: 'var(--amber-bg)', color: 'var(--amber)', fontSize: 13 }}>
-            กรุณากรอกและบันทึกตารางเรียนของคุณในหน้าโปรไฟล์ก่อนสมัคร Lab Boy
+            กรุณากรอกและบันทึกตารางเรียน{targetTerm}ในหน้าโปรไฟล์ก่อนสมัครวิชานี้
             <a href="/student/profile" style={{ display: 'inline-block', marginTop: 6, color: 'var(--primary)', fontWeight: 700 }}>
               ไปกรอกตารางเรียน
             </a>
@@ -262,6 +275,13 @@ export function useApplyLabboy() {
           </div>
         ) : null}
 
+        {storedGrade ? (
+          <div style={{ padding: '12px 14px', borderRadius: 8, background: 'var(--green-bg)', fontSize: 13, color: 'var(--ink-700)' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-500)', marginBottom: 4 }}>เกรดที่เคยได้ในวิชานี้</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink-900)' }}>{storedGrade}</div>
+            <div style={{ marginTop: 4 }}>ดึงจากใบเกรดที่ยื่นไว้ในหน้าตรวจสอบเกรด ไม่ต้องแนบรูปภาพเกรดเพิ่ม</div>
+          </div>
+        ) : (
         <Select
           label="เกรดที่เคยได้ในวิชานี้ *"
           value={grade}
@@ -273,11 +293,15 @@ export function useApplyLabboy() {
           error={gradeTouched && !grade ? 'กรุณาเลือกเกรดที่เคยได้ในวิชานี้' : undefined}
           hint="อาจารย์ใช้เกรดนี้ตรวจกับเกรดขั้นต่ำของวิชา"
         />
+        )}
 
         {requireGradeProof && (
           <div>
             <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 6 }}>
               แนบรูปภาพเกรด * <span style={{ fontWeight: 400, color: 'var(--ink-400)' }}>(เช่น ภาพจาก MyReg — วิชานี้ต้องแนบเพื่อยืนยันเกรด)</span>
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--ink-500)', marginBottom: 6 }}>
+              ยังไม่มีเกรดวิชานี้ในหน้าตรวจสอบเกรด — เกรดที่ระบบอ่านได้จากรูปนี้จะถูกเก็บไว้ ครั้งหน้าไม่ต้องแนบซ้ำ
             </div>
             <input
               type="file"
@@ -299,7 +323,7 @@ export function useApplyLabboy() {
           <Button
             onClick={confirmApply}
             loading={applyMutation.isPending}
-            disabled={scheduleConfirmed !== true || selectedSectionIds.length === 0 || selectedSections.some((s) => !!s.conflict_day) || (requireGradeProof && !gradeProofFile) || !!fileError}
+            disabled={scheduleMissing || selectedSectionIds.length === 0 || selectedSections.some((s) => !!s.conflict_day) || (requireGradeProof && !gradeProofFile) || !!fileError}
           >
             ยืนยันสมัคร{selectedSectionIds.length > 1 ? ` (${selectedSectionIds.length} ช่วงเวลา)` : ''}
           </Button>
@@ -308,5 +332,5 @@ export function useApplyLabboy() {
     </Modal>
   )
 
-  return { openApply, modal, scheduleConfirmed }
+  return { openApply, modal }
 }

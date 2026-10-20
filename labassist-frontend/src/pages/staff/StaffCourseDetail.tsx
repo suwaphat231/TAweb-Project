@@ -198,7 +198,7 @@ export default function StaffCourseDetail() {
               )}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 20px', fontSize: 12, color: 'var(--ink-500)' }}>
-              <span>ภาคเรียน {offering.semester} / {offering.academicYear}</span>
+              <span>ภาคเรียนที่ {offering.semester}</span>
               {courseDetail?.credits && <span>หน่วยกิต {courseDetail.credits}</span>}
               {(courseDetail?.schedule ?? offering.schedule) && (
                 <span>{formatSchedule(courseDetail?.schedule ?? offering.schedule, { separator: ' / ' })}</span>
@@ -396,7 +396,7 @@ export default function StaffCourseDetail() {
                 วันที่ไม่ต้องปฏิบัติงาน
               </div>
               <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>
-                วันหยุดและวันงดการสอนในภาคเรียน {offering.semester}/{offering.academicYear} (ดึงจากการตั้งค่า)
+                วันหยุดและวันงดการสอนในภาคเรียนที่ {offering.semester} (ดึงจากการตั้งค่า)
               </div>
             </div>
 

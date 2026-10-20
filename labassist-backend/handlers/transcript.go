@@ -231,6 +231,6 @@ func (h *AuthHandler) UploadTranscript(c *gin.Context) {
 		Program:    program,
 		Courses:    courses,
 		UpdatedAt:  now,
-		User:       updated,
+		User:       database.WithTranscriptCourseTitles(updated),
 	})
 }

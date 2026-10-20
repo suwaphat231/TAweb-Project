@@ -33,21 +33,29 @@ func docTypePtr(t models.DocType) *models.DocType { return &t }
 //   - Step 2's title is from the department's sample memo
 //     (บันทึกขออนุมัติ (ป.ตรี)…doc, "เรื่อง ขออนุมัติจ้างนักศึกษาปฏิบัติงาน"),
 //     rendered from approval_memo.docx.
-//   - Step 3 is issued on the same memo template (docxgen renders both).
+//   - Step 3 bills the approval memo's plan: one page per planned month in a
+//     single document, as in the department's sample
+//     (บันทึกขออนุมัติเบิกจ่ายเงิน (ป.ตรี)…doc), rendered from payment_request.docx.
+//   - Step 4 reports the same months on the faculty's overtime form
+//     (ฟอร์ม-รายงานผลการปฏิบัติงานนอกเวลาราชการ…docx), rendered from work_report.docx.
 var preWorkSteps = []workflowStep{
 	{Step: 1, Type: models.DocHiringNotice, Label: "แบบฟอร์มแจ้งความประสงค์ในการจ้างนักศึกษาช่วยสอนและช่วยคุมปฏิบัติการ"},
 	{Step: 2, Type: models.DocApprovalMemo, Label: "บันทึกข้อความ ขออนุมัติจ้างนักศึกษาปฏิบัติงาน", Requires: docTypePtr(models.DocHiringNotice)},
-	{Step: 3, Type: models.DocLabNotice, Label: "แบบแจ้งนักศึกษาช่วยคุมรายวิชาปฏิบัติการ", Requires: docTypePtr(models.DocApprovalMemo)},
-	// Step 4 bills the approval memo's plan: one page per planned month in a
-	// single document, as in the department's sample
-	// (บันทึกขออนุมัติเบิกจ่ายเงิน (ป.ตรี)…doc), rendered from payment_request.docx.
-	{Step: 4, Type: models.DocPaymentRequest, Label: "บันทึกข้อความ ขออนุมัติเบิกจ่ายเงินค่าตอบแทนนักศึกษาปฏิบัติงาน", Requires: docTypePtr(models.DocApprovalMemo)},
+	{Step: 3, Type: models.DocPaymentRequest, Label: "บันทึกข้อความ ขออนุมัติเบิกจ่ายเงินค่าตอบแทนนักศึกษาปฏิบัติงาน", Requires: docTypePtr(models.DocApprovalMemo)},
+	{Step: 4, Type: models.DocWorkReport, Label: "รายงานผลการปฏิบัติงานนอกเวลาราชการ", Requires: docTypePtr(models.DocPaymentRequest)},
 }
 
 // monthlyDocTypes are created per billing month (GenerateMonthlyDocument),
 // so the workflow only lists them.
 var monthlyDocTypes = map[models.DocType]bool{
-	models.DocWorkReport: true, models.DocPaymentEvidence: true,
+	models.DocPaymentEvidence: true,
+}
+
+// isMonthlyDoc: monthly documents are made per billing month from the
+// monthly page. work_report and payment_request are also workflow steps 3-4,
+// so the monthly period, not the type, tells the two apart.
+func isMonthlyDoc(d models.StaffDocument) bool {
+	return d.MonthlyPeriodID != nil || monthlyDocTypes[d.Type]
 }
 
 func stepFor(t models.DocType) (workflowStep, bool) {
@@ -57,6 +65,12 @@ func stepFor(t models.DocType) (workflowStep, bool) {
 		}
 	}
 	return workflowStep{}, false
+}
+
+// notSignedReason is why a step waits on a previous document that exists
+// but has not been signed.
+func notSignedReason(prev workflowStep) string {
+	return "รอบันทึกลงนาม \"" + prev.Label + "\" ก่อน"
 }
 
 // WorkflowCourse is the course offering a workflow belongs to.
@@ -74,8 +88,11 @@ type WorkflowCourse struct {
 	ReviewStatus string   `json:"review_status"`
 	StaffCaseID  *uint    `json:"staff_case_id,omitempty"`
 	// ScheduleConfirmed is true once staff have confirmed the Lab Boy schedule.
-	ScheduleConfirmed bool   `json:"schedule_confirmed"`
-	PlanStatus        string `json:"plan_status,omitempty"`
+	ScheduleConfirmed bool `json:"schedule_confirmed"`
+	// ConfirmBlockedReasons lists what must be done before staff can confirm
+	// the schedule; empty means the confirm button is enabled.
+	ConfirmBlockedReasons []string `json:"confirm_blocked_reasons"`
+	PlanStatus            string   `json:"plan_status,omitempty"`
 }
 
 // WorkflowStepView is one step as the staff UI shows it.
@@ -174,6 +191,29 @@ func sameIDs(a, b []uint) bool {
 	return true
 }
 
+// scheduleConfirmBlockers lists what still stops staff from confirming the
+// Lab Boy schedule: there must be accepted students and every pre-work
+// document must be signed.
+func scheduleConfirmBlockers(accepted []models.Application, docs []models.StaffDocument) []string {
+	reasons := []string{}
+	if len(accepted) == 0 {
+		reasons = append(reasons, "ยังไม่มีนักศึกษาที่อาจารย์รับเป็น Lab Boy")
+	}
+	for _, st := range preWorkSteps {
+		signed := false
+		for _, d := range docs {
+			if d.Type == st.Type && d.Status == models.DocSigned && !isMonthlyDoc(d) {
+				signed = true
+				break
+			}
+		}
+		if !signed {
+			reasons = append(reasons, "เอกสารขั้นที่ "+strconv.Itoa(st.Step)+" \""+st.Label+"\" ยังไม่ได้ลงนาม")
+		}
+	}
+	return reasons
+}
+
 // preconditions lists what still blocks creating any pre-work document for
 // this offering. It is checked again on create, never trusted from the UI.
 func preconditions(review models.FormReview, sc *models.StaffCase, accepted []models.Application) []string {
@@ -185,7 +225,7 @@ func preconditions(review models.FormReview, sc *models.StaffCase, accepted []mo
 		reasons = append(reasons, "ยังไม่มีนักศึกษาที่ผ่านการคัดเลือก")
 	}
 	if sc == nil {
-		reasons = append(reasons, "เจ้าหน้าที่ยังไม่ได้ยืนยันตารางปฏิบัติงาน (ยังไม่มี Staff Case)")
+		reasons = append(reasons, "ยังไม่มีแผนปฏิบัติงานของรายวิชานี้ (Staff Case)")
 		return reasons
 	}
 	snap := database.BuildHiringNoticeSnapshot(sc.ID)
@@ -219,6 +259,15 @@ func (h *Handler) GetDocumentWorkflow(c *gin.Context) {
 	var sc *models.StaffCase
 	if found, ok := database.StaffCaseByPostingID(posting.ID); ok {
 		sc = &found
+	} else if len(accepted) > 0 {
+		// The staff case holds the work plan the documents are built from, so
+		// it opens as soon as there are Lab Boys; confirming the schedule now
+		// comes last, after every document is signed.
+		if created, err := database.EnsureStaffCase(posting.ID, course.ID, course.Semester, course.AcademicYear, c.GetUint("user_id")); err != nil {
+			log.Printf("document workflow %d: ensure staff case: %v", course.ID, err)
+		} else {
+			sc = &created
+		}
 	}
 
 	resp := WorkflowResponse{
@@ -227,7 +276,8 @@ func (h *Handler) GetDocumentWorkflow(c *gin.Context) {
 			EnglishTitle: course.EnglishTitle, Section: course.Section, Semester: course.Semester,
 			AcademicYear: course.AcademicYear, Instructors: instructorNames(course),
 			LabBoyCount: len(accepted), ReviewStatus: string(review.Status),
-			ScheduleConfirmed: posting.LabBoyScheduleConfirmed,
+			ScheduleConfirmed:     posting.LabBoyScheduleConfirmed,
+			ConfirmBlockedReasons: scheduleConfirmBlockers(accepted, docs),
 		},
 		Steps:            []WorkflowStepView{},
 		MonthlyDocuments: []models.StaffDocument{},
@@ -253,7 +303,7 @@ func (h *Handler) GetDocumentWorkflow(c *gin.Context) {
 			BlockedReasons: []string{}, StaleReasons: []string{}, HasTemplate: templateReady[st.Type]}
 		for i := range docs {
 			d := docs[i]
-			if d.Type != st.Type {
+			if d.Type != st.Type || isMonthlyDoc(d) {
 				continue
 			}
 			if database.IsActiveDocStatus(d.Status) {
@@ -266,9 +316,13 @@ func (h *Handler) GetDocumentWorkflow(c *gin.Context) {
 		active[st.Type] = v.Document
 		if v.Document == nil {
 			v.BlockedReasons = append(v.BlockedReasons, blocked...)
-			if st.Requires != nil && active[*st.Requires] == nil {
+			if st.Requires != nil {
 				prev, _ := stepFor(*st.Requires)
-				v.BlockedReasons = append(v.BlockedReasons, "ต้องสร้าง \""+prev.Label+"\" ก่อน")
+				if pd := active[*st.Requires]; pd == nil {
+					v.BlockedReasons = append(v.BlockedReasons, "ต้องสร้าง \""+prev.Label+"\" ก่อน")
+				} else if pd.Status != models.DocSigned {
+					v.BlockedReasons = append(v.BlockedReasons, notSignedReason(prev))
+				}
 			}
 			v.CanCreate = len(v.BlockedReasons) == 0
 		} else {
@@ -285,7 +339,7 @@ func (h *Handler) GetDocumentWorkflow(c *gin.Context) {
 		resp.Steps = append(resp.Steps, v)
 	}
 	for _, d := range docs {
-		if monthlyDocTypes[d.Type] && d.Status != models.DocCancelled {
+		if isMonthlyDoc(d) && d.Status != models.DocCancelled {
 			resp.MonthlyDocuments = append(resp.MonthlyDocuments, d)
 		}
 	}
@@ -315,7 +369,7 @@ const maxWorkflowTextLen = 300
 // @Produce      json
 // @Security     BearerAuth
 // @Param        courseId  path  int                        true  "Course ID"
-// @Param        type      path  string                     true  "hiring_notice | approval_memo | lab_notice"
+// @Param        type      path  string                     true  "hiring_notice | approval_memo | payment_request | work_report"
 // @Param        body      body  CreateWorkflowStepRequest  false "ตัวเลือก"
 // @Success      201  {object}  models.StaffDocument
 // @Failure      400  {object}  handlers.ErrorResponse
@@ -383,6 +437,9 @@ func createStep(c *gin.Context, step workflowStep, course models.Course, posting
 	case errors.Is(err, database.ErrPrerequisiteMissing):
 		prev, _ := stepFor(*step.Requires)
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "ต้องสร้าง \"" + prev.Label + "\" ก่อน"})
+	case errors.Is(err, database.ErrPrerequisiteNotSigned):
+		prev, _ := stepFor(*step.Requires)
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": notSignedReason(prev)})
 	case err != nil:
 		log.Printf("create workflow document: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})

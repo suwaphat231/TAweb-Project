@@ -165,7 +165,7 @@ async def extract_student_information(file: UploadFile = File(...)):
         processed_image = preprocess_image(file_bytes)
         ocr_results = extract_text(processed_image)
 
-        fields, confidence = extract_student_info(ocr_results)
+        fields, confidence, page_kind = extract_student_info(ocr_results)
 
         return StudentInfoExtractResult(
             student_id=fields.get("student_id"),
@@ -176,6 +176,7 @@ async def extract_student_information(file: UploadFile = File(...)):
             faculty=fields.get("faculty"),
             campus=fields.get("campus"),
             student_status=fields.get("student_status"),
+            page_kind=page_kind,
             confidence=round(confidence, 3),
         )
     except HTTPException:

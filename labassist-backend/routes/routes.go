@@ -119,6 +119,10 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			instructor.GET("/instructor/notifications", teacherH.MyNotifications)
 			instructor.PUT("/instructor/notifications/read-all", teacherH.MarkAllRead)
 			instructor.PUT("/instructor/notifications/:id/read", teacherH.MarkRead)
+			// Makeup days for work days that fall on a holiday
+			instructor.GET("/instructor/makeup-days", teacherH.MyMakeupDays)
+			instructor.POST("/instructor/occurrences/:id/makeup", teacherH.ChooseMakeupDay)
+			instructor.POST("/instructor/occurrences/:id/no-makeup", teacherH.DeclineMakeupDay)
 			// Lab Boy performance reports (filed by the course's instructor)
 			instructor.GET("/instructor/reports", reportH.ListMine)
 			instructor.POST("/instructor/reports", reportH.CreateReport)
@@ -205,6 +209,9 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			staffGroup.PATCH("/staff/occurrences/:id", staffH.PatchOccurrence)
 			staffGroup.DELETE("/staff/occurrences/:id", staffH.DeleteOccurrenceHandler)
 			staffGroup.POST("/staff/occurrences/:id/reschedule", staffH.RescheduleOccurrence)
+			staffGroup.GET("/staff/cases/:id/makeup-days", staffH.ListCaseMakeupDays)
+			staffGroup.POST("/staff/occurrences/:id/makeup", staffH.StaffChooseMakeupDay)
+			staffGroup.POST("/staff/occurrences/:id/no-makeup", staffH.StaffDeclineMakeupDay)
 
 			// Monthly periods
 			staffGroup.GET("/staff/cases/:id/monthly-periods", staffH.ListMonthlyPeriods)

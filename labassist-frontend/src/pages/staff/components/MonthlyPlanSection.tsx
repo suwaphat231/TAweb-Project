@@ -6,6 +6,7 @@ import type {
   WorkOccurrence, OccurrenceStatus, PatchOccurrencePayload,
   AddGroupMonthOccurrencePayload, CalendarDate,
 } from '../../../types'
+import { DateInput } from '../../../components/ui/DateInput'
 
 const MONTHS_TH = [
   'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
@@ -631,8 +632,7 @@ function AddOccurrenceForm({
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
         <div>
           <label style={{ display: 'block', fontSize: 11, color: 'var(--ink-500)', marginBottom: 4 }}>วันที่</label>
-          <input
-            type="date"
+          <DateInput
             value={form.date}
             onChange={(e) => onChange({ ...form, date: e.target.value })}
             className="form-input"
@@ -942,8 +942,7 @@ function OccurrenceRows({
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
               <div>
                 <label style={labelStyle}>วันที่</label>
-                <input
-                  type="date"
+                <DateInput
                   value={editForm.date}
                   onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
                   className="form-input"
@@ -1013,8 +1012,7 @@ function OccurrenceRows({
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
               <div>
                 <label style={labelStyle}>วันที่ใหม่</label>
-                <input
-                  type="date"
+                <DateInput
                   value={rescheduleForm.new_date}
                   onChange={(e) => setRescheduleForm({ ...rescheduleForm, new_date: e.target.value })}
                   className="form-input"

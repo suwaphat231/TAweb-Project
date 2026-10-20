@@ -283,6 +283,42 @@ select.slot-control { width: 100%; cursor: pointer; }
   transition: background .15s, color .15s;
 }
 .report-icon-btn:hover { background: var(--red-bg); color: var(--red); }
+.grade-dropzone {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  min-height: 168px; padding: 24px 16px; text-align: center;
+  border: 1.5px dashed var(--primary-100); border-radius: 12px; background: var(--primary-50);
+  cursor: pointer; transition: border-color .15s, background .15s;
+}
+.grade-dropzone:hover, .grade-dropzone.is-dragging { border-color: var(--primary); background: var(--primary-100); }
+.grade-dropzone:has(~ input.sr-only:focus-visible) { outline: 2px solid var(--primary); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .grade-dropzone { transition: none; } }
+.profile-fields {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px 24px; margin: 0;
+}
+.profile-fields dd { margin: 0; }
+.profile-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 960px) { .profile-layout { grid-template-columns: minmax(0, 1fr); } }
+.profile-avatar-btn {
+  position: absolute; right: -2px; bottom: -2px; width: 36px; height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  border: 3px solid #fff; border-radius: 50%; background: var(--primary); color: #fff;
+  cursor: pointer; box-shadow: var(--shadow-md); transition: background .15s;
+}
+.profile-avatar-btn:hover:not(:disabled) { background: var(--primary-700); }
+.profile-avatar-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.profile-avatar-btn:disabled { cursor: progress; }
+.profile-spinner {
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; animation: profile-spin .8s linear infinite;
+}
+@keyframes profile-spin { to { transform: rotate(360deg); } }
+.profile-tab { min-height: 44px; }
+.profile-tab:hover { color: var(--primary) !important; }
+.profile-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; border-radius: 6px 6px 0 0; }
+@media (prefers-reduced-motion: reduce) {
+  .profile-avatar-btn, .profile-tab { transition: none !important; }
+  .profile-spinner { animation-duration: 2s; }
+}
 
 .report-card-link {
   text-align: left; background: var(--bg-card); border: 1.5px solid var(--line); border-radius: var(--radius-card);

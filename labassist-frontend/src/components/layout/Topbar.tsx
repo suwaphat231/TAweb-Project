@@ -2,8 +2,9 @@ import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../../hooks/useAuth'
+import { useLogout } from '../../hooks/useLogout'
 import { Avatar } from '../ui/Avatar'
-import { notificationApi, instructorApi, authApi } from '../../services/api'
+import { notificationApi, instructorApi } from '../../services/api'
 import type { Notification } from '../../types'
 
 interface Props {
@@ -22,10 +23,10 @@ const routeMeta: Record<string, { title: string; breadcrumb: string }> = {
   '/instructor/courses':  { title: 'วิชาของฉัน',         breadcrumb: 'อาจารย์' },
   '/instructor/announce': { title: 'จัดการประกาศ',       breadcrumb: 'อาจารย์' },
   '/instructor/select':   { title: 'คัดเลือกผู้สมัคร',   breadcrumb: 'อาจารย์' },
+  '/instructor/makeup-days': { title: 'วันชดเชย',      breadcrumb: 'อาจารย์' },
   '/instructor/profile':  { title: 'ข้อมูลส่วนตัว',      breadcrumb: 'อาจารย์' },
   '/staff/home':          { title: 'ภาพรวม',              breadcrumb: 'เจ้าหน้าที่' },
   '/staff/review':        { title: 'ตรวจสอบแบบฟอร์ม',   breadcrumb: 'เจ้าหน้าที่' },
-  '/staff/docs':          { title: 'จัดการเอกสาร',        breadcrumb: 'เจ้าหน้าที่' },
   '/staff/profile':       { title: 'ข้อมูลส่วนตัว',       breadcrumb: 'เจ้าหน้าที่' },
   '/admin/overview':      { title: 'ภาพรวมระบบ',         breadcrumb: 'ผู้ดูแลระบบ' },
   '/admin/courses':       { title: 'จัดการรายวิชา',      breadcrumb: 'ผู้ดูแลระบบ' },
@@ -48,7 +49,8 @@ const PROFILE_PATH: Record<string, string> = {
 // Avatar button with a small account menu: who is signed in, a shortcut to
 // the profile page and "ออกจากระบบ" (same flow as the sidebar's logout).
 function UserMenu() {
-  const { user, logout } = useAuth()
+  const { user } = useAuth()
+  const { requestLogout, logoutDialog } = useLogout()
   const navigate = useNavigate()
   const [isOpen, setIsOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -72,11 +74,9 @@ function UserMenu() {
   if (!user) return null
   const profilePath = PROFILE_PATH[user.role]
 
-  async function handleLogout() {
+  function handleLogout() {
     setIsOpen(false)
-    try { await authApi.logout() } catch { /* ignore */ }
-    logout()
-    navigate('/login')
+    requestLogout()
   }
 
   const itemStyle: React.CSSProperties = {
@@ -140,6 +140,7 @@ function UserMenu() {
           </button>
         </div>
       )}
+      {logoutDialog}
     </div>
   )
 }

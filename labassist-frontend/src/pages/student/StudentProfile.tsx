@@ -15,6 +15,8 @@ function TabButton({
 }) {
   return (
     <button
+      type="button"
+      className="profile-tab"
       role="tab"
       id={id}
       aria-selected={active}
@@ -22,7 +24,7 @@ function TabButton({
       onClick={onClick}
       style={{
         padding: '10px 18px',
-        fontSize: 14,
+        fontSize: 15,
         fontWeight: 600,
         background: 'none',
         border: 'none',
@@ -55,8 +57,8 @@ export default function StudentProfile() {
         <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 4 }}>
           โปรไฟล์ของฉัน
         </h1>
-        <p style={{ fontSize: 13, color: 'var(--ink-500)' }}>
-          จัดการข้อมูลส่วนตัวและตารางเรียน
+        <p style={{ fontSize: 14, color: 'var(--ink-500)' }}>
+          จัดการข้อมูลส่วนตัว เอกสารยืนยันสถานภาพ และตารางเรียน
         </p>
       </div>
 

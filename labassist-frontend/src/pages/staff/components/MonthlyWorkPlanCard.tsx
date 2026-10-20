@@ -6,6 +6,7 @@ import type {
   OccurrenceStatus, GroupWeekDaySlot, UpdateScheduleGroupPayload, PatchOccurrencePayload,
 } from '../../../types'
 import { formatThaiDate, thaiDayShort as thaiDayShortFn, toDateOnly } from '../../../utils/thaiDate'
+import { DateInput } from '../../../components/ui/DateInput'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -107,7 +108,10 @@ export function MonthlyWorkPlanCard({ caseId, group, entry, calDates, isReadOnly
   const [rsEnd, setRsEnd] = useState('')
   const [rsReason, setRsReason] = useState('')
 
-  function inv() { qc.invalidateQueries({ queryKey: ['monthly-plan', caseId] }) }
+  function inv() {
+    qc.invalidateQueries({ queryKey: ['monthly-plan', caseId] })
+    qc.invalidateQueries({ queryKey: ['case-makeup-days', caseId] })
+  }
 
   const genMut = useMutation({
     mutationFn: () => staffApi.generateMonthOccurrences(caseId, group.id, sgm.year, sgm.month),
@@ -317,7 +321,7 @@ export function MonthlyWorkPlanCard({ caseId, group, entry, calDates, isReadOnly
               padding: '8px 10px', background: 'var(--line-soft)', borderRadius: 'var(--radius-input)',
               marginBottom: 8, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap',
             }}>
-              <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
+              <DateInput value={newDate} onChange={e => setNewDate(e.target.value)}
                 className="form-input" style={{ width: 148 }} />
               <input type="time" value={newStart} onChange={e => setNewStart(e.target.value)}
                 className="form-input" style={{ width: 104 }} />
@@ -404,6 +408,14 @@ export function MonthlyWorkPlanCard({ caseId, group, entry, calDates, isReadOnly
                                 → {thaiFmt(occ.rescheduled_to_date)}
                               </span>
                             )}
+                            {occ.rescheduled_from_occurrence_id && occ.reason?.startsWith('ชดเชยวันหยุด') && (
+                              <span className="badge badge-green" style={{ marginLeft: 5, fontSize: 10 }} title={occ.reason}>
+                                ชดเชย (แทน {occ.reason.replace('ชดเชยวันหยุด ', '')})
+                              </span>
+                            )}
+                            {occ.status === 'cancelled_holiday' && occ.no_makeup && (
+                              <span style={{ fontSize: 11, color: 'var(--ink-500)', marginLeft: 6 }}>ไม่ชดเชย</span>
+                            )}
                           </td>
                           {showDayActions && (
                             <td style={{ padding: '7px 10px', textAlign: 'right' }}>
@@ -464,7 +476,7 @@ export function MonthlyWorkPlanCard({ caseId, group, entry, calDates, isReadOnly
                               style={{ padding: '8px 10px', background: 'var(--blue-bg)' }}>
                               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--blue)' }}>เลื่อนเป็น:</span>
-                                <input type="date" value={rsDate} onChange={e => setRsDate(e.target.value)}
+                                <DateInput value={rsDate} onChange={e => setRsDate(e.target.value)}
                                   className="form-input" style={{ width: 148, fontSize: 12, padding: '3px 8px' }} />
                                 <input type="time" value={rsStart} onChange={e => setRsStart(e.target.value)}
                                   className="form-input" style={{ width: 100, fontSize: 12, padding: '3px 8px' }} />

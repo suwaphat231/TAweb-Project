@@ -70,6 +70,11 @@ type Application struct {
 	// blocks submission per Rule 3.
 	OcrWarning *string `gorm:"type:text" json:"ocr_warning,omitempty"`
 
+	// GradeFromTranscript marks a Grade taken from the grades the student
+	// already submitted on the grade-check page. On postings that require
+	// grade proof it stands in for the GradeProof image.
+	GradeFromTranscript bool `gorm:"not null;default:false" json:"grade_from_transcript,omitempty"`
+
 	// Computed fields (not in DB)
 	HasGradeProof      bool    `gorm:"-" json:"has_grade_proof"`
 	RequireGradeProof  bool    `gorm:"-" json:"require_grade_proof"`

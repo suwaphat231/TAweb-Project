@@ -39,7 +39,7 @@ export function ConfirmedHistory({ applicationId, count }: { applicationId: numb
                 {categoryLabel[rec.category]} · {formatDate(rec.incident_date)}
               </div>
               <div style={{ fontSize: 12, color: 'var(--ink-500)', margin: '2px 0 6px' }}>
-                {rec.course_code} {rec.course_title}{rec.course_semester ? ` (${rec.course_semester}/${rec.course_academic_year})` : ''} · ยืนยันเมื่อ {formatDate(rec.confirmed_at)}
+                {rec.course_code} {rec.course_title}{rec.course_semester ? ` (ภาคเรียนที่ ${rec.course_semester})` : ''} · ยืนยันเมื่อ {formatDate(rec.confirmed_at)}
                 {rec.student_responded && ' · นักศึกษาได้ส่งคำชี้แจงแล้ว'}
               </div>
               <div style={{ color: 'var(--ink-700)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{rec.description}</div>

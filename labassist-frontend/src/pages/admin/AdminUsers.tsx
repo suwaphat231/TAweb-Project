@@ -245,7 +245,7 @@ export default function AdminUsers() {
                   {c.status !== 'draft' && <StatusBadge value={c.status} />}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 6 }}>
-                  ภาค {c.semester}/{c.academic_year} · Lab Boy {c.labboy_accepted}/{c.labboy_slots}
+                  ภาคเรียนที่ {c.semester} · Lab Boy {c.labboy_accepted}/{c.labboy_slots}
                 </div>
               </div>
             ))}

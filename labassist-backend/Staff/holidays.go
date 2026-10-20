@@ -152,6 +152,12 @@ func (h *Handler) CreateCalendarDate(c *gin.Context) {
 		}{created, "บันทึกวันหยุดแล้ว แต่ยกเลิกวันทำงานที่ตรงกับวันหยุดไม่สำเร็จ กรุณาตรวจสอบแผนงาน"})
 		return
 	}
+	// Instructors of the courses that lost a work day choose makeup days.
+	if notifs, err := database.HolidayClashNotifications(created); err != nil {
+		log.Printf("holiday %d clash notifications: %v", created.ID, err)
+	} else {
+		database.CreateNotifications(notifs)
+	}
 	c.JSON(http.StatusCreated, created)
 }
 

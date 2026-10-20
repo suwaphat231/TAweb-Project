@@ -8,8 +8,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// enrichConflicts stamps ConflictDay on each course that overlaps the student's
-// confirmed term schedule, reusing cached TermSchedule lookups per term.
+// enrichConflicts stamps ScheduleMissing on each course whose term the student
+// has no saved schedule for, and ConflictDay on each course that overlaps the
+// student's confirmed term schedule, reusing cached lookups per term.
 func enrichConflicts(studentID uint, courses []models.Course) []models.Course {
 	type termKey struct {
 		Semester     string
@@ -21,8 +22,12 @@ func enrichConflicts(studentID uint, courses []models.Course) []models.Course {
 		k := termKey{course.Semester, course.AcademicYear}
 		ts, seen := cache[k]
 		if !seen {
-			ts = database.BestTermSchedule(studentID, course.Semester, course.AcademicYear)
+			ts = database.TermScheduleByUserTerm(studentID, course.Semester, course.AcademicYear)
 			cache[k] = ts
+		}
+		if !ts.Confirmed() {
+			courses[i].ScheduleMissing = true
+			continue
 		}
 		if day := database.ConflictingDay(course.Schedule, ts); day != "" {
 			courses[i].ConflictDay = day

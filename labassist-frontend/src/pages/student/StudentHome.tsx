@@ -10,13 +10,14 @@ import { Button } from '../../components/ui/Button'
 import { ErrorState } from '../../components/ui/ErrorState'
 import { Avatar } from '../../components/ui/Avatar'
 import { CourseCard } from '../../components/course/CourseCard'
+import { ScheduleRequiredBanner } from '../../components/course/ScheduleRequiredBanner'
 import { useApplyLabboy } from '../../hooks/useApplyLabboy'
 import { groupCourseSections, getAppliedSections } from '../../utils/courseGrouping'
 import { cleanCourseTitle } from '../../utils/courseTitle'
 
 export default function StudentHome() {
   const { user } = useAuth()
-  const { openApply, modal, scheduleConfirmed } = useApplyLabboy()
+  const { openApply, modal } = useApplyLabboy()
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['student-dashboard'],
     queryFn: studentApi.dashboard,
@@ -26,10 +27,7 @@ export default function StudentHome() {
     queryFn: studentApi.applications,
   })
 
-  const bannerInfo = [
-    user?.student_id,
-    user?.gpa !== undefined && `GPA ${user.gpa.toFixed(2)}`,
-  ].filter(Boolean).join(' · ')
+  const bannerInfo = user?.student_id ?? ''
 
   return (
     <div>
@@ -50,22 +48,7 @@ export default function StudentHome() {
         </div>
       </div>
 
-      {scheduleConfirmed === false && (
-        <div style={{
-          display: 'flex', alignItems: 'flex-start', gap: 10, margin: '16px 0',
-          padding: '12px 16px', borderRadius: 8,
-          background: 'var(--amber-bg)', color: 'var(--amber)', fontSize: 13,
-        }}>
-          <span aria-hidden="true" style={{ fontSize: 16, lineHeight: 1 }}>!</span>
-          <div>
-            <div style={{ fontWeight: 700, marginBottom: 3 }}>กรุณากรอกตารางเรียนก่อนสมัคร Lab Boy</div>
-            <div>กรอกและบันทึกข้อมูลตารางเรียนในหน้าโปรไฟล์ก่อนจึงจะสมัครรายวิชาได้</div>
-            <Link to="/student/profile" style={{ display: 'inline-block', marginTop: 6, color: 'var(--primary)', fontWeight: 700 }}>
-              ไปกรอกตารางเรียน
-            </Link>
-          </div>
-        </div>
-      )}
+      <ScheduleRequiredBanner courses={data?.recent_courses ?? []} style={{ margin: '16px 0' }} />
 
       {/* Stat cards */}
       {isLoading ? (
@@ -104,7 +87,6 @@ export default function StudentHome() {
                   group={group}
                   appliedSections={getAppliedSections(group, myApps)}
                   onApply={openApply}
-                  scheduleRequired={scheduleConfirmed === false}
                 />
               ))}
             </div>

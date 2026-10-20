@@ -344,28 +344,34 @@ func InstructorCourses(instructorID uint, fullName string, isAdmin bool, hasLab 
 
 func CreateCourse(c models.Course) models.Course {
 	if err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Omit(clause.Associations).Create(&c).Error; err != nil {
-			return err
-		}
-		// The course's own instructor (matched from the import file, or the
-		// instructor creating it) owns it — an imported link is what
-		// InstructorOwnsCourse checks. self_added is only for courses an
-		// instructor links themselves to via AddCourseRelation.
-		if c.InstructorID != nil && *c.InstructorID != 0 {
-			ci := models.CourseInstructor{
-				CourseID:     c.ID,
-				InstructorID: *c.InstructorID,
-				Source:       models.CourseInstructorImported,
-			}
-			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&ci).Error; err != nil {
-				return err
-			}
-		}
-		return syncPostingTx(tx, c)
+		return createCourseTx(tx, &c)
 	}); err != nil {
 		return models.Course{}
 	}
 	return courseWithInstructor(c)
+}
+
+// createCourseTx saves a course with its instructor link and posting inside
+// the caller's transaction.
+func createCourseTx(tx *gorm.DB, c *models.Course) error {
+	if err := tx.Omit(clause.Associations).Create(c).Error; err != nil {
+		return err
+	}
+	// The course's own instructor (matched from the import file, or the
+	// instructor creating it) owns it — an imported link is what
+	// InstructorOwnsCourse checks. self_added is only for courses an
+	// instructor links themselves to via AddCourseRelation.
+	if c.InstructorID != nil && *c.InstructorID != 0 {
+		ci := models.CourseInstructor{
+			CourseID:     c.ID,
+			InstructorID: *c.InstructorID,
+			Source:       models.CourseInstructorImported,
+		}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&ci).Error; err != nil {
+			return err
+		}
+	}
+	return syncPostingTx(tx, *c)
 }
 
 func UpdateCourse(id uint, fn func(c *models.Course)) (models.Course, bool) {
@@ -554,11 +560,16 @@ func CountCourses() (int64, error) {
 	return n, err
 }
 
+// CountOpenCourses counts subjects open for applications. Each section (and
+// each meeting day of a section) is its own course row and posting, so one
+// subject with two open sections still counts once: distinct code per term.
 func CountOpenCourses() (int64, error) {
 	var n int64
 	err := DB.Model(&models.Posting{}).
-		Where("status IN ? AND is_active = true", []models.CourseStatus{models.StatusOpen, models.StatusClosingSoon}).
-		Count(&n).Error
+		Select("COUNT(DISTINCT courses.code, courses.semester, courses.academic_year)").
+		Joins("JOIN courses ON courses.id = postings.course_id").
+		Where("postings.status IN ? AND postings.is_active = true", []models.CourseStatus{models.StatusOpen, models.StatusClosingSoon}).
+		Scan(&n).Error
 	return n, err
 }
 
@@ -584,7 +595,7 @@ func RecentOpenCourses(limit int) ([]models.Course, error) {
 var instructorTitlePrefixes = []string{
 	"ผู้ช่วยศาสตราจารย์", "รองศาสตราจารย์", "ศาสตราจารย์",
 	"ผศ.", "ผศ", "รศ.", "รศ", "ศ.",
-	"อาจารย์", "ดร.", "ดร", "นางสาว", "นาง", "นาย",
+	"อาจารย์", "อ.", "ดร.", "ดร", "นางสาว", "นาง", "นาย",
 }
 
 func NormalizeInstructorName(s string) string {
@@ -767,7 +778,9 @@ func RemoveCourseRelation(relationID, instructorID uint) bool {
 // excluding courses with zero lab hours. Backed by the M:N course_instructors
 // table so only explicitly linked courses appear (nil-instructor gap closed).
 func CoursesTaughtBy(instructorID uint, fullName string, isAdmin bool) ([]models.Course, error) {
-	query := DB.Table("courses").Order("courses.id DESC")
+	// Newest term first, so each code's entry (and the term the announce form
+	// starts on) is its latest term, not whichever term was imported last.
+	query := DB.Table("courses").Order("courses.academic_year DESC, courses.semester DESC, courses.id DESC")
 	if !isAdmin {
 		query = query.Joins(
 			"JOIN course_instructors ci ON ci.course_id = courses.id AND ci.instructor_id = ? AND ci.archived_at IS NULL",
@@ -1245,8 +1258,10 @@ func ReviewApplicationTx(appID uint, newStatus models.AppStatus, applyFields fun
 				return nil
 			}
 			// Enforce grade-proof requirement inside the lock so a direct API
-			// call or a race between upload and review cannot bypass it.
-			if posting.RequireGradeProof && len(app.GradeProofData) == 0 {
+			// call or a race between upload and review cannot bypass it. A
+			// grade taken from the student's grade-check transcript counts
+			// as proof too.
+			if posting.RequireGradeProof && len(app.GradeProofData) == 0 && !app.GradeFromTranscript {
 				res.MissingProof = true
 				return nil
 			}

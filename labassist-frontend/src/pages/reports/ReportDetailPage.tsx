@@ -200,7 +200,7 @@ export default function ReportDetailPage() {
           <Section title="รายละเอียดเหตุการณ์">
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 16, paddingBottom: 16, marginBottom: 16, borderBottom: '1px solid var(--line-soft)' }}>
               {!isStudent && <Field label="นักศึกษา" value={<>{r.student_name}<div style={{ color: 'var(--ink-500)', fontSize: 13 }}>{r.student_code}</div></>} />}
-              <Field label="รายวิชา" value={<>{r.course_code}{r.course_section ? ` · Sec ${r.course_section}` : ''}<div style={{ color: 'var(--ink-500)', fontSize: 13 }}>{r.course_title}{r.course_semester ? ` (${r.course_semester}/${r.course_academic_year})` : ''}</div></>} />
+              <Field label="รายวิชา" value={<>{r.course_code}{r.course_section ? ` · Sec ${r.course_section}` : ''}<div style={{ color: 'var(--ink-500)', fontSize: 13 }}>{r.course_title}{r.course_semester ? ` (ภาคเรียนที่ ${r.course_semester})` : ''}</div></>} />
               {!isStudent && <Field label="ผู้รายงาน" value={r.reporter_name} />}
               <Field label="วันที่เกิดเหตุ" value={formatDate(r.incident_date)} />
               <Field label="ส่งรายงานเมื่อ" value={formatDateTime(r.submitted_at)} />

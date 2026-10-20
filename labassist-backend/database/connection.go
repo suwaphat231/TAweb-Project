@@ -577,6 +577,15 @@ func backfillCourseInstructors(db *gorm.DB) error {
 					// Zero matches → no account; >1 → ambiguous first name. Skip both.
 					continue
 				}
+				// A course whose owner could not be matched when it was
+				// seeded takes its first matched instructor as owner.
+				if c.InstructorID == nil || *c.InstructorID == 0 {
+					id := matches[0].ID
+					c.InstructorID = &id
+					if err := db.Model(&models.Course{}).Where("id = ?", c.ID).Update("instructor_id", id).Error; err != nil {
+						return fmt.Errorf("backfillCourseInstructors set owner: %w", err)
+					}
+				}
 				k := key{c.ID, matches[0].ID}
 				if !seen[k] {
 					seen[k] = true
@@ -750,6 +759,9 @@ func Connect(cfg *config.Config) error {
 	if err := seedCoursesFromClasslist(); err != nil {
 		return fmt.Errorf("seed courses from classlist: %w", err)
 	}
+	if err := removeExcludedCourses(); err != nil {
+		return fmt.Errorf("remove excluded courses: %w", err)
+	}
 	if err := backfillCourseInstructors(db); err != nil {
 		return fmt.Errorf("backfill course instructors: %w", err)
 	}
@@ -765,6 +777,9 @@ func Connect(cfg *config.Config) error {
 	}
 	if err := mergeSameDaySlots(); err != nil {
 		return fmt.Errorf("merge same-day course slots: %w", err)
+	}
+	if err := removeQuizDayCourses(); err != nil {
+		return fmt.Errorf("remove quiz day courses: %w", err)
 	}
 
 	if err := seedAdminAccount(); err != nil {

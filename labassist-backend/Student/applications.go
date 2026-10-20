@@ -30,13 +30,18 @@ type WithdrawRequest struct {
 
 // UpdateProfileRequest is the request body for updating student profile
 type UpdateProfileRequest struct {
-	FullName  *string `json:"full_name,omitempty" example:"สมชาย ใจดี"`
+	// FullName is the Thai name — the primary name shown everywhere.
+	FullName *string `json:"full_name,omitempty" example:"สมชาย ใจดี"`
+	// FullNameEn is the English spelling; "" clears it.
+	FullNameEn *string `json:"full_name_en,omitempty" example:"Somchai Jaidee"`
 	StudentID *string `json:"student_id,omitempty" example:"640710112"`
 	Year      *int    `json:"year,omitempty" binding:"omitempty,min=0,max=4" example:"3"`
 	Faculty   *string `json:"faculty,omitempty" example:"วิทยาการคอมพิวเตอร์"`
 	// Username is the login name used by /auth/login. Passwords are changed
 	// through /auth/password/* instead.
 	Username *string `json:"username,omitempty" example:"somchai"`
+	// Phone is the student's contact number; "" clears it.
+	Phone *string `json:"phone,omitempty" example:"0812345678"`
 }
 
 // StudentDashboard godoc
@@ -129,23 +134,34 @@ func (h *Handler) Apply(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "course is not accepting applications"})
 		return
 	}
-	hasSchedule, err := database.HasConfirmedTermSchedule(studentID.(uint))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+	// Only a student whose confirmed registrar document says สถานภาพ ปกติ
+	// may apply.
+	if status := database.VerifiedStudentStatus(studentID.(uint)); !database.IsNormalStudentStatus(status) {
+		msg := "กรุณาแนบเอกสารแสดงสถานภาพนักศึกษาและยืนยันข้อมูลในหน้าโปรไฟล์ก่อนสมัคร Lab Boy"
+		if status != "" {
+			msg = "สมัคร Lab Boy ได้เฉพาะนักศึกษาที่มีสถานภาพปกติ (สถานภาพของคุณ: " + status + ")"
+		}
+		c.JSON(http.StatusForbidden, gin.H{"error": msg, "student_status_required": true})
 		return
 	}
-	if !hasSchedule {
+	// The profile name must match the confirmed registrar document.
+	if me, _ := database.UserByID(studentID.(uint)); !database.SamePersonName(database.VerifiedFullName(studentID.(uint)), me.FullName) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "ชื่อ-นามสกุลในโปรไฟล์ต้องตรงกับเอกสารจากระบบทะเบียน กรุณายืนยันเอกสารในหน้าโปรไฟล์ก่อนสมัคร", "student_status_required": true})
+		return
+	}
+
+	// The student must have saved a schedule for this course's own term — a
+	// term 1 schedule says nothing about clashes with a term 2 course.
+	ts := database.TermScheduleByUserTerm(studentID.(uint), course.Semester, course.AcademicYear)
+	if !ts.Confirmed() {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error":             "กรุณากรอกและบันทึกตารางเรียนในหน้าโปรไฟล์ก่อนสมัคร Lab Boy",
+			"error":             fmt.Sprintf("กรุณากรอกและบันทึกตารางเรียนภาคเรียนที่ %s ในหน้าโปรไฟล์ก่อนสมัครวิชานี้", course.Semester),
 			"schedule_required": true,
 		})
 		return
 	}
 
-	// Block if the student's confirmed term schedule conflicts with this course.
-	// Falls back to any set TermSchedule when the course-specific term has no
-	// entry, catching the common case of a schedule saved under the wrong semester.
-	ts := database.BestTermSchedule(studentID.(uint), course.Semester, course.AcademicYear)
+	// Block if the student's term schedule conflicts with this course.
 	if day := database.ConflictingDay(course.Schedule, ts); day != "" {
 		c.JSON(http.StatusConflict, gin.H{
 			"error":             "ตารางเรียนของคุณมีวิชาที่เรียนใน" + day + " ซึ่งตรงกับเวลาของวิชานี้ กรุณาตรวจสอบตารางเรียนของคุณในหน้าโปรไฟล์",
@@ -155,13 +171,27 @@ func (h *Handler) Apply(c *gin.Context) {
 		return
 	}
 
-	app, err := database.CreateApplication(models.Application{
+	newApp := models.Application{
 		StudentID:   studentID.(uint),
 		CourseID:    body.CourseID,
 		RoleApplied: body.RoleApplied,
 		Status:      models.AppPending,
 		Grade:       body.Grade,
-	})
+	}
+	// On postings that require grade proof, a grade the student already
+	// submitted on the grade-check page stands in for the image — it wins
+	// over the self-reported grade.
+	if course.RequireGradeProof {
+		if grade, ok := database.TranscriptGrade(studentID.(uint), course.Code); ok {
+			newApp.Grade = &grade
+			newApp.GradeFromTranscript = true
+			if min := minGradeFromRequirements(course.Requirements); min != "" && !gradeAtLeast(grade, min) {
+				warn := fmt.Sprintf("เกรดจากใบเกรดที่ยื่นไว้ (%s) ต่ำกว่าเกณฑ์ขั้นต่ำ (%s)", grade, min)
+				newApp.OcrWarning = &warn
+			}
+		}
+	}
+	app, err := database.CreateApplication(newApp)
 	if err != nil {
 		if err == database.ErrConflict {
 			c.JSON(http.StatusConflict, gin.H{"error": "already applied"})
@@ -309,7 +339,7 @@ func (h *Handler) ApplicationHistory(c *gin.Context) {
 func (h *Handler) GetProfile(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
 	user, _ := database.UserByID(studentID.(uint))
-	c.JSON(http.StatusOK, user)
+	c.JSON(http.StatusOK, database.WithTranscriptCourseTitles(user))
 }
 
 // UpdateProfile godoc
@@ -334,11 +364,37 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณากรอกชื่อ-นามสกุล"})
 			return
 		}
+		if !database.HasThaiLetter(trimmed) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณากรอกชื่อ-นามสกุลเป็นภาษาไทย"})
+			return
+		}
 		body.FullName = &trimmed
+	}
+	if body.FullNameEn != nil {
+		trimmed := strings.Join(strings.Fields(*body.FullNameEn), " ")
+		if trimmed != "" && !database.IsEnglishName(trimmed) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ชื่อ-นามสกุลภาษาอังกฤษต้องเป็นตัวอักษรภาษาอังกฤษเท่านั้น"})
+			return
+		}
+		body.FullNameEn = &trimmed
+	}
+	// Once a registrar document is confirmed, the names are locked to it.
+	verifiedTh, verifiedEn := database.VerifiedNames(studentID.(uint))
+	if body.FullName != nil && verifiedTh != "" && !database.SamePersonName(verifiedTh, *body.FullName) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ชื่อ-นามสกุล (ไทย) ต้องตรงกับเอกสารจากระบบทะเบียน (" + verifiedTh + ") — หากชื่อเปลี่ยน กรุณาแนบเอกสารใหม่"})
+		return
+	}
+	if body.FullNameEn != nil && verifiedEn != "" && !database.SamePersonName(verifiedEn, *body.FullNameEn) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ชื่อ-นามสกุล (อังกฤษ) ต้องตรงกับเอกสารจากระบบทะเบียน (" + verifiedEn + ") — หากชื่อเปลี่ยน กรุณาแนบเอกสารใหม่"})
+		return
 	}
 
 	if body.StudentID != nil {
-		trimmed := strings.TrimSpace(*body.StudentID)
+		trimmed, ok := database.NormalizeStudentID(*body.StudentID)
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "รหัสนักศึกษาต้องเป็นตัวเลข 9-10 หลัก (ตรวจว่าไม่ได้พิมพ์ด้วยแป้นภาษาไทย)"})
+			return
+		}
 		body.StudentID = &trimmed
 		if trimmed != "" {
 			if owner, ok := database.UserByStudentID(trimmed); ok && owner.ID != studentID.(uint) {
@@ -346,6 +402,15 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 				return
 			}
 		}
+	}
+
+	if body.Phone != nil {
+		phone, ok := normalizePhone(*body.Phone)
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "เบอร์ติดต่อต้องเป็นตัวเลข 9-10 หลัก"})
+			return
+		}
+		body.Phone = &phone
 	}
 
 	var username *string
@@ -367,6 +432,9 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 		if body.FullName != nil {
 			u.FullName = *body.FullName
 		}
+		if body.FullNameEn != nil {
+			u.FullNameEn = *body.FullNameEn
+		}
 		if body.StudentID != nil {
 			if *body.StudentID == "" {
 				u.StudentID = nil
@@ -380,6 +448,13 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 		}
 		if body.Faculty != nil {
 			u.Faculty = body.Faculty
+		}
+		if body.Phone != nil {
+			if *body.Phone == "" {
+				u.Phone = nil
+			} else {
+				u.Phone = body.Phone
+			}
 		}
 	})
 	if !ok {

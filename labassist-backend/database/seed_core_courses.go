@@ -47,9 +47,10 @@ func ProgramForFaculty(faculty *string) string {
 	return ""
 }
 
-// CoreCoursesForProgram returns the courses the OCR feature should look for.
-// An empty program returns every course, deduplicated by code (the same course
-// is listed once per program, and the transcript only carries the code).
+// CoreCoursesForProgram returns the courses the OCR feature should look for:
+// the program's core courses plus every course in the courses table. An empty
+// program takes every program's core courses. The result is deduplicated by
+// code (the transcript only carries the code).
 func CoreCoursesForProgram(program string) []models.CoreCourse {
 	var courses []models.CoreCourse
 	q := DB.Order("code")
@@ -59,10 +60,6 @@ func CoreCoursesForProgram(program string) []models.CoreCourse {
 	if err := q.Find(&courses).Error; err != nil {
 		return nil
 	}
-	if program != "" {
-		return courses
-	}
-
 	seen := make(map[string]bool, len(courses))
 	unique := courses[:0]
 	for _, c := range courses {
@@ -71,6 +68,21 @@ func CoreCoursesForProgram(program string) []models.CoreCourse {
 		}
 		seen[c.Code] = true
 		unique = append(unique, c)
+	}
+
+	// Every course in the classlist can be posted for Lab Boy and may ask for
+	// a grade, so look for those codes too. Transcripts print 6-digit codes.
+	var offered []struct{ Code, Title string }
+	if err := DB.Raw(`SELECT code, MIN(title) AS title FROM courses
+		WHERE code REGEXP '^[0-9]{6}$' GROUP BY code ORDER BY code`).Scan(&offered).Error; err != nil {
+		return unique
+	}
+	for _, c := range offered {
+		if seen[c.Code] {
+			continue
+		}
+		seen[c.Code] = true
+		unique = append(unique, models.CoreCourse{Program: program, Code: c.Code, Title: c.Title})
 	}
 	return unique
 }

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { staffApi } from '../../services/api'
 import { FilterChips } from '../../components/ui/FilterChips'
@@ -7,7 +8,8 @@ import { Textarea } from '../../components/ui/Textarea'
 import { Button } from '../../components/ui/Button'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../hooks/useToast'
-import type { FormReview, ReviewStatus } from '../../types'
+import type { DocStatus, DocType, FormReview, ReviewStatus } from '../../types'
+import { docProgress, type DocProgress } from './staffCourseUtils'
 
 const STATUS_OPTIONS = [
   { value: '', label: 'ทั้งหมด' },
@@ -27,7 +29,53 @@ const statusLabel: Record<ReviewStatus, string> = {
   returned: 'ส่งกลับแก้ไข',
 }
 
+const STEP_SHORT: Partial<Record<DocType, string>> = {
+  hiring_notice:   'แบบฟอร์มแจ้งความประสงค์จ้าง',
+  approval_memo:   'บันทึกขออนุมัติจ้าง',
+  payment_request: 'บันทึกขออนุมัติเบิกจ่าย',
+  work_report:     'รายงานผลการปฏิบัติงาน',
+}
+
+const CURRENT_STATUS: Partial<Record<DocStatus | 'not_created', { label: string; color: string }>> = {
+  not_created:        { label: 'รอสร้างเอกสาร', color: '#92400E' },
+  draft:              { label: 'ร่างเอกสาร',    color: 'var(--blue)' },
+  generated:          { label: 'ร่างเอกสาร',    color: 'var(--blue)' },
+  approved:           { label: 'ร่างเอกสาร',    color: 'var(--blue)' },
+  pending:            { label: 'รอตรวจสอบ',     color: 'var(--primary)' },
+  awaiting_signature: { label: 'รอลงนาม',       color: '#92400E' },
+}
+
+function DocProgressCell({ p }: { p: DocProgress }) {
+  if (p.phase === 'form_pending') {
+    return <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>รอแบบฟอร์มผ่านการตรวจสอบ</span>
+  }
+  const st = CURRENT_STATUS[p.currentStatus] ?? CURRENT_STATUS.draft!
+  return (
+    <div style={{ minWidth: 190 }}>
+      <div style={{ display: 'flex', gap: 3, marginBottom: 6 }} aria-label={`ลงนามแล้ว ${p.signed} จาก ${p.total} ฉบับ`}>
+        {Array.from({ length: p.total }, (_, i) => (
+          <span key={i} style={{
+            flex: 1, height: 5, borderRadius: 3,
+            background: i < p.signed ? 'var(--green)' : i === p.signed && p.current ? 'var(--amber)' : 'var(--line)',
+          }} />
+        ))}
+      </div>
+      {p.phase === 'done' || !p.current ? (
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--green)' }}>เอกสารครบ {p.total} ฉบับ ลงนามแล้ว</div>
+      ) : (
+        <>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-900)' }}>
+            {p.current.step}/{p.total} {STEP_SHORT[p.current.docType] ?? p.current.label}
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: st.color, marginTop: 1 }}>{st.label}</div>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function StaffReview() {
+  const navigate = useNavigate()
   const qc = useQueryClient()
   const showToast = useToast()
   const [statusFilter, setStatusFilter] = useState('')
@@ -40,6 +88,15 @@ export default function StaffReview() {
     queryKey: ['staff-reviews', statusFilter, search],
     queryFn: () => staffApi.listReviews({ status: statusFilter || undefined, q: search || undefined }),
   })
+
+  const { data: allDocs = [] } = useQuery({
+    queryKey: ['staff-documents'],
+    queryFn: () => staffApi.listDocuments(),
+  })
+
+  function openCourse(form: FormReview) {
+    navigate(`/staff/course/${form.academic_year}/${form.semester}/${form.course_code}/${form.section}?course=${form.course_id}`)
+  }
 
   const verifyMut = useMutation({
     mutationFn: (courseId: number) => staffApi.verifyForm(courseId),
@@ -78,7 +135,7 @@ export default function StaffReview() {
   }
 
   return (
-    <div style={{ maxWidth: 1040, margin: '0 auto' }}>
+    <div style={{ maxWidth: 1200, margin: '0 auto' }}>
 
       {/* Page header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
@@ -87,7 +144,7 @@ export default function StaffReview() {
             ตรวจสอบแบบฟอร์ม
           </h1>
           <p style={{ fontSize: 13, color: 'var(--ink-400)' }}>
-            ตรวจสอบแบบฟอร์มแจ้งความประสงค์ที่อาจารย์ส่งมา
+            ตรวจสอบแบบฟอร์มแจ้งความประสงค์ที่อาจารย์ส่งมา และติดตามเอกสารของแต่ละรายวิชาว่าดำเนินการถึงขั้นไหนแล้ว
           </p>
         </div>
         {!isLoading && pendingCount > 0 && (
@@ -124,24 +181,26 @@ export default function StaffReview() {
 
       {/* Table */}
       <div style={{ background: '#fff', borderRadius: 'var(--radius-card)', overflow: 'auto', border: '1.5px solid var(--line)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960 }}>
           <thead>
             <tr style={{ background: 'var(--bg)', borderBottom: '1.5px solid var(--line)' }}>
-              {['รายวิชา / ตอน', 'อาจารย์ผู้สอน', 'ที่รับ / ที่เปิดรับ', 'วันที่ส่ง', 'สถานะ', ''].map((h) => (
+              {['รายวิชา / ตอน', 'อาจารย์ผู้สอน', 'ที่รับ / ที่เปิดรับ', 'วันที่ส่ง', 'แบบฟอร์ม', 'ความคืบหน้าเอกสาร', ''].map((h) => (
                 <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--ink-500)', whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={6} style={{ padding: 24 }}><Skeleton lines={4} height={14} /></td></tr>
+              <tr><td colSpan={7} style={{ padding: 24 }}><Skeleton lines={4} height={14} /></td></tr>
             ) : reviews.length === 0 ? (
               <tr>
-                <td colSpan={6} style={{ padding: '52px 24px', textAlign: 'center' }}>
+                <td colSpan={7} style={{ padding: '52px 24px', textAlign: 'center' }}>
                   <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>ไม่พบรายการ</div>
                 </td>
               </tr>
-            ) : reviews.map((form, i) => (
+            ) : reviews.map((form, i) => {
+              const progress = docProgress(form, allDocs)
+              return (
               <tr key={form.course_id}
                 style={{ borderBottom: i < reviews.length - 1 ? '1px solid var(--line-soft)' : 'none', transition: 'background .1s' }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg)')}
@@ -171,17 +230,28 @@ export default function StaffReview() {
                   </span>
                 </td>
                 <td style={{ padding: '13px 16px' }}>
+                  <DocProgressCell p={progress} />
+                </td>
+                <td style={{ padding: '13px 16px' }}>
                   {form.status !== 'verified' ? (
                     <div style={{ display: 'flex', gap: 6 }}>
                       <Button size="sm" loading={verifyMut.isPending} onClick={() => verifyMut.mutate(form.course_id)}>ผ่านแล้ว</Button>
                       <Button size="sm" variant="outline" onClick={() => handleOpenReturn(form)}>ส่งกลับ</Button>
                     </div>
                   ) : (
-                    <Button size="sm" variant="ghost" onClick={() => handleOpenReturn(form)}>ส่งกลับแก้ไข</Button>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      {progress.phase === 'done' ? (
+                        <Button size="sm" variant="outline" onClick={() => openCourse(form)}>ดูเอกสาร</Button>
+                      ) : (
+                        <Button size="sm" onClick={() => openCourse(form)}>ดำเนินการต่อ</Button>
+                      )}
+                      <Button size="sm" variant="ghost" onClick={() => handleOpenReturn(form)}>ส่งกลับแก้ไข</Button>
+                    </div>
                   )}
                 </td>
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
       </div>

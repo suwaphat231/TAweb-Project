@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { studentApi } from '../../services/api'
 import { CourseCard } from '../../components/course/CourseCard'
+import { ScheduleRequiredBanner } from '../../components/course/ScheduleRequiredBanner'
 import { Card } from '../../components/ui/Card'
 import { FilterChips } from '../../components/ui/FilterChips'
 import { SkeletonCard } from '../../components/ui/Skeleton'
@@ -18,7 +19,7 @@ const filterOptions = [
 export default function StudentApply() {
   const [filter, setFilter] = useState('')
   const [search, setSearch] = useState('')
-  const { openApply, modal, scheduleConfirmed } = useApplyLabboy()
+  const { openApply, modal } = useApplyLabboy()
 
   const { data: courses = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['student-courses', filter],
@@ -57,22 +58,7 @@ export default function StudentApply() {
         <p style={{ color: 'var(--ink-500)', fontSize: 14 }}>เลือกวิชาที่คุณต้องการสมัคร</p>
       </div>
 
-      {scheduleConfirmed === false && (
-        <div style={{
-          display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 16,
-          padding: '12px 16px', borderRadius: 8,
-          background: 'var(--amber-bg)', color: 'var(--amber)', fontSize: 13,
-        }}>
-          <span aria-hidden="true" style={{ fontSize: 16, lineHeight: 1 }}>!</span>
-          <div>
-            <div style={{ fontWeight: 700, marginBottom: 3 }}>กรุณากรอกตารางเรียนก่อนสมัคร</div>
-            <div>ต้องบันทึกตารางเรียนหรือยืนยันว่าไม่มีคาบเรียนในหน้าโปรไฟล์ก่อนสมัคร Lab Boy</div>
-            <a href="/student/profile" style={{ display: 'inline-block', marginTop: 6, color: 'var(--primary)', fontWeight: 700 }}>
-              ไปกรอกตารางเรียน
-            </a>
-          </div>
-        </div>
-      )}
+      <ScheduleRequiredBanner courses={visibleCourses} style={{ marginBottom: 16 }} />
 
       <div style={{ position: 'relative', marginBottom: 14 }}>
         <svg
@@ -156,7 +142,6 @@ export default function StudentApply() {
               group={group}
               appliedSections={getAppliedSections(group, myApps)}
               onApply={openApply}
-              scheduleRequired={scheduleConfirmed === false}
             />
           ))}
         </div>

@@ -38,8 +38,9 @@ type Course struct {
 	// InstructorsRaw is the verbatim text of the spreadsheet's instructor
 	// cell (kept for display as-is, e.g. co-teaching names the system has
 	// no matching account for) — separate from InstructorID, which only
-	// ever points to a real, matched user account.
-	InstructorsRaw string `gorm:"size:500" json:"instructors_raw,omitempty"`
+	// ever points to a real, matched user account. TEXT because a seminar
+	// can list the whole department (517497 in 2568/2: 19 names, 710 chars).
+	InstructorsRaw string `gorm:"type:text" json:"instructors_raw,omitempty"`
 	ApplicantCount int    `gorm:"-" json:"applicant_count"`
 	Semester       string `gorm:"size:10;not null;uniqueIndex:idx_course_time_slot" json:"semester"`
 	AcademicYear   int    `gorm:"not null;uniqueIndex:idx_course_time_slot" json:"academic_year"`
@@ -60,6 +61,9 @@ type Course struct {
 	// ConflictDay is set server-side when the course schedule overlaps the
 	// requesting student's confirmed term schedule. Empty string = no conflict.
 	ConflictDay             string       `gorm:"-" json:"conflict_day,omitempty"`
+	// ScheduleMissing is set server-side when the requesting student has not
+	// saved a schedule for this course's term, so they cannot apply yet.
+	ScheduleMissing         bool         `gorm:"-" json:"schedule_missing,omitempty"`
 	CreatedAt               time.Time    `json:"created_at"`
 	UpdatedAt               time.Time    `json:"updated_at"`
 }

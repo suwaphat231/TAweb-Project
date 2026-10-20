@@ -32,7 +32,8 @@ type workflowResp struct {
 		AcademicYear int      `json:"academic_year"`
 		Instructors  []string `json:"instructors"`
 		// ScheduleConfirmed is set once staff confirm the Lab Boy schedule.
-		ScheduleConfirmed bool `json:"schedule_confirmed"`
+		ScheduleConfirmed     bool     `json:"schedule_confirmed"`
+		ConfirmBlockedReasons []string `json:"confirm_blocked_reasons"`
 	} `json:"course"`
 	Steps []struct {
 		Step           int                    `json:"step"`
@@ -147,8 +148,13 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 		_ = json.Unmarshal(raw, &d)
 		return code, d
 	}
+	// sign finishes a step; only then does the next one open.
+	sign := func(t *testing.T, d models.StaffDocument) {
+		t.Helper()
+		expect(t, 200, "PUT", fmt.Sprintf("/staff/documents/%d/status", d.ID), tokStaff, map[string]any{"status": "signed"})
+	}
 
-	var hiring, memo, notice models.StaffDocument
+	var hiring, memo, payment, report models.StaffDocument
 
 	t.Run("workflow shows course info and blocks until the form is verified", func(t *testing.T) {
 		w := getWF(t)
@@ -174,31 +180,20 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 		}
 	})
 
-	t.Run("missing work plan is reported, not silently created", func(t *testing.T) {
+	t.Run("the work plan opens with Lab Boys; the schedule waits for signed documents", func(t *testing.T) {
 		expect(t, 200, "PUT", fmt.Sprintf("/staff/reviews/%d/verify", course.ID), tokStaff, nil)
-		code, raw := call("POST", wfPath+"/hiring_notice", tokStaff, nil)
-		if code != 422 || !strings.Contains(string(raw), "Staff Case") {
-			t.Fatalf("no staff case: %d %s", code, raw)
+		w := getWF(t)
+		if len(w.Course.ConfirmBlockedReasons) != 4 {
+			t.Fatalf("confirm blockers = %v, want the 4 unsigned steps", w.Course.ConfirmBlockedReasons)
 		}
-		var confirmed struct {
-			Confirmed bool `json:"confirmed"`
-			Notified  int  `json:"notified"`
-		}
-		_ = json.Unmarshal(expect(t, 200, "POST", confirmPath, tokStaff, nil), &confirmed)
-		if !confirmed.Confirmed || confirmed.Notified != 2 {
-			t.Fatalf("confirm = %+v, want confirmed and 2 students notified", confirmed)
-		}
-		_ = json.Unmarshal(expect(t, 200, "POST", confirmPath, tokStaff, nil), &confirmed)
-		if confirmed.Notified != 0 {
-			t.Fatalf("second confirm notified %d students again", confirmed.Notified)
-		}
-		if !getWF(t).Course.ScheduleConfirmed {
-			t.Fatal("workflow does not report the confirmed schedule")
+		code, raw := call("POST", confirmPath, tokStaff, nil)
+		if code != 422 || !strings.Contains(string(raw), "ลงนาม") {
+			t.Fatalf("confirm before documents are signed: %d %s", code, raw)
 		}
 		posting, _ := database.ActivePostingForCourse(course.ID)
 		sc, ok := database.StaffCaseByPostingID(posting.ID)
 		if !ok {
-			t.Fatal("staff confirmation did not create the staff case")
+			t.Fatal("opening the workflow did not create the staff case")
 		}
 		expect(t, 422, "POST", wfPath+"/hiring_notice", tokStaff, nil) // no schedule group yet
 		g, err := database.UpsertScheduleGroup(models.ScheduleGroup{StaffCaseID: sc.ID, WeekDay: "WED", StartTime: "10:20", EndTime: "12:20"})
@@ -228,15 +223,15 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 		if code != 422 || !strings.Contains(string(raw), "ก่อน") {
 			t.Fatalf("memo before hiring notice: %d %s", code, raw)
 		}
-		code, raw = call("POST", wfPath+"/lab_notice", tokStaff, nil)
-		if code != 422 || !strings.Contains(string(raw), "ก่อน") {
-			t.Fatalf("lab notice before memo: %d %s", code, raw)
-		}
 		code, raw = call("POST", wfPath+"/payment_request", tokStaff, nil)
 		if code != 422 || !strings.Contains(string(raw), "ก่อน") {
 			t.Fatalf("payment request before memo: %d %s", code, raw)
 		}
-		expect(t, 400, "POST", wfPath+"/work_report", tokStaff, nil)
+		code, raw = call("POST", wfPath+"/work_report", tokStaff, nil)
+		if code != 422 || !strings.Contains(string(raw), "ก่อน") {
+			t.Fatalf("work report before payment request: %d %s", code, raw)
+		}
+		expect(t, 400, "POST", wfPath+"/lab_notice", tokStaff, nil)
 		expect(t, 404, "POST", "/staff/courses/999999999/document-workflow/hiring_notice", tokStaff, nil)
 	})
 
@@ -259,8 +254,23 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 		expect(t, 409, "POST", "/staff/documents", tokStaff, map[string]any{"type": "hiring_notice", "course_ref": "x", "course_id": course.ID})
 		expect(t, 400, "POST", "/staff/documents", tokStaff, map[string]any{"type": "approval_memo", "course_ref": "x"})
 		w := getWF(t)
-		if w.Steps[0].Document == nil || w.Steps[0].Document.ID != hiring.ID || !w.Steps[1].CanCreate {
+		if w.Steps[0].Document == nil || w.Steps[0].Document.ID != hiring.ID || w.Steps[1].CanCreate {
 			t.Fatalf("after step 1: %+v", w.Steps)
+		}
+	})
+
+	t.Run("the next step opens only once the previous document is signed", func(t *testing.T) {
+		code, raw := call("POST", wfPath+"/approval_memo", tokStaff, nil)
+		if code != 422 || !strings.Contains(string(raw), "ลงนาม") {
+			t.Fatalf("memo before hiring notice is signed: %d %s", code, raw)
+		}
+		expect(t, 200, "PUT", fmt.Sprintf("/staff/documents/%d/status", hiring.ID), tokStaff, map[string]any{"status": "awaiting_signature"})
+		if w := getWF(t); w.Steps[1].CanCreate || len(w.Steps[1].BlockedReasons) == 0 {
+			t.Fatalf("awaiting signature must still block step 2: %+v", w.Steps[1])
+		}
+		sign(t, hiring)
+		if w := getWF(t); !w.Steps[1].CanCreate {
+			t.Fatalf("signed hiring notice must open step 2: %+v", w.Steps[1])
 		}
 	})
 
@@ -318,27 +328,10 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 		if code != http.StatusOK || len(file) < 1000 || string(file[:2]) != "PK" {
 			t.Fatalf("memo download = %d (%d bytes), want a .docx", code, len(file))
 		}
+		sign(t, memo)
 	})
 
-	t.Run("lab notice is step 3, built on the memo, signed by its creator", func(t *testing.T) {
-		var code int
-		code, notice = create("lab_notice", tokStaff, nil)
-		if code != 201 {
-			t.Fatalf("create lab_notice = %d", code)
-		}
-		if notice.BasedOnDocumentID == nil || *notice.BasedOnDocumentID != memo.ID {
-			t.Fatalf("lab notice based on %v, want memo %d", notice.BasedOnDocumentID, memo.ID)
-		}
-		if notice.StaffOfficerName != staffU.FullName {
-			t.Fatalf("staff officer = %q, want creator %q", notice.StaffOfficerName, staffU.FullName)
-		}
-		code, file := call("GET", fmt.Sprintf("/staff/documents/%d/file", notice.ID), tokStaff, nil)
-		if code != http.StatusOK || string(file[:2]) != "PK" {
-			t.Fatalf("lab notice download = %d, want a .docx", code)
-		}
-	})
-
-	t.Run("step 4 bills every planned month from the approval memo in one click", func(t *testing.T) {
+	t.Run("step 3 bills every planned month from the approval memo in one click", func(t *testing.T) {
 		code, d := create("payment_request", tokStaff, nil)
 		if code != 201 {
 			t.Fatalf("create payment request = %d", code)
@@ -348,12 +341,12 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 			t.Fatalf("payment request = %+v", d)
 		}
 		w := getWF(t)
-		if w.Steps[3].Document == nil || w.Steps[3].Document.ID != d.ID {
-			t.Fatalf("step 4 = %+v", w.Steps[3])
+		if w.Steps[2].Document == nil || w.Steps[2].Document.ID != d.ID {
+			t.Fatalf("step 3 = %+v", w.Steps[2])
 		}
 		for _, m := range w.MonthlyDocuments {
 			if m.ID == d.ID {
-				t.Fatal("step 4 document also listed under monthly documents")
+				t.Fatal("step 3 document also listed under monthly documents")
 			}
 		}
 		code, file := call("GET", fmt.Sprintf("/staff/documents/%d/file", d.ID), tokStaff, nil)
@@ -376,8 +369,70 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 				t.Errorf("payment request document lacks %q", want)
 			}
 		}
-		// Later subtests cancel the memo; nothing may depend on it then.
-		expect(t, 204, "DELETE", fmt.Sprintf("/staff/documents/%d", d.ID), tokStaff, nil)
+		payment = d
+		sign(t, payment)
+	})
+
+	t.Run("step 4 reports every planned month from the payment request in one click", func(t *testing.T) {
+		code, d := create("work_report", tokStaff, nil)
+		if code != 201 {
+			t.Fatalf("create work report = %d", code)
+		}
+		if d.BasedOnDocumentID == nil || *d.BasedOnDocumentID != payment.ID || len(d.Roster) != 2 {
+			t.Fatalf("work report = %+v", d)
+		}
+		w := getWF(t)
+		if w.Steps[3].Type != string(models.DocWorkReport) || w.Steps[3].Document == nil || w.Steps[3].Document.ID != d.ID {
+			t.Fatalf("step 4 = %+v", w.Steps[3])
+		}
+		for _, m := range w.MonthlyDocuments {
+			if m.ID == d.ID {
+				t.Fatal("step 4 document also listed under monthly documents")
+			}
+		}
+		code, file := call("GET", fmt.Sprintf("/staff/documents/%d/file", d.ID), tokStaff, nil)
+		if code != http.StatusOK || string(file[:2]) != "PK" {
+			t.Fatalf("work report download = %d", code)
+		}
+		report = d
+	})
+
+	t.Run("staff confirm the schedule once every document is signed", func(t *testing.T) {
+		for _, d := range []models.StaffDocument{memo, payment, report} {
+			if saved, _ := database.StaffDocumentByID(d.ID); saved.Status != models.DocSigned {
+				sign(t, saved)
+			}
+		}
+		if r := getWF(t).Course.ConfirmBlockedReasons; len(r) != 0 {
+			t.Fatalf("confirm still blocked: %v", r)
+		}
+		workDays := func() []database.WorkSession {
+			var out []database.WorkSession
+			_ = json.Unmarshal(expect(t, 200, "GET", "/student/work-schedule", tokStu, nil), &out)
+			return out
+		}
+		if got := workDays(); len(got) != 0 {
+			t.Fatalf("student sees %d work days before staff confirmed the schedule", len(got))
+		}
+		var confirmed struct {
+			Confirmed bool `json:"confirmed"`
+			Notified  int  `json:"notified"`
+		}
+		_ = json.Unmarshal(expect(t, 200, "POST", confirmPath, tokStaff, nil), &confirmed)
+		if !confirmed.Confirmed || confirmed.Notified != 2 {
+			t.Fatalf("confirm = %+v, want confirmed and 2 students notified", confirmed)
+		}
+		_ = json.Unmarshal(expect(t, 200, "POST", confirmPath, tokStaff, nil), &confirmed)
+		if confirmed.Notified != 0 {
+			t.Fatalf("second confirm notified %d students again", confirmed.Notified)
+		}
+		if !getWF(t).Course.ScheduleConfirmed {
+			t.Fatal("workflow does not report the confirmed schedule")
+		}
+		got := workDays()
+		if len(got) == 0 || got[0].CourseID != course.ID || got[0].SessionDate != "2026-12-02" || got[0].WorkTimeStart != "10:20" {
+			t.Fatalf("student work days after confirm = %+v", got)
+		}
 	})
 
 	t.Run("documents of one course never appear in another", func(t *testing.T) {
@@ -389,7 +444,7 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 
 	t.Run("a document another step depends on cannot be cancelled", func(t *testing.T) {
 		expect(t, 409, "DELETE", fmt.Sprintf("/staff/documents/%d", hiring.ID), tokStaff, nil)
-		expect(t, 409, "DELETE", fmt.Sprintf("/staff/documents/%d", memo.ID), tokStaff, nil) // lab notice depends on it
+		expect(t, 409, "DELETE", fmt.Sprintf("/staff/documents/%d", memo.ID), tokStaff, nil) // the payment request depends on it
 		expect(t, 403, "DELETE", fmt.Sprintf("/staff/documents/%d", memo.ID), tokInst, nil)
 	})
 
@@ -421,8 +476,9 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 	})
 
 	t.Run("cancel keeps the row and its audit trail", func(t *testing.T) {
-		// Later steps go first: the lab notice is built on the memo.
-		expect(t, 204, "DELETE", fmt.Sprintf("/staff/documents/%d", notice.ID), tokStaff, nil)
+		// Later steps go first: each is built on the one before.
+		expect(t, 204, "DELETE", fmt.Sprintf("/staff/documents/%d", report.ID), tokStaff, nil)
+		expect(t, 204, "DELETE", fmt.Sprintf("/staff/documents/%d", payment.ID), tokStaff, nil)
 		expect(t, 204, "DELETE", fmt.Sprintf("/staff/documents/%d", memo.ID), tokStaff, nil)
 		saved, ok := database.StaffDocumentByID(memo.ID)
 		if !ok || saved.Status != models.DocCancelled {
@@ -432,13 +488,14 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 		if strings.Contains(string(list), fmt.Sprintf(`"id":%d,`, memo.ID)) {
 			t.Fatal("cancelled document still listed")
 		}
+		sign(t, hiring) // v2 of the hiring notice
 		w := getWF(t)
 		if w.Steps[1].Document != nil || !w.Steps[1].CanCreate || len(w.Steps[1].History) != 1 {
 			t.Fatalf("step 2 after cancel: %+v", w.Steps[1])
 		}
 		var actions []string
 		database.DB.Model(&models.StaffAuditLog{}).Where("entity_type = ? AND entity_id = ?", "staff_document", memo.ID).Order("id").Pluck("action", &actions)
-		if strings.Join(actions, ",") != "create,cancel" {
+		if strings.Join(actions, ",") != "create,status_change,cancel" {
 			t.Fatalf("memo audit = %v", actions)
 		}
 		code, _ := create("approval_memo", tokStaff, nil)

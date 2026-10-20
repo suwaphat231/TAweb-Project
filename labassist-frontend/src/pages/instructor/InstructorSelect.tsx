@@ -147,7 +147,8 @@ export default function InstructorSelect() {
   })
 
   const filtered = useMemo(() => {
-    let list = [...applicants].sort((a, b) => (b.student_gpa ?? 0) - (a.student_gpa ?? 0))
+    // First come, first listed.
+    let list = [...applicants].sort((a, b) => new Date(a.applied_at).getTime() - new Date(b.applied_at).getTime())
     if (statusFilter) list = list.filter((a) => a.status === statusFilter)
     if (search) {
       const q = search.toLowerCase()
@@ -423,7 +424,7 @@ export default function InstructorSelect() {
                   </th>
                   <th style={{ padding: '11px 10px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--ink-500)', width: 36 }}>#</th>
                   <th style={{ padding: '11px 16px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--ink-500)' }}>นักศึกษา</th>
-                  <th style={{ padding: '11px 16px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--ink-500)' }}>เกรด / GPA</th>
+                  <th style={{ padding: '11px 16px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--ink-500)' }}>เกรด</th>
                   <th style={{ padding: '11px 16px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--ink-500)' }}>วันที่สมัคร</th>
                   <th style={{ padding: '11px 16px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--ink-500)' }}>สถานะ</th>
                   <th style={{ padding: '11px 20px', textAlign: 'right', fontSize: 12, fontWeight: 700, color: 'var(--ink-500)' }}>การดำเนินการ</th>
@@ -507,20 +508,9 @@ export default function InstructorSelect() {
                         </div>
                       </td>
 
-                      {/* Grade / GPA */}
+                      {/* Grade */}
                       <td style={{ padding: '14px 16px' }}>
-                        <div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-700)' }}>{row.grade || '—'}</div>
-                          {row.student_gpa != null && (
-                            <div style={{
-                              fontSize: 11, fontWeight: 600, marginTop: 2,
-                              color: row.student_gpa >= 3.5 ? 'var(--green)'
-                                : row.student_gpa >= 3.0 ? 'var(--primary)' : 'var(--ink-400)',
-                            }}>
-                              GPA {row.student_gpa.toFixed(2)}
-                            </div>
-                          )}
-                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-700)' }}>{row.grade || '—'}</div>
                       </td>
 
                       {/* Applied date */}
@@ -816,7 +806,11 @@ export default function InstructorSelect() {
             {selectedCourse?.require_grade_proof && (
               <div>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-400)', marginBottom: 6 }}>รูปภาพเกรดยืนยัน</div>
-                {!profileTarget.has_grade_proof ? (
+                {!profileTarget.has_grade_proof && profileTarget.grade_from_transcript ? (
+                  <div style={{ fontSize: 13, color: 'var(--green)', fontWeight: 500 }}>
+                    ใช้เกรดจากใบเกรดที่นักศึกษายื่นไว้ในหน้าตรวจสอบเกรด (อ่านด้วย OCR)
+                  </div>
+                ) : !profileTarget.has_grade_proof ? (
                   <div style={{ fontSize: 13, color: 'var(--red)', fontWeight: 500 }}>ยังไม่ได้แนบรูปภาพ</div>
                 ) : gradeProofUrl ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { staffApi } from '../../services/api'
 import { useToast } from '../../hooks/useToast'
 import type { CalendarDate, CalendarDateType } from '../../types'
+import { DateInput } from '../../components/ui/DateInput'
 
 const SEMESTER_MONTHS: Record<string, { label: string; months: number[] }> = {
   '1': { label: 'ภาคต้น',      months: [7, 8, 9, 10] },
@@ -90,6 +91,8 @@ export default function StaffSettings() {
         ['semester-cal-dates', semester, year],
         (old = []) => [...old, created].sort((a, b) => a.date.localeCompare(b.date)),
       )
+      // Holidays cancel or restore work days, which changes the makeup lists.
+      for (const key of ['monthly-plan', 'case-makeup-days', 'instructor-makeup-days']) qc.invalidateQueries({ queryKey: [key] })
       setOpenMonth(null)
       setForm({ date: '', name: '', date_type: 'public_holiday', affects_work: true })
     },
@@ -102,6 +105,8 @@ export default function StaffSettings() {
         ['semester-cal-dates', semester, year],
         (old = []) => old.filter(d => d.id !== id),
       )
+      // Holidays cancel or restore work days, which changes the makeup lists.
+      for (const key of ['monthly-plan', 'case-makeup-days', 'instructor-makeup-days']) qc.invalidateQueries({ queryKey: [key] })
     },
     onError: () => showToast('ลบวันหยุดไม่สำเร็จ กรุณาลองใหม่', 'error'),
   })
@@ -244,8 +249,7 @@ export default function StaffSettings() {
                   padding: '14px 16px', borderBottom: '1px solid var(--line)',
                   background: '#FAFAFE', display: 'flex', flexDirection: 'column', gap: 9,
                 }}>
-                  <input
-                    type="date"
+                  <DateInput
                     value={form.date}
                     min={`${cy}-${String(month).padStart(2, '0')}-01`}
                     max={`${cy}-${String(month).padStart(2, '0')}-31`}

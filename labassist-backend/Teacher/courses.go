@@ -5,7 +5,9 @@ import (
 	"labassist/database"
 	"labassist/models"
 	"net/http"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -62,12 +64,25 @@ type SectionInput struct {
 	Schedule string `json:"schedule,omitempty" example:"จ,พ,ศ 09:00-12:00"`
 }
 
+// courseCodeRe: course codes are numeric (e.g. 517121), as in the
+// registrar's catalog and the Excel import.
+var courseCodeRe = regexp.MustCompile(`^[0-9]+$`)
+
+const courseCodeError = "รหัสวิชาต้องเป็นตัวเลขเท่านั้น"
+
+// creditsRe is the registrar's credit notation, total (lecture-lab-self study),
+// e.g. "3 (2-2-5)" — the same shape the Excel import stores, so lab hours
+// are read the same way for manually added courses.
+var creditsRe = regexp.MustCompile(`^\d+\s*\(\s*\d+\s*-\s*\d+\s*-\s*\d+\s*\)$`)
+
 // CreateCourseRequest is the request body for creating a course
 type CreateCourseRequest struct {
-	Code         string              `json:"code" binding:"required" example:"CS101"`
-	Title        string              `json:"title" binding:"required" example:"Introduction to Programming"`
-	Semester     string              `json:"semester" binding:"required" example:"1"`
-	AcademicYear int                 `json:"academic_year" binding:"required" example:"2567"`
+	Code         string `json:"code" binding:"required" example:"517121"`
+	Title        string `json:"title" binding:"required" example:"Introduction to Programming"`
+	Semester     string `json:"semester" binding:"required" example:"1"`
+	AcademicYear int    `json:"academic_year" binding:"required" example:"2567"`
+	// Credits is optional, in the registrar's notation "3 (2-2-5)".
+	Credits      string              `json:"credits,omitempty" example:"3 (2-2-5)"`
 	LabBoySlots  int                 `json:"labboy_slots" binding:"min=0" example:"2"`
 	Status       models.CourseStatus `json:"status" binding:"omitempty,oneof=open closing_soon closed draft archived" example:"draft"`
 	Description  *string             `json:"description,omitempty"`
@@ -91,7 +106,7 @@ type CreateCourseRequest struct {
 
 // UpdateCourseRequest is the request body for updating a course
 type UpdateCourseRequest struct {
-	Code              *string              `json:"code,omitempty" example:"CS101"`
+	Code              *string              `json:"code,omitempty" example:"517121"`
 	Title             *string              `json:"title,omitempty" example:"Introduction to Programming"`
 	Semester          *string              `json:"semester,omitempty" example:"1"`
 	AcademicYear      *int                 `json:"academic_year,omitempty" example:"2567"`
@@ -217,6 +232,16 @@ func (h *Handler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	body.Code = strings.TrimSpace(body.Code)
+	if !courseCodeRe.MatchString(body.Code) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": courseCodeError})
+		return
+	}
+	body.Credits = strings.TrimSpace(body.Credits)
+	if body.Credits != "" && !creditsRe.MatchString(body.Credits) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "หน่วยกิตต้องอยู่ในรูปแบบ 3 (2-2-5)"})
+		return
+	}
 
 	// Only an admin may assign the course to someone other than themselves —
 	// an instructor's own InstructorID field in the request (if they somehow
@@ -255,28 +280,34 @@ func (h *Handler) Create(c *gin.Context) {
 		}
 	}
 
+	// A section meeting on several days becomes one course row per day
+	// (slot 0, 1, …), each with its own posting — as the Excel import does.
 	created := make([]models.Course, 0, len(sections))
 	for _, sec := range sections {
-		course := database.CreateCourse(models.Course{
-			Code:              body.Code,
-			Title:             body.Title,
-			Section:           sec.Section,
-			Schedule:          sec.Schedule,
-			InstructorID:      &ownerID,
-			Semester:          body.Semester,
-			AcademicYear:      body.AcademicYear,
-			LabBoySlots:       body.LabBoySlots,
-			Status:            status,
-			Description:       body.Description,
-			Requirements:      body.Requirements,
-			Deadline:          deadline,
-			RequireGradeProof: body.RequireGradeProof,
-		})
-		if course.ID == 0 {
-			c.JSON(http.StatusConflict, gin.H{"error": "cannot save course; check duplicate section or instructor"})
-			return
+		for slot, schedule := range database.SplitScheduleDays(sec.Schedule) {
+			course := database.CreateCourse(models.Course{
+				Code:              body.Code,
+				Title:             body.Title,
+				Credits:           body.Credits,
+				Section:           sec.Section,
+				Slot:              slot,
+				Schedule:          schedule,
+				InstructorID:      &ownerID,
+				Semester:          body.Semester,
+				AcademicYear:      body.AcademicYear,
+				LabBoySlots:       body.LabBoySlots,
+				Status:            status,
+				Description:       body.Description,
+				Requirements:      body.Requirements,
+				Deadline:          deadline,
+				RequireGradeProof: body.RequireGradeProof,
+			})
+			if course.ID == 0 {
+				c.JSON(http.StatusConflict, gin.H{"error": "cannot save course; check duplicate section or instructor"})
+				return
+			}
+			created = append(created, course)
 		}
-		created = append(created, course)
 	}
 	c.JSON(http.StatusCreated, created)
 }
@@ -372,6 +403,14 @@ func (h *Handler) Update(c *gin.Context) {
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	if body.Code != nil {
+		code := strings.TrimSpace(*body.Code)
+		if !courseCodeRe.MatchString(code) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": courseCodeError})
+			return
+		}
+		body.Code = &code
 	}
 
 	if body.Deadline != nil && *body.Deadline != "" && parseDeadline(*body.Deadline) == nil {

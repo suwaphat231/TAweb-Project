@@ -4,6 +4,7 @@ import { studentApi } from '../../services/api'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorState } from '../../components/ui/ErrorState'
 import { Skeleton } from '../../components/ui/Skeleton'
+import { Badge } from '../../components/ui/Badge'
 import { cleanCourseTitle } from '../../utils/courseTitle'
 import type { WorkSession, LabBoyAssignment } from '../../types'
 import { formatSchedule } from '../../utils/schedule'
@@ -249,7 +250,7 @@ export default function StudentSchedule() {
       ) : isError ? (
         <ErrorState onRetry={refetch} />
       ) : isEmpty ? (
-        <EmptyState title="ยังไม่มีตารางปฏิบัติงาน" description="ตารางจะแสดงเมื่อคุณได้รับการคัดเลือกและอาจารย์ยืนยันตารางแล้ว" icon="📅" />
+        <EmptyState title="ยังไม่มีตารางปฏิบัติงาน" description="ตารางจะแสดงเมื่อคุณได้รับการคัดเลือกและเจ้าหน้าที่ยืนยันตารางแล้ว" icon="📅" />
       ) : (
         <>
           {/* ── Timetable grid (built from confirmed assignments' course schedules) ── */}
@@ -521,6 +522,9 @@ export default function StudentSchedule() {
                                 {s.hours_per_session > 0 ? ` · ${s.hours_per_session} ชม.` : ''}
                               </div>
                             </div>
+                            {s.is_makeup && <Badge variant="purple">วันชดเชย</Badge>}
+                            {s.status === 'completed' && <Badge variant="green">ปฏิบัติงานแล้ว</Badge>}
+                            {s.status === 'absent' && <Badge variant="red">ขาด</Badge>}
                           </div>
                         )
                       })}
@@ -592,7 +596,7 @@ function AssignmentCard({ a }: { a: LabBoyAssignment }) {
           {cleanCourseTitle(a.course_title)}
         </div>
         <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 1 }}>
-          ภาค {a.semester}/{a.academic_year} · {formatScheduleDisplay(a.course_schedule)}
+          ภาคเรียนที่ {a.semester} · {formatScheduleDisplay(a.course_schedule)}
         </div>
       </div>
       <div style={{

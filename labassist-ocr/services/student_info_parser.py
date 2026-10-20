@@ -1,6 +1,6 @@
 """
 student_info_parser.py — extract allowed student profile fields from a
-university info document image.
+registrar (REG) screenshot.
 
 Allowlist: student_id, full_name_th, full_name_en, education_level,
            curriculum, faculty, campus, student_status.
@@ -8,172 +8,235 @@ Allowlist: student_id, full_name_th, full_name_en, education_level,
 Sensitive fields (national_id, birth_date, age, religion, nationality,
 address, postal_code, phone, emergency_contact) are explicitly blocked
 and never returned.
+
+REG lays its boxes out as "label: value" pairs, often two pairs per row:
+
+    ชื่อ - สกุล (ไทย):  นายสมชาย ใจดี     ชื่อ - สกุล (อังกฤษ):  Mr.Somchai Jaidee
+
+so each OCR line is split into (label, value) pairs at the colon-terminated
+label tokens; a value never runs on into the next column's label.
 """
 
 import re
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from utils.helpers import group_into_lines
 
-_STUDENT_ID_RE = re.compile(r'\b(\d{10})\b')
+# Silpakorn student IDs are 9 digits (e.g. 660710260); 10 is accepted too.
+# They never start with 0, which keeps phone numbers (08x…) out.
+_STUDENT_ID_RE = re.compile(r'(?<!\d)([1-9]\d{8,9})(?!\d)', re.ASCII)
 _THAI_CHARS = re.compile(r'[฀-๿]')
 
-_LABELS: Dict[str, list] = {
-    'student_id': [
-        r'รหัสนักศึกษา',
-        r'รหัสประจำตัวนักศึกษา',
-        r'student[\s_]?id',
-    ],
-    'full_name_th': [
-        r'ชื่อ[-\s]?นามสกุล\s*[\(\（]?ภาษาไทย',
-        r'ชื่อ[-\s]?นามสกุล\s*[\(\（]?ไทย',
-        r'ชื่อ[-\s]?นามสกุล',
-        r'ชื่อ[-\s]?สกุล',
-        r'ชื่อ\s*\(นาม\)สกุล',
-        r'^ชื่อ$',
-    ],
-    'full_name_en': [
-        r'ชื่อ[-\s]?นามสกุล\s*[\(\（]?ภาษาอังกฤษ',
-        r'ชื่อ[-\s]?นามสกุล\s*[\(\（]?อังกฤษ',
-        r'full[\s_]?name',
-        r'name[\s_]?\(english\)',
-        r'english[\s_]?name',
-    ],
-    'education_level': [
-        r'ระดับการศึกษา',
-        r'ระดับ\b',
-        r'education[\s_]?level',
-    ],
-    'curriculum': [
-        r'หลักสูตร',
-        r'curriculum',
-    ],
-    'faculty': [
-        r'ภาควิชา',
-        r'faculty',
-        r'department',
-        r'คณะ/สาขา',
-        r'^คณะ$',
-    ],
-    'campus': [
-        r'วิทยาเขต',
-        r'\bcampus\b',
-    ],
-    'student_status': [
-        r'สถานภาพ',
-        r'สถานะนักศึกษา',
-        r'student[\s_]?status',
-    ],
+# Thai above/below vowels and tone marks. EasyOCR often drops or swaps them
+# ("ชื่อ" → "ชือ"), so labels are compared with them removed.
+_THAI_MARKS = re.compile(r'[ัิ-ฺ็-๎]')
+_LABEL_NOISE = re.compile(r'[\s\-–—_().:：/]')
+
+FIELDS = ('student_id', 'full_name_th', 'full_name_en', 'education_level',
+          'curriculum', 'faculty', 'campus', 'student_status')
+
+
+def _norm(text: str) -> str:
+    """Lowercase, drop Thai marks, spaces and punctuation — for label matching."""
+    return _LABEL_NOISE.sub('', _THAI_MARKS.sub('', text.lower()))
+
+
+def _keys(*words: str) -> List[str]:
+    return [_norm(w) for w in words]
+
+
+# Label keywords per field, best first. The profile's "faculty" holds the
+# programme (เทคโนโลยีสารสนเทศ), not the คณะ (วิทยาศาสตร์), so คณะ is not used;
+# when REG shows no ภาควิชา/สาขา the programme is taken from หลักสูตร instead.
+_FIELD_KEYWORDS: Dict[str, List[str]] = {
+    'student_id': _keys('รหัสนักศึกษา', 'รหัสประจำตัวนักศึกษา', 'student id', 'student code'),
+    'education_level': _keys('ระดับการศึกษา', 'education level', 'degree'),
+    'curriculum': _keys('หลักสูตร', 'curriculum', 'program'),
+    'faculty': _keys('ภาควิชา', 'สาขาวิชา', 'department', 'major'),
+    'campus': _keys('วิทยาเขต', 'campus'),
+    'student_status': _keys('สถานภาพนักศึกษา', 'สถานะนักศึกษา', 'สถานภาพ', 'student status', 'status'),
+}
+_NAME_KEYWORDS = _keys('ชื่อ', 'สกุล', 'name')
+# Other people's names (e.g. the advisor) must not be read as the student's.
+# Nor are labels that merely contain "ชื่อ" (ชื่อปริญญา = degree name).
+_OTHER_PERSON_KEYWORDS = _keys('อาจารย์', 'ที่ปรึกษา', 'advisor', 'บิดา', 'มารดา')
+_NOT_A_NAME_KEYWORDS = _keys('ปริญญา', 'degree', 'หลักสูตร', 'วิชา')
+_ENGLISH_KEYWORDS = _keys('อังกฤษ', 'english', 'eng')
+
+_SENSITIVE_KEYWORDS = _keys(
+    'เลขบัตรประชาชน', 'เลขประจำตัวประชาชน', 'national id', 'id card',
+    'วันเกิด', 'เดือนปีเกิด', 'birth', 'อายุ', 'age',
+    'ศาสนา', 'religion', 'สัญชาติ', 'เชื้อชาติ', 'nationality',
+    'ที่อยู่', 'address', 'รหัสไปรษณีย์', 'postal', 'zip',
+    'โทรศัพท์', 'เบอร์โทร', 'phone', 'tel', 'อีเมล', 'email',
+    'ผู้ติดต่อฉุกเฉิน', 'emergency', 'ผู้ปกครอง', 'บิดา', 'มารดา',
+    'หมู่เลือด', 'เกรดเฉลี่ย', 'gpa',
+)
+
+_PAGE_HEADERS = {
+    'personal': _keys('ข้อมูลส่วนตัว', 'personal information'),
+    'student': _keys('ข้อมูลนักศึกษา', 'student information'),
 }
 
-# Sensitive field patterns — lines matching these are skipped entirely
-_SENSITIVE_PATTERNS = [
-    re.compile(p, re.IGNORECASE) for p in [
-        r'เลขบัตรประชาชน', r'เลขประจำตัวประชาชน',
-        r'national[\s_]?id', r'id[\s_]?card',
-        r'วันเกิด', r'วันเดือนปีเกิด',
-        r'birth[\s_]?date', r'date[\s_]?of[\s_]?birth',
-        r'\bอายุ\b', r'\bage\b',
-        r'ศาสนา', r'religion',
-        r'สัญชาติ', r'nationality',
-        r'ที่อยู่', r'\baddress\b',
-        r'รหัสไปรษณีย์', r'postal[\s_]?code', r'zip[\s_]?code',
-        r'โทรศัพท์', r'เบอร์โทร', r'\bphone\b', r'\btel\b',
-        r'ผู้ติดต่อฉุกเฉิน', r'emergency[\s_]?contact',
-        r'ผู้ปกครอง',
-    ]
-]
+
+def _is_sensitive(label: str) -> bool:
+    n = _norm(label)
+    return any(k in n for k in _SENSITIVE_KEYWORDS)
 
 
-def _is_label(text: str, patterns: list) -> bool:
-    t = text.strip()
-    return any(re.search(pat, t, re.IGNORECASE) for pat in patterns)
+def _classify_label(label: str) -> Tuple[Optional[str], int]:
+    """Map a label to (field, rank); lower rank = better keyword. (None, 0) if unknown."""
+    n = _norm(label)
+    if not n or _is_sensitive(label):
+        return None, 0
+    if any(k in n for k in _OTHER_PERSON_KEYWORDS):
+        return None, 0
+    if (any(k in n for k in _NAME_KEYWORDS) and 'รหส' not in n
+            and not any(k in n for k in _NOT_A_NAME_KEYWORDS)):
+        if any(k in n for k in _ENGLISH_KEYWORDS):
+            return 'full_name_en', 0
+        return 'full_name_th', 0
+    for field, keywords in _FIELD_KEYWORDS.items():
+        for rank, k in enumerate(keywords):
+            if k in n:
+                return field, rank
+    return None, 0
 
 
-def _is_sensitive(text: str) -> bool:
-    return any(pat.search(text) for pat in _SENSITIVE_PATTERNS)
+def _ends_label(text: str) -> bool:
+    return text.rstrip().endswith((':', '：'))
 
 
-def _after_colon(text: str) -> str:
-    for sep in (':', '：'):
-        if sep in text:
-            return text.split(sep, 1)[1].strip()
-    return ''
+def _split_inline_colon(line):
+    """Split "label: value" tokens so the label and value become separate tokens."""
+    out = []
+    for box, text, conf in line:
+        m = re.match(r'^(.+?[:：])\s*(\S.*)$', text.strip())
+        if m and not _STUDENT_ID_RE.fullmatch(m.group(1)):
+            out.append((box, m.group(1), conf))
+            out.append((box, m.group(2), conf))
+        else:
+            out.append((box, text, conf))
+    return out
 
 
-def _is_thai(text: str) -> bool:
-    return bool(_THAI_CHARS.search(text))
+def _box_height(box) -> float:
+    return max(1.0, box[2][1] - box[0][1])
 
 
-def extract_student_info(ocr_results) -> Tuple[Dict, float]:
+def _gap(left_box, right_box) -> float:
+    return right_box[0][0] - left_box[1][0]
+
+
+def line_pairs(line) -> List[Tuple[str, str]]:
+    """Split one OCR line into (label, value) pairs at colon-terminated labels.
+
+    A label may span several tokens ("ชือ" + "สกุล (ไทย):"): tokens directly
+    left of the colon token belong to it while the horizontal gap stays under
+    two text heights. Column gaps in REG are far wider than that.
+    """
+    tokens = _split_inline_colon(line)
+    colon_idx = [i for i, (_, t, _) in enumerate(tokens) if _ends_label(t)]
+    if not colon_idx:
+        return []
+
+    starts = []
+    prev_end = -1
+    for c in colon_idx:
+        start = c
+        while start - 1 > prev_end:
+            left, right = tokens[start - 1][0], tokens[start][0]
+            if _ends_label(tokens[start - 1][1]) or _gap(left, right) > 2 * _box_height(right):
+                break
+            start -= 1
+        starts.append(start)
+        prev_end = c
+
+    pairs = []
+    for n, c in enumerate(colon_idx):
+        label = ' '.join(t for _, t, _ in tokens[starts[n]:c + 1])
+        value_end = starts[n + 1] if n + 1 < len(colon_idx) else len(tokens)
+        value = ' '.join(t.strip() for _, t, _ in tokens[c + 1:value_end]).strip()
+        pairs.append((label, value))
+    return pairs
+
+
+def _programme_from_curriculum(curriculum: str) -> Optional[str]:
+    """'107090000650 เทคโนโลยีสารสนเทศ (โครงการวิจัย)' → 'เทคโนโลยีสารสนเทศ'."""
+    name = re.sub(r'^\s*\d+\s*', '', curriculum)
+    name = re.sub(r'\s*[(（].*$', '', name).strip()
+    return name or None
+
+
+def _clean_value(field: str, value: str) -> Optional[str]:
+    value = value.strip(' :：-–')
+    if not value:
+        return None
+    if field == 'student_id':
+        digits = value.translate(str.maketrans('OoIl|', '00111')).replace(' ', '')
+        m = _STUDENT_ID_RE.search(digits)
+        return m.group(1) if m else None
+    if field == 'full_name_th':
+        return value[:200] if _THAI_CHARS.search(value) else None
+    if field == 'full_name_en':
+        if _THAI_CHARS.search(value) or len(value) < 4:
+            return None
+        # EasyOCR's English model tends to lowercase everything.
+        if value == value.lower():
+            value = re.sub(r'(^|[\s.])([a-z])', lambda m: m.group(1) + m.group(2).upper(), value)
+        return value[:200]
+    return value[:300]
+
+
+def detect_page_kind(lines, extracted: Dict) -> Optional[str]:
+    """Which REG box the image shows: 'personal', 'student' or None if unclear.
+
+    The box title is the first header on its line; the student box also has
+    "*แก้ไขข้อมูลส่วนตัว ล่าสุด…" at the far right, which must not count.
+    """
+    for line in lines[:3]:
+        n = _norm(' '.join(t for _, t, _ in line))
+        found = [(n.find(h), kind) for kind, headers in _PAGE_HEADERS.items() for h in headers if h in n]
+        if found:
+            return min(found)[1]
+    has_names = bool(extracted.get('full_name_th') or extracted.get('full_name_en'))
+    has_student = any(extracted.get(f) for f in ('student_id', 'student_status', 'faculty', 'curriculum'))
+    if has_names and not has_student:
+        return 'personal'
+    if has_student and not has_names:
+        return 'student'
+    return None
+
+
+def extract_student_info(ocr_results) -> Tuple[Dict, float, Optional[str]]:
     """
     Scan OCR results for allowed student-info fields.
 
-    Returns (fields_dict, avg_confidence). Sensitive fields are explicitly
+    Returns (fields_dict, avg_confidence, page_kind). Sensitive labels are
     skipped. Raw text is never included in the returned dict.
     """
     lines = group_into_lines(ocr_results)
 
-    extracted: Dict[str, Optional[object]] = {k: None for k in _LABELS}
+    extracted: Dict[str, Optional[str]] = {k: None for k in FIELDS}
+    ranks: Dict[str, int] = {}
 
     confidences = [float(conf) for _, _, conf in ocr_results] if ocr_results else []
     avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
 
     for line in lines:
-        full_line_text = ' '.join(t for _, t, _ in line)
-        if _is_sensitive(full_line_text):
-            continue
-
-        for idx, (_, text, _) in enumerate(line):
-            same_token_after_colon = _after_colon(text)
-            rest_of_line = ' '.join(t for _, t, _ in line[idx + 1:])
-            value_text = same_token_after_colon or rest_of_line
-
-            if not value_text.strip():
+        for label, value in line_pairs(line):
+            field, rank = _classify_label(label)
+            if field is None or (field in ranks and ranks[field] <= rank):
                 continue
+            cleaned = _clean_value(field, value)
+            if cleaned is not None:
+                extracted[field] = cleaned
+                ranks[field] = rank
 
-            for field, patterns in _LABELS.items():
-                if extracted[field] is not None:
-                    continue
-                if not _is_label(text, patterns):
-                    continue
-
-                if field == 'student_id':
-                    m = _STUDENT_ID_RE.search(value_text)
-                    if m:
-                        extracted['student_id'] = m.group(1)
-
-                elif field == 'full_name_th':
-                    v = value_text.strip()[:200]
-                    if not v:
-                        continue
-                    # Explicit Thai-language label: trust directly if value has Thai chars
-                    thai_explicit = re.search(r'ไทย|ภาษาไทย', text, re.IGNORECASE)
-                    if thai_explicit and _is_thai(v):
-                        extracted['full_name_th'] = v
-                    elif not thai_explicit and _is_thai(v):
-                        extracted['full_name_th'] = v
-
-                elif field == 'full_name_en':
-                    v = value_text.strip()[:200]
-                    if not v or len(v) < 4:
-                        continue
-                    en_explicit = re.search(r'อังกฤษ|english', text, re.IGNORECASE)
-                    if en_explicit and not _is_thai(v):
-                        extracted['full_name_en'] = v
-                    elif not en_explicit and not _is_thai(v):
-                        extracted['full_name_en'] = v
-
-                else:
-                    v = value_text.strip()[:300]
-                    if v:
-                        extracted[field] = v
-
-    # Fallback: scan entire doc for a 10-digit student ID (skip sensitive lines)
+    # Fallback: a student ID anywhere outside sensitive rows.
     if extracted['student_id'] is None:
         for line in lines:
-            full_line = ' '.join(t for _, t, _ in line)
-            if _is_sensitive(full_line):
+            if any(_is_sensitive(label) for label, _ in line_pairs(line)):
                 continue
             for _, text, _ in line:
                 m = _STUDENT_ID_RE.search(text)
@@ -183,4 +246,7 @@ def extract_student_info(ocr_results) -> Tuple[Dict, float]:
             if extracted['student_id']:
                 break
 
-    return extracted, avg_confidence
+    if extracted['faculty'] is None and extracted['curriculum']:
+        extracted['faculty'] = _programme_from_curriculum(extracted['curriculum'])
+
+    return extracted, avg_confidence, detect_page_kind(lines, extracted)
