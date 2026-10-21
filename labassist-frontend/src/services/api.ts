@@ -16,6 +16,8 @@ import type {
   MakeupDay, MakeupDayPayload,
   ReportResponse, ConfirmedRecord, DocumentWorkflowResponse, CreateWorkflowStepPayload, DocType,
   CalendarPreviewResponse, CalendarImportEntry, CalendarImportResponse, SkippedCourse,
+  CourseEditRequest, CourseEditRequestPayload, CourseEditRequestStatus,
+  TranscriptImage,
 } from '../types'
 
 // Keep API calls on the same origin by default. This works both behind the
@@ -140,6 +142,18 @@ export const applicationsAPI = {
     api.get(`/student/applications/${applicationId}/grade-proof`, { responseType: 'blob' }).then((r) => r.data as Blob),
   instructorGradeProof: (applicationId: number) =>
     api.get(`/instructor/applications/${applicationId}/grade-proof`, { responseType: 'blob' }).then((r) => r.data as Blob),
+  getCoursePeers: (courseId: number) =>
+    api.get<Array<{
+      application_id: number
+      student_id: number
+      student_name: string
+      student_code: string
+      role_applied: string
+      status: string
+      is_self: boolean
+    }>>(`/student/courses/${courseId}/peers`).then((r) => r.data),
+  createReport: (data: { application_id: number; incident_date: string; category: string; description: string; impact: string }) =>
+    api.post('/student/reports', data).then((r) => r.data),
 }
 
 export const studentAPI = {
@@ -158,6 +172,14 @@ export const studentAPI = {
     formData.append('file', file)
     return api.post<TranscriptOCRResult>('/student/profile/transcript', formData).then((r) => r.data)
   },
+  // Confirms the OCR-read grades, with any the student corrected by hand.
+  confirmTranscriptGrades: (grades: Record<string, string>) =>
+    api.put<User>('/student/profile/transcript/confirm', { grades }).then((r) => r.data),
+  // Grade sheets uploaded for OCR, newest first, so the student can compare.
+  transcriptImages: () =>
+    api.get<TranscriptImage[]>('/student/profile/transcript/images').then((r) => r.data),
+  transcriptImageFile: (id: number) =>
+    api.get(`/student/profile/transcript/images/${id}`, { responseType: 'blob' }).then((r) => r.data as Blob),
 }
 
 export const transcriptAPI = {
@@ -205,6 +227,12 @@ export const adminAPI = {
   // OCR transcript matching) — separate from the Excel-imported course
   // postings above. Backs the code-suggestion dropdown in "เพิ่มวิชาเอง".
   coreCourseCatalog: () => api.get<CoreCourse[]>('/admin/core-courses').then((r) => r.data),
+  courseEditRequests: (status?: CourseEditRequestStatus) =>
+    api.get<CourseEditRequest[]>('/admin/course-edit-requests', { params: { status } }).then((r) => r.data),
+  approveCourseEditRequest: (id: number) =>
+    api.post<CourseEditRequest>(`/admin/course-edit-requests/${id}/approve`).then((r) => r.data),
+  rejectCourseEditRequest: (id: number, reason: string) =>
+    api.post<CourseEditRequest>(`/admin/course-edit-requests/${id}/reject`, { reason }).then((r) => r.data),
   // Academic calendar PDF for a whole year: read it for review, then save
   // the entries the admin kept as semester holidays / no-class days.
   previewCalendarImport: (file: File, academicYear: number) => {
@@ -242,6 +270,9 @@ export const studentApi = {
   uploadTranscript: transcriptAPI.upload,
   // Stores the PDF (above) vs. runs OCR and matches core_courses (below).
   ocrTranscript: studentAPI.uploadTranscript,
+  confirmTranscriptGrades: studentAPI.confirmTranscriptGrades,
+  transcriptImages: studentAPI.transcriptImages,
+  transcriptImageFile: studentAPI.transcriptImageFile,
   downloadTranscript: transcriptAPI.download,
   uploadGradeProof: applicationsAPI.uploadGradeProof,
   gradeProof: applicationsAPI.gradeProof,
@@ -278,6 +309,13 @@ export const instructorApi = {
     api.post('/instructor/my-courses', { course_id: courseId }).then((r) => r.data),
   removeMyCourse: (relationId: number) =>
     api.delete(`/instructor/my-courses/${relationId}`).then((r) => r.data),
+  // Course detail changes wait for admin approval before touching the course.
+  requestCourseEdit: (courseId: number, data: CourseEditRequestPayload) =>
+    api.post<CourseEditRequest>(`/instructor/courses/${courseId}/edit-requests`, data).then((r) => r.data),
+  myCourseEditRequests: () =>
+    api.get<CourseEditRequest[]>('/instructor/course-edit-requests').then((r) => r.data),
+  cancelCourseEditRequest: (id: number) =>
+    api.delete(`/instructor/course-edit-requests/${id}`).then(() => undefined),
   courseCandidates: (params?: { semester?: string; academic_year?: number; q?: string }) =>
     api.get<Course[]>('/instructor/course-candidates', { params }).then((r) => r.data),
   courseCatalog: () => api.get<Course[]>('/instructor/course-catalog').then((r) => r.data),
@@ -418,13 +456,9 @@ export const staffApi = {
     api.put<WorkOccurrence>(`/staff/occurrences/${id}`, { status, reason }).then((r) => r.data),
   rescheduleOccurrence: (id: number, new_date: string, new_start: string, new_end: string, reason?: string) =>
     api.post<WorkOccurrence>(`/staff/occurrences/${id}/reschedule`, { new_date, new_start, new_end, reason }).then((r) => r.data),
-  // Makeup days (chosen on the instructor's behalf)
+  // Makeup days, read-only: only the instructor picks them
   caseMakeupDays: (caseId: number) =>
     api.get<MakeupDay[]>(`/staff/cases/${caseId}/makeup-days`).then((r) => r.data),
-  chooseMakeup: (occurrenceId: number, data: MakeupDayPayload) =>
-    api.post<WorkOccurrence>(`/staff/occurrences/${occurrenceId}/makeup`, data).then((r) => r.data),
-  declineMakeup: (occurrenceId: number) =>
-    api.post<WorkOccurrence>(`/staff/occurrences/${occurrenceId}/no-makeup`).then((r) => r.data),
 
   // Monthly periods
   listMonthlyPeriods: (caseId: number) =>

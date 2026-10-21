@@ -68,8 +68,8 @@ func TestDemoSeedSplitsMultiDayCourseIntoOneRowPerDay(t *testing.T) {
 	var onTuesday, onThursday int64
 	DB.Model(&models.Application{}).Where("course_id = ?", demo[0].ID).Count(&onTuesday)
 	DB.Model(&models.Application{}).Where("course_id = ?", demo[1].ID).Count(&onThursday)
-	if onTuesday != 5 || onThursday != 0 {
-		t.Fatalf("applications tue=%d thu=%d, want 5 and 0", onTuesday, onThursday)
+	if onTuesday != 6 || onThursday != 0 {
+		t.Fatalf("applications tue=%d thu=%d, want 6 and 0", onTuesday, onThursday)
 	}
 
 	// Staff pick a course from the review list, so each day must be its own

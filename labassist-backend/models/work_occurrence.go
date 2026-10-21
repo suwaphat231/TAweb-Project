@@ -14,7 +14,8 @@ const (
 )
 
 // MaxLabSessionsPerTerm caps how many lab sessions one schedule group may hold
-// in a term. Only rows that are lab days count (see CountsAsSession).
+// in a term. Lab days count (see CountsAsSession), and so does a day that
+// falls on a holiday until a makeup day replaces it.
 const MaxLabSessionsPerTerm = 15
 
 // CountsAsSession reports whether an occurrence with this status is a lab day

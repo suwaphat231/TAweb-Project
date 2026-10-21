@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"labassist/config"
 	"labassist/database"
 	"labassist/models"
@@ -66,3 +67,21 @@ func SignToken(cfg *config.Config, userID uint, role, name string) (string, erro
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(cfg.JWTSecret))
 }
+
+// VerifyToken validates a JWT token and looks up the associated active user.
+func VerifyToken(cfg *config.Config, tokenStr string) (*Claims, models.User, error) {
+	claims := &Claims{}
+	token, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
+		return []byte(cfg.JWTSecret), nil
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithExpirationRequired())
+	if err != nil || !token.Valid {
+		return nil, models.User{}, errors.New("invalid token")
+	}
+
+	user, ok := database.UserByID(claims.UserID)
+	if !ok || !user.IsActive {
+		return nil, models.User{}, errors.New("account unavailable")
+	}
+	return claims, user, nil
+}
+

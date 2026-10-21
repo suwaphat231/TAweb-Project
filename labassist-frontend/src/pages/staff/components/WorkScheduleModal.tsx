@@ -9,6 +9,7 @@ import { MonthlyWorkPlanCard, MONTH_NAMES } from './MonthlyWorkPlanCard'
 import { OverallScheduleSummary } from './OverallScheduleSummary'
 import { formatThaiDate, toDateOnly } from '../../../utils/thaiDate'
 import { payableHours } from '../../../utils/payableHours'
+import { capSessionDates } from '../../../utils/labSessions'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -602,9 +603,6 @@ export function WorkScheduleModal({
       const months = (SEMESTER_MONTHS[semester] ?? [])
         .filter(m => !usedMonthKeys.has(`${monthCEYear(m, semester, academicYear)}-${m}`))
       if (months.length === 0) throw new Error('เพิ่มครบทุกเดือนของภาคเรียนแล้ว')
-      const holidaySet = new Set(
-        calDates.filter(cd => cd.affects_work).map(cd => cd.date.slice(0, 10)),
-      )
       const weekdays = slots.map(s => s.weekday)
       const hoursPerSession = hoursFromSlot(slots[0])
       const weekDaySlots: GroupWeekDaySlot[] = slots.map(s => ({
@@ -619,12 +617,17 @@ export function WorkScheduleModal({
         week_day_slots: weekDaySlots,
         hours_per_session: hoursPerSession > 0 ? hoursPerSession : undefined,
       })
+      // A term holds at most 15 lab sessions, and a week that falls on a
+      // holiday is one of them (it stays in the plan as a holiday clash so
+      // the instructor can pick a makeup day, which then takes its place).
+      // Weeks past the 15th are left out, and months with none left are not added.
+      const years = months.map(m => monthCEYear(m, semester, academicYear))
+      const datesByMonth = capSessionDates(months.map((m, i) => candidateDates(years[i], m, weekdays)))
       try {
-        for (const m of months) {
-          const ceYear = monthCEYear(m, semester, academicYear)
-          const dates = candidateDates(ceYear, m, weekdays).filter(d => !holidaySet.has(d))
-          await staffApi.addGroupMonth(innerCaseId!, newGroup.id, { year: ceYear, month: m })
-          await staffApi.setGroupMonthDates(innerCaseId!, newGroup.id, ceYear, m, dates)
+        for (const [i, m] of months.entries()) {
+          if (datesByMonth[i].length === 0) continue
+          await staffApi.addGroupMonth(innerCaseId!, newGroup.id, { year: years[i], month: m })
+          await staffApi.setGroupMonthDates(innerCaseId!, newGroup.id, years[i], m, datesByMonth[i])
         }
       } catch (err) {
         await staffApi.deleteScheduleGroup(innerCaseId!, newGroup.id).catch(() => {})

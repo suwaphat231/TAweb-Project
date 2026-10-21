@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"labassist/models"
+	"labassist/ws"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
@@ -459,6 +460,11 @@ func deleteEmptyCourseTx(tx *gorm.DB, id uint) error {
 	}
 	if err := tx.Model(&models.Notification{}).Where("course_id = ?", id).Update("course_id", nil).Error; err != nil {
 		return err
+	}
+	if tx.Migrator().HasTable("course_edit_requests") {
+		if err := tx.Where("course_id = ?", id).Delete(&models.CourseEditRequest{}).Error; err != nil {
+			return err
+		}
 	}
 	if err := tx.Where("course_id = ?", id).Delete(&models.Posting{}).Error; err != nil {
 		return err
@@ -1339,6 +1345,10 @@ func CreateNotifications(notifs []models.Notification) int {
 	if DB.Create(&notifs).Error != nil {
 		return 0
 	}
+	hub := ws.GetHub()
+	for _, n := range notifs {
+		hub.SendToUser(n.UserID, "notification", n)
+	}
 	return len(notifs)
 }
 
@@ -1490,6 +1500,8 @@ func migrateApplicationData(db *gorm.DB) error {
 		&models.LabBoyReportEvidence{},
 		&models.LabBoyReportReview{},
 		&models.LabBoyReportStatusHistory{},
+		&models.CourseEditRequest{},
+		&models.TranscriptImage{},
 	)
 }
 

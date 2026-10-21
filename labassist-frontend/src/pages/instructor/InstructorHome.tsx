@@ -248,6 +248,10 @@ export default function InstructorHome() {
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
+    if (form.labboy_slots < 0) {
+      showToast('จำนวน Lab Boy ต้องไม่น้อยกว่า 0', 'error')
+      return
+    }
     const data = { ...form, requirements: joinRequirements(minGrade, form.requirements ?? '') }
     if (editIds.length === 1) {
       updateMut.mutate({ ids: editIds, data })

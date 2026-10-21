@@ -192,8 +192,17 @@ func (h *Handler) Apply(c *gin.Context) {
 		if grade, ok := database.TranscriptGrade(studentID.(uint), course.Code); ok {
 			newApp.Grade = &grade
 			newApp.GradeFromTranscript = true
+			var warnParts []string
+			if student, ok := database.UserByID(studentID.(uint)); ok {
+				if ocrGrade, edited := database.TranscriptGradeEdited(student, course.Code); edited {
+					warnParts = append(warnParts, fmt.Sprintf("นักศึกษาแก้เกรดเอง (%s) ต่างจากที่ OCR อ่านได้จากใบเกรด (%s)", grade, ocrGrade))
+				}
+			}
 			if min := minGradeFromRequirements(course.Requirements); min != "" && !gradeAtLeast(grade, min) {
-				warn := fmt.Sprintf("เกรดจากใบเกรดที่ยื่นไว้ (%s) ต่ำกว่าเกณฑ์ขั้นต่ำ (%s)", grade, min)
+				warnParts = append(warnParts, fmt.Sprintf("เกรดจากใบเกรดที่ยื่นไว้ (%s) ต่ำกว่าเกณฑ์ขั้นต่ำ (%s)", grade, min))
+			}
+			if len(warnParts) > 0 {
+				warn := strings.Join(warnParts, "; ")
 				newApp.OcrWarning = &warn
 			}
 		}

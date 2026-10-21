@@ -10,6 +10,7 @@ import (
 	"labassist/handlers"
 	"labassist/middleware"
 	"labassist/reports"
+	"labassist/ws"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
@@ -37,6 +38,15 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 	v1.POST("/auth/dev-login", authH.DevLogin)
 	v1.GET("/courses", courseH.List)
 	v1.GET("/courses/:id", courseH.Get)
+
+	wsH := ws.NewHandler(func(token string) (uint, string, error) {
+		claims, user, err := middleware.VerifyToken(cfg, token)
+		if err != nil {
+			return 0, "", err
+		}
+		return user.ID, string(claims.Role), nil
+	})
+	v1.GET("/ws", wsH.HandleWS)
 
 	// Authenticated
 	authed := v1.Group("")
@@ -77,6 +87,9 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			// OCR: อ่านเกรดจากใบเกรด/ทรานสคริปต์ แล้วจับคู่กับรายวิชาใน core_courses
 			// (คนละอันกับ /student/transcript ด้านบน ซึ่งแค่เก็บไฟล์ PDF ไว้เฉยๆ)
 			studentGroup.POST("/student/profile/transcript", authH.UploadTranscript)
+			studentGroup.PUT("/student/profile/transcript/confirm", authH.ConfirmTranscriptGrades)
+			studentGroup.GET("/student/profile/transcript/images", authH.TranscriptImages)
+			studentGroup.GET("/student/profile/transcript/images/:id", authH.TranscriptImageFile)
 			studentGroup.POST("/student/applications/:id/grade-proof", studentH.UploadGradeProof)
 			studentGroup.GET("/student/applications/:id/grade-proof", studentH.GetGradeProof)
 			studentGroup.GET("/student/applications/:id/history", studentH.ApplicationHistory)
@@ -96,6 +109,8 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			studentGroup.POST("/student/profile/student-info/confirm", studentH.ConfirmStudentInfo)
 			studentGroup.GET("/student/profile/student-info/file", studentH.GetStudentInfoFile)
 			studentGroup.GET("/student/reports", reportH.MyReports)
+			studentGroup.POST("/student/reports", studentH.CreateStudentReport)
+			studentGroup.GET("/student/courses/:id/peers", studentH.CoursePeers)
 		}
 
 		// Instructor
@@ -116,6 +131,10 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			instructor.DELETE("/instructor/courses/:id/labboy-roster/confirm", teacherH.ReopenLabBoyRoster)
 			instructor.DELETE("/instructor/courses/:id", teacherH.Delete)
 			instructor.POST("/instructor/courses/:id/sections", teacherH.AddSection)
+			// Course detail changes go to the admin for approval first
+			instructor.POST("/instructor/courses/:id/edit-requests", teacherH.RequestCourseEdit)
+			instructor.GET("/instructor/course-edit-requests", teacherH.MyCourseEditRequests)
+			instructor.DELETE("/instructor/course-edit-requests/:id", teacherH.CancelCourseEditRequest)
 			instructor.GET("/instructor/profile", teacherH.GetInstructorProfile)
 			instructor.PUT("/instructor/profile", teacherH.UpdateInstructorProfile)
 			instructor.GET("/instructor/notifications", teacherH.MyNotifications)
@@ -212,8 +231,6 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			staffGroup.DELETE("/staff/occurrences/:id", staffH.DeleteOccurrenceHandler)
 			staffGroup.POST("/staff/occurrences/:id/reschedule", staffH.RescheduleOccurrence)
 			staffGroup.GET("/staff/cases/:id/makeup-days", staffH.ListCaseMakeupDays)
-			staffGroup.POST("/staff/occurrences/:id/makeup", staffH.StaffChooseMakeupDay)
-			staffGroup.POST("/staff/occurrences/:id/no-makeup", staffH.StaffDeclineMakeupDay)
 
 			// Monthly periods
 			staffGroup.GET("/staff/cases/:id/monthly-periods", staffH.ListMonthlyPeriods)
@@ -238,6 +255,9 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			adminGroup.POST("/admin/courses/import", adminH.ImportCourses)
 			adminGroup.POST("/admin/courses/import/resolve", adminH.ResolveImportConflicts)
 			adminGroup.DELETE("/admin/courses/term", adminH.DeleteCoursesByTerm)
+			adminGroup.GET("/admin/course-edit-requests", adminH.CourseEditRequests)
+			adminGroup.POST("/admin/course-edit-requests/:id/approve", adminH.ApproveCourseEditRequest)
+			adminGroup.POST("/admin/course-edit-requests/:id/reject", adminH.RejectCourseEditRequest)
 			// Academic calendar: read the PDF for review, then save the chosen dates
 			adminGroup.POST("/admin/calendar/import/preview", adminH.PreviewCalendarImport)
 			adminGroup.POST("/admin/calendar/import", adminH.ImportCalendar)

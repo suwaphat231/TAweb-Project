@@ -44,13 +44,22 @@ func TestSessionCapPerTerm(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Mon 12 Oct is a holiday: the clash still takes one of the 15 slots.
+	affects := true
+	holiday := models.CalendarDate{Date: time.Date(2026, 10, 12, 0, 0, 0, 0, time.UTC), Name: "วันหยุดทดสอบ",
+		DateType: models.DateTypeUniversityHoliday, Scope: models.DateScopeCase, StaffCaseID: &sc.ID, AffectsWork: &affects, CreatedByID: 1}
+	if err := DB.Create(&holiday).Error; err != nil {
+		t.Fatal(err)
+	}
+	cancelled := map[string]uint{"2026-10-12": holiday.ID}
+
 	// Sep–Dec 2026 hold 17 Mondays; generation must stop at 15 (Dec 14).
 	for _, m := range []int{9, 10, 11, 12} {
 		month := models.ScheduleGroupMonth{ScheduleGroupID: sg.ID, Year: 2026, Month: m}
 		if err := DB.Create(&month).Error; err != nil {
 			t.Fatal(err)
 		}
-		if _, err := RegenerateGroupMonthOccurrences(sc.ID, sg.ID, slots, month, nil); err != nil {
+		if _, err := RegenerateGroupMonthOccurrences(sc.ID, sg.ID, slots, month, cancelled); err != nil {
 			t.Fatalf("regenerate %d: %v", m, err)
 		}
 	}
@@ -63,6 +72,23 @@ func TestSessionCapPerTerm(t *testing.T) {
 	}
 	if last := occs[len(occs)-1].ScheduledDate.Format("2006-01-02"); last != "2026-12-14" {
 		t.Errorf("last session = %s, want 2026-12-14", last)
+	}
+
+	// The plan is full, yet a makeup day for the clash replaces it, not adds to it.
+	var clash models.WorkOccurrence
+	for _, o := range occs {
+		if o.Status == models.OccurrenceCancelledHoliday {
+			clash = o
+		}
+	}
+	if clash.ID == 0 {
+		t.Fatal("no holiday clash generated")
+	}
+	if _, _, err := ChooseMakeupDay(clash.ID, time.Date(2026, 10, 13, 0, 0, 0, 0, time.UTC), "13:00", "16:00", 1); err != nil {
+		t.Fatalf("makeup at the cap: %v", err)
+	}
+	if n, _ := countedSessions(DB, sc.ID, &sg.ID); n != models.MaxLabSessionsPerTerm {
+		t.Errorf("after makeup: %d sessions, want %d", n, models.MaxLabSessionsPerTerm)
 	}
 
 	// A 16th session is refused and nothing is written.

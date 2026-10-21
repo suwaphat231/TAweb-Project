@@ -79,6 +79,12 @@ type User struct {
 	TranscriptMessage    *string    `gorm:"type:text" json:"transcript_message,omitempty"`
 	TranscriptConfidence *float64   `gorm:"type:decimal(5,4)" json:"transcript_confidence,omitempty"`
 	TranscriptUpdatedAt  *time.Time `json:"transcript_updated_at,omitempty"`
+	// TranscriptOcrGrades keeps what OCR read for each course, so a grade the
+	// student corrected by hand (TranscriptGrades differs) can be flagged.
+	TranscriptOcrGrades StringMap `gorm:"type:json" json:"transcript_ocr_grades,omitempty"`
+	// TranscriptConfirmedAt is when the student confirmed (or corrected) the
+	// grades after the latest upload; nil means they still need checking.
+	TranscriptConfirmedAt *time.Time `json:"transcript_confirmed_at,omitempty"`
 	// TranscriptCourseTitles names the courses in TranscriptGrades, keyed by
 	// code. Filled in by the endpoints that show the grades, not stored.
 	TranscriptCourseTitles map[string]string `gorm:"-" json:"transcript_course_titles,omitempty"`

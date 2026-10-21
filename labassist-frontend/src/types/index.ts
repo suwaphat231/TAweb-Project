@@ -32,6 +32,10 @@ export interface User {
   transcript_message?: string
   transcript_confidence?: number
   transcript_updated_at?: string
+  /** What OCR originally read, keyed by course code — differs from transcript_grades where the student corrected it. */
+  transcript_ocr_grades?: Record<string, string>
+  /** Set once the student has checked the grades from the latest upload. */
+  transcript_confirmed_at?: string
 }
 
 /** One course from the core_courses catalog paired with the grade OCR read. */
@@ -52,6 +56,14 @@ export interface CoreCourse {
   code: string
   title: string
   credits?: string
+}
+
+/** A grade sheet the student uploaded for OCR (file fetched separately). */
+export interface TranscriptImage {
+  id: number
+  file_name: string
+  content_type: string
+  uploaded_at: string
 }
 
 /** Result of POST /student/profile/transcript (OCR). */
@@ -113,6 +125,40 @@ export interface CourseRelation {
   course: Course
   source: CourseInstructorSource
   created_at: string
+}
+
+export type CourseEditRequestStatus = 'pending' | 'approved' | 'rejected'
+
+/** An instructor's proposed course details, applied only once an admin approves.
+ *  The plain fields are the proposed values; old_* snapshot the course at request time. */
+export interface CourseEditRequest {
+  id: number
+  course_id: number
+  requested_by: number
+  title: string
+  english_title: string
+  credits: string
+  schedule: string
+  note: string
+  old_title: string
+  old_english_title: string
+  old_credits: string
+  old_schedule: string
+  status: CourseEditRequestStatus
+  reject_reason?: string
+  reviewed_at?: string
+  created_at: string
+  course_code?: string
+  course_section?: number
+  course_semester?: string
+  course_academic_year?: number
+  requester_name?: string
+}
+
+// Instructors may only change the meeting time; the name and credits stay as imported.
+export interface CourseEditRequestPayload {
+  schedule: string
+  note: string
 }
 
 export interface LabBoyAssignment {

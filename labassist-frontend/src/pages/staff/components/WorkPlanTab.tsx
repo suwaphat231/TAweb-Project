@@ -9,6 +9,7 @@ import MonthlyPlanSection from './MonthlyPlanSection'
 import PlanSummaryPanel from './PlanSummaryPanel'
 import { DateInput } from '../../../components/ui/DateInput'
 import { payableMinutes } from '../../../utils/payableHours'
+import { MAX_LAB_SESSIONS_PER_TERM, sessionSlotsUsed } from '../../../utils/labSessions'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -17,8 +18,6 @@ export const DAY_LABELS: Record<string, string> = {
   MON: 'จันทร์', TUE: 'อังคาร', WED: 'พุธ', THU: 'พฤหัสบดี',
   FRI: 'ศุกร์', SAT: 'เสาร์', SUN: 'อาทิตย์',
 }
-// Mirrors models.MaxLabSessionsPerTerm: a term holds at most 15 lab sessions.
-const MAX_LAB_SESSIONS_PER_TERM = 15
 const MONTHS_TH = [
   'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
   'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
@@ -71,6 +70,8 @@ interface GroupSummary {
   durationMins: number
   hoursPerSession: number
   totalSessions: number
+  /** Slots used toward the 15-session term cap, holiday clashes included. */
+  sessionSlots: number
   monthBreakdown: { label: string; count: number }[]
   hoursPerPerson: number
   payPerPersonBaht: number
@@ -109,6 +110,7 @@ function computeSummary(
     durationMins,
     hoursPerSession,
     totalSessions,
+    sessionSlots: sessionSlotsUsed(occs),
     monthBreakdown,
     hoursPerPerson: hoursPerSession * totalSessions,
     payPerPersonBaht,
@@ -1157,7 +1159,8 @@ function WorkPlanSummary({
             <div className="space-y-2">
               <SummaryRow label="จำนวน Lab Boy" value={`${summary.labBoyCount} คน`} />
               <SummaryRow label="ชั่วโมงต่อครั้ง" value={`${durationHrs.toFixed(2)} ชม.`} />
-              <SummaryRow label="จำนวนครั้งทั้งหมด" value={`${summary.totalSessions} / ${MAX_LAB_SESSIONS_PER_TERM} ครั้ง`} highlight />
+              <SummaryRow label="จำนวนครั้งทั้งหมด" value={`${summary.totalSessions} ครั้ง`} highlight />
+              <SummaryRow label="ใช้โควตาภาคเรียน (รวมวันชนวันหยุด)" value={`${summary.sessionSlots} / ${MAX_LAB_SESSIONS_PER_TERM} ครั้ง`} />
               {summary.monthBreakdown.length > 1 && (
                 <div style={{ paddingLeft: 12 }}>
                   {summary.monthBreakdown.map((mb) => (

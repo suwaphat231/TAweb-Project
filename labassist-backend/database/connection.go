@@ -210,6 +210,7 @@ func ensureForeignKeys(db *gorm.DB) error {
 		{"class_schedules", "user_id", "users", "id", "CASCADE"},
 		{"term_schedules", "user_id", "users", "id", "CASCADE"},
 		{"student_info_documents", "user_id", "users", "id", "CASCADE"},
+		{"transcript_images", "user_id", "users", "id", "CASCADE"},
 		{"courses", "instructor_id", "users", "id", "SET NULL"},
 		{"postings", "course_id", "courses", "id", "CASCADE"},
 		// Legacy course_id FKs on child tables (kept until columns are dropped).

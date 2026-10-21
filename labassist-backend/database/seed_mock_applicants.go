@@ -27,21 +27,24 @@ var mockDemoStaff = struct {
 }{"parinya", "ปริญญา สุภาวดี", "parinya@cp.su.ac.th"}
 
 // mockDemoCourseBase is the primary debug course: open, 6 Lab Boy slots,
-// 5 pre-applied students — the 6th slot is left for a real student to fill.
+// mockDemoCourseBase is the primary debug course: open, 6 Lab Boy slots.
 var mockDemoCourseBase = models.Course{
 	Code:         "517122",
 	Title:        "ทักษะการเขียนโปรแกรมคอมพิวเตอร์ 2",
-	EnglishTitle: "COMPUTER PROGRAMMING SKILL 2",
+	EnglishTitle: "COMPUTER PROGRAMMING SKILL II",
 	Semester:     "1",
 	AcademicYear: 2569,
 	LabBoySlots:  6,
 	Status:       models.StatusOpen,
 }
 
-var mockDemoSection = struct {
+var mockDemoSections = []struct {
 	Section  int
 	Schedule string
-}{1, "อ,พฤ 13:00-16:00"}
+}{
+	{1, "อ,พฤ 13:00-16:00"},
+	{2, "พ,ศ 13:00-16:00"},
+}
 
 type mockDemoStudent struct {
 	Username  string
@@ -54,8 +57,7 @@ type mockDemoStudent struct {
 	Grade     string
 }
 
-// demo_std01 is the student dev-login account and applies manually.
-// The other five accounts are pre-seeded applicants for instructor puriwat.
+// 12 demo student accounts across Section 1 and Section 2
 var mockDemoStudents = []mockDemoStudent{
 	{"demo_std01", "ธนภัทร ศรีวิไล", "demo_std01@example.com", "6410123456", 3.85, "เทคโนโลยีสารสนเทศ", 3, "A"},
 	{"demo_std02", "ปวีณ์นุช อินทรสุวรรณ", "demo_std02@example.com", "6410123457", 3.42, "วิทยาการคอมพิวเตอร์", 3, "B+"},
@@ -63,13 +65,17 @@ var mockDemoStudents = []mockDemoStudent{
 	{"demo_std04", "ศศิวิมล บุญมาก", "demo_std04@example.com", "6410123459", 3.67, "เทคโนโลยีสารสนเทศ", 3, "A"},
 	{"demo_std05", "อดิศร แก้วมณี", "demo_std05@example.com", "6410123460", 2.89, "วิทยาการคอมพิวเตอร์", 3, "B+"},
 	{"demo_std06", "ณัฐพล ทดสอบระบบ", "demo_std06@example.com", "6410123461", 3.50, "วิทยาการคอมพิวเตอร์", 3, "A"},
+	{"demo_std07", "วรัญญู สุขเกษม", "demo_std07@example.com", "6410123462", 3.75, "วิทยาการคอมพิวเตอร์", 3, "A"},
+	{"demo_std08", "ชลธิชา พงษ์สวัสดิ์", "demo_std08@example.com", "6410123463", 3.30, "เทคโนโลยีสารสนเทศ", 2, "B+"},
+	{"demo_std09", "รัฐศาสตร์ รุ่งเรือง", "demo_std09@example.com", "6410123464", 3.10, "วิทยาการคอมพิวเตอร์", 3, "B"},
+	{"demo_std10", "กัลยารัตน์ บุญสิริ", "demo_std10@example.com", "6410123465", 3.90, "เทคโนโลยีสารสนเทศ", 4, "A"},
+	{"demo_std11", "ภาณุพงศ์ เจริญผล", "demo_std11@example.com", "6410123466", 3.25, "วิทยาการคอมพิวเตอร์", 2, "B+"},
+	{"demo_std12", "สุจิตรา รัตนวงษ์", "demo_std12@example.com", "6410123467", 3.60, "วิทยาการคอมพิวเตอร์", 3, "A"},
 }
 
 // seedMockApplicants sets up the debug demo:
-// one instructor with an open Lab Boy posting (6 slots, section 1) and
-// 5 pre-applied students — leaving the 6th slot open for manual testing.
-// The section meets Tue and Thu, so it is two courses (one per day); the
-// applicants are on the Tuesday one.
+// one instructor with open Lab Boy postings (6 slots, section 1 & section 2) and
+// 6 applicants per section.
 // Duplicate accounts/applications are skipped so restarting is safe.
 func seedMockApplicants() error {
 	if _, ok := UserByUsername(mockDemoStaff.Username); !ok {
@@ -104,20 +110,27 @@ func seedMockApplicants() error {
 		}
 	}
 
-	// A section meeting on several days is one course per day (slot 0, 1, …),
-	// matching the classlist import. Each day is opened on its own; the
-	// pre-applied students apply to the first day.
-	var course models.Course
-	for slot, schedule := range SplitScheduleDays(mockDemoSection.Schedule) {
-		dayCourse, err := seedDemoCourseSlot(instructor.ID, slot, schedule)
-		if err != nil {
-			return err
-		}
-		if slot == 0 {
-			course = dayCourse
+	// Create/open both section 1 and section 2 courses
+	var sec1Course models.Course
+	var sec2Course models.Course
+	for _, sec := range mockDemoSections {
+		for slot, schedule := range SplitScheduleDays(sec.Schedule) {
+			dayCourse, err := seedDemoCourseSlot(instructor.ID, sec.Section, slot, schedule)
+			if err != nil {
+				return err
+			}
+			if slot == 0 {
+				if sec.Section == 1 {
+					sec1Course = dayCourse
+				} else if sec.Section == 2 {
+					sec2Course = dayCourse
+				}
+			}
 		}
 	}
 
+	// Pre-create all demo student accounts
+	studentMap := make(map[string]models.User)
 	for _, s := range mockDemoStudents {
 		student, ok := UserByUsername(s.Username)
 		if !ok {
@@ -141,15 +154,51 @@ func seedMockApplicants() error {
 				return err
 			}
 		}
+		studentMap[s.Username] = student
+	}
 
-		if s.Username == "demo_std01" {
+	// Section 1: exactly 6 applicants
+	sec1Applicants := []string{"demo_std01", "demo_std02", "demo_std03", "demo_std04", "demo_std05", "demo_std06"}
+	for _, uname := range sec1Applicants {
+		student, ok := studentMap[uname]
+		if !ok {
 			continue
 		}
-
-		grade := s.Grade
+		grade := "A"
+		for _, s := range mockDemoStudents {
+			if s.Username == uname {
+				grade = s.Grade
+				break
+			}
+		}
 		if _, err := CreateApplication(models.Application{
 			StudentID:   student.ID,
-			CourseID:    course.ID,
+			CourseID:    sec1Course.ID,
+			RoleApplied: models.RoleLabBoy,
+			Status:      models.AppPending,
+			Grade:       &grade,
+		}); err != nil && err != ErrConflict {
+			return err
+		}
+	}
+
+	// Section 2: exactly 6 applicants
+	sec2Applicants := []string{"demo_std01", "demo_std07", "demo_std08", "demo_std09", "demo_std10", "demo_std11"}
+	for _, uname := range sec2Applicants {
+		student, ok := studentMap[uname]
+		if !ok {
+			continue
+		}
+		grade := "A"
+		for _, s := range mockDemoStudents {
+			if s.Username == uname {
+				grade = s.Grade
+				break
+			}
+		}
+		if _, err := CreateApplication(models.Application{
+			StudentID:   student.ID,
+			CourseID:    sec2Course.ID,
 			RoleApplied: models.RoleLabBoy,
 			Status:      models.AppPending,
 			Grade:       &grade,
@@ -167,19 +216,19 @@ func seedMockApplicants() error {
 
 // seedDemoCourseSlot creates (or initializes, if still an untouched draft) the
 // demo course for one meeting day and links its instructor.
-func seedDemoCourseSlot(instructorID uint, slot int, schedule string) (models.Course, error) {
-	course, found := FindCourseSlot(mockDemoCourseBase.Code, mockDemoCourseBase.Semester, mockDemoCourseBase.AcademicYear, mockDemoSection.Section, slot)
+func seedDemoCourseSlot(instructorID uint, section int, slot int, schedule string) (models.Course, error) {
+	course, found := FindCourseSlot(mockDemoCourseBase.Code, mockDemoCourseBase.Semester, mockDemoCourseBase.AcademicYear, section, slot)
 	if !found {
 		deadline := time.Now().AddDate(0, 0, 21)
 		newCourse := mockDemoCourseBase
 		newCourse.InstructorID = &instructorID
-		newCourse.Section = mockDemoSection.Section
+		newCourse.Section = section
 		newCourse.Slot = slot
 		newCourse.Schedule = schedule
 		newCourse.Deadline = &deadline
 		course = CreateCourse(newCourse)
 		if course.ID == 0 {
-			return course, fmt.Errorf("create demo course slot %d", slot)
+			return course, fmt.Errorf("create demo course section %d slot %d", section, slot)
 		}
 	} else {
 		// Seed only an untouched draft; retain existing recruitment decisions.
@@ -192,7 +241,7 @@ func seedDemoCourseSlot(instructorID uint, slot int, schedule string) (models.Co
 				c.LabBoySlots = mockDemoCourseBase.LabBoySlots
 			})
 			if !saved {
-				return course, fmt.Errorf("initialize demo posting slot %d", slot)
+				return course, fmt.Errorf("initialize demo posting section %d slot %d", section, slot)
 			}
 		}
 	}
@@ -241,7 +290,7 @@ func seedMockReports() error {
 		pastCourse = CreateCourse(models.Course{
 			Code:         "517121",
 			Title:        "ทักษะการเขียนโปรแกรมคอมพิวเตอร์ 1",
-			EnglishTitle: "COMPUTER PROGRAMMING SKILL 1",
+			EnglishTitle: "COMPUTER PROGRAMMING SKILL I",
 			Semester:     "2",
 			AcademicYear: 2568,
 			Section:      1,
