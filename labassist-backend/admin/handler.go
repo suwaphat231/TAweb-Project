@@ -5,6 +5,7 @@
 package admin
 
 import (
+	"labassist/config"
 	"labassist/database"
 	"labassist/models"
 	"net/http"
@@ -51,11 +52,17 @@ type AdminStatsResponse struct {
 // DeleteCoursesByTermResponse is the response for the bulk term-delete endpoint
 type DeleteCoursesByTermResponse struct {
 	Deleted int `json:"deleted" example:"12"`
+	// Skipped lists the courses kept because of open recruitment or records
+	// that must be kept, each with the reason.
+	Skipped []database.SkippedCourse `json:"skipped"`
 }
 
-type Handler struct{}
+type Handler struct {
+	// ocrURL is the OCR service that reads academic-calendar PDFs.
+	ocrURL string
+}
 
-func NewHandler() *Handler { return &Handler{} }
+func NewHandler(cfg *config.Config) *Handler { return &Handler{ocrURL: cfg.OCRServiceURL} }
 
 // Stats godoc
 // @Summary      สถิติภาพรวมของระบบ
@@ -306,6 +313,10 @@ func (h *Handler) DeleteCoursesByTerm(c *gin.Context) {
 		return
 	}
 
-	deleted := database.DeleteCoursesByTerm(semester, academicYear)
-	c.JSON(http.StatusOK, DeleteCoursesByTermResponse{Deleted: deleted})
+	deleted, skipped, err := database.DeleteCoursesByTerm(semester, academicYear)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ลบรายวิชาไม่สำเร็จ กรุณาลองใหม่"})
+		return
+	}
+	c.JSON(http.StatusOK, DeleteCoursesByTermResponse{Deleted: deleted, Skipped: skipped})
 }

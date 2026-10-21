@@ -821,6 +821,52 @@ export interface CreateCalendarDatePayload {
   reason?: string
 }
 
+/** A course "ลบทั้งเทอม" kept, with the reason (open recruitment or records to keep). */
+export interface SkippedCourse {
+  id: number
+  code: string
+  section: number
+  title: string
+  reason: string
+}
+
+// Academic-calendar import (admin): only holidays are taken from the file.
+export type CalendarImportType = 'public_holiday' | 'university_holiday'
+
+export interface CalendarPreviewEntry {
+  start_date: string
+  end_date: string
+  name: string
+  semester: string
+  date_type: CalendarImportType
+  include: boolean
+  page: number
+  /** Every day of the entry is already in the system. */
+  exists: boolean
+}
+
+export interface CalendarPreviewResponse {
+  academic_year: number
+  detected_academic_year?: number
+  used_ocr: boolean
+  entries: CalendarPreviewEntry[]
+}
+
+export interface CalendarImportEntry {
+  start_date: string
+  end_date: string
+  name: string
+  semester: string
+  date_type: CalendarImportType
+  affects_work: boolean
+}
+
+export interface CalendarImportResponse {
+  created: number
+  skipped: number
+  warning?: string
+}
+
 export interface GenerateOccurrencesPayload {
   week_day: string
   start_time: string

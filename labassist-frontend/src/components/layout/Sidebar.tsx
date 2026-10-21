@@ -75,6 +75,7 @@ const navMap: Record<UserRole, NavItem[]> = {
   admin: [
     { to: '/admin/overview',     label: 'ภาพรวม',         icon: 'layout' },
     { to: '/admin/courses',      label: 'จัดการรายวิชา',  icon: 'book' },
+    { to: '/admin/calendar',     label: 'ปฏิทินการศึกษา', icon: 'calendar' },
     { to: '/admin/users',        label: 'จัดการผู้ใช้งาน', icon: 'users' },
     { to: '/staff/reports',      label: 'ตรวจสอบรายงาน Lab Boy', icon: 'clipboard', match: ['/reports/'] },
     { to: '/instructor/profile', label: 'ข้อมูลส่วนตัว',   icon: 'user' },

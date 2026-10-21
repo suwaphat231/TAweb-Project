@@ -15,6 +15,7 @@ import type {
   LabBoyReport, ReportDetail, ReportPage, ReportListParams, ReportInput, ReportAction, ReportEvidence,
   MakeupDay, MakeupDayPayload,
   ReportResponse, ConfirmedRecord, DocumentWorkflowResponse, CreateWorkflowStepPayload, DocType,
+  CalendarPreviewResponse, CalendarImportEntry, CalendarImportResponse, SkippedCourse,
 } from '../types'
 
 // Keep API calls on the same origin by default. This works both behind the
@@ -195,11 +196,21 @@ export const adminAPI = {
   resolveImportConflicts: (updates: { course_id: number; fields: ImportCourseFields }[]) =>
     api.post<{ updated: number }>('/admin/courses/import/resolve', { updates }).then((r) => r.data),
   deleteCoursesByTerm: (semester: string, academicYear: number) =>
-    api.delete<{ deleted: number }>('/admin/courses/term', { params: { semester, academic_year: academicYear } }).then((r) => r.data),
+    api.delete<{ deleted: number; skipped: SkippedCourse[] }>('/admin/courses/term', { params: { semester, academic_year: academicYear } }).then((r) => r.data),
   // The department's required-course reference list (core_courses, used for
   // OCR transcript matching) — separate from the Excel-imported course
   // postings above. Backs the code-suggestion dropdown in "เพิ่มวิชาเอง".
   coreCourseCatalog: () => api.get<CoreCourse[]>('/admin/core-courses').then((r) => r.data),
+  // Academic calendar PDF for a whole year: read it for review, then save
+  // the entries the admin kept as semester holidays / no-class days.
+  previewCalendarImport: (file: File, academicYear: number) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('academic_year', String(academicYear))
+    return api.post<CalendarPreviewResponse>('/admin/calendar/import/preview', formData).then((r) => r.data)
+  },
+  importCalendar: (academicYear: number, entries: CalendarImportEntry[]) =>
+    api.post<CalendarImportResponse>('/admin/calendar/import', { academic_year: academicYear, entries }).then((r) => r.data),
 }
 
 export const notificationApi = {

@@ -11,7 +11,7 @@ import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../hooks/useToast'
 import { displayCourseTitle } from '../../utils/courseDisplay'
 import { isLabCourse } from '../../utils/labCourse'
-import type { Course } from '../../types'
+import type { Course, SkippedCourse } from '../../types'
 import { formatSchedule } from '../../utils/schedule'
 
 // Meeting days for a manually added course, stored in the classlist format
@@ -58,6 +58,8 @@ export default function AdminCourses() {
   const [semester, setSemester] = useState('1')
   const [academicYear, setAcademicYear] = useState('2569')
   const [duplicateNotice, setDuplicateNotice] = useState<{ duplicates: number; created: number } | null>(null)
+  // Courses "ลบทั้งเทอม" had to keep, shown with the reason for each.
+  const [bulkSkipped, setBulkSkipped] = useState<{ deleted: number; skipped: SkippedCourse[] } | null>(null)
 
   const [showBulkDelete, setShowBulkDelete] = useState(false)
   const [bulkSemester, setBulkSemester] = useState('1')
@@ -205,7 +207,8 @@ export default function AdminCourses() {
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['all-courses'] })
       setShowBulkDelete(false)
-      showToast(`ลบวิชาเทอม ${bulkSemester}/${bulkAcademicYear} ไปแล้ว ${data.deleted} วิชา`, 'success')
+      if (data.skipped?.length) setBulkSkipped({ deleted: data.deleted, skipped: data.skipped })
+      else showToast(`ลบวิชาเทอม ${bulkSemester}/${bulkAcademicYear} ไปแล้ว ${data.deleted} วิชา`, 'success')
     },
     onError: (err) => {
       const detail = isAxiosError(err) ? err.response?.data?.error : undefined
@@ -508,6 +511,32 @@ export default function AdminCourses() {
             <Button type="submit" loading={addCourseMut.isPending}>เพิ่มวิชา</Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal isOpen={bulkSkipped !== null} onClose={() => setBulkSkipped(null)} title="ผลการลบวิชาทั้งเทอม" size="lg">
+        {bulkSkipped && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <p style={{ fontSize: 14, color: 'var(--ink-700)' }}>
+              ลบแล้ว <b>{bulkSkipped.deleted}</b> วิชา — ลบไม่ได้ <b>{bulkSkipped.skipped.length}</b> วิชา ดังนี้
+            </p>
+            <div style={{ maxHeight: 360, overflowY: 'auto', border: '1px solid var(--line)', borderRadius: 8 }}>
+              {bulkSkipped.skipped.map((s) => (
+                <div key={s.id} style={{ padding: '10px 14px', borderBottom: '1px solid var(--line-soft)' }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-800)' }}>
+                    {s.code} กลุ่ม {s.section} · {displayCourseTitle(s.title)}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 2 }}>{s.reason}</div>
+                </div>
+              ))}
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--ink-500)' }}>
+              วิชาที่มีแต่ใบสมัครที่นักศึกษาถอนแล้วจะลบได้ ส่วนวิชาที่อาจารย์ยังเปิดรับสมัคร ให้อาจารย์ปิดหรือลบประกาศก่อน
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Button type="button" onClick={() => setBulkSkipped(null)}>ตกลง</Button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       <Modal isOpen={showBulkDelete} onClose={() => setShowBulkDelete(false)} title="ลบวิชาทั้งเทอม" size="md">

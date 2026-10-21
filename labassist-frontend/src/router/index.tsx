@@ -35,6 +35,7 @@ const StaffCourseDetail = lazy(() => import('../pages/staff/StaffCourseDetail'))
 const AdminOverview = lazy(() => import('../pages/admin/AdminOverview'))
 const AdminUsers = lazy(() => import('../pages/admin/AdminUsers'))
 const AdminCourses = lazy(() => import('../pages/admin/AdminCourses'))
+const AdminCalendar = lazy(() => import('../pages/admin/AdminCalendar'))
 
 import type { UserRole } from '../types'
 
@@ -104,6 +105,7 @@ export function AppRouter() {
       <Route path="/admin/overview" element={<ProtectedRoute roles={['admin']}><AdminOverview /></ProtectedRoute>} />
       <Route path="/admin/users"    element={<ProtectedRoute roles={['admin']}><AdminUsers /></ProtectedRoute>} />
       <Route path="/admin/courses"  element={<ProtectedRoute roles={['admin']}><AdminCourses /></ProtectedRoute>} />
+      <Route path="/admin/calendar" element={<ProtectedRoute roles={['admin']}><AdminCalendar /></ProtectedRoute>} />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

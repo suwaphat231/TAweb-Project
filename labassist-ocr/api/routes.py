@@ -2,12 +2,16 @@ from pathlib import Path
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 import json
-from models.schemas import OCRResponse, SubjectCriteria, ScheduleOCRResponse, StudentInfoExtractResult
+from models.schemas import (
+    OCRResponse, SubjectCriteria, ScheduleOCRResponse, StudentInfoExtractResult,
+    AcademicCalendarEntry, AcademicCalendarResponse,
+)
 from services.preprocessor import preprocess_image, preprocess_pages
 from services.ocr_engine import extract_text
 from services.processor import parse_transcript, evaluate_grades
 from services.schedule_parser import parse_schedule
 from services.student_info_parser import extract_student_info
+from services.calendar_parser import tokens_from_pdf, tokens_from_ocr, parse_calendar, detect_academic_year
 
 router = APIRouter()
 
@@ -183,3 +187,50 @@ async def extract_student_information(file: UploadFile = File(...)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาดในการประมวลผล: {str(e)}")
+
+@router.post("/academic-calendar/extract", response_model=AcademicCalendarResponse)
+async def extract_academic_calendar(
+    file: UploadFile = File(...),
+    academic_year: int = Form(...),  # ปีการศึกษา (พ.ศ.) ใช้เติมปีให้วันที่ที่ไม่ได้พิมพ์ปีไว้
+):
+    """
+    อ่านปฏิทินการศึกษา (PDF) ทั้งปีการศึกษา คืนรายการกิจกรรม/วันหยุดพร้อมวันที่และภาคการศึกษา
+    PDF ที่มีข้อความ (ดาวน์โหลดจากเว็บ) อ่านจาก text layer โดยตรง ส่วน PDF สแกนจะใช้ OCR แทน
+    """
+    extension = Path(file.filename or "").suffix.lower()
+    if extension != ".pdf":
+        raise HTTPException(status_code=400, detail="กรุณาอัปโหลดไฟล์ปฏิทินการศึกษาเป็น PDF")
+    if not 2500 <= academic_year <= 2700:
+        raise HTTPException(status_code=400, detail="ปีการศึกษาต้องเป็น พ.ศ. เช่น 2569")
+
+    file_bytes = await read_limited(file)
+    if file_bytes.lstrip()[:4] != b"%PDF":
+        raise HTTPException(status_code=400, detail="ไฟล์ไม่ใช่ PDF ที่ถูกต้อง")
+
+    try:
+        tokens = tokens_from_pdf(file_bytes)
+        used_ocr = False
+        if sum(len(t.text) for t in tokens) < 50:
+            # Scanned PDF: no usable text layer, fall back to OCR on each page.
+            used_ocr = True
+            tokens = tokens_from_ocr([extract_text(img) for img in preprocess_pages(file_bytes)])
+        entries = parse_calendar(tokens, academic_year)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"อ่านไฟล์ปฏิทินไม่สำเร็จ: {str(e)}")
+
+    return AcademicCalendarResponse(
+        entries=[
+            AcademicCalendarEntry(
+                start_date=e.start_date.isoformat(),
+                end_date=e.end_date.isoformat(),
+                name=e.name,
+                semester=e.semester,
+                date_type=e.date_type,
+                include=e.include,
+                page=e.page,
+            )
+            for e in entries
+        ],
+        detected_academic_year=detect_academic_year(tokens),
+        used_ocr=used_ocr,
+    )
