@@ -6,11 +6,9 @@ import "time"
 // the fields extracted from them. One row per student (uniqueIndex on
 // user_id), so a new upload always replaces the previous one.
 //
-// REG shows the data in two boxes, so there are two images:
-//   - ข้อมูลนักศึกษา (Student Information) → FileName/FileData: student ID,
-//     education level, curriculum, faculty, campus, student status.
-//   - ข้อมูลส่วนตัว (Personal Information) → PersonalFileName/PersonalFileData:
-//     the Thai and English names.
+// One image — the REG profile card (student ID, Thai/English name, status) —
+// in FileName/FileData. The Personal* columns are from the old two-screenshot
+// flow; a new upload clears them.
 //
 // Allowlist: student_id, full_name_th, full_name_en, education_level,
 // curriculum, faculty, campus, student_status.

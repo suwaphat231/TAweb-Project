@@ -147,12 +147,15 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 		user, ok = database.UserByEmail(email)
 		if !ok {
 			// ไม่เจอเลย → สร้าง student ใหม่
-			created, err := database.CreateUser(models.User{
-				FullName:  name,
-				Email:     email,
-				Role:      models.RoleStudent,
-				GoogleSub: &googleSub,
-			})
+			// Google ส่งชื่อมาตามที่ตั้งในบัญชี (ของมหาวิทยาลัยเป็นภาษาอังกฤษ)
+			// ชื่อภาษาไทยให้นักศึกษากรอกเองในหน้าโปรไฟล์
+			newUser := models.User{Email: email, Role: models.RoleStudent, GoogleSub: &googleSub}
+			if database.HasThaiLetter(name) {
+				newUser.FullName = name
+			} else {
+				newUser.FullNameEn = name
+			}
+			created, err := database.CreateUser(newUser)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถสร้างบัญชีได้"})
 				return
@@ -181,7 +184,7 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 		return
 	}
 
-	token, err := middleware.SignToken(h.cfg, user.ID, string(user.Role), user.FullName)
+	token, err := middleware.SignToken(h.cfg, user.ID, string(user.Role), user.DisplayName())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถสร้าง token ได้"})
 		return

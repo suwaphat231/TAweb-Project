@@ -25,7 +25,7 @@ const reportAuditEntity = "labboy_report"
 
 func enrichReport(r models.LabBoyReport) models.LabBoyReport {
 	if u, ok := UserByID(r.StudentID); ok {
-		r.StudentName = u.FullName
+		r.StudentName = u.DisplayName()
 		if u.StudentID != nil {
 			r.StudentCode = *u.StudentID
 		}
@@ -45,7 +45,7 @@ func enrichReport(r models.LabBoyReport) models.LabBoyReport {
 
 func userName(id uint) string {
 	if u, ok := UserByID(id); ok {
-		return u.FullName
+		return u.DisplayName()
 	}
 	return ""
 }
@@ -417,7 +417,7 @@ func ReportResponses(reportID uint) ([]models.LabBoyReportResponse, error) {
 	}
 	for i := range rows {
 		if u, ok := UserByID(rows[i].AuthorID); ok {
-			rows[i].AuthorName = u.FullName
+			rows[i].AuthorName = u.DisplayName()
 			rows[i].AuthorRole = string(u.Role)
 		}
 	}

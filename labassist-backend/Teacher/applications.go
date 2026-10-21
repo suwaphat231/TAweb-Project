@@ -23,6 +23,8 @@ type BulkReviewResult struct {
 	SkippedNoProof int `json:"skipped_no_proof"`
 }
 
+const rosterLockedMsg = "ยืนยันรายชื่อ Lab Boy แล้ว รับหรือยกเลิกการรับเพิ่มไม่ได้ — ยกเลิกการยืนยันรายชื่อก่อน"
+
 // ReviewRequest is the request body for reviewing an application
 type ReviewRequest struct {
 	Status models.AppStatus `json:"status" binding:"required,oneof=accepted rejected" example:"accepted"`
@@ -100,6 +102,10 @@ func (h *Handler) Review(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "รอบรับสมัครนี้ถูกเก็บเป็นประวัติแล้ว"})
 		return
 	}
+	if txRes.RosterLocked {
+		c.JSON(http.StatusConflict, gin.H{"error": rosterLockedMsg})
+		return
+	}
 	if txRes.SlotsFull {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Lab Boy slots are full"})
 		return
@@ -169,6 +175,14 @@ func (h *Handler) CancelAcceptance(c *gin.Context) {
 	}
 	if txRes.WasWithdrawn {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "application has been withdrawn"})
+		return
+	}
+	if txRes.Archived {
+		c.JSON(http.StatusConflict, gin.H{"error": "รอบรับสมัครนี้ถูกเก็บเป็นประวัติแล้ว"})
+		return
+	}
+	if txRes.RosterLocked {
+		c.JSON(http.StatusConflict, gin.H{"error": rosterLockedMsg})
 		return
 	}
 
@@ -327,7 +341,7 @@ func (h *Handler) BulkReview(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot save application"})
 			return
 		}
-		if txRes.Archived || txRes.WasWithdrawn || txRes.SlotsFull || txRes.MissingProof {
+		if txRes.Archived || txRes.WasWithdrawn || txRes.SlotsFull || txRes.MissingProof || txRes.RosterLocked {
 			if txRes.SlotsFull {
 				result.SkippedFull++
 			}

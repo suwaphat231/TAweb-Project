@@ -249,4 +249,49 @@ def extract_student_info(ocr_results) -> Tuple[Dict, float, Optional[str]]:
     if extracted['faculty'] is None and extracted['curriculum']:
         extracted['faculty'] = _programme_from_curriculum(extracted['curriculum'])
 
+    _read_profile_card(lines, extracted)
+
     return extracted, avg_confidence, detect_page_kind(lines, extracted)
+
+
+# The REG profile card (top-left of every REG page) has no labels for the
+# names: the Thai name is the line starting with a title, the English name
+# is the all-Latin line under it, and the status wraps onto the next line:
+#
+#     660710260
+#     นายสุวพัชร วัฒกีเจริญ
+#     suwaphat watthakicharoen
+#     สถานภาพนักศึกษา : นักศึกษาปัจจุบัน
+#     สถานะปกติ
+_THAI_TITLE_RE = re.compile(r'^\s*(นางสาว|นาย|นาง|น\.ส\.)\s*\S')
+_LATIN_NAME_RE = re.compile(r'^[A-Za-z][A-Za-z.\'\- ]+[A-Za-z]$')
+
+
+def _line_text(line) -> str:
+    return ' '.join(t.strip() for _, t, _ in line).strip()
+
+
+def _read_profile_card(lines, extracted: Dict) -> None:
+    texts = [_line_text(line) for line in lines]
+    th_at = None
+    if extracted['full_name_th'] is None:
+        for i, text in enumerate(texts):
+            if ':' not in text and _THAI_TITLE_RE.match(text):
+                extracted['full_name_th'] = text[:200]
+                th_at = i
+                break
+    if extracted['full_name_en'] is None and th_at is not None:
+        for text in texts[th_at + 1:th_at + 3]:
+            if '@' not in text and _LATIN_NAME_RE.match(text) and ' ' in text:
+                extracted['full_name_en'] = _clean_value('full_name_en', text)
+                break
+
+    status = extracted['student_status']
+    if status and 'ปกติ' not in status and 'สถานะ' not in status:
+        at = next((i for i, t in enumerate(texts) if status in t), None)
+        for text in texts[at + 1:at + 3] if at is not None else []:
+            if ':' in text or _is_sensitive(text):
+                break
+            if text.startswith('สถานะ'):
+                extracted['student_status'] = f'{status} {text}'[:300]
+                break

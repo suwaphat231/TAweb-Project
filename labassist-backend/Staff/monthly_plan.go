@@ -380,6 +380,10 @@ func (h *Handler) AddGroupMonthOccurrence(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "occurrence already exists on this date for the group"})
 		return
 	}
+	if occErr == database.ErrSessionCap {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": occErr.Error()})
+		return
+	}
 	if occErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot add occurrence: " + occErr.Error()})
 		return

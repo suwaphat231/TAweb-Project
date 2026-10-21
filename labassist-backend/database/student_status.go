@@ -1,6 +1,10 @@
 package database
 
-import "strings"
+import (
+	"strings"
+
+	"labassist/models"
+)
 
 // IsNormalStudentStatus reports whether a registrar student status (สถานภาพ
 // นักศึกษา, read from the student's document) means the student is enrolled
@@ -69,6 +73,23 @@ func NormalizePersonName(name string) string {
 	return s
 }
 
+// SplitNamePrefix separates a leading นาย / นางสาว (or น.ส.) from a Thai name,
+// so "นางสาว สมหญิง ใจดี" becomes ("นางสาว", "สมหญิง ใจดี"). Names without one of
+// those titles come back unchanged with an empty prefix.
+func SplitNamePrefix(name string) (prefix, rest string) {
+	s := strings.Join(strings.Fields(name), " ")
+	for _, p := range []struct{ title, prefix string }{
+		{"นางสาว", models.NamePrefixMiss},
+		{"น.ส.", models.NamePrefixMiss},
+		{"นาย", models.NamePrefixMr},
+	} {
+		if r := strings.TrimSpace(strings.TrimPrefix(s, p.title)); r != s && r != "" {
+			return p.prefix, r
+		}
+	}
+	return "", s
+}
+
 func isASCIILetter(s string) bool {
 	return s != "" && s[0] >= 'a' && s[0] <= 'z'
 }
@@ -78,30 +99,6 @@ func isASCIILetter(s string) bool {
 func SamePersonName(a, b string) bool {
 	na, nb := NormalizePersonName(a), NormalizePersonName(b)
 	return na != "" && na == nb
-}
-
-// VerifiedFullName returns the Thai full name from the student's confirmed
-// registrar document, or "" when no document has been confirmed or the name
-// could not be read.
-func VerifiedFullName(userID uint) string {
-	th, _ := VerifiedNames(userID)
-	return th
-}
-
-// VerifiedNames returns the Thai and English full names from the student's
-// confirmed registrar document; either is "" when it was not read.
-func VerifiedNames(userID uint) (th, en string) {
-	doc, ok := StudentInfoDocumentByUserID(userID)
-	if !ok || doc.ConfirmedAt == nil {
-		return "", ""
-	}
-	if doc.OcrFullNameTh != nil {
-		th = strings.TrimSpace(*doc.OcrFullNameTh)
-	}
-	if doc.OcrFullNameEn != nil {
-		en = strings.TrimSpace(*doc.OcrFullNameEn)
-	}
-	return th, en
 }
 
 // HasThaiLetter reports whether s contains at least one Thai character, so a

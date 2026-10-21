@@ -58,6 +58,7 @@ type Course struct {
 	RequireGradeProof       bool         `gorm:"-" json:"require_grade_proof"`
 	ClosedByInstructor      bool         `gorm:"-" json:"closed_by_instructor"`
 	LabBoyScheduleConfirmed bool         `gorm:"-" json:"labboy_schedule_confirmed"`
+	LabBoyRosterConfirmedAt *time.Time   `gorm:"-" json:"labboy_roster_confirmed_at,omitempty"`
 	// ConflictDay is set server-side when the course schedule overlaps the
 	// requesting student's confirmed term schedule. Empty string = no conflict.
 	ConflictDay             string       `gorm:"-" json:"conflict_day,omitempty"`

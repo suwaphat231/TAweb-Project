@@ -34,6 +34,7 @@ export default function InstructorSelect() {
   const [noteText, setNoteText] = useState('')
   const [profileTarget, setProfileTarget] = useState<Application | null>(null)
   const [showAcceptAll, setShowAcceptAll] = useState(false)
+  const [showConfirmRoster, setShowConfirmRoster] = useState(false)
 
   const qc = useQueryClient()
   const showToast = useToast()
@@ -133,6 +134,19 @@ export default function InstructorSelect() {
       showToast(err?.response?.data?.error ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'),
   })
 
+  // Confirming the roster hands the course to staff and freezes who is accepted.
+  const rosterMut = useMutation({
+    mutationFn: (confirm: boolean) =>
+      confirm ? instructorApi.confirmRoster(courseId) : instructorApi.reopenRoster(courseId),
+    onSuccess: (_, confirm) => {
+      qc.invalidateQueries({ queryKey: ['instructor-courses'] })
+      setShowConfirmRoster(false)
+      showToast(confirm ? 'ยืนยันรายชื่อ Lab Boy แล้ว เจ้าหน้าที่จะเริ่มจัดทำเอกสารได้' : 'ยกเลิกการยืนยันรายชื่อแล้ว', 'success')
+    },
+    onError: (err: { response?: { data?: { error?: string } } }) =>
+      showToast(err?.response?.data?.error ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'),
+  })
+
   const resolveWithdrawMut = useMutation({
     mutationFn: ({ id, approve }: { id: number; approve: boolean }) =>
       instructorApi.resolveWithdraw(id, approve),
@@ -171,6 +185,7 @@ export default function InstructorSelect() {
   )
   const currentGroup = courseGroups.find((g) => g.sections.some((s) => s.id === courseId))
   const pendingCount = applicants.filter((a) => a.status === 'pending').length
+  const rosterLocked = !!selectedCourse?.labboy_roster_confirmed_at
   const remainingSlots = selectedCourse ? Math.max(0, selectedCourse.labboy_slots - selectedCourse.labboy_accepted) : 0
   const slotFill = selectedCourse && selectedCourse.labboy_slots > 0
     ? selectedCourse.labboy_accepted / selectedCourse.labboy_slots
@@ -217,7 +232,30 @@ export default function InstructorSelect() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink-900)' }}>คัดเลือกผู้สมัคร</h1>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          {!!courseId && pendingCount > 0 && (
+          {!!courseId && selectedCourse && !rosterLocked && selectedCourse.labboy_accepted > 0 && (
+            <Button
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              onClick={() => setShowConfirmRoster(true)}
+            >
+              <CheckIcon /> ยืนยันรายชื่อ Lab Boy ({selectedCourse.labboy_accepted})
+            </Button>
+          )}
+          {!!courseId && rosterLocked && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '6px 8px 6px 14px', borderRadius: 8,
+              background: '#F0FDF4', border: '1px solid #BBF7D0',
+              fontSize: 13, fontWeight: 600, color: '#15803D',
+            }}>
+              ✅ ยืนยันรายชื่อแล้ว
+              {!selectedCourse?.labboy_schedule_confirmed && (
+                <Button variant="ghost" size="sm" loading={rosterMut.isPending} onClick={() => rosterMut.mutate(false)}>
+                  ยกเลิกการยืนยัน
+                </Button>
+              )}
+            </div>
+          )}
+          {!!courseId && !rosterLocked && pendingCount > 0 && (
             <Button
               style={{ background: 'var(--green)', borderColor: 'var(--green)', display: 'flex', alignItems: 'center', gap: 6 }}
               onClick={() => setShowAcceptAll(true)}
@@ -535,7 +573,7 @@ export default function InstructorSelect() {
                         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
 
                           {/* Accept — green solid pill */}
-                          {(row.status === 'pending' || row.status === 'rejected') && (
+                          {(row.status === 'pending' || row.status === 'rejected') && !rosterLocked && (
                             <ActionBtn
                               color="green"
                               onClick={(e) => { e.stopPropagation(); reviewMut.mutate({ id: row.id, status: 'accepted' }) }}
@@ -566,7 +604,7 @@ export default function InstructorSelect() {
                           )}
 
                           {/* Reject — red soft pill */}
-                          {(row.status === 'pending' || row.status === 'accepted') && !row.withdraw_requested && (
+                          {(row.status === 'pending' || (row.status === 'accepted' && !rosterLocked)) && !row.withdraw_requested && (
                             <ActionBtn
                               color="red"
                               onClick={(e) => { e.stopPropagation(); reviewMut.mutate({ id: row.id, status: 'rejected' }) }}
@@ -628,7 +666,7 @@ export default function InstructorSelect() {
           <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,.15)' }} />
 
           {/* Bulk accept */}
-          <button
+          {!rosterLocked && <button
             onClick={() => bulkReviewMut.mutate({ ids: [...selectedIds], status: 'accepted' })}
             disabled={bulkReviewMut.isPending}
             style={{
@@ -643,7 +681,7 @@ export default function InstructorSelect() {
             onMouseLeave={(e) => (e.currentTarget.style.opacity = bulkReviewMut.isPending ? '0.6' : '1')}
           >
             <CheckIcon size={12} /> รับที่เลือก
-          </button>
+          </button>}
 
           {/* Bulk reject */}
           <button
@@ -680,6 +718,26 @@ export default function InstructorSelect() {
           </button>
         </div>
       )}
+
+      {/* ── Confirm Roster Modal ── */}
+      <Modal isOpen={showConfirmRoster} onClose={() => setShowConfirmRoster(false)} title="ยืนยันรายชื่อ Lab Boy" size="sm">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <p style={{ fontSize: 14, color: 'var(--ink-600)', margin: 0, lineHeight: 1.7 }}>
+            ยืนยันว่านักศึกษาที่รับแล้ว <strong>{selectedCourse?.labboy_accepted}</strong> คน คือรายชื่อ Lab Boy ทั้งหมดของวิชา{' '}
+            <strong>{selectedCourse?.code}</strong> — เจ้าหน้าที่จะเห็นรายวิชานี้และเริ่มจัดทำเอกสารได้
+            หลังยืนยันจะรับหรือยกเลิกการรับนักศึกษาเพิ่มไม่ได้
+            {selectedCourse && selectedCourse.labboy_accepted < selectedCourse.labboy_slots && (
+              <> (รับไว้ <strong style={{ color: 'var(--amber)' }}>{selectedCourse.labboy_accepted}</strong> จาก {selectedCourse.labboy_slots} ที่)</>
+            )}
+          </p>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <Button variant="ghost" onClick={() => setShowConfirmRoster(false)}>ยกเลิก</Button>
+            <Button loading={rosterMut.isPending} onClick={() => rosterMut.mutate(true)}>
+              ยืนยันรายชื่อ
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* ── Accept All Confirm Modal ── */}
       <Modal isOpen={showAcceptAll} onClose={() => setShowAcceptAll(false)} title="รับ Lab Boy ทั้งหมด" size="sm">
@@ -894,7 +952,7 @@ export default function InstructorSelect() {
             )}
             {profileTarget.status !== 'withdrawn' && !profileTarget.withdraw_requested && (
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 4, borderTop: '1px solid var(--line-soft)' }}>
-                {(profileTarget.status === 'pending' || profileTarget.status === 'accepted') && (
+                {(profileTarget.status === 'pending' || (profileTarget.status === 'accepted' && !rosterLocked)) && (
                   <Button
                     variant="ghost"
                     style={{ color: 'var(--red)', border: '1px solid var(--red)' }}
@@ -904,7 +962,7 @@ export default function InstructorSelect() {
                     ไม่รับ
                   </Button>
                 )}
-                {(profileTarget.status === 'pending' || profileTarget.status === 'rejected') && (
+                {(profileTarget.status === 'pending' || profileTarget.status === 'rejected') && !rosterLocked && (
                   <Button
                     style={{ background: 'var(--green)', borderColor: 'var(--green)' }}
                     loading={reviewMut.isPending && reviewMut.variables?.status === 'accepted'}

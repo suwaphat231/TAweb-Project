@@ -154,6 +154,10 @@ func offering(c *gin.Context) (models.Course, models.Posting, bool) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "รายวิชานี้ยังไม่มีรอบรับสมัคร"})
 		return course, posting, false
 	}
+	if posting.LabBoyRosterConfirmedAt == nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "อาจารย์ยังไม่ได้ยืนยันรายชื่อ Lab Boy ของรายวิชานี้"})
+		return course, posting, false
+	}
 	return course, posting, true
 }
 

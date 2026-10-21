@@ -58,7 +58,7 @@ type TranscriptOCRResponse struct {
 
 // UploadTranscript godoc
 // @Summary      แนบไฟล์ใบเกรดเพื่อให้ระบบ OCR อ่านและบันทึกผล
-// @Description  ระบบจะอ่านเกรดเฉพาะรายวิชาในตาราง core_courses ของสาขานักศึกษา (ดู database/migrations/allcourse.sql)
+// @Description  ระบบจะอ่านเกรดเฉพาะรายวิชาที่กำหนดในระบบของสาขานักศึกษา
 // @Tags         student
 // @Accept       mpfd
 // @Produce      json
@@ -184,7 +184,7 @@ func (h *AuthHandler) UploadTranscript(c *gin.Context) {
 
 	// Keep only grades belonging to a course in the catalog. The OCR service
 	// already filters by the codes we sent, but a course could have been
-	// removed from allcourse.sql between the request and the response, and
+	// removed from the catalog between the request and the response, and
 	// this also drops anything the service returned unasked.
 	//
 	// A student's transcript photo/PDF rarely covers every semester at once,

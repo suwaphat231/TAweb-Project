@@ -7,6 +7,10 @@ export interface User {
   username: string
   full_name: string
   full_name_en?: string
+  /** Student's Thai title: 'นาย' | 'นางสาว'; '' until chosen. */
+  name_prefix?: string
+  /** name_prefix + ' ' + full_name, as the backend prints it ("นาย สมชาย ใจดี"). */
+  display_name?: string
   avatar_url?: string
   email: string
   role: UserRole
@@ -89,6 +93,8 @@ export interface Course {
   // just self-reporting it — set per posting by the instructor.
   require_grade_proof: boolean
   labboy_schedule_confirmed: boolean
+  /** Set when the instructor confirmed the final Lab Boy roster; staff see the course only after this. */
+  labboy_roster_confirmed_at?: string
   // Set by /student/courses and /student/dashboard when the course schedule
   // overlaps the student's confirmed term schedule. Empty / absent = no conflict.
   conflict_day?: string
@@ -318,6 +324,8 @@ export interface FormReview {
   instructor_name: string
   labboy_slots: number
   labboy_accepted: number
+  /** The instructor confirmed the final Lab Boy roster; the staff home lists only these. */
+  labboy_roster_confirmed: boolean
   submitted_at: string
 }
 
@@ -472,17 +480,11 @@ export interface DocumentWorkflowItem {
 
 // ─── Student info OCR ────────────────────────────────────────────────────────
 
-/** The two REG boxes a student attaches: ข้อมูลนักศึกษา and ข้อมูลส่วนตัว. */
-export type StudentInfoKind = 'student' | 'personal'
-
 export interface StudentInfoDocument {
   id: number
   user_id: number
-  /** ข้อมูลนักศึกษา image ('' until attached). */
+  /** REG profile-card image ('' until attached). */
   file_name: string
-  /** ข้อมูลส่วนตัว image ('' until attached) — source of the names. */
-  personal_file_name: string
-  personal_confidence: number
   ocr_student_id?: string
   ocr_full_name_th?: string
   ocr_full_name_en?: string

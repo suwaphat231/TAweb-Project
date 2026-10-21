@@ -7,7 +7,7 @@ import type {
   CreateUserPayload, UpdateUserPayload, ImportCoursesResponse, ImportCourseFields,
   FormReview, StaffDocument, CreateStaffDocumentPayload, TranscriptOCRResult, CoreCourse, WorkDaySlot,
   WorkSession, TermSchedule, TermOption, ScheduleSlot, TermScheduleStatus,
-  LabBoyAssignment, CourseRelation, StudentInfoUploadResult, StudentInfoKind,
+  LabBoyAssignment, CourseRelation, StudentInfoUploadResult,
   StaffCaseResponse, ScheduleGroup, CalendarDate, WorkOccurrence, MonthlyPeriodResponse, StaffAuditLog,
   UpdateCasePayload, AddScheduleGroupPayload, UpdateScheduleGroupPayload, CreateCalendarDatePayload, GenerateOccurrencesPayload,
   ScheduleGroupMonth, AddGroupMonthPayload, MonthOccurrenceSummary,
@@ -103,6 +103,10 @@ export const coursesAPI = {
   updateStatus: (id: number, status: CourseStatus) =>
     api.put<Course>(`/instructor/courses/${id}/status`, { status }).then((r) => r.data),
   remove: (id: number) => api.delete(`/instructor/courses/${id}`).then(() => undefined),
+  confirmRoster: (id: number) =>
+    api.put<Course>(`/instructor/courses/${id}/labboy-roster/confirm`).then((r) => r.data),
+  reopenRoster: (id: number) =>
+    api.delete<Course>(`/instructor/courses/${id}/labboy-roster/confirm`).then((r) => r.data),
 }
 
 export const applicationsAPI = {
@@ -242,18 +246,17 @@ export const studentApi = {
   courses: (params?: { status?: string; q?: string }) =>
     api.get<Course[]>('/student/courses', { params }).then((r) => r.data),
   // Student info document (OCR)
-  uploadStudentInfo: (file: File, kind: StudentInfoKind) => {
+  uploadStudentInfo: (file: File) => {
     const formData = new FormData()
     formData.append('file', file)
-    formData.append('kind', kind)
     return api.post<StudentInfoUploadResult>('/student/profile/student-info', formData).then((r) => r.data)
   },
   getStudentInfo: () =>
     api.get<StudentInfoUploadResult>('/student/profile/student-info').then((r) => r.data),
-  confirmStudentInfo: (applyToProfile: boolean) =>
-    api.post<StudentInfoUploadResult>('/student/profile/student-info/confirm', { apply_to_profile: applyToProfile }).then((r) => r.data),
-  getStudentInfoFile: (kind: StudentInfoKind) =>
-    api.get('/student/profile/student-info/file', { params: { kind }, responseType: 'blob' }).then((r) => r.data as Blob),
+  confirmStudentInfo: () =>
+    api.post<StudentInfoUploadResult>('/student/profile/student-info/confirm').then((r) => r.data),
+  getStudentInfoFile: () =>
+    api.get('/student/profile/student-info/file', { responseType: 'blob' }).then((r) => r.data as Blob),
 }
 export const instructorApi = {
   courses: (params?: { has_lab?: boolean }) =>
@@ -280,6 +283,8 @@ export const instructorApi = {
   updateCourse: coursesAPI.update,
   updateCourseStatus: coursesAPI.updateStatus,
   deleteCourse: coursesAPI.remove,
+  confirmRoster: coursesAPI.confirmRoster,
+  reopenRoster: coursesAPI.reopenRoster,
   applicants: applicationsAPI.getCourseApplicants,
   review: applicationsAPI.review,
   bulkReview: applicationsAPI.bulkReview,

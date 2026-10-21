@@ -425,6 +425,9 @@ func ChooseMakeupDay(clashID uint, date time.Time, start, end string, actorID ui
 		if err := tx.Create(&makeup).Error; err != nil {
 			return err
 		}
+		if err := checkSessionCap(tx, clash.StaffCaseID, &gid); err != nil {
+			return err
+		}
 		clash.NoMakeup = false
 		clash.UpdatedByID = &actorID
 		return tx.Save(&clash).Error
@@ -543,6 +546,8 @@ func MakeupErrorText(err error) string {
 		return "วันที่เลือกเป็นวันหยุด"
 	case errors.Is(err, ErrMakeupDateTaken):
 		return "วันที่เลือกมีวันทำงานอยู่แล้ว"
+	case errors.Is(err, ErrSessionCap):
+		return ErrSessionCap.Error()
 	}
 	return ""
 }

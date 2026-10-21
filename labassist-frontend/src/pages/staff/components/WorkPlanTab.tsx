@@ -8,6 +8,7 @@ import type {
 import MonthlyPlanSection from './MonthlyPlanSection'
 import PlanSummaryPanel from './PlanSummaryPanel'
 import { DateInput } from '../../../components/ui/DateInput'
+import { payableMinutes } from '../../../utils/payableHours'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -16,6 +17,8 @@ export const DAY_LABELS: Record<string, string> = {
   MON: 'จันทร์', TUE: 'อังคาร', WED: 'พุธ', THU: 'พฤหัสบดี',
   FRI: 'ศุกร์', SAT: 'เสาร์', SUN: 'อาทิตย์',
 }
+// Mirrors models.MaxLabSessionsPerTerm: a term holds at most 15 lab sessions.
+const MAX_LAB_SESSIONS_PER_TERM = 15
 const MONTHS_TH = [
   'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
   'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
@@ -25,11 +28,6 @@ const MONTHS_TH = [
 
 function formatThaiMonthYear(year: number, month: number) {
   return `${MONTHS_TH[month - 1]} ${year + 543}`
-}
-
-function timeToMins(t: string) {
-  const [h, m] = t.split(':').map(Number)
-  return h * 60 + m
 }
 
 function isCountedStatus(status: OccurrenceStatus) {
@@ -86,7 +84,7 @@ function computeSummary(
   occs: WorkOccurrence[],
   caseRateSatang: number,
 ): GroupSummary {
-  const durationMins = timeToMins(group.end_time) - timeToMins(group.start_time)
+  const durationMins = payableMinutes(group.start_time, group.end_time)
   const hoursPerSession = group.hours_per_session > 0
     ? group.hours_per_session
     : Math.max(0, durationMins / 60)
@@ -1159,7 +1157,7 @@ function WorkPlanSummary({
             <div className="space-y-2">
               <SummaryRow label="จำนวน Lab Boy" value={`${summary.labBoyCount} คน`} />
               <SummaryRow label="ชั่วโมงต่อครั้ง" value={`${durationHrs.toFixed(2)} ชม.`} />
-              <SummaryRow label="จำนวนครั้งทั้งหมด" value={`${summary.totalSessions} ครั้ง`} highlight />
+              <SummaryRow label="จำนวนครั้งทั้งหมด" value={`${summary.totalSessions} / ${MAX_LAB_SESSIONS_PER_TERM} ครั้ง`} highlight />
               {summary.monthBreakdown.length > 1 && (
                 <div style={{ paddingLeft: 12 }}>
                   {summary.monthBreakdown.map((mb) => (

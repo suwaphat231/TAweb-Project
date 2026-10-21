@@ -36,10 +36,9 @@ export function ProfileInfoTab() {
     },
   })
 
-  const [draft, setDraft] = useState<Partial<Record<'full_name' | 'full_name_en' | 'student_id' | 'faculty' | 'phone', string>>>({})
+  const [draft, setDraft] = useState<Partial<Record<'name_prefix' | 'full_name' | 'full_name_en' | 'student_id' | 'faculty' | 'phone', string>>>({})
   const [isEditing, setIsEditing] = useState(false)
   const info = useStudentInfoDoc()
-  const cmp = info.doc ? info.cmp : undefined
 
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['student-profile'],
@@ -49,6 +48,7 @@ export function ProfileInfoTab() {
   const p = profile ?? user
 
   const form = {
+    name_prefix: p?.name_prefix ?? '',
     full_name: p?.full_name ?? '',
     full_name_en: p?.full_name_en ?? '',
     student_id: p?.student_id ?? '',
@@ -58,7 +58,7 @@ export function ProfileInfoTab() {
   }
 
   const updateMut = useMutation({
-    mutationFn: (data: { full_name: string; full_name_en: string; student_id: string; faculty: string; phone: string }) =>
+    mutationFn: (data: { name_prefix: string; full_name: string; full_name_en: string; student_id: string; faculty: string; phone: string }) =>
       studentApi.updateProfile(data),
     onSuccess: (updated) => {
       setUser(updated)
@@ -76,26 +76,25 @@ export function ProfileInfoTab() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (!form.name_prefix) {
+      showToast('กรุณาเลือกคำนำหน้าชื่อ (นาย หรือ นางสาว)', 'error')
+      return
+    }
     updateMut.mutate({
-      full_name: verifiedName ?? form.full_name,
-      full_name_en: verifiedNameEn ?? form.full_name_en.trim(),
+      name_prefix: form.name_prefix,
+      full_name: form.full_name,
+      full_name_en: form.full_name_en.trim(),
       student_id: form.student_id.trim(),
       faculty: form.faculty,
       phone: form.phone.trim(),
     })
   }
 
-  // Once the registrar document is confirmed the name is locked to it.
-  const verifiedName = info.doc?.confirmed_at ? info.doc.ocr_full_name_th?.trim() : undefined
-  const verifiedNameEn = info.doc?.confirmed_at ? info.doc.ocr_full_name_en?.trim() || undefined : undefined
-  const nameMatchesReg = !!verifiedName && !!cmp?.full_name_th.match
-
   const status = studentStatus(info.doc?.ocr_student_status, info.doc?.confirmed_at, !!info.doc)
 
   const readiness = [
-    { done: !!(p?.full_name && p?.student_id && p?.faculty && p?.phone), label: 'ข้อมูลส่วนตัวครบ', hint: 'ชื่อ รหัสนักศึกษา ภาควิชา และเบอร์ติดต่อ' },
-    { done: status.variant === 'green', label: 'ยืนยันสถานภาพปกติ', hint: 'แนบรูปข้อมูลส่วนตัวและข้อมูลนักศึกษาจากระบบทะเบียนแล้วกดยืนยัน' },
-    { done: nameMatchesReg, label: 'ชื่อตรงกับระบบทะเบียน', hint: 'ชื่อ-นามสกุลต้องตรงกับเอกสารจากระบบทะเบียน' },
+    { done: !!(p?.name_prefix && p?.full_name && p?.student_id && p?.faculty && p?.phone), label: 'ข้อมูลส่วนตัวครบ', hint: 'คำนำหน้าชื่อ ชื่อ รหัสนักศึกษา ภาควิชา และเบอร์ติดต่อ' },
+    { done: status.variant === 'green', label: 'ยืนยันสถานภาพปกติ', hint: 'แนบรูปการ์ดโปรไฟล์จากระบบทะเบียนแล้วกดยืนยัน' },
     { done: Object.keys(p?.transcript_grades ?? {}).length > 0, label: 'ยื่นใบเกรดแล้ว', hint: 'ใช้แทนการแนบรูปเกรดตอนสมัคร', to: '/student/grade-check' },
   ]
   const readyCount = readiness.filter((r) => r.done).length
@@ -143,7 +142,7 @@ export function ProfileInfoTab() {
             )}
             {profileLoading ? <div style={{ width: '100%', marginTop: 16 }}><Skeleton lines={2} height={14} /></div> : (
               <>
-                <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--ink-900)', lineHeight: 1.35, marginTop: 14 }}>{p?.full_name || '—'}</div>
+                <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--ink-900)', lineHeight: 1.35, marginTop: 14 }}>{p?.display_name || p?.full_name || '—'}</div>
                 {p?.full_name_en && <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>{p.full_name_en}</div>}
                 {p?.student_id && <div style={{ fontSize: 14, color: 'var(--ink-600)', fontVariantNumeric: 'tabular-nums' }}>{p.student_id}</div>}
                 {p?.faculty && <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>{p.faculty}</div>}
@@ -207,10 +206,11 @@ export function ProfileInfoTab() {
           <Skeleton lines={4} height={16} />
         ) : !isEditing ? (
           <dl className="profile-fields">
-            <InfoRow label="ชื่อ-นามสกุล (ภาษาไทย)" value={p?.full_name} check={cmp?.full_name_th} />
-            <InfoRow label="ชื่อ-นามสกุล (ภาษาอังกฤษ)" value={p?.full_name_en} check={cmp?.full_name_en} />
-            <InfoRow label="รหัสนักศึกษา" value={p?.student_id} check={cmp?.student_id} />
-            <InfoRow label="ภาควิชา" value={p?.faculty} check={cmp?.faculty} />
+            <InfoRow label="คำนำหน้าชื่อ" value={p?.name_prefix || undefined} />
+            <InfoRow label="ชื่อ-นามสกุล (ภาษาไทย)" value={p?.full_name} />
+            <InfoRow label="ชื่อ-นามสกุล (ภาษาอังกฤษ)" value={p?.full_name_en} />
+            <InfoRow label="รหัสนักศึกษา" value={p?.student_id} />
+            <InfoRow label="ภาควิชา" value={p?.faculty} />
             <InfoRow label="เบอร์ติดต่อ" value={formatPhone(p?.phone)} />
             <InfoRow label="อีเมล (ใช้สำหรับเข้าสู่ระบบ)" value={p?.email} />
             <div>
@@ -224,25 +224,37 @@ export function ProfileInfoTab() {
         ) : (
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <div className="profile-fields">
+              <Select
+                disabled={updateMut.isPending}
+                label="คำนำหน้าชื่อ *"
+                value={form.name_prefix}
+                onChange={(e) => setDraft((f) => ({ ...f, name_prefix: e.target.value }))}
+                required
+                options={[
+                  { value: '', label: '— เลือกคำนำหน้า —' },
+                  { value: 'นาย', label: 'นาย' },
+                  { value: 'นางสาว', label: 'นางสาว' },
+                ]}
+              />
               <Input
-                readOnly={updateMut.isPending || !!verifiedName}
+                readOnly={updateMut.isPending}
                 label="ชื่อ-นามสกุล (ภาษาไทย) *"
                 placeholder="เช่น สมชาย ใจดี"
-                value={verifiedName ?? form.full_name}
+                value={form.full_name}
                 onChange={(e) => setDraft((f) => ({ ...f, full_name: e.target.value }))}
                 required
                 autoComplete="name"
-                hint={verifiedName ? 'ล็อกตามเอกสารจากระบบทะเบียน — หากชื่อเปลี่ยน ให้แนบเอกสารใหม่' : 'ต้องตรงกับชื่อในระบบทะเบียน ระบบจะตรวจจากเอกสารที่แนบ'}
+                hint="ไม่ต้องใส่คำนำหน้า"
               />
               <Input
-                readOnly={updateMut.isPending || !!verifiedNameEn}
+                readOnly={updateMut.isPending}
                 label="ชื่อ-นามสกุล (ภาษาอังกฤษ)"
                 placeholder="เช่น Somchai Jaidee"
-                value={verifiedNameEn ?? form.full_name_en}
+                value={form.full_name_en}
                 onChange={(e) => setDraft((f) => ({ ...f, full_name_en: e.target.value }))}
                 autoComplete="off"
                 lang="en"
-                hint={verifiedNameEn ? 'ล็อกตามเอกสารจากระบบทะเบียน' : 'ตัวอักษรภาษาอังกฤษตามที่ระบบทะเบียนสะกด'}
+                hint="ตัวอักษรภาษาอังกฤษตามที่ระบบทะเบียนสะกด"
               />
               <Input
                 readOnly={updateMut.isPending}
@@ -304,7 +316,7 @@ export function ProfileInfoTab() {
 
         <div style={{ marginTop: 24, padding: 20, borderRadius: 12, background: 'var(--line-soft)' }}>
           <SectionTitle icon="file" title="เอกสารยืนยันจากระบบทะเบียน" inset
-            hint="แนบรูปจากระบบทะเบียน 2 รูป (PDF, JPG หรือ PNG) — ต้องมีสถานภาพปกติจึงจะสมัคร Lab Boy ได้" />
+            hint="แนบรูปการ์ดโปรไฟล์จากระบบทะเบียน 1 รูป (PDF, JPG หรือ PNG) เพื่อตรวจสถานภาพ — ต้องเป็นสถานภาพปกติจึงจะสมัคร Lab Boy ได้" />
           <StudentInfoVerification info={info} />
         </div>
       </Card>
@@ -312,12 +324,9 @@ export function ProfileInfoTab() {
   )
 }
 
-type FieldCheck = { ocr?: string | null; current?: string | null; match: boolean }
-
 const labelStyle: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: 'var(--ink-500)' }
 
-function InfoRow({ label, value, check }: { label: string; value?: string | null; check?: FieldCheck }) {
-  const checked = !!(check?.ocr && check.current)
+function InfoRow({ label, value }: { label: string; value?: string | null }) {
   return (
     <div>
       <dt style={labelStyle}>{label}</dt>
@@ -325,9 +334,6 @@ function InfoRow({ label, value, check }: { label: string; value?: string | null
         <span style={{ fontSize: 15, color: value ? 'var(--ink-900)' : 'var(--ink-400)', wordBreak: 'break-all' }}>
           {value || '—'}
         </span>
-        {checked && (check?.match
-          ? <Badge variant="green"><Icon name="check" size={12} /> ตรงกับเอกสาร</Badge>
-          : <Badge variant="amber" wrap>ต่างจากเอกสาร: {check?.ocr}</Badge>)}
       </dd>
     </div>
   )

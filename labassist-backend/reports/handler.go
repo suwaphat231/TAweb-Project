@@ -809,7 +809,7 @@ func (h *Handler) ConfirmedHistory(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
 		return
 	}
-	if !actor.isReviewer() {
+	if !actor.isStaffOrAdmin() {
 		course, ok := database.CourseByID(app.CourseID)
 		if !ok || !database.InstructorOwnsCourse(course, actor.ID, "", false) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})

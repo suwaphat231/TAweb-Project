@@ -735,6 +735,9 @@ func Connect(cfg *config.Config) error {
 	if err := BackfillPostings(db); err != nil {
 		return fmt.Errorf("backfill postings: %w", err)
 	}
+	if err := migrateGoogleEnglishNames(db); err != nil {
+		return fmt.Errorf("move Google English names: %w", err)
+	}
 	if err := migrateToPostingFKs(db); err != nil {
 		return fmt.Errorf("migrate to posting FKs: %w", err)
 	}
@@ -746,9 +749,6 @@ func Connect(cfg *config.Config) error {
 	}
 	DB = db
 
-	if err := seedCoreCourses(); err != nil {
-		return fmt.Errorf("seed core courses: %w", err)
-	}
 
 	// Classlist instructors and courses are real production data — seed them
 	// regardless of SEED_DEMO_DATA so the system works out of the box.

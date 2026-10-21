@@ -243,16 +243,10 @@ func occurrencesFromSlice(occs []models.WorkOccurrence) (workDates []WorkDateIte
 	return
 }
 
-// hoursFromTime parses two "HH:MM" strings and returns the duration in hours.
+// hoursFromTime parses two "HH:MM" strings and returns the paid hours
+// (partial hours rounded up, see database.PayableMinutes).
 func hoursFromTime(start, end string) float64 {
-	var sh, sm, eh, em int
-	fmt.Sscanf(start, "%d:%d", &sh, &sm)
-	fmt.Sscanf(end, "%d:%d", &eh, &em)
-	mins := (eh*60 + em) - (sh*60 + sm)
-	if mins <= 0 {
-		return 0
-	}
-	return float64(mins) / 60.0
+	return database.PayableHours(start, end)
 }
 
 // formatInt renders a whole-number float without a trailing ".0".

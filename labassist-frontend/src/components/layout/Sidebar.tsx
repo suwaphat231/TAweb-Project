@@ -207,7 +207,7 @@ export function Sidebar({ collapsed = false, onClose }: Props) {
           {!collapsed && (
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-900)', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {user.full_name}
+                {user.display_name || user.full_name}
               </div>
               <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 1 }}>{roleLabel[user.role]}</div>
             </div>

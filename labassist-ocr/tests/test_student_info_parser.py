@@ -63,6 +63,40 @@ REAL_STUDENT_PAGE = [
 ]
 
 
+# Token positions as EasyOCR returned them for the real REG profile card:
+# no labels for the names, and the status wraps onto a second line.
+PROFILE_CARD = [
+    tok('(.', 624, 106, w=298, h=266, conf=0.19),
+    tok('8นักศึกษา', 595, 563, w=401, h=111),
+    tok('660710260', 557, 791, w=468, h=84),
+    tok('นายสุวพัชร วัฒกีเจริญ', 381, 935, w=822, h=97),
+    tok(' suwaphat watthakicharoen', 247, 1088, w=1081, h=126),
+    tok('สถานภาพนักศึกษา : นักศึกษาปจจบัน', 137, 1263, w=1305, h=97),
+    tok('..', 1300, 1346, w=26, h=28, conf=0.18),
+    tok(' สถานะปกติ', 586, 1396, w=405, h=90),
+    tok('zwatthakicharoen s@su.ac.th', 124, 1668, w=1350, h=98),
+    tok(' (', 199, 1949, w=88, h=86, conf=0.28),
+    tok('ออกจากระบบ', 336, 1967, w=474, h=64),
+]
+
+
+class ProfileCardTest(unittest.TestCase):
+    def setUp(self):
+        self.fields, _, _ = extract_student_info(PROFILE_CARD)
+
+    def test_fields(self):
+        self.assertEqual(self.fields['student_id'], '660710260')
+        self.assertEqual(self.fields['full_name_th'], 'นายสุวพัชร วัฒกีเจริญ')
+        self.assertEqual(self.fields['full_name_en'], 'Suwaphat Watthakicharoen')
+
+    def test_status_joins_its_wrapped_line(self):
+        self.assertEqual(self.fields['student_status'], 'นักศึกษาปจจบัน สถานะปกติ')
+
+    def test_email_not_returned(self):
+        values = ' '.join(v for v in self.fields.values() if v)
+        self.assertNotIn('su.ac.th', values)
+
+
 class RealStudentPageTest(unittest.TestCase):
     def setUp(self):
         self.fields, _, self.kind = extract_student_info(REAL_STUDENT_PAGE)

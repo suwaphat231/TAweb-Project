@@ -559,6 +559,10 @@ func (h *Handler) Delete(c *gin.Context) {
 			return
 		}
 	} else {
+		if course.LabBoyRosterConfirmedAt != nil {
+			c.JSON(http.StatusConflict, gin.H{"error": "ยืนยันรายชื่อ Lab Boy แล้ว ลบประกาศไม่ได้ — ยกเลิกการยืนยันรายชื่อก่อน"})
+			return
+		}
 		if _, ok := database.ResetCourseToDraft(uint(id)); !ok {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot archive posting"})
 			return

@@ -8,6 +8,7 @@ import type {
 import { MonthlyWorkPlanCard, MONTH_NAMES } from './MonthlyWorkPlanCard'
 import { OverallScheduleSummary } from './OverallScheduleSummary'
 import { formatThaiDate, toDateOnly } from '../../../utils/thaiDate'
+import { payableHours } from '../../../utils/payableHours'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -39,9 +40,7 @@ const SEMESTER_LABEL: Record<string, string> = {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function hoursFromSlot(slot: CourseScheduleSlot): number {
-  const [sh, sm] = slot.start_time.split(':').map(Number)
-  const [eh, em] = slot.end_time.split(':').map(Number)
-  return ((eh * 60 + em) - (sh * 60 + sm)) / 60
+  return payableHours(slot.start_time, slot.end_time)
 }
 
 function thaiFmt(dateStr: string): string {

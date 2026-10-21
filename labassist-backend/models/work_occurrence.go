@@ -13,6 +13,17 @@ const (
 	OccurrenceCancelledOther   OccurrenceStatus = "cancelled_other"
 )
 
+// MaxLabSessionsPerTerm caps how many lab sessions one schedule group may hold
+// in a term. Only rows that are lab days count (see CountsAsSession).
+const MaxLabSessionsPerTerm = 15
+
+// CountsAsSession reports whether an occurrence with this status is a lab day
+// toward MaxLabSessionsPerTerm. Holiday-cancelled, cancelled and rescheduled
+// rows are not.
+func (s OccurrenceStatus) CountsAsSession() bool {
+	return s == OccurrenceScheduled || s == OccurrenceCompleted || s == OccurrenceAbsent
+}
+
 // WorkOccurrence is one individual instance of a Lab Boy work session, derived
 // by expanding the weekly schedule over the semester date range. Only
 // OccurrenceCompleted occurrences count toward hours and payment calculation.

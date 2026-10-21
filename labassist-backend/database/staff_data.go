@@ -21,6 +21,7 @@ func enrichReview(r models.FormReview) models.FormReview {
 			courseID = p.CourseID
 			r.LabBoySlots = p.LabBoySlots
 			r.AcceptedCount = p.LabBoyAccepted
+			r.RosterConfirmed = p.LabBoyRosterConfirmedAt != nil
 		}
 	} else {
 		courseID = r.CourseID
@@ -39,6 +40,7 @@ func enrichReview(r models.FormReview) models.FormReview {
 		if r.PostingID == 0 {
 			r.LabBoySlots = c.LabBoySlots
 			r.AcceptedCount = c.LabBoyAccepted
+			r.RosterConfirmed = c.LabBoyRosterConfirmedAt != nil
 		}
 	}
 	return r

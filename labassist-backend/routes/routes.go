@@ -112,6 +112,8 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			instructor.POST("/instructor/courses", teacherH.Create)
 			instructor.PUT("/instructor/courses/:id", teacherH.Update)
 			instructor.PUT("/instructor/courses/:id/status", teacherH.UpdateStatus)
+			instructor.PUT("/instructor/courses/:id/labboy-roster/confirm", teacherH.ConfirmLabBoyRoster)
+			instructor.DELETE("/instructor/courses/:id/labboy-roster/confirm", teacherH.ReopenLabBoyRoster)
 			instructor.DELETE("/instructor/courses/:id", teacherH.Delete)
 			instructor.POST("/instructor/courses/:id/sections", teacherH.AddSection)
 			instructor.GET("/instructor/profile", teacherH.GetInstructorProfile)

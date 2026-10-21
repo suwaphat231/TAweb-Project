@@ -9,8 +9,13 @@ type Actor struct {
 	Role string
 }
 
-func (a Actor) isAdmin() bool    { return a.Role == string(models.RoleAdmin) }
-func (a Actor) isReviewer() bool { return a.Role == string(models.RoleStaff) || a.isAdmin() }
+func (a Actor) isAdmin() bool        { return a.Role == string(models.RoleAdmin) }
+func (a Actor) isStaff() bool        { return a.Role == string(models.RoleStaff) }
+func (a Actor) isStaffOrAdmin() bool { return a.isStaff() || a.isAdmin() }
+
+// isReviewer returns true only for admin — staff is read-only on reports
+// and may not take any workflow actions.
+func (a Actor) isReviewer() bool { return a.isAdmin() }
 
 // Action is a step a user can take on a report.
 type Action string
@@ -117,7 +122,7 @@ func CheckAction(r models.LabBoyReport, actor Actor, action Action, reason strin
 		}
 	case byReviewer:
 		if !actor.isReviewer() {
-			return "", &Denial{Forbidden: true, Message: "เฉพาะผู้ตรวจสอบ (เจ้าหน้าที่/ผู้ดูแลระบบ) เท่านั้น"}
+			return "", &Denial{Forbidden: true, Message: "เฉพาะผู้ดูแลระบบ (admin) เท่านั้น"}
 		}
 		if r.ReporterID == actor.ID {
 			return "", &Denial{Forbidden: true, Message: "ผู้รายงานไม่สามารถพิจารณารายงานของตนเองได้"}

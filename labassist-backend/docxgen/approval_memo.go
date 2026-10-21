@@ -160,13 +160,18 @@ func replaceParagraph(docXML, anchor, replacement string) (string, error) {
 	return docXML[:start] + replacement + docXML[end:], nil
 }
 
-// splitThaiName splits "นายสมชาย ใจดี" into ("นายสมชาย", "ใจดี").
+// splitThaiName splits "นาย สมชาย ใจดี" into ("นาย สมชาย", "ใจดี"); the title
+// stays with the first name. "นายสมชาย ใจดี" gives ("นายสมชาย", "ใจดี").
 func splitThaiName(name string) (first, last string) {
 	name = strings.TrimSpace(name)
-	if i := strings.Index(name, " "); i >= 0 {
-		return name[:i], strings.TrimSpace(name[i+1:])
+	title := ""
+	if p, rest := database.SplitNamePrefix(name); p != "" && strings.HasPrefix(name, p+" ") {
+		title, name = p+" ", rest
 	}
-	return name, ""
+	if i := strings.Index(name, " "); i >= 0 {
+		return title + name[:i], strings.TrimSpace(name[i+1:])
+	}
+	return title + name, ""
 }
 
 // fiscalYearBE returns the Thai government fiscal year (Oct–Sep) in BE.

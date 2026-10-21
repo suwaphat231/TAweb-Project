@@ -6,7 +6,7 @@ import type { FormReview } from '../types'
 const base = {
   reviewer_id: 0, status: 'pending', updated_at: '', course_code: '517122',
   course_title: 'Programming Skill 2', section: 1, semester: '1', academic_year: 2569,
-  instructor_name: '', labboy_slots: 6, submitted_at: '',
+  instructor_name: '', labboy_slots: 6, labboy_roster_confirmed: true, submitted_at: '',
 } satisfies Omit<FormReview, 'id' | 'course_id' | 'labboy_accepted'>
 const thursday: FormReview = { ...base, id: 2, course_id: 84, labboy_accepted: 0 }
 const tuesday: FormReview = { ...base, id: 1, course_id: 83, labboy_accepted: 6 }

@@ -33,6 +33,9 @@ type FormReview struct {
 	InstructorName string `gorm:"-" json:"instructor_name"`
 	LabBoySlots    int    `gorm:"-" json:"labboy_slots"`
 	AcceptedCount  int    `gorm:"-" json:"labboy_accepted"`
+	// RosterConfirmed is true once the instructor confirmed the final Lab Boy
+	// roster; only then does the course show on the staff home page.
+	RosterConfirmed bool `gorm:"-" json:"labboy_roster_confirmed"`
 	SubmittedAt    string `gorm:"-" json:"submitted_at"`
 }
 

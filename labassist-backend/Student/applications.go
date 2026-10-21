@@ -32,6 +32,8 @@ type WithdrawRequest struct {
 type UpdateProfileRequest struct {
 	// FullName is the Thai name — the primary name shown everywhere.
 	FullName *string `json:"full_name,omitempty" example:"สมชาย ใจดี"`
+	// NamePrefix is the Thai title: "นาย" or "นางสาว".
+	NamePrefix *string `json:"name_prefix,omitempty" example:"นาย"`
 	// FullNameEn is the English spelling; "" clears it.
 	FullNameEn *string `json:"full_name_en,omitempty" example:"Somchai Jaidee"`
 	StudentID *string `json:"student_id,omitempty" example:"640710112"`
@@ -144,9 +146,14 @@ func (h *Handler) Apply(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": msg, "student_status_required": true})
 		return
 	}
-	// The profile name must match the confirmed registrar document.
-	if me, _ := database.UserByID(studentID.(uint)); !database.SamePersonName(database.VerifiedFullName(studentID.(uint)), me.FullName) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "ชื่อ-นามสกุลในโปรไฟล์ต้องตรงกับเอกสารจากระบบทะเบียน กรุณายืนยันเอกสารในหน้าโปรไฟล์ก่อนสมัคร", "student_status_required": true})
+	// Hiring documents print the student's title, so it must be set.
+	if me, _ := database.UserByID(studentID.(uint)); !models.IsValidNamePrefix(me.NamePrefix) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "กรุณาเลือกคำนำหน้าชื่อ (นาย/นางสาว) ในหน้าโปรไฟล์ก่อนสมัคร Lab Boy", "name_prefix_required": true})
+		return
+	}
+	// A Google sign-up starts with only the English name.
+	if me, _ := database.UserByID(studentID.(uint)); !database.HasThaiLetter(me.FullName) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "กรุณากรอกชื่อ-นามสกุลภาษาไทยในหน้าโปรไฟล์ก่อนสมัคร Lab Boy", "thai_name_required": true})
 		return
 	}
 
@@ -215,7 +222,7 @@ func (h *Handler) Apply(c *gin.Context) {
 				UserID:   ins.ID,
 				CourseID: &body.CourseID,
 				Title:    "มีผู้สมัครใหม่",
-				Body:     fmt.Sprintf("นักศึกษา %s สมัครวิชา %s (%s)", applicant.FullName, course.Title, course.Code),
+				Body:     fmt.Sprintf("นักศึกษา %s สมัครวิชา %s (%s)", applicant.DisplayName(), course.Title, course.Code),
 			})
 		}
 		database.CreateNotifications(notifs)
@@ -291,7 +298,7 @@ func (h *Handler) Withdraw(c *gin.Context) {
 						UserID:   ins.ID,
 						CourseID: &course.ID,
 						Title:    "มีคำขอถอนจาก Lab Boy",
-						Body:     fmt.Sprintf("นักศึกษา %s ขอถอนจากการเป็น Lab Boy วิชา %s (%s) เหตุผล: %s", applicant.FullName, course.Title, course.Code, reason),
+						Body:     fmt.Sprintf("นักศึกษา %s ขอถอนจากการเป็น Lab Boy วิชา %s (%s) เหตุผล: %s", applicant.DisplayName(), course.Title, course.Code, reason),
 					})
 				}
 				database.CreateNotifications(notifs)
@@ -358,8 +365,17 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if body.NamePrefix != nil && !models.IsValidNamePrefix(*body.NamePrefix) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาเลือกคำนำหน้าชื่อ (นาย หรือ นางสาว)"})
+		return
+	}
 	if body.FullName != nil {
-		trimmed := strings.TrimSpace(*body.FullName)
+		// A title typed into the name box moves to NamePrefix, so it is not
+		// printed twice ("นายนายสมชาย").
+		prefix, trimmed := database.SplitNamePrefix(*body.FullName)
+		if prefix != "" && body.NamePrefix == nil {
+			body.NamePrefix = &prefix
+		}
 		if trimmed == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณากรอกชื่อ-นามสกุล"})
 			return
@@ -377,16 +393,6 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 			return
 		}
 		body.FullNameEn = &trimmed
-	}
-	// Once a registrar document is confirmed, the names are locked to it.
-	verifiedTh, verifiedEn := database.VerifiedNames(studentID.(uint))
-	if body.FullName != nil && verifiedTh != "" && !database.SamePersonName(verifiedTh, *body.FullName) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "ชื่อ-นามสกุล (ไทย) ต้องตรงกับเอกสารจากระบบทะเบียน (" + verifiedTh + ") — หากชื่อเปลี่ยน กรุณาแนบเอกสารใหม่"})
-		return
-	}
-	if body.FullNameEn != nil && verifiedEn != "" && !database.SamePersonName(verifiedEn, *body.FullNameEn) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "ชื่อ-นามสกุล (อังกฤษ) ต้องตรงกับเอกสารจากระบบทะเบียน (" + verifiedEn + ") — หากชื่อเปลี่ยน กรุณาแนบเอกสารใหม่"})
-		return
 	}
 
 	if body.StudentID != nil {
@@ -431,6 +437,9 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 		}
 		if body.FullName != nil {
 			u.FullName = *body.FullName
+		}
+		if body.NamePrefix != nil {
+			u.NamePrefix = *body.NamePrefix
 		}
 		if body.FullNameEn != nil {
 			u.FullNameEn = *body.FullNameEn

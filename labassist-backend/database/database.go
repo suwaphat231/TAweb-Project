@@ -56,6 +56,7 @@ func applyPostingToCourse(p models.Posting, c *models.Course) {
 	c.RequireGradeProof = p.RequireGradeProof
 	c.ClosedByInstructor = p.ClosedByInstructor
 	c.LabBoyScheduleConfirmed = p.LabBoyScheduleConfirmed
+	c.LabBoyRosterConfirmedAt = p.LabBoyRosterConfirmedAt
 }
 
 // closeIfPastDeadline flips an open/closing_soon posting to closed once its
@@ -106,7 +107,7 @@ func countNonWithdrawnApplications(courseID uint) (int, error) {
 
 func enrichApplication(a models.Application) models.Application {
 	if u, ok := UserByID(a.StudentID); ok {
-		a.StudentName = u.FullName
+		a.StudentName = u.DisplayName()
 		if u.StudentID != nil {
 			a.StudentCode = *u.StudentID
 		}
@@ -809,8 +810,7 @@ func CoursesTaughtBy(instructorID uint, fullName string, isAdmin bool) ([]models
 
 // CoreCourseCatalog returns every core_courses code, deduped (the same code
 // can appear once per program — see models.CoreCourse), code ascending. This
-// is the department's required-course reference list (seeded from
-// migrations/allcourse.sql), not the imported class-postings in the courses
+// is the department's required-course reference list, not the imported class-postings in the courses
 // table — it's what backs the "type a code, see suggestions" helper when an
 // admin adds a course by hand instead of importing it from Excel.
 func CoreCourseCatalog() ([]models.CoreCourse, error) {
@@ -1218,6 +1218,7 @@ type ReviewTxResult struct {
 	SlotsFull    bool // true when skipped because the course had no remaining slots
 	WasWithdrawn bool // true when skipped because the student withdrew after the pre-check
 	MissingProof bool // true when skipped because course requires grade proof but none uploaded
+	RosterLocked bool // true when skipped because the instructor already confirmed the Lab Boy roster
 }
 
 // ReviewApplicationTx atomically checks slot availability, updates the
@@ -1251,6 +1252,12 @@ func ReviewApplicationTx(appID uint, newStatus models.AppStatus, applyFields fun
 		}
 
 		prevStatus := app.Status
+
+		// A confirmed roster is final: nobody joins or leaves it by review.
+		if posting.LabBoyRosterConfirmedAt != nil && (prevStatus == models.AppAccepted) != (newStatus == models.AppAccepted) {
+			res.RosterLocked = true
+			return nil
+		}
 
 		if newStatus == models.AppAccepted && prevStatus != models.AppAccepted {
 			if app.RoleApplied == models.RoleLabBoy && posting.LabBoyAccepted >= posting.LabBoySlots {

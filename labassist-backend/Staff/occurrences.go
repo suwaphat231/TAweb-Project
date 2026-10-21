@@ -1,6 +1,7 @@
 package staff
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -153,8 +154,12 @@ func (h *Handler) UpdateOccurrence(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid status; use scheduled, cancelled_holiday, completed, absent, or cancelled_other"})
 		return
 	}
-	occ, ok := database.UpdateOccurrenceStatus(uint(id), body.Status, body.Reason, staffID.(uint))
-	if !ok {
+	occ, err := database.UpdateOccurrenceStatus(uint(id), body.Status, body.Reason, staffID.(uint))
+	if errors.Is(err, database.ErrSessionCap) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return
+	}
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "occurrence not found"})
 		return
 	}
@@ -308,6 +313,10 @@ func (h *Handler) RescheduleOccurrence(c *gin.Context) {
 	_, newOcc, err := database.RescheduleOccurrence(
 		uint(id), newDate, body.NewStart, body.NewEnd, body.Reason, staffID.(uint),
 	)
+	if errors.Is(err, database.ErrSessionCap) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot reschedule occurrence: " + err.Error()})
 		return
