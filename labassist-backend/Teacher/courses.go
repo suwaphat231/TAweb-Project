@@ -1,9 +1,11 @@
 package teacher
 
 import (
+	"errors"
 	"fmt"
 	"labassist/database"
 	"labassist/models"
+	"log"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -554,8 +556,14 @@ func (h *Handler) Delete(c *gin.Context) {
 
 	role, _ := c.Get("role")
 	if role.(string) == "admin" {
-		if !database.DeleteCourse(uint(id)) {
-			c.JSON(http.StatusConflict, gin.H{"error": "ลบไม่ได้: รายวิชามีประวัติที่ต้องเก็บ หรือไม่สามารถบันทึกการลบได้"})
+		if err := database.DeleteCourse(uint(id)); err != nil {
+			var blocked *database.CourseDeleteBlockedError
+			if errors.As(err, &blocked) {
+				c.JSON(http.StatusConflict, gin.H{"error": blocked.Error()})
+				return
+			}
+			log.Printf("delete course %d: %v", id, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "ลบรายวิชาไม่สำเร็จ กรุณาลองใหม่"})
 			return
 		}
 	} else {

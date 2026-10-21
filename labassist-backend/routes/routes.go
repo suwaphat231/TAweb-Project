@@ -23,7 +23,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 
 	authH := handlers.NewAuthHandler(cfg)
 	courseH := handlers.NewCourseHandler()
-	adminH := admin.NewHandler()
+	adminH := admin.NewHandler(cfg)
 	teacherH := teacher.NewHandler()
 	studentH := student.NewHandler(cfg)
 	staffH := staff.NewHandler()
@@ -238,6 +238,9 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			adminGroup.POST("/admin/courses/import", adminH.ImportCourses)
 			adminGroup.POST("/admin/courses/import/resolve", adminH.ResolveImportConflicts)
 			adminGroup.DELETE("/admin/courses/term", adminH.DeleteCoursesByTerm)
+			// Academic calendar: read the PDF for review, then save the chosen dates
+			adminGroup.POST("/admin/calendar/import/preview", adminH.PreviewCalendarImport)
+			adminGroup.POST("/admin/calendar/import", adminH.ImportCalendar)
 		}
 	}
 }

@@ -466,10 +466,6 @@ func deleteEmptyCourseTx(tx *gorm.DB, id uint) error {
 	return tx.Delete(&course).Error
 }
 
-func DeleteCourse(id uint) bool {
-	return DB.Transaction(func(tx *gorm.DB) error { return deleteEmptyCourseTx(tx, id) }) == nil
-}
-
 // ResetCourseToDraft is what an instructor's "ลบประกาศ" actually does:
 // archive the current active posting (preserving all application history,
 // form reviews, and staff documents that reference it) and open a blank draft
@@ -528,31 +524,6 @@ func FindCourseSlot(code, semester string, academicYear, section, slot int) (mod
 	err := DB.Where("code = ? AND semester = ? AND academic_year = ? AND section = ? AND slot = ?",
 		code, semester, academicYear, section, slot).First(&c).Error
 	return c, err == nil
-}
-
-// DeleteCoursesByTerm only deletes empty catalog entries; historical data stays.
-func DeleteCoursesByTerm(semester string, academicYear int) int {
-	deleted := 0
-	err := DB.Transaction(func(tx *gorm.DB) error {
-		var ids []uint
-		if err := tx.Model(&models.Course{}).Where("semester = ? AND academic_year = ?", semester, academicYear).Order("id").Pluck("id", &ids).Error; err != nil {
-			return err
-		}
-		for _, id := range ids {
-			if err := deleteEmptyCourseTx(tx, id); err != nil {
-				if errors.Is(err, ErrConflict) {
-					continue
-				}
-				return err
-			}
-			deleted++
-		}
-		return nil
-	})
-	if err != nil {
-		return 0
-	}
-	return deleted
 }
 
 func CountCourses() (int64, error) {

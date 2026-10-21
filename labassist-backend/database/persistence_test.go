@@ -2,6 +2,7 @@ package database
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -138,8 +139,8 @@ func TestPersistenceAcrossConnections(t *testing.T) {
 	if err != nil || newApp.PostingID == app.PostingID || newApp.ID == app.ID {
 		t.Fatalf("new round application: %+v, %v", newApp, err)
 	}
-	if DeleteCourse(course.ID) {
-		t.Fatal("deleted course with historical applications")
+	if err := DeleteCourse(course.ID); !errors.Is(err, ErrConflict) {
+		t.Fatalf("deleted course with historical applications: %v", err)
 	}
 	if _, ok := UpdateCourse(course.ID, func(c *models.Course) {
 		c.LabBoySlots = 3

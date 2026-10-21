@@ -41,3 +41,16 @@ class StudentInfoExtractResult(BaseModel):
     # Which REG box the image shows: "personal", "student", or None if unclear.
     page_kind: Optional[str] = None
     confidence: float
+class AcademicCalendarEntry(BaseModel):
+    start_date: str              # YYYY-MM-DD (Christian era)
+    end_date: str                # YYYY-MM-DD, same as start_date for a single day
+    name: str
+    semester: str                # "1", "2" or "S"
+    date_type: Optional[str] = None  # public_holiday | university_holiday | no_class; None = activity only
+    include: bool                # suggested default: the date stops teaching
+    page: int
+
+class AcademicCalendarResponse(BaseModel):
+    entries: List[AcademicCalendarEntry]
+    detected_academic_year: Optional[int] = None  # "ปีการศึกษา 2569" found in the file
+    used_ocr: bool               # True when the PDF had no text layer (scanned)

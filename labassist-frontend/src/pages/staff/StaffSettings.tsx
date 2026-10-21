@@ -4,6 +4,7 @@ import { staffApi } from '../../services/api'
 import { useToast } from '../../hooks/useToast'
 import type { CalendarDate, CalendarDateType } from '../../types'
 import { DateInput } from '../../components/ui/DateInput'
+import { CALENDAR_IMPORT_REASON, semesterMonthKeys } from '../../utils/academicCalendar'
 
 const SEMESTER_MONTHS: Record<string, { label: string; months: number[] }> = {
   '1': { label: 'ภาคต้น',      months: [7, 8, 9, 10] },
@@ -70,8 +71,8 @@ export default function StaffSettings() {
     queryFn: () => staffApi.listCalendarDatesBySemester(semester, year),
   })
 
-  // per-month add form: null = none open, number = which month is open
-  const [openMonth, setOpenMonth] = useState<number | null>(null)
+  // per-month add form: null = none open, otherwise the open month's "YYYY-MM"
+  const [openMonth, setOpenMonth] = useState<string | null>(null)
   const [form, setForm] = useState({
     date: '', name: '', date_type: 'public_holiday' as CalendarDateType, affects_work: true,
   })
@@ -113,22 +114,24 @@ export default function StaffSettings() {
 
   const semInfo = SEMESTER_MONTHS[semester] ?? SEMESTER_MONTHS['1']
 
-  // group calDates by month number (from the date field)
-  const byMonth = useMemo(() => {
-    const map: Record<number, CalendarDate[]> = {}
-    for (const m of semInfo.months) map[m] = []
-    for (const d of calDates) {
-      const m = new Date(d.date.slice(0, 10) + 'T00:00:00').getMonth() + 1
-      if (m in map) map[m].push(d)
-    }
-    return map
-  }, [calDates, semInfo])
+  // Months shown ("YYYY-MM"): the term's usual months, widened to cover every
+  // holiday of the term (e.g. ones imported from the academic calendar).
+  const monthKeys = useMemo(() => semesterMonthKeys(
+    semInfo.months.map(m => `${monthCEYear(m, semester, year)}-${String(m).padStart(2, '0')}`),
+    calDates,
+  ), [calDates, semInfo, semester, year])
 
-  function openAddForm(month: number) {
-    const cy = monthCEYear(month, semester, year)
-    const mm = String(month).padStart(2, '0')
-    setForm({ date: `${cy}-${mm}-01`, name: '', date_type: 'public_holiday', affects_work: true })
-    setOpenMonth(openMonth === month ? null : month)
+  // group calDates by "YYYY-MM"
+  const byMonth = useMemo(() => {
+    const map: Record<string, CalendarDate[]> = {}
+    for (const k of monthKeys) map[k] = []
+    for (const d of calDates) map[d.date.slice(0, 7)]?.push(d)
+    return map
+  }, [calDates, monthKeys])
+
+  function openAddForm(key: string) {
+    setForm({ date: `${key}-01`, name: '', date_type: 'public_holiday', affects_work: true })
+    setOpenMonth(openMonth === key ? null : key)
   }
 
   return (
@@ -165,7 +168,7 @@ export default function StaffSettings() {
         <span style={{ fontSize: 12, color: 'var(--ink-400)', marginLeft: 4 }}>
           {isLoading
             ? 'กำลังโหลด...'
-            : `${calDates.length} รายการทั้งหมด (${semInfo.months.length} เดือน)`}
+            : `${calDates.length} รายการทั้งหมด (${monthKeys.length} เดือน)`}
         </span>
       </div>
 
@@ -195,13 +198,14 @@ export default function StaffSettings() {
 
       {/* Month grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))', gap: 16 }}>
-        {semInfo.months.map(month => {
-          const cy    = monthCEYear(month, semester, year)
-          const items = byMonth[month] ?? []
-          const isOpen = openMonth === month
+        {monthKeys.map(key => {
+          const cy    = Number(key.slice(0, 4))
+          const month = Number(key.slice(5, 7))
+          const items = byMonth[key] ?? []
+          const isOpen = openMonth === key
 
           return (
-            <div key={month} style={{
+            <div key={key} style={{
               background: '#fff', border: '1.5px solid var(--line)',
               borderRadius: 12, overflow: 'hidden',
             }}>
@@ -230,7 +234,7 @@ export default function StaffSettings() {
                   )}
                 </div>
                 <button
-                  onClick={() => openAddForm(month)}
+                  onClick={() => openAddForm(key)}
                   style={{
                     height: 28, padding: '0 12px', borderRadius: 7, border: 'none',
                     fontSize: 12, fontWeight: 600, cursor: 'pointer',
@@ -327,6 +331,13 @@ export default function StaffSettings() {
                         </div>
                         <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span>{DATE_TYPE_LABELS[d.date_type]}</span>
+                          {d.edit_reason === CALENDAR_IMPORT_REASON && (
+                            <span style={{
+                              padding: '0 5px', borderRadius: 4,
+                              background: 'var(--primary-50)', color: 'var(--primary)',
+                              fontSize: 10, fontWeight: 600,
+                            }}>จากปฏิทินการศึกษา</span>
+                          )}
                           {!d.affects_work && (
                             <span style={{
                               padding: '0 5px', borderRadius: 4,
