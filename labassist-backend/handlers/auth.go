@@ -146,6 +146,20 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 	if !ok {
 		user, ok = database.UserByEmail(email)
 		if !ok {
+			// Admin-created accounts start with a name only; claim one by name
+			// before falling back to a new student account.
+			if claimed, found := database.UnclaimedUserByName(name); found {
+				user, ok = database.UpdateUser(claimed.ID, func(u *models.User) {
+					u.Email = email
+					u.GoogleSub = &googleSub
+				})
+				if !ok {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "ไม่สามารถผูกบัญชี Google ได้ กรุณาลองใหม่"})
+					return
+				}
+			}
+		}
+		if !ok {
 			// ไม่เจอเลย → สร้าง student ใหม่
 			created, err := database.CreateUser(models.User{
 				FullName:  name,

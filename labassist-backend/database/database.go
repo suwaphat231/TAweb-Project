@@ -204,6 +204,48 @@ func UserByEmail(email string) (models.User, bool) {
 	return u, true
 }
 
+// UnclaimedUserByName finds the admin-created account (no email, not yet
+// linked to Google, not a student) whose Thai or English full name matches
+// name. It only succeeds on exactly one match so an ambiguous name never
+// hands one person's role to someone else.
+func UnclaimedUserByName(name string) (models.User, bool) {
+	target := normalizeAccountName(name)
+	if target == "" {
+		return models.User{}, false
+	}
+	var candidates []models.User
+	if err := DB.Where("email = '' AND google_sub IS NULL AND role <> ? AND is_active = ?", models.RoleStudent, true).
+		Find(&candidates).Error; err != nil {
+		return models.User{}, false
+	}
+	var match models.User
+	found := 0
+	for _, u := range candidates {
+		if normalizeAccountName(u.FullName) == target || normalizeAccountName(u.FullNameEn) == target {
+			match = u
+			found++
+		}
+	}
+	return match, found == 1
+}
+
+// normalizeAccountName strips academic titles, then applies
+// NormalizePersonName, so "ผศ.ดร. Somchai  Jaidee" and "somchai jaidee"
+// compare equal. Unlike NormalizeInstructorName it keeps the last name.
+func normalizeAccountName(s string) string {
+	s = strings.TrimSpace(s)
+	for changed := true; changed; {
+		changed = false
+		for _, p := range instructorTitlePrefixes {
+			if strings.HasPrefix(s, p) {
+				s = strings.TrimSpace(strings.TrimPrefix(s, p))
+				changed = true
+			}
+		}
+	}
+	return NormalizePersonName(s)
+}
+
 func UserByStudentID(studentID string) (models.User, bool) {
 	var u models.User
 	if err := DB.Where("student_id = ?", studentID).First(&u).Error; err != nil {

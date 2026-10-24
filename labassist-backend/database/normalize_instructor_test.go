@@ -17,3 +17,17 @@ func TestNormalizeInstructorName(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeAccountName(t *testing.T) {
+	cases := map[string]string{
+		"Warisarapohn Kanchita":      "warisarapohn kanchita",
+		"  warisarapohn   KANCHITA ": "warisarapohn kanchita",
+		"ผศ.ดร. ภูริวัจน์ วรวิชัยพัฒน์": "ภูริวัจน์ วรวิชัยพัฒน์",
+		"": "",
+	}
+	for in, want := range cases {
+		if got := normalizeAccountName(in); got != want {
+			t.Errorf("normalizeAccountName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
