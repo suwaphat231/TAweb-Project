@@ -210,6 +210,7 @@ func ensureForeignKeys(db *gorm.DB) error {
 		{"class_schedules", "user_id", "users", "id", "CASCADE"},
 		{"term_schedules", "user_id", "users", "id", "CASCADE"},
 		{"student_info_documents", "user_id", "users", "id", "CASCADE"},
+		{"transcript_images", "user_id", "users", "id", "CASCADE"},
 		{"courses", "instructor_id", "users", "id", "SET NULL"},
 		{"postings", "course_id", "courses", "id", "CASCADE"},
 		// Legacy course_id FKs on child tables (kept until columns are dropped).
@@ -673,6 +674,10 @@ func Connect(cfg *config.Config) error {
 		time.Sleep(retryDelay)
 	}
 
+	if err := registerPostingEvents(db); err != nil {
+		return fmt.Errorf("register posting events: %w", err)
+	}
+
 	if cfg.ResetDBOnStart {
 		log.Printf("RESET_DB_ON_START enabled: dropping all tables in %q", cfg.DBName)
 		if err := resetSchema(db); err != nil {
@@ -735,6 +740,9 @@ func Connect(cfg *config.Config) error {
 	if err := BackfillPostings(db); err != nil {
 		return fmt.Errorf("backfill postings: %w", err)
 	}
+	if err := migrateGoogleEnglishNames(db); err != nil {
+		return fmt.Errorf("move Google English names: %w", err)
+	}
 	if err := migrateToPostingFKs(db); err != nil {
 		return fmt.Errorf("migrate to posting FKs: %w", err)
 	}
@@ -746,9 +754,6 @@ func Connect(cfg *config.Config) error {
 	}
 	DB = db
 
-	if err := seedCoreCourses(); err != nil {
-		return fmt.Errorf("seed core courses: %w", err)
-	}
 
 	// Classlist instructors and courses are real production data — seed them
 	// regardless of SEED_DEMO_DATA so the system works out of the box.
@@ -758,6 +763,9 @@ func Connect(cfg *config.Config) error {
 
 	if err := seedCoursesFromClasslist(); err != nil {
 		return fmt.Errorf("seed courses from classlist: %w", err)
+	}
+	if err := backfillCourseCurriculumCodes(db); err != nil {
+		return fmt.Errorf("backfill course curriculum codes: %w", err)
 	}
 	if err := removeExcludedCourses(); err != nil {
 		return fmt.Errorf("remove excluded courses: %w", err)

@@ -49,6 +49,10 @@ type User struct {
 	Username     *string `gorm:"uniqueIndex;size:100" json:"username"`
 	PasswordHash *string `gorm:"size:255" json:"-"`
 	FullName     string  `gorm:"size:200;not null" json:"full_name"`
+	// NamePrefix is the student's Thai title (นาย / นางสาว), required before
+	// applying as a Lab Boy. FullName never carries it; use DisplayName to
+	// show the two together. Defaults to '' so AutoMigrate can add the column.
+	NamePrefix string `gorm:"size:20;not null;default:''" json:"name_prefix"`
 	// FullNameEn is the English spelling of the name, set by an admin. It
 	// defaults to '' so AutoMigrate can add the column to existing rows.
 	FullNameEn string `gorm:"size:200;not null;default:''" json:"full_name_en"`
@@ -75,6 +79,12 @@ type User struct {
 	TranscriptMessage    *string    `gorm:"type:text" json:"transcript_message,omitempty"`
 	TranscriptConfidence *float64   `gorm:"type:decimal(5,4)" json:"transcript_confidence,omitempty"`
 	TranscriptUpdatedAt  *time.Time `json:"transcript_updated_at,omitempty"`
+	// TranscriptOcrGrades keeps what OCR read for each course, so a grade the
+	// student corrected by hand (TranscriptGrades differs) can be flagged.
+	TranscriptOcrGrades StringMap `gorm:"type:json" json:"transcript_ocr_grades,omitempty"`
+	// TranscriptConfirmedAt is when the student confirmed (or corrected) the
+	// grades after the latest upload; nil means they still need checking.
+	TranscriptConfirmedAt *time.Time `json:"transcript_confirmed_at,omitempty"`
 	// TranscriptCourseTitles names the courses in TranscriptGrades, keyed by
 	// code. Filled in by the endpoints that show the grades, not stored.
 	TranscriptCourseTitles map[string]string `gorm:"-" json:"transcript_course_titles,omitempty"`
@@ -82,12 +92,39 @@ type User struct {
 
 func (User) TableName() string { return "users" }
 
+// Thai name titles a student may choose.
+const (
+	NamePrefixMr   = "นาย"
+	NamePrefixMiss = "นางสาว"
+)
+
+// IsValidNamePrefix reports whether p is one of the allowed student titles.
+func IsValidNamePrefix(p string) bool {
+	return p == NamePrefixMr || p == NamePrefixMiss
+}
+
+// DisplayName is the name to show and print: the title, a space, then the
+// name ("นาย สมชาย ใจดี"), or just FullName when no title is set.
+func (u User) DisplayName() string {
+	// A Google sign-up has only the English name until the student enters
+	// the Thai one on their profile.
+	if u.FullName == "" {
+		return u.FullNameEn
+	}
+	if u.NamePrefix == "" {
+		return u.FullName
+	}
+	return u.NamePrefix + " " + u.FullName
+}
+
 // MarshalJSON adds has_password so the client can offer "create password"
-// instead of "change password" without ever seeing the hash.
+// instead of "change password" without ever seeing the hash, and
+// display_name so every page shows the same titled name.
 func (u User) MarshalJSON() ([]byte, error) {
 	type plain User
 	return json.Marshal(struct {
 		plain
-		HasPassword bool `json:"has_password"`
-	}{plain(u), u.PasswordHash != nil && *u.PasswordHash != ""})
+		HasPassword bool   `json:"has_password"`
+		DisplayName string `json:"display_name"`
+	}{plain(u), u.PasswordHash != nil && *u.PasswordHash != "", u.DisplayName()})
 }

@@ -9,8 +9,13 @@ type Actor struct {
 	Role string
 }
 
-func (a Actor) isAdmin() bool    { return a.Role == string(models.RoleAdmin) }
-func (a Actor) isReviewer() bool { return a.Role == string(models.RoleStaff) || a.isAdmin() }
+func (a Actor) isAdmin() bool        { return a.Role == string(models.RoleAdmin) }
+func (a Actor) isStaff() bool        { return a.Role == string(models.RoleStaff) }
+func (a Actor) isStaffOrAdmin() bool { return a.isStaff() || a.isAdmin() }
+
+// isReviewer returns true only for admin — staff is read-only on reports
+// and may not take any workflow actions.
+func (a Actor) isReviewer() bool { return a.isAdmin() }
 
 // Action is a step a user can take on a report.
 type Action string
@@ -72,8 +77,9 @@ var rules = map[Action]transitionRule{
 		by: byReviewer, needsReason: true, review: decision(models.DecisionRequestInfo),
 	},
 	ActionConfirm: {
+		// No reason required: the reporter's description already says why.
 		from: []models.ReportStatus{models.ReportUnderReview}, to: models.ReportConfirmed,
-		by: byReviewer, needsReason: true, review: decision(models.DecisionConfirm),
+		by: byReviewer, review: decision(models.DecisionConfirm),
 	},
 	ActionNotSubstantiated: {
 		from: []models.ReportStatus{models.ReportUnderReview}, to: models.ReportNotSubstantiated,
@@ -117,7 +123,7 @@ func CheckAction(r models.LabBoyReport, actor Actor, action Action, reason strin
 		}
 	case byReviewer:
 		if !actor.isReviewer() {
-			return "", &Denial{Forbidden: true, Message: "เฉพาะผู้ตรวจสอบ (เจ้าหน้าที่/ผู้ดูแลระบบ) เท่านั้น"}
+			return "", &Denial{Forbidden: true, Message: "เฉพาะผู้ดูแลระบบ (admin) เท่านั้น"}
 		}
 		if r.ReporterID == actor.ID {
 			return "", &Denial{Forbidden: true, Message: "ผู้รายงานไม่สามารถพิจารณารายงานของตนเองได้"}
@@ -173,7 +179,8 @@ func CanView(r models.LabBoyReport, actor Actor) bool {
 	case r.ReporterID == actor.ID:
 		return true
 	case actor.Role == string(models.RoleStaff):
-		return r.Status != models.ReportDraft
+		// Staff only need to know who is blacklisted; reviewing is admin's job.
+		return r.Status == models.ReportConfirmed
 	case actor.Role == string(models.RoleStudent):
 		return r.StudentID == actor.ID && r.Status != models.ReportDraft
 	}

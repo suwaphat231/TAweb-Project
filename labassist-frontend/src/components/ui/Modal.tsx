@@ -14,7 +14,7 @@ function getFocusable(el: HTMLElement | null): HTMLElement[] {
   return el ? Array.from(el.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)) : []
 }
 
-const sizeMap = { sm: 400, md: 520, lg: 720 }
+const sizeMap = { sm: 400, md: 520, lg: 720, xl: 1040 }
 
 interface Props {
   isOpen: boolean
@@ -22,7 +22,7 @@ interface Props {
   title: string
   children: ReactNode
   footer?: ReactNode
-  size?: 'sm' | 'md' | 'lg'
+  size?: 'sm' | 'md' | 'lg' | 'xl'
 }
 
 export function Modal({ isOpen, onClose, title, children, footer, size = 'md' }: Props) {

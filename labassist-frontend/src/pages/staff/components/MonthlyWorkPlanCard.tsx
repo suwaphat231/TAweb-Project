@@ -7,6 +7,7 @@ import type {
 } from '../../../types'
 import { formatThaiDate, thaiDayShort as thaiDayShortFn, toDateOnly } from '../../../utils/thaiDate'
 import { DateInput } from '../../../components/ui/DateInput'
+import { payableMinutes } from '../../../utils/payableHours'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -46,10 +47,7 @@ export function parseGroupSlots(group: ScheduleGroup): GroupWeekDaySlot[] {
 }
 
 function computeSlotHours(s: string, e: string): number | null {
-  if (!s || !e) return null
-  const [sh, sm] = s.split(':').map(Number)
-  const [eh, em] = e.split(':').map(Number)
-  const mins = (eh * 60 + em) - (sh * 60 + sm)
+  const mins = payableMinutes(s, e)
   return mins > 0 ? mins / 60 : null
 }
 

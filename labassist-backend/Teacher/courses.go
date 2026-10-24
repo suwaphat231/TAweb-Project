@@ -66,11 +66,11 @@ type SectionInput struct {
 	Schedule string `json:"schedule,omitempty" example:"จ,พ,ศ 09:00-12:00"`
 }
 
-// courseCodeRe: course codes are numeric (e.g. 517121), as in the
-// registrar's catalog and the Excel import.
-var courseCodeRe = regexp.MustCompile(`^[0-9]+$`)
+// courseCodeRe: course codes may be plain numeric (e.g. 517121) or include
+// curriculum suffixes (e.g. 517101-165, or combined like 517121-165, -2560).
+var courseCodeRe = regexp.MustCompile(`^[0-9]+(\s*-\s*[0-9]+)?(\s*,\s*-[0-9]+)*$`)
 
-const courseCodeError = "รหัสวิชาต้องเป็นตัวเลขเท่านั้น"
+const courseCodeError = "รหัสวิชาไม่ถูกต้อง (เช่น 517101, 517101-165 หรือ 517121-165, -2560)"
 
 // creditsRe is the registrar's credit notation, total (lecture-lab-self study),
 // e.g. "3 (2-2-5)" — the same shape the Excel import stores, so lab hours
@@ -567,6 +567,10 @@ func (h *Handler) Delete(c *gin.Context) {
 			return
 		}
 	} else {
+		if course.LabBoyRosterConfirmedAt != nil {
+			c.JSON(http.StatusConflict, gin.H{"error": "ยืนยันรายชื่อ Lab Boy แล้ว ลบประกาศไม่ได้ — ยกเลิกการยืนยันรายชื่อก่อน"})
+			return
+		}
 		if _, ok := database.ResetCourseToDraft(uint(id)); !ok {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot archive posting"})
 			return

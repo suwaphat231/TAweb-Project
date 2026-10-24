@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -100,15 +101,18 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 	}
 	other := database.CreateCourse(models.Course{Code: "X" + code[len(code)-7:], Title: "Other", Section: 1,
 		Status: models.StatusOpen, LabBoySlots: 1, Semester: "2", AcademicYear: 2569})
-	accept := func(u models.User) {
+	accept := func(u models.User) models.Application {
 		a, err := database.CreateApplication(models.Application{StudentID: u.ID, CourseID: course.ID, RoleApplied: models.RoleLabBoy})
 		if err != nil {
 			t.Fatal(err)
 		}
-		database.UpdateApplication(a.ID, func(a *models.Application) { a.Status = models.AppAccepted })
+		if _, err := database.ReviewApplicationTx(a.ID, models.AppAccepted, func(a *models.Application) { a.Status = models.AppAccepted }); err != nil {
+			t.Fatal(err)
+		}
+		return a
 	}
 	accept(s1)
-	accept(s2)
+	app2 := accept(s2)
 
 	call := func(method, path, tok string, body any) (int, []byte) {
 		var rd *bytes.Reader
@@ -155,6 +159,36 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 	}
 
 	var hiring, memo, payment, report models.StaffDocument
+
+	t.Run("staff see the course only after the instructor confirms the roster", func(t *testing.T) {
+		rosterPath := fmt.Sprintf("/instructor/courses/%d/labboy-roster/confirm", course.ID)
+		expect(t, 409, "GET", wfPath, tokStaff, nil)
+		var reviews []models.FormReview
+		_ = json.Unmarshal(expect(t, 200, "GET", "/staff/reviews", tokStaff, nil), &reviews)
+		for _, rv := range reviews {
+			if rv.CourseID == course.ID {
+				t.Fatal("review list shows the course before the instructor confirmed the roster")
+			}
+		}
+		expect(t, 200, "PUT", rosterPath, tokInst, nil)
+		// The confirmed roster is final: no more accepting.
+		accept3, err := database.CreateApplication(models.Application{StudentID: s3.ID, CourseID: course.ID, RoleApplied: models.RoleLabBoy})
+		if err != nil {
+			t.Fatal(err)
+		}
+		expect(t, 409, "PUT", fmt.Sprintf("/instructor/applications/%d/review", accept3.ID), tokInst, map[string]any{"status": "accepted"})
+		expect(t, 200, "PUT", fmt.Sprintf("/instructor/applications/%d/review", accept3.ID), tokInst, map[string]any{"status": "rejected"})
+		// Reopen and confirm again while staff have not started.
+		expect(t, 200, "DELETE", rosterPath, tokInst, nil)
+		expect(t, 409, "GET", wfPath, tokStaff, nil)
+		expect(t, 200, "PUT", rosterPath, tokInst, nil)
+		getWF(t)
+		// Another course is confirmed directly so the isolation checks below can open it.
+		if err := database.DB.Model(&models.Posting{}).Where("course_id = ? AND is_active = true", other.ID).
+			Update("lab_boy_roster_confirmed_at", time.Now()).Error; err != nil {
+			t.Fatal(err)
+		}
+	})
 
 	t.Run("workflow shows course info and blocks until the form is verified", func(t *testing.T) {
 		w := getWF(t)
@@ -449,14 +483,22 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 	})
 
 	t.Run("source changes are reported; replacing keeps the old version", func(t *testing.T) {
-		accept(s3)
+		// Students cannot withdraw from a confirmed roster, so the roster
+		// change is made directly in the database.
+		if _, err := database.WithdrawApplication(app2.ID, s2.ID, "ติดธุระ"); !errors.Is(err, database.ErrWithdrawalRosterConfirmed) {
+			t.Fatalf("withdraw from confirmed roster err = %v", err)
+		}
+		if err := database.DB.Model(&models.Application{}).Where("id = ?", app2.ID).
+			Update("status", models.AppWithdrawn).Error; err != nil {
+			t.Fatal(err)
+		}
 		w := getWF(t)
 		if len(w.Steps[0].StaleReasons) == 0 {
 			t.Fatal("roster change must mark step 1 stale")
 		}
 		expect(t, 400, "POST", wfPath+"/hiring_notice", tokStaff, map[string]any{"replace": true})
-		code, v2 := create("hiring_notice", tokStaff, map[string]any{"replace": true, "reason": "เพิ่มนักศึกษา 1 คน"})
-		if code != 201 || v2.Version != 2 || len(v2.Roster) != 3 {
+		code, v2 := create("hiring_notice", tokStaff, map[string]any{"replace": true, "reason": "นักศึกษาถอน 1 คน"})
+		if code != 201 || v2.Version != 2 || len(v2.Roster) != 1 {
 			t.Fatalf("replace = %d %+v", code, v2)
 		}
 		old, _ := database.StaffDocumentByID(hiring.ID)

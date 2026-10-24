@@ -32,10 +32,7 @@ type ocrStudentInfoResponse struct {
 	Faculty        *string `json:"faculty"`
 	Campus         *string `json:"campus"`
 	StudentStatus  *string `json:"student_status"`
-	// PageKind is which REG box the image shows ("personal"/"student"),
-	// empty when the OCR service could not tell.
-	PageKind   string  `json:"page_kind"`
-	Confidence float64 `json:"confidence"`
+	Confidence     float64 `json:"confidence"`
 }
 
 // StudentInfoFieldStr is a side-by-side comparison for a string field.
@@ -190,21 +187,7 @@ func parseTextLayerFields(text string) *ocrStudentInfoResponse {
 	r.Faculty = setStr(reTextFaculty)
 	r.Campus = setStr(reTextCampus)
 	r.StudentStatus = setStr(reTextStatus)
-	switch {
-	case strings.Contains(text, "ข้อมูลส่วนตัว") || strings.Contains(strings.ToLower(text), "personal information"):
-		r.PageKind = studentInfoKindPersonal
-	case strings.Contains(text, "ข้อมูลนักศึกษา") || strings.Contains(strings.ToLower(text), "student information"):
-		r.PageKind = studentInfoKindStudent
-	}
 	return r
-}
-
-// studentInfoKindLabel is the REG box name shown to students for a kind.
-func studentInfoKindLabel(kind string) string {
-	if kind == studentInfoKindPersonal {
-		return "ข้อมูลส่วนตัว (Personal Information)"
-	}
-	return "ข้อมูลนักศึกษา (Student Information)"
 }
 
 // ── OCR service call ──────────────────────────────────────────────────────────
@@ -325,24 +308,7 @@ func normalizeFaculty(s string) string {
 	return strings.TrimSpace(s)
 }
 
-func knownFacultyName(s string) string {
-	lower := strings.ToLower(s)
-	if strings.Contains(lower, "สารสนเทศ") || strings.Contains(lower, "it") {
-		return "เทคโนโลยีสารสนเทศ"
-	}
-	if strings.Contains(lower, "คอมพิวเตอร์") || strings.Contains(lower, "cs") {
-		return "วิทยาการคอมพิวเตอร์"
-	}
-	return strings.TrimSpace(s)
-}
-
 // ── Handlers ──────────────────────────────────────────────────────────────────
-
-// The two REG boxes a student attaches, as the "kind" upload/file parameter.
-const (
-	studentInfoKindStudent  = "student"  // ข้อมูลนักศึกษา (Student Information)
-	studentInfoKindPersonal = "personal" // ข้อมูลส่วนตัว (Personal Information)
-)
 
 // UploadStudentInfo godoc
 // @Summary      อัปโหลดเอกสารข้อมูลนักศึกษาเพื่อให้ระบบ OCR อ่านข้อมูล
@@ -350,8 +316,7 @@ const (
 // @Accept       mpfd
 // @Produce      json
 // @Security     BearerAuth
-// @Param        file  formData  file    true   "รูปจากระบบทะเบียน (PDF/PNG/JPG, สูงสุด 10 MB)"
-// @Param        kind  formData  string  false  "student (ข้อมูลนักศึกษา, ค่าเริ่มต้น) หรือ personal (ข้อมูลส่วนตัว)"
+// @Param        file  formData  file    true   "รูปการ์ดโปรไฟล์จากระบบทะเบียน (PDF/PNG/JPG, สูงสุด 10 MB)"
 // @Success      200   {object}  StudentInfoUploadResponse
 // @Failure      400   {object}  map[string]string
 // @Failure      502   {object}  map[string]string
@@ -363,12 +328,6 @@ func (h *Handler) UploadStudentInfo(c *gin.Context) {
 	user, ok := database.UserByID(uid)
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ไม่พบข้อมูลนักศึกษา"})
-		return
-	}
-
-	kind := c.DefaultPostForm("kind", studentInfoKindStudent)
-	if kind != studentInfoKindStudent && kind != studentInfoKindPersonal {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "kind ต้องเป็น student หรือ personal"})
 		return
 	}
 
@@ -474,34 +433,17 @@ func (h *Handler) UploadStudentInfo(c *gin.Context) {
 		}
 	}
 
-	// A screenshot of the other REG box in this slot would leave every
-	// field of this slot empty, so reject it with a pointer to the right slot.
-	if ocrResult.PageKind != "" && ocrResult.PageKind != kind {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf(
-			"รูปนี้เป็นหน้า %s ไม่ใช่หน้า %s — กรุณาแนบในช่องที่ถูกต้อง",
-			studentInfoKindLabel(ocrResult.PageKind), studentInfoKindLabel(kind),
-		)})
-		return
-	}
-
-	// Each REG box only supplies its own fields: the names come from
-	// ข้อมูลส่วนตัว, everything else from ข้อมูลนักศึกษา.
-	var doc models.StudentInfoDocument
-	var dbErr error
-	if kind == studentInfoKindPersonal {
-		doc, dbErr = database.UpsertStudentInfoPersonal(uid, storeFileName, storeData,
-			ocrResult.FullNameTh, ocrResult.FullNameEn, ocrResult.Confidence)
-	} else {
-		doc, dbErr = database.UpsertStudentInfoDocument(uid, storeFileName, storeData, database.StudentInfoOCR{
-			StudentID:      ocrResult.StudentID,
-			EducationLevel: ocrResult.EducationLevel,
-			Curriculum:     ocrResult.Curriculum,
-			Faculty:        ocrResult.Faculty,
-			Campus:         ocrResult.Campus,
-			StudentStatus:  ocrResult.StudentStatus,
-			Confidence:     ocrResult.Confidence,
-		})
-	}
+	doc, dbErr := database.UpsertStudentInfoDocument(uid, storeFileName, storeData, database.StudentInfoOCR{
+		StudentID:      ocrResult.StudentID,
+		FullNameTh:     ocrResult.FullNameTh,
+		FullNameEn:     ocrResult.FullNameEn,
+		EducationLevel: ocrResult.EducationLevel,
+		Curriculum:     ocrResult.Curriculum,
+		Faculty:        ocrResult.Faculty,
+		Campus:         ocrResult.Campus,
+		StudentStatus:  ocrResult.StudentStatus,
+		Confidence:     ocrResult.Confidence,
+	})
 	if dbErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกข้อมูลไม่สำเร็จ"})
 		return
@@ -542,12 +484,11 @@ func (h *Handler) GetStudentInfo(c *gin.Context) {
 }
 
 // ConfirmStudentInfo godoc
-// @Summary      ยืนยันข้อมูลที่ OCR อ่านได้ และเลือกว่าจะอัปเดตโปรไฟล์หรือไม่
+// @Summary      ยืนยันสถานภาพนักศึกษาที่ OCR อ่านได้
+// @Description  เอกสารใช้ตรวจสถานภาพเท่านั้น — ชื่อ รหัส ภาควิชา นักศึกษากรอกเองในโปรไฟล์
 // @Tags         student
-// @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        body  body  map[string]bool  false  "{ \"apply_to_profile\": true }"
 // @Success      200   {object}  StudentInfoUploadResponse
 // @Failure      404   {object}  map[string]string
 // @Router       /student/profile/student-info/confirm [post]
@@ -555,64 +496,13 @@ func (h *Handler) ConfirmStudentInfo(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	uid := userID.(uint)
 
-	var body struct {
-		ApplyToProfile bool `json:"apply_to_profile"`
-	}
-	_ = c.ShouldBindJSON(&body)
-
 	doc, ok := database.StudentInfoDocumentByUserID(uid)
-	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "ยังไม่มีเอกสาร"})
+	if !ok || doc.FileName == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "กรุณาแนบรูปการ์ดโปรไฟล์จากระบบทะเบียนก่อนยืนยัน"})
 		return
 	}
-
-	// Both REG boxes are needed: ข้อมูลส่วนตัว for the names and
-	// ข้อมูลนักศึกษา for the student status.
-	if doc.PersonalFileName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาแนบรูป ข้อมูลส่วนตัว (Personal Information) จากระบบทะเบียนก่อนยืนยัน"})
-		return
-	}
-	if doc.FileName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาแนบรูป ข้อมูลนักศึกษา (Student Information) จากระบบทะเบียนก่อนยืนยัน"})
-		return
-	}
-	// The profile name must match the registrar document, so confirming
-	// requires a readable Thai name and always copies it (and the English
-	// name, when the document has one) onto the profile.
-	if doc.OcrFullNameTh == nil || strings.TrimSpace(*doc.OcrFullNameTh) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "ระบบอ่านชื่อ-นามสกุลจากรูป ข้อมูลส่วนตัว ไม่ได้ กรุณาแนบรูปที่ชัดกว่า"})
-		return
-	}
-	ocrName := strings.TrimSpace(*doc.OcrFullNameTh)
-	// student_id is unique: a misread ID, or someone else's document, would
-	// make the whole profile save fail, so say so instead of confirming.
-	if body.ApplyToProfile && doc.OcrStudentID != nil {
-		if other, found := database.UserByStudentID(*doc.OcrStudentID); found && other.ID != uid {
-			c.JSON(http.StatusConflict, gin.H{"error": "รหัสนักศึกษา " + *doc.OcrStudentID +
-				" ในเอกสารเป็นของบัญชีอื่น — ตรวจว่าแนบรูปของตัวเองและระบบอ่านรหัสถูกต้อง แล้วแนบใหม่"})
-			return
-		}
-	}
-	// Confirming requires the name to be on the profile (Apply checks it),
-	// so a failed save must not stamp the document as confirmed.
-	if _, saved := database.UpdateUser(uid, func(u *models.User) {
-		u.FullName = ocrName
-		if doc.OcrFullNameEn != nil && strings.TrimSpace(*doc.OcrFullNameEn) != "" {
-			u.FullNameEn = strings.TrimSpace(*doc.OcrFullNameEn)
-		}
-		if !body.ApplyToProfile {
-			return
-		}
-		if doc.OcrStudentID != nil {
-			v := *doc.OcrStudentID
-			u.StudentID = &v
-		}
-		if doc.OcrFaculty != nil {
-			normalized := knownFacultyName(*doc.OcrFaculty)
-			u.Faculty = &normalized
-		}
-	}); !saved {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกข้อมูลลงโปรไฟล์ไม่สำเร็จ กรุณาลองใหม่"})
+	if doc.OcrStudentStatus == nil || strings.TrimSpace(*doc.OcrStudentStatus) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ระบบอ่านสถานภาพนักศึกษาจากรูปไม่ได้ กรุณาแนบรูปที่ชัดกว่า"})
 		return
 	}
 
@@ -637,14 +527,12 @@ func (h *Handler) ConfirmStudentInfo(c *gin.Context) {
 // @Tags         student
 // @Produce      image/jpeg
 // @Security     BearerAuth
-// @Param        kind  query  string  false  "student (ค่าเริ่มต้น) หรือ personal"
 // @Success      200  {file}   binary
 // @Failure      404  {object} map[string]string
 // @Router       /student/profile/student-info/file [get]
 func (h *Handler) GetStudentInfoFile(c *gin.Context) {
 	userID, _ := c.Get("user_id")
-	personal := c.Query("kind") == studentInfoKindPersonal
-	fileName, data, ok := database.StudentInfoImageByUserID(userID.(uint), personal)
+	fileName, data, ok := database.StudentInfoImageByUserID(userID.(uint))
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "ไม่พบเอกสาร"})
 		return

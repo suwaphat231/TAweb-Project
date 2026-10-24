@@ -18,7 +18,7 @@ type Course struct {
 	// (code, section, slot, semester, academic_year) is the natural key for a
 	// teaching slot — exactly one row may exist per combination regardless
 	// of which instructor account is linked.
-	Code           string `gorm:"size:20;not null;uniqueIndex:idx_course_time_slot" json:"code"`
+	Code           string `gorm:"size:100;not null;uniqueIndex:idx_course_time_slot" json:"code"`
 	Title          string `gorm:"size:300;not null" json:"title"`
 	EnglishTitle   string `gorm:"size:300" json:"english_title,omitempty"`
 	GroupNote      string `gorm:"size:200" json:"group_note,omitempty"`
@@ -58,6 +58,7 @@ type Course struct {
 	RequireGradeProof       bool         `gorm:"-" json:"require_grade_proof"`
 	ClosedByInstructor      bool         `gorm:"-" json:"closed_by_instructor"`
 	LabBoyScheduleConfirmed bool         `gorm:"-" json:"labboy_schedule_confirmed"`
+	LabBoyRosterConfirmedAt *time.Time   `gorm:"-" json:"labboy_roster_confirmed_at,omitempty"`
 	// ConflictDay is set server-side when the course schedule overlaps the
 	// requesting student's confirmed term schedule. Empty string = no conflict.
 	ConflictDay             string       `gorm:"-" json:"conflict_day,omitempty"`

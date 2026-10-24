@@ -187,7 +187,7 @@ export default function StudentStatus() {
                     แนบหลักฐาน
                   </Button>
                 )}
-                {(app.status === 'accepted' || app.status === 'pending') && !app.withdraw_requested && (
+                {(app.status === 'accepted' || app.status === 'pending') && !app.withdraw_requested && app.withdraw_open && (
                   <Button
                     variant="ghost"
                     size="sm"

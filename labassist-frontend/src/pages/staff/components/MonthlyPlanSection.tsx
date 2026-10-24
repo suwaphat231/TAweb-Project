@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { staffApi } from '../../../services/api'
+import { payableHours } from '../../../utils/payableHours'
 import type {
   ScheduleGroup, GroupMonthPlanEntry,
   WorkOccurrence, OccurrenceStatus, PatchOccurrencePayload,
@@ -71,12 +72,6 @@ function validateTime(start: string, end: string): string | null {
   const [eh, em] = end.split(':').map(Number)
   if (sh * 60 + sm >= eh * 60 + em) return 'เวลาเริ่มต้องก่อนเวลาสิ้นสุด'
   return null
-}
-
-function computeHours(startTime: string, endTime: string): number {
-  const [sh, sm] = startTime.split(':').map(Number)
-  const [eh, em] = endTime.split(':').map(Number)
-  return ((eh * 60 + em) - (sh * 60 + sm)) / 60
 }
 
 interface Props {
@@ -783,7 +778,7 @@ function OccurrenceRows({
   const canSaveEdit = !editDateDuplicate && !editTimeError
   const canReschedule = !!rescheduleForm.new_date && !rescheduleTimeError
 
-  const hours = computeHours(occ.start_time, occ.end_time)
+  const hours = payableHours(occ.start_time, occ.end_time)
   const dateStr = occ.scheduled_date.slice(0, 10)
 
   const rowBase: React.CSSProperties = {

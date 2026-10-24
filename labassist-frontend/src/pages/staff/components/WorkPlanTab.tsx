@@ -8,6 +8,8 @@ import type {
 import MonthlyPlanSection from './MonthlyPlanSection'
 import PlanSummaryPanel from './PlanSummaryPanel'
 import { DateInput } from '../../../components/ui/DateInput'
+import { payableMinutes } from '../../../utils/payableHours'
+import { MAX_LAB_SESSIONS_PER_TERM, sessionSlotsUsed } from '../../../utils/labSessions'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -25,11 +27,6 @@ const MONTHS_TH = [
 
 function formatThaiMonthYear(year: number, month: number) {
   return `${MONTHS_TH[month - 1]} ${year + 543}`
-}
-
-function timeToMins(t: string) {
-  const [h, m] = t.split(':').map(Number)
-  return h * 60 + m
 }
 
 function isCountedStatus(status: OccurrenceStatus) {
@@ -73,6 +70,8 @@ interface GroupSummary {
   durationMins: number
   hoursPerSession: number
   totalSessions: number
+  /** Slots used toward the 15-session term cap, holiday clashes included. */
+  sessionSlots: number
   monthBreakdown: { label: string; count: number }[]
   hoursPerPerson: number
   payPerPersonBaht: number
@@ -86,7 +85,7 @@ function computeSummary(
   occs: WorkOccurrence[],
   caseRateSatang: number,
 ): GroupSummary {
-  const durationMins = timeToMins(group.end_time) - timeToMins(group.start_time)
+  const durationMins = payableMinutes(group.start_time, group.end_time)
   const hoursPerSession = group.hours_per_session > 0
     ? group.hours_per_session
     : Math.max(0, durationMins / 60)
@@ -111,6 +110,7 @@ function computeSummary(
     durationMins,
     hoursPerSession,
     totalSessions,
+    sessionSlots: sessionSlotsUsed(occs),
     monthBreakdown,
     hoursPerPerson: hoursPerSession * totalSessions,
     payPerPersonBaht,
@@ -1160,6 +1160,7 @@ function WorkPlanSummary({
               <SummaryRow label="จำนวน Lab Boy" value={`${summary.labBoyCount} คน`} />
               <SummaryRow label="ชั่วโมงต่อครั้ง" value={`${durationHrs.toFixed(2)} ชม.`} />
               <SummaryRow label="จำนวนครั้งทั้งหมด" value={`${summary.totalSessions} ครั้ง`} highlight />
+              <SummaryRow label="ใช้โควตาภาคเรียน (รวมวันชนวันหยุด)" value={`${summary.sessionSlots} / ${MAX_LAB_SESSIONS_PER_TERM} ครั้ง`} />
               {summary.monthBreakdown.length > 1 && (
                 <div style={{ paddingLeft: 12 }}>
                   {summary.monthBreakdown.map((mb) => (

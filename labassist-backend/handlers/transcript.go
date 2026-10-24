@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"maps"
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +19,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+// maxTranscriptImageSize caps a grade-sheet upload at 10MB.
+const maxTranscriptImageSize = 10 << 20
 
 var allowedTranscriptExt = map[string]bool{
 	".png": true, ".jpg": true, ".jpeg": true, ".pdf": true,
@@ -58,7 +63,7 @@ type TranscriptOCRResponse struct {
 
 // UploadTranscript godoc
 // @Summary      แนบไฟล์ใบเกรดเพื่อให้ระบบ OCR อ่านและบันทึกผล
-// @Description  ระบบจะอ่านเกรดเฉพาะรายวิชาในตาราง core_courses ของสาขานักศึกษา (ดู database/migrations/allcourse.sql)
+// @Description  ระบบจะอ่านเกรดเฉพาะรายวิชาที่กำหนดในระบบของสาขานักศึกษา
 // @Tags         student
 // @Accept       mpfd
 // @Produce      json
@@ -110,12 +115,23 @@ func (h *AuthHandler) UploadTranscript(c *gin.Context) {
 		return
 	}
 
+	if fileHeader.Size > maxTranscriptImageSize {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ไฟล์ใหญ่เกิน 10MB"})
+		return
+	}
 	src, err := fileHeader.Open()
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ไม่สามารถอ่านไฟล์ได้"})
 		return
 	}
 	defer src.Close()
+	// Read the file once: it goes to the OCR service and, after a successful
+	// read, is kept so the student can compare it with the grades.
+	fileData, err := io.ReadAll(io.LimitReader(src, maxTranscriptImageSize+1))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ไม่สามารถอ่านไฟล์ได้"})
+		return
+	}
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -125,7 +141,7 @@ func (h *AuthHandler) UploadTranscript(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
-	if _, err := io.Copy(part, src); err != nil {
+	if _, err := part.Write(fileData); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
@@ -184,7 +200,7 @@ func (h *AuthHandler) UploadTranscript(c *gin.Context) {
 
 	// Keep only grades belonging to a course in the catalog. The OCR service
 	// already filters by the codes we sent, but a course could have been
-	// removed from allcourse.sql between the request and the response, and
+	// removed from the catalog between the request and the response, and
 	// this also drops anything the service returned unasked.
 	//
 	// A student's transcript photo/PDF rarely covers every semester at once,
@@ -195,9 +211,12 @@ func (h *AuthHandler) UploadTranscript(c *gin.Context) {
 	// off just because the latest file doesn't happen to show it.
 	allGrades := make(models.StringMap, len(user.TranscriptGrades)+len(coreCourses))
 	maps.Copy(allGrades, user.TranscriptGrades)
+	ocrGrades := make(models.StringMap, len(user.TranscriptOcrGrades)+len(coreCourses))
+	maps.Copy(ocrGrades, user.TranscriptOcrGrades)
 	for _, cc := range coreCourses {
 		if grade, found := ocrResult.ExtractedData[cc.Code]; found {
 			allGrades[cc.Code] = grade
+			ocrGrades[cc.Code] = grade
 		}
 	}
 
@@ -212,9 +231,21 @@ func (h *AuthHandler) UploadTranscript(c *gin.Context) {
 		})
 	}
 
+	contentType := http.DetectContentType(fileData)
+	if ext == ".pdf" {
+		contentType = "application/pdf"
+	}
+	if err := database.SaveTranscriptImage(sid, fileHeader.Filename, contentType, fileData); err != nil {
+		// The grades are still useful without the stored copy.
+		log.Printf("save transcript image for user %d: %v", sid, err)
+	}
+
 	now := time.Now()
 	updated, _ := database.UpdateUser(sid, func(u *models.User) {
 		u.TranscriptGrades = allGrades
+		u.TranscriptOcrGrades = ocrGrades
+		// A new reading has to be checked by the student again.
+		u.TranscriptConfirmedAt = nil
 		status := ocrResult.Status
 		u.TranscriptStatus = &status
 		message := ocrResult.Message
@@ -233,4 +264,108 @@ func (h *AuthHandler) UploadTranscript(c *gin.Context) {
 		UpdatedAt:  now,
 		User:       database.WithTranscriptCourseTitles(updated),
 	})
+}
+
+// validTranscriptGrades are the letter grades a student may enter by hand.
+var validTranscriptGrades = map[string]bool{
+	"A": true, "B+": true, "B": true, "C+": true, "C": true, "D+": true, "D": true,
+}
+
+// ConfirmTranscriptGradesBody is the student's checked grades, keyed by
+// course code. Only courses already read from a transcript may be sent.
+type ConfirmTranscriptGradesBody struct {
+	Grades map[string]string `json:"grades" binding:"required"`
+}
+
+// ConfirmTranscriptGrades godoc
+// @Summary      ยืนยันหรือแก้ไขเกรดที่ระบบ OCR อ่านได้
+// @Description  เกรดที่แก้ต่างจากที่ OCR อ่านได้จะถูกแจ้งให้อาจารย์เห็นตอนสมัคร
+// @Tags         student
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body  ConfirmTranscriptGradesBody  true  "เกรดรายวิชา"
+// @Success      200   {object}  models.User
+// @Failure      400   {object}  ErrorResponse
+// @Router       /student/profile/transcript/confirm [put]
+func (h *AuthHandler) ConfirmTranscriptGrades(c *gin.Context) {
+	studentID, _ := c.Get("user_id")
+	sid := studentID.(uint)
+
+	var body ConfirmTranscriptGradesBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ข้อมูลเกรดไม่ถูกต้อง"})
+		return
+	}
+	user, ok := database.UserByID(sid)
+	if !ok || len(user.TranscriptGrades) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาอัปโหลดใบเกรดก่อน"})
+		return
+	}
+	grades := make(models.StringMap, len(user.TranscriptGrades))
+	maps.Copy(grades, user.TranscriptGrades)
+	for code, grade := range body.Grades {
+		grade = strings.ToUpper(strings.TrimSpace(grade))
+		current, onFile := grades[code]
+		if !onFile {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("ไม่พบวิชา %s ในใบเกรดที่อัปโหลด", code)})
+			return
+		}
+		// An unchanged grade is confirmed as is, even one OCR read in an
+		// unusual form; only hand-entered grades must be a known letter.
+		if grade != current && !validTranscriptGrades[grade] {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("เกรด '%s' ของวิชา %s ไม่ถูกต้อง", grade, code)})
+			return
+		}
+		grades[code] = grade
+	}
+
+	now := time.Now()
+	updated, ok := database.UpdateUser(sid, func(u *models.User) {
+		u.TranscriptGrades = grades
+		u.TranscriptConfirmedAt = &now
+	})
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกเกรดไม่สำเร็จ"})
+		return
+	}
+	c.JSON(http.StatusOK, database.WithTranscriptCourseTitles(updated))
+}
+
+// TranscriptImages godoc
+// @Summary      รายการไฟล์ใบเกรดที่เคยอัปโหลดให้ OCR อ่าน
+// @Tags         student
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {array}  models.TranscriptImage
+// @Router       /student/profile/transcript/images [get]
+func (h *AuthHandler) TranscriptImages(c *gin.Context) {
+	studentID, _ := c.Get("user_id")
+	list, err := database.TranscriptImagesForUser(studentID.(uint))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, list)
+}
+
+// TranscriptImageFile godoc
+// @Summary      เปิดไฟล์ใบเกรดที่เคยอัปโหลด
+// @Tags         student
+// @Security     BearerAuth
+// @Param        id  path  int  true  "Image ID"
+// @Success      200  {file}  binary
+// @Failure      404  {object}  ErrorResponse
+// @Router       /student/profile/transcript/images/{id} [get]
+func (h *AuthHandler) TranscriptImageFile(c *gin.Context) {
+	studentID, _ := c.Get("user_id")
+	id, _ := strconv.Atoi(c.Param("id"))
+	img, ok := database.TranscriptImageForUser(uint(id), studentID.(uint))
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ไม่พบไฟล์ใบเกรด"})
+		return
+	}
+	c.Header("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, img.FileName))
+	c.Header("Cache-Control", "private, max-age=3600")
+	c.Data(http.StatusOK, img.ContentType, img.FileData)
 }

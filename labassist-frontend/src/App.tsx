@@ -3,6 +3,12 @@ import { ToastProvider } from './components/ui/Toast'
 import { AppRouter } from './router'
 import { useAuthStore } from './store/authStore'
 import { authApi } from './services/api'
+import { useWebSocket } from './hooks/useWebSocket'
+
+function WebSocketListener() {
+  useWebSocket()
+  return null
+}
 
 export default function App() {
   const token = useAuthStore((state) => state.token)
@@ -18,6 +24,7 @@ export default function App() {
 
   return (
     <ToastProvider>
+      <WebSocketListener />
       <AppRouter />
     </ToastProvider>
   )

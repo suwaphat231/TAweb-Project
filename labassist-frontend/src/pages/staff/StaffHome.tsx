@@ -34,9 +34,10 @@ export default function StaffHome() {
 
   const loading = reviewsLoading || docsLoading
 
-  // Build CourseOffering from FormReview + Document data
+  // Build CourseOffering from FormReview + Document data. A course shows only
+  // after its instructor confirmed the final Lab Boy roster.
   const offerings = useMemo<CourseOffering[]>(
-    () => reviews.map((r) => buildCourseOffering(r, allDocs)),
+    () => reviews.filter((r) => r.labboy_roster_confirmed).map((r) => buildCourseOffering(r, allDocs)),
     [reviews, allDocs],
   )
 
@@ -60,7 +61,7 @@ export default function StaffHome() {
   )
 
   function handleCourseAction(offering: CourseOffering) {
-    navigate(`/staff/course/${offering.academicYear}/${offering.semester}/${offering.courseCode}/${offering.sectionNo}?course=${offering.courseId}`)
+    navigate(`/staff/course/${offering.academicYear}/${offering.semester}/${encodeURIComponent(offering.courseCode)}/${offering.sectionNo}?course=${offering.courseId}`)
   }
 
   return (
@@ -124,7 +125,7 @@ export default function StaffHome() {
           </div>
           <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>
             {offerings.length === 0
-              ? 'รายวิชาจะปรากฏเมื่ออาจารย์ส่งแบบฟอร์มแจ้งความประสงค์เข้ามา'
+              ? 'รายวิชาจะปรากฏเมื่ออาจารย์ยืนยันรายชื่อ Lab Boy ครบแล้ว'
               : 'ลองเปลี่ยนคำค้นหาหรือตัวกรอง'}
           </div>
         </div>

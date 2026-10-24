@@ -159,3 +159,16 @@ func SplitScheduleDays(schedule string) []string {
 	}
 	return out
 }
+
+// ScheduleWeekday returns the single weekday code (MON…SUN) a schedule meets
+// on, or "" when it can't be parsed or spans more than one day.
+func ScheduleWeekday(schedule string) string {
+	day := ""
+	for _, s := range parseCourseScheduleSlots(schedule) {
+		if day != "" && s.Day != day {
+			return ""
+		}
+		day = s.Day
+	}
+	return day
+}

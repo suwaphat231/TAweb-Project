@@ -88,6 +88,19 @@ func TestGroupClasslistByDay(t *testing.T) {
 			t.Errorf("rows = %+v", got)
 		}
 	})
+
+	t.Run("curriculum codes combine into formatted code", func(t *testing.T) {
+		got := groupClasslistByDay([]classlistRow{
+			{AcademicYear: 2569, Semester: 1, SubjectCode: "517121", CurriculumCode: "165", SectionNo: "1", Credits: "4 (2-4-6)", Schedule: "Mo 13:00 - 15:00 1227"},
+			{AcademicYear: 2569, Semester: 1, SubjectCode: "517121", CurriculumCode: "2560", SectionNo: "1", Credits: "4 (2-4-6)", Schedule: "Mo 13:00 - 15:00 1227"},
+		})
+		if len(got) != 1 {
+			t.Fatalf("got %d rows, want 1", len(got))
+		}
+		if gotCode := got[0].FormattedCode(); gotCode != "517121-165, -2560" {
+			t.Errorf("got code %q, want %q", gotCode, "517121-165, -2560")
+		}
+	})
 }
 
 func TestIsLectureRoomLine(t *testing.T) {

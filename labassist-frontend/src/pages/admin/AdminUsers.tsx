@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { useAuth } from '../../hooks/useAuth'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { isAxiosError } from 'axios'
 import { adminApi } from '../../services/api'
 import { Table } from '../../components/ui/Table'
 import { StatusBadge } from '../../components/ui/Badge'
@@ -25,7 +27,15 @@ const ROLE_OPTIONS = [
   { value: 'admin',      label: 'Admin' },
 ]
 
+// Student accounts are created by the student's own Google sign-in, so the
+// role is only offered when editing an existing account.
+const EDIT_ROLE_OPTIONS = [
+  ...ROLE_OPTIONS,
+  { value: 'student',    label: 'นักศึกษา' },
+]
+
 export default function AdminUsers() {
+  const { user: currentUser } = useAuth()
   const [showCreate, setShowCreate] = useState(false)
   const [roleFilter, setRoleFilter] = useState<UserRole | ''>('')
   const [search, setSearch] = useState('')
@@ -35,6 +45,7 @@ export default function AdminUsers() {
   const [editForm, setEditForm] = useState({ full_name: '', full_name_en: '', role: 'instructor' as UserRole })
 
   const [viewingUser, setViewingUser] = useState<User | null>(null)
+  const [deletingUser, setDeletingUser] = useState<User | null>(null)
 
   const qc = useQueryClient()
 
@@ -74,6 +85,16 @@ export default function AdminUsers() {
       setEditingUser(null)
     },
   })
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => adminApi.deleteUser(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-users'] })
+      setDeletingUser(null)
+    },
+  })
+  const deleteError = deleteMut.error
+    ? (isAxiosError(deleteMut.error) && deleteMut.error.response?.data?.error) || 'ลบผู้ใช้ไม่สำเร็จ กรุณาลองใหม่'
+    : ''
   const toggleMut = useMutation({
     mutationFn: ({ id, is_active }: { id: number; is_active: boolean }) => adminApi.updateUserStatus(id, is_active),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-users'] }),
@@ -122,8 +143,17 @@ export default function AdminUsers() {
               วิชาที่สอน
             </Button>
           )}
-          <Button size="sm" variant="ghost" onClick={() => openEdit(u)} style={{ border: '1px solid var(--line)' }}>
-            แก้ไข
+          {u.role !== 'admin' && (
+            <Button size="sm" variant="ghost" onClick={() => openEdit(u)} style={{ border: '1px solid var(--line)' }}>
+              แก้ไข
+            </Button>
+          )}
+          <Button
+            size="sm" variant="danger-ghost"
+            onClick={() => { deleteMut.reset(); setDeletingUser(u) }}
+            style={{ border: '1px solid var(--line)' }}
+          >
+            ลบ
           </Button>
           {!u.is_active && (
             <Button
@@ -218,13 +248,40 @@ export default function AdminUsers() {
           <Input label="ชื่อ-นามสกุล (ภาษาอังกฤษ)" value={editForm.full_name_en} onChange={setEdit('full_name_en')} placeholder="เช่น Somchai Jaidee" />
           <Select
             label="บทบาท *" value={editForm.role} onChange={setEdit('role')}
-            options={ROLE_OPTIONS}
+            options={EDIT_ROLE_OPTIONS}
+            disabled={editingUser?.id === currentUser?.id}
+            hint={editingUser?.id === currentUser?.id ? 'ไม่สามารถเปลี่ยนบทบาทของตัวเองได้' : undefined}
           />
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
             <Button type="button" variant="ghost" onClick={() => setEditingUser(null)}>ยกเลิก</Button>
             <Button type="submit" loading={updateMut.isPending}>บันทึก</Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal isOpen={!!deletingUser} onClose={() => setDeletingUser(null)} title="ลบผู้ใช้" size="md">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <p style={{ fontSize: 14, color: 'var(--ink-700)' }}>
+            ต้องการลบบัญชี <strong>{deletingUser?.full_name}</strong> ใช่หรือไม่? การลบไม่สามารถย้อนกลับได้
+          </p>
+          <p style={{ fontSize: 13, color: 'var(--ink-500)' }}>
+            บัญชีที่มีประวัติในระบบ (ใบสมัคร, วิชาที่สอน, เอกสาร, รายงาน ฯลฯ) จะลบไม่ได้ — ให้ใช้การระงับแทน
+          </p>
+          {deleteError && (
+            <div style={{ fontSize: 13, color: 'var(--red)', background: 'var(--red-bg)', borderRadius: 'var(--radius-input)', padding: '10px 12px' }}>
+              {deleteError}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <Button type="button" variant="ghost" onClick={() => setDeletingUser(null)}>ยกเลิก</Button>
+            <Button
+              type="button" variant="danger" loading={deleteMut.isPending}
+              onClick={() => deletingUser && deleteMut.mutate(deletingUser.id)}
+            >
+              ลบผู้ใช้
+            </Button>
+          </div>
+        </div>
       </Modal>
 
       <Modal isOpen={!!viewingUser} onClose={() => setViewingUser(null)} title={`วิชาที่สอน — ${viewingUser?.full_name ?? ''}`} size="lg">

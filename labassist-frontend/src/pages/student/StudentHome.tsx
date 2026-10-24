@@ -41,7 +41,7 @@ export default function StudentHome() {
         <Avatar size={64}
           style={{ background: 'rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.85)', border: '2px solid rgba(255,255,255,0.35)', flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 22, fontWeight: 700 }}>สวัสดี, {user?.full_name}</div>
+          <div style={{ fontSize: 22, fontWeight: 700 }}>สวัสดี, {user?.display_name || user?.full_name}</div>
           <div style={{ fontSize: 14, opacity: 0.8, marginTop: 4 }}>
             {bannerInfo}
           </div>

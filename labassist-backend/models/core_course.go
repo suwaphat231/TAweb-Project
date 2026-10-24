@@ -17,9 +17,7 @@ const (
 // The same course can appear under both programs (e.g. IT students take the
 // CS department's 517121), hence the unique key is (program, code) rather
 // than code alone.
-//
-// Rows are seeded from database/migrations/allcourse.sql — see
-// database/seed_core_courses.go.
+// CoreCourse represents a required department course used for transcript matching.
 type CoreCourse struct {
 	ID      uint   `gorm:"primaryKey" json:"id"`
 	Program string `gorm:"size:10;not null;uniqueIndex:idx_core_courses_program_code" json:"program"`

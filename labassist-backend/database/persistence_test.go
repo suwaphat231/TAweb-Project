@@ -159,8 +159,9 @@ func TestPersistenceAcrossConnections(t *testing.T) {
 	if current.LabBoySlots != 0 || current.RequireGradeProof || current.Deadline != nil {
 		t.Fatalf("zero values were not saved: %+v", current)
 	}
-	if _, err := WithdrawApplication(app.ID, student.ID, "ตารางเรียนชน"); err != nil {
-		t.Fatal(err)
+	// The old round is archived, so it is no longer open for withdrawal.
+	if _, err := WithdrawApplication(app.ID, student.ID, "ตารางเรียนชน"); !errors.Is(err, ErrWithdrawalClosed) {
+		t.Fatalf("withdraw from archived round: %v", err)
 	}
 	current, _ = ActivePostingForCourse(course.ID)
 	if current.LabBoyAccepted != 0 {

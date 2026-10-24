@@ -61,7 +61,7 @@ func seedCoursesFromClasslist() error {
 	}
 
 	var all []classlistRow
-	if err := DB.Raw(`SELECT academic_year, semester, subject_code, title_th, title_en,
+	if err := DB.Raw(`SELECT academic_year, semester, subject_code, course_code, curriculum_code, title_th, title_en,
 		credits, schedule, section_no, capacity, enrolled, instructors
 		FROM classlist_courses`).Scan(&all).Error; err != nil {
 		return fmt.Errorf("query classlist_courses: %w", err)
@@ -114,7 +114,7 @@ func seedClasslistDay(tx *gorm.DB, d classlistDay, users []models.User) error {
 	}
 
 	course := models.Course{
-		Code:           d.SubjectCode,
+		Code:           d.FormattedCode(),
 		Title:          d.Title,
 		EnglishTitle:   d.TitleEN,
 		Credits:        d.Credits,
@@ -133,26 +133,57 @@ func seedClasslistDay(tx *gorm.DB, d classlistDay, users []models.User) error {
 	return createCourseTx(tx, &course)
 }
 
+// formatCurriculumCode combines a subject code (e.g. "517121") and one or more
+// curriculum codes (e.g. ["165", "2560"]) into the display course code:
+// - single curriculum: "517101-165"
+// - multiple curricula: "517121-165, -2560"
+// - no curriculum: "517100"
+func formatCurriculumCode(subjectCode string, curricula []string) string {
+	if len(curricula) == 0 {
+		return subjectCode
+	}
+	ordered := make([]string, 0, len(curricula))
+	for _, c := range curricula {
+		if c == "165" {
+			ordered = append([]string{"165"}, ordered...)
+		} else {
+			ordered = append(ordered, c)
+		}
+	}
+	res := subjectCode + "-" + ordered[0]
+	for _, c := range ordered[1:] {
+		res += ", -" + c
+	}
+	return res
+}
+
+func (d *classlistDay) FormattedCode() string {
+	return formatCurriculumCode(d.SubjectCode, d.Curricula)
+}
+
 // classlistRow is one row of the classlist_courses staging table: one
 // curriculum group (e.g. 517433-160) of one section.
 type classlistRow struct {
-	AcademicYear int    `gorm:"column:academic_year"`
-	Semester     int    `gorm:"column:semester"`
-	SubjectCode  string `gorm:"column:subject_code"`
-	TitleTH      string `gorm:"column:title_th"`
-	TitleEN      string `gorm:"column:title_en"`
-	Credits      string `gorm:"column:credits"`
-	Schedule     string `gorm:"column:schedule"`
-	SectionNo    string `gorm:"column:section_no"`
-	Capacity     int    `gorm:"column:capacity"`
-	Enrolled     int    `gorm:"column:enrolled"`
-	Instructors  string `gorm:"column:instructors"`
+	AcademicYear   int    `gorm:"column:academic_year"`
+	Semester       int    `gorm:"column:semester"`
+	SubjectCode    string `gorm:"column:subject_code"`
+	CourseCode     string `gorm:"column:course_code"`
+	CurriculumCode string `gorm:"column:curriculum_code"`
+	TitleTH        string `gorm:"column:title_th"`
+	TitleEN        string `gorm:"column:title_en"`
+	Credits        string `gorm:"column:credits"`
+	Schedule       string `gorm:"column:schedule"`
+	SectionNo      string `gorm:"column:section_no"`
+	Capacity       int    `gorm:"column:capacity"`
+	Enrolled       int    `gorm:"column:enrolled"`
+	Instructors    string `gorm:"column:instructors"`
 }
 
 // classlistDay is one course row to seed: one section's class on one day.
 type classlistDay struct {
 	AcademicYear, Semester, Section, Slot int
 	SubjectCode, Title, TitleEN, Credits  string
+	Curricula                             []string
 	Schedule, Instructors                 string
 	Capacity, Enrolled                    int
 	groups                                int
@@ -346,6 +377,14 @@ func groupClasslistByDay(rows []classlistRow) []classlistDay {
 				byDay[k] = d
 				order = append(order, k)
 			}
+			cur := strings.TrimSpace(r.CurriculumCode)
+			if cur == "" && strings.Contains(r.CourseCode, "-") {
+				parts := strings.Split(r.CourseCode, "-")
+				cur = strings.TrimSpace(parts[len(parts)-1])
+			}
+			if cur != "" && !slices.Contains(d.Curricula, cur) {
+				d.Curricula = append(d.Curricula, cur)
+			}
 			// 9999 is the classlist's "no limit" capacity; summing it would be
 			// meaningless, so an unlimited group keeps the class unlimited.
 			if d.Capacity >= unlimitedCapacity || r.Capacity >= unlimitedCapacity {
@@ -515,7 +554,8 @@ func mergeDuplicateCourses() error {
 	groups := map[classKey][]models.Course{}
 	var order []classKey
 	for _, c := range courses {
-		k := classKey{c.Code, c.Semester, strings.TrimSpace(c.Schedule), c.Section, c.Slot, c.AcademicYear}
+		baseCode := strings.TrimSpace(strings.Split(c.Code, "-")[0])
+		k := classKey{baseCode, c.Semester, strings.TrimSpace(c.Schedule), c.Section, c.Slot, c.AcademicYear}
 		if _, ok := groups[k]; !ok {
 			order = append(order, k)
 		}
@@ -545,6 +585,7 @@ func mergeDuplicateCourses() error {
 					continue
 				}
 				drop = append(drop, c.ID)
+				keep.Code = combineCurriculumCodes(keep.Code, c.Code)
 				keep.Enrolled += c.Enrolled
 				if keep.Capacity >= unlimitedCapacity || c.Capacity >= unlimitedCapacity {
 					keep.Capacity = unlimitedCapacity
@@ -557,7 +598,7 @@ func mergeDuplicateCourses() error {
 			}
 			title := strings.TrimSpace(strings.SplitN(keep.Title, "\n", 2)[0])
 			if err := tx.Model(&models.Course{}).Where("id = ?", keep.ID).Updates(map[string]any{
-				"title": title, "enrolled": keep.Enrolled, "capacity": keep.Capacity,
+				"code": keep.Code, "title": title, "enrolled": keep.Enrolled, "capacity": keep.Capacity,
 			}).Error; err != nil {
 				return err
 			}
@@ -573,6 +614,112 @@ func mergeDuplicateCourses() error {
 	}
 	if removed > 0 {
 		log.Printf("Merged %d duplicate courses (same code, section, term and time)", removed)
+	}
+	return nil
+}
+
+func extractCurricula(code string) []string {
+	if !strings.Contains(code, "-") {
+		return nil
+	}
+	var res []string
+	parts := strings.Split(code, ",")
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if idx := strings.LastIndex(p, "-"); idx != -1 {
+			cur := strings.TrimSpace(p[idx+1:])
+			if cur != "" && !slices.Contains(res, cur) {
+				res = append(res, cur)
+			}
+		}
+	}
+	return res
+}
+
+func combineCurriculumCodes(existing, incoming string) string {
+	if existing == incoming || incoming == "" {
+		return existing
+	}
+	if existing == "" {
+		return incoming
+	}
+	curricula := extractCurricula(existing)
+	for _, c := range extractCurricula(incoming) {
+		if !slices.Contains(curricula, c) {
+			curricula = append(curricula, c)
+		}
+	}
+	base := strings.TrimSpace(strings.Split(existing, "-")[0])
+	return formatCurriculumCode(base, curricula)
+}
+
+// backfillCourseCurriculumCodes updates courses in the database to display
+// their curriculum suffixes (e.g. "517101-165", "517121-165, -2560") matched
+// from classlist_courses.
+func backfillCourseCurriculumCodes(db *gorm.DB) error {
+	_ = db.Exec("ALTER TABLE courses MODIFY COLUMN code VARCHAR(100) NOT NULL").Error
+
+	var classlistRows []struct {
+		AcademicYear   int    `gorm:"column:academic_year"`
+		Semester       int    `gorm:"column:semester"`
+		SubjectCode    string `gorm:"column:subject_code"`
+		CourseCode     string `gorm:"column:course_code"`
+		CurriculumCode string `gorm:"column:curriculum_code"`
+		SectionNo      string `gorm:"column:section_no"`
+	}
+	if err := db.Raw("SELECT academic_year, semester, subject_code, course_code, curriculum_code, section_no FROM classlist_courses").Scan(&classlistRows).Error; err != nil {
+		return err
+	}
+
+	type groupKey struct {
+		year, semester         int
+		subjectCode, sectionNo string
+	}
+	curriculaMap := map[groupKey][]string{}
+	for _, cl := range classlistRows {
+		sec := strings.TrimSpace(cl.SectionNo)
+		k := groupKey{cl.AcademicYear, cl.Semester, strings.TrimSpace(cl.SubjectCode), sec}
+		cur := strings.TrimSpace(cl.CurriculumCode)
+		if cur == "" && strings.Contains(cl.CourseCode, "-") {
+			parts := strings.Split(cl.CourseCode, "-")
+			cur = strings.TrimSpace(parts[len(parts)-1])
+		}
+		if cur != "" && !slices.Contains(curriculaMap[k], cur) {
+			curriculaMap[k] = append(curriculaMap[k], cur)
+		}
+		// Fallback key without section
+		kAll := groupKey{cl.AcademicYear, cl.Semester, strings.TrimSpace(cl.SubjectCode), ""}
+		if cur != "" && !slices.Contains(curriculaMap[kAll], cur) {
+			curriculaMap[kAll] = append(curriculaMap[kAll], cur)
+		}
+	}
+
+	var courses []models.Course
+	if err := db.Find(&courses).Error; err != nil {
+		return err
+	}
+
+	updated := 0
+	for _, c := range courses {
+		baseCode := strings.TrimSpace(strings.Split(c.Code, "-")[0])
+		sem, _ := strconv.Atoi(c.Semester)
+		secStr := strconv.Itoa(c.Section)
+
+		curricula := curriculaMap[groupKey{c.AcademicYear, sem, baseCode, secStr}]
+		if len(curricula) == 0 {
+			curricula = curriculaMap[groupKey{c.AcademicYear, sem, baseCode, ""}]
+		}
+		if len(curricula) > 0 {
+			newCode := formatCurriculumCode(baseCode, curricula)
+			if c.Code != newCode {
+				if err := db.Model(&models.Course{}).Where("id = ?", c.ID).Update("code", newCode).Error; err == nil {
+					updated++
+				}
+			}
+		}
+	}
+	if updated > 0 {
+		log.Printf("Backfilled %d courses with curriculum code suffixes", updated)
 	}
 	return nil
 }

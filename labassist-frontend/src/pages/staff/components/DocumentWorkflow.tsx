@@ -213,7 +213,7 @@ export function DocumentWorkflow({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      {staffCase?.id && <StaffMakeupSection caseId={staffCase.id} courseId={courseId} />}
+      {staffCase?.id && <StaffMakeupSection caseId={staffCase.id} />}
       {views.map((view, idx) => {
         const locked = currentIdx >= 0 && idx > currentIdx
         const isCurrent = idx === currentIdx

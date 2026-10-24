@@ -21,6 +21,7 @@ func enrichReview(r models.FormReview) models.FormReview {
 			courseID = p.CourseID
 			r.LabBoySlots = p.LabBoySlots
 			r.AcceptedCount = p.LabBoyAccepted
+			r.RosterConfirmed = p.LabBoyRosterConfirmedAt != nil
 		}
 	} else {
 		courseID = r.CourseID
@@ -39,6 +40,7 @@ func enrichReview(r models.FormReview) models.FormReview {
 		if r.PostingID == 0 {
 			r.LabBoySlots = c.LabBoySlots
 			r.AcceptedCount = c.LabBoyAccepted
+			r.RosterConfirmed = c.LabBoyRosterConfirmedAt != nil
 		}
 	}
 	return r
@@ -84,12 +86,14 @@ func reviewByPostingID(postingID, courseID uint) models.FormReview {
 	return r
 }
 
-// ListFormReviews returns all active postings with labboy slots, each
-// enriched with their current review status. If statusFilter is non-empty
-// only that status is returned.
+// ListFormReviews returns the active postings whose instructor has confirmed
+// the final Lab Boy roster — staff have nothing to do for a course before
+// that — each enriched with their current review status. If statusFilter is
+// non-empty only that status is returned.
 func ListFormReviews(statusFilter, search string) ([]models.FormReview, error) {
 	var postings []models.Posting
-	if err := DB.Where("is_active = true AND lab_boy_slots > 0").Order("id DESC").Find(&postings).Error; err != nil {
+	if err := DB.Where("is_active = true AND lab_boy_slots > 0 AND lab_boy_roster_confirmed_at IS NOT NULL").
+		Order("id DESC").Find(&postings).Error; err != nil {
 		return nil, err
 	}
 

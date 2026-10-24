@@ -142,7 +142,15 @@ func TestApprovalMemoCourseLine(t *testing.T) {
 	}
 }
 
-// 13:00–16:35 is 3h35m = 3.5833… h; hours must print rounded, not as a raw float.
+// Staff pay whole hours: 13:00–16:35 is paid as 13:00–17:00 = 4 h.
+func TestHoursFromTime_RoundsUpToWholeHours(t *testing.T) {
+	if got := hoursFromTime("13:00", "16:35"); got != 4 {
+		t.Errorf("hoursFromTime(13:00, 16:35) = %v, want 4", got)
+	}
+}
+
+// A fractional Hours value (3h35m = 3.5833… h, e.g. from an older snapshot)
+// must print rounded, not as a raw float.
 func TestRenderApprovalMemo_RoundsFractionalHours(t *testing.T) {
 	in := approvalMemoFixture()
 	in.Students = in.Students[:1]
@@ -150,7 +158,7 @@ func TestRenderApprovalMemo_RoundsFractionalHours(t *testing.T) {
 	for i := 0; i < 16; i++ {
 		in.Sessions = append(in.Sessions, ApprovalMemoSession{
 			Date: time.Date(2026, 7, 7+i, 0, 0, 0, 0, time.UTC), Start: "13:00", End: "16:35",
-			Hours: hoursFromTime("13:00", "16:35"),
+			Hours: 215.0 / 60,
 		})
 	}
 	data, err := RenderApprovalMemo(in)
@@ -182,5 +190,19 @@ func TestRenderApprovalMemo_IncompleteData(t *testing.T) {
 	doc.DataSnapshot = `{"occurrences":[{"date":"2025-12-03","start_time":"10:20","end_time":"12:20","status":"scheduled"}],"rate_per_hour_baht":50}`
 	if _, err := renderApprovalMemo(doc, course); !errors.Is(err, ErrIncompleteDocumentData) {
 		t.Fatalf("no students: err = %v", err)
+	}
+}
+
+func TestSplitThaiName_KeepsTitleWithFirstName(t *testing.T) {
+	cases := []struct{ in, first, last string }{
+		{"นาย สมชาย ใจดี", "นาย สมชาย", "ใจดี"},
+		{"นางสาว สมหญิง ใจดี", "นางสาว สมหญิง", "ใจดี"},
+		{"นายสมชาย ใจดี", "นายสมชาย", "ใจดี"},
+		{"สมชาย ใจดี", "สมชาย", "ใจดี"},
+	}
+	for _, c := range cases {
+		if f, l := splitThaiName(c.in); f != c.first || l != c.last {
+			t.Errorf("splitThaiName(%q) = (%q, %q), want (%q, %q)", c.in, f, l, c.first, c.last)
+		}
 	}
 }

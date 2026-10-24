@@ -34,6 +34,12 @@ describe('makeupProblem', () => {
     expect(makeupProblem(day, '2026-09-08', '16:00', '13:00')).toMatch('หลังเวลาเริ่ม')
     expect(makeupProblem(day, '2026-09-08', '13:00', '16:30')).toMatch('ไม่เกิน')
   })
+
+  it('flags a hand-typed time that is unfinished or impossible', () => {
+    expect(makeupProblem(day, '2026-09-08', '13:0', '16:00')).toMatch('24 ชั่วโมง')
+    expect(makeupProblem(day, '2026-09-08', '25:00', '16:00')).toMatch('24 ชั่วโมง')
+    expect(makeupProblem(day, '2026-09-08', '13:00', '15:75')).toMatch('24 ชั่วโมง')
+  })
 })
 
 it('pendingCount counts only undecided clashes', () => {

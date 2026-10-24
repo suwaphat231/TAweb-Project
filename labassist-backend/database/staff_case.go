@@ -504,11 +504,21 @@ func GenerateWorkOccurrences(
 	if err != nil {
 		return nil, err
 	}
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		// Weekly expansion stops once the term's session cap is reached.
+		if occurrences, err = trimToSessionCap(tx, staffCaseID, scheduleGroupID, occurrences); err != nil {
+			return err
+		}
+		if len(occurrences) == 0 {
+			return nil
+		}
+		return tx.Create(&occurrences).Error
+	})
+	if err != nil {
+		return nil, err
+	}
 	if len(occurrences) == 0 {
 		return []models.WorkOccurrence{}, nil
-	}
-	if err := DB.Create(&occurrences).Error; err != nil {
-		return nil, err
 	}
 	return occurrences, nil
 }
@@ -537,7 +547,8 @@ func WorkOccurrencesForMonth(staffCaseID uint, year, month int) ([]models.WorkOc
 }
 
 // UpdateOccurrenceStatus changes the status of a work occurrence and records who changed it.
-func UpdateOccurrenceStatus(id uint, status models.OccurrenceStatus, reason string, updatedByID uint) (models.WorkOccurrence, bool) {
+// Returns ErrSessionCap when the change would exceed the term's session cap.
+func UpdateOccurrenceStatus(id uint, status models.OccurrenceStatus, reason string, updatedByID uint) (models.WorkOccurrence, error) {
 	var occ models.WorkOccurrence
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&occ, id).Error; err != nil {
@@ -546,12 +557,15 @@ func UpdateOccurrenceStatus(id uint, status models.OccurrenceStatus, reason stri
 		occ.Status = status
 		occ.Reason = reason
 		occ.UpdatedByID = &updatedByID
-		return tx.Save(&occ).Error
+		if err := tx.Save(&occ).Error; err != nil {
+			return err
+		}
+		return checkSessionCap(tx, occ.StaffCaseID, occ.ScheduleGroupID)
 	})
 	if err != nil {
-		return models.WorkOccurrence{}, false
+		return models.WorkOccurrence{}, err
 	}
-	return occ, true
+	return occ, nil
 }
 
 // RescheduleOccurrence marks the original occurrence as rescheduled and creates
@@ -586,7 +600,10 @@ func RescheduleOccurrence(
 			Status:                      models.OccurrenceScheduled,
 			RescheduledFromOccurrenceID: &orig.ID,
 		}
-		return tx.Create(&newOcc).Error
+		if err := tx.Create(&newOcc).Error; err != nil {
+			return err
+		}
+		return checkSessionCap(tx, orig.StaffCaseID, orig.ScheduleGroupID)
 	})
 	if err != nil {
 		return models.WorkOccurrence{}, models.WorkOccurrence{}, err
@@ -806,26 +823,31 @@ func RegenerateGroupMonthOccurrences(
 		}
 
 		// Generate fresh rows for each slot.
+		var occs []models.WorkOccurrence
 		for _, slot := range slots {
 			all, err := buildOccurrenceSlice(staffCaseID, &gid, slot.Day, slot.StartTime, slot.EndTime, startDate, endDate, cancelledDates)
 			if err != nil {
 				return err
 			}
-			occs := all[:0]
 			for _, o := range all {
 				if d := o.ScheduledDate.Format("2006-01-02"); !taken[d] {
 					taken[d] = true
 					occs = append(occs, o)
 				}
 			}
-			if len(occs) == 0 {
-				continue
-			}
-			if err := tx.Create(&occs).Error; err != nil {
-				return err
-			}
-			result = append(result, occs...)
 		}
+		// Stop at the term's session cap, counting the group's other months.
+		occs, err = trimToSessionCap(tx, staffCaseID, &gid, occs)
+		if err != nil {
+			return err
+		}
+		if len(occs) == 0 {
+			return nil
+		}
+		if err := tx.Create(&occs).Error; err != nil {
+			return err
+		}
+		result = occs
 		return nil
 	})
 	return result, err
@@ -853,18 +875,8 @@ func ComputeMonthOccurrenceSummary(
 			// scheduled, completed, absent all count as "valid plan days"
 			if o.Status != models.OccurrenceAbsent {
 				s.Valid++
-				// Compute duration in minutes.
-				var durMins int64
-				if len(o.StartTime) >= 5 && len(o.EndTime) >= 5 {
-					var sh, sm, eh, em int
-					fmt.Sscanf(o.StartTime, "%d:%d", &sh, &sm)
-					fmt.Sscanf(o.EndTime, "%d:%d", &eh, &em)
-					durMins = int64((eh*60+em)-(sh*60+sm))
-					if durMins < 0 {
-						durMins = 0
-					}
-				}
-				s.ValidMinutes += durMins
+				// Paid duration in minutes (partial hours rounded up).
+				s.ValidMinutes += int64(PayableMinutes(o.StartTime, o.EndTime))
 			}
 		}
 	}
@@ -913,7 +925,13 @@ func AddSingleGroupOccurrence(
 		Status:          status,
 		CalendarDateID:  calDateID,
 	}
-	if err := DB.Create(&occ).Error; err != nil {
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&occ).Error; err != nil {
+			return err
+		}
+		return checkSessionCap(tx, staffCaseID, &gid)
+	})
+	if err != nil {
 		if isDuplicateErr(err) {
 			return models.WorkOccurrence{}, ErrDuplicateOccurrence
 		}
@@ -970,7 +988,10 @@ func PatchOccurrenceFields(id uint, patch OccurrencePatch, updatedByID uint) (mo
 			occ.Reason = *patch.Reason
 		}
 		occ.UpdatedByID = &updatedByID
-		return tx.Save(&occ).Error
+		if err := tx.Save(&occ).Error; err != nil {
+			return err
+		}
+		return checkSessionCap(tx, occ.StaffCaseID, occ.ScheduleGroupID)
 	})
 	if err != nil {
 		return models.WorkOccurrence{}, err
@@ -1131,6 +1152,10 @@ func SetGroupMonthDates(
 				return err
 			}
 		}
+		// Staff-picked dates are refused, not trimmed, past the session cap.
+		if err := checkSessionCap(tx, staffCaseID, &gid); err != nil {
+			return err
+		}
 		result = occs
 
 		// Mark this month as staff-managed (manual dates).
@@ -1142,16 +1167,10 @@ func SetGroupMonthDates(
 	return result, err
 }
 
-// occurrenceHours returns the work duration in hours for a single occurrence.
+// occurrenceHours returns the paid hours for a single occurrence
+// (partial hours rounded up, see PayableMinutes).
 func occurrenceHours(startTime, endTime string) float64 {
-	var sh, sm, eh, em int
-	fmt.Sscanf(startTime, "%d:%d", &sh, &sm)
-	fmt.Sscanf(endTime, "%d:%d", &eh, &em)
-	mins := (eh*60 + em) - (sh*60 + sm)
-	if mins <= 0 {
-		return 0
-	}
-	return float64(mins) / 60.0
+	return PayableHours(startTime, endTime)
 }
 
 // BuildDocumentSnapshot builds a frozen DocumentDataSnapshot for a StaffCase document.

@@ -23,6 +23,10 @@ type Posting struct {
 	RequireGradeProof       bool         `gorm:"default:false" json:"require_grade_proof"`
 	ClosedByInstructor      bool         `gorm:"default:false" json:"closed_by_instructor"`
 	LabBoyScheduleConfirmed bool         `gorm:"default:false" json:"labboy_schedule_confirmed"`
+	// LabBoyRosterConfirmedAt is set when the instructor confirms the accepted
+	// Lab Boys as final. Staff see the course only after this, and the
+	// accepted roster can no longer be changed by accepting or cancelling.
+	LabBoyRosterConfirmedAt *time.Time `json:"labboy_roster_confirmed_at,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

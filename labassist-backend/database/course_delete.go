@@ -148,6 +148,11 @@ func adminDeleteCourseTx(tx *gorm.DB, id uint) error {
 	if err := tx.Model(&models.Notification{}).Where("course_id = ?", id).Update("course_id", nil).Error; err != nil {
 		return err
 	}
+	if tx.Migrator().HasTable("course_edit_requests") {
+		if err := tx.Where("course_id = ?", id).Delete(&models.CourseEditRequest{}).Error; err != nil {
+			return err
+		}
+	}
 	if tx.Migrator().HasTable("staff_cases") {
 		var empty []uint
 		if err := emptyStaffCases(tx, id).Pluck("id", &empty).Error; err != nil {

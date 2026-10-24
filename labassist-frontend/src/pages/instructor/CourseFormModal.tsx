@@ -43,10 +43,43 @@ export function CourseFormModal({
   // ห้ามเลือกวันปิดรับสมัครที่ผ่านมาแล้ว — แต่ตอนแก้ไขวิชาที่ deadline เดิมผ่านไปแล้ว
   // ยังคงค่าเดิมไว้ได้ เพื่อไม่ให้ฟอร์มส่งไม่ได้เพียงเพราะไม่ได้แตะช่องวันที่
   const [initialDeadline, setInitialDeadline] = useState('')
+  const [slotsStr, setSlotsStr] = useState('')
+
   useEffect(() => {
-    if (isOpen) setInitialDeadline(editId ? form.deadline ?? '' : '')
+    if (isOpen) {
+      setInitialDeadline(editId ? form.deadline ?? '' : '')
+      if (editId) {
+        setSlotsStr(form.labboy_slots !== undefined && form.labboy_slots !== null ? String(form.labboy_slots) : '')
+      } else {
+        setSlotsStr(form.labboy_slots > 0 ? String(form.labboy_slots) : '')
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, editId])
+
+  const handleSlotsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value
+    // Strip everything except digits: no '-', '+', '.', 'e', etc.
+    const sanitized = raw.replace(/[^0-9]/g, '')
+    setSlotsStr(sanitized)
+    const num = sanitized === '' ? 0 : parseInt(sanitized, 10)
+    setForm(f => ({ ...f, labboy_slots: Math.max(0, num) }))
+  }
+
+  const handleNonNegativeKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (['-', '+', 'e', 'E', '.'].includes(e.key)) {
+      e.preventDefault()
+    }
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (form.labboy_slots < 0) {
+      return
+    }
+    onSubmit(e)
+  }
+
   const today = todayBangkok()
   const minDeadline = initialDeadline && initialDeadline < today ? initialDeadline : today
 
@@ -57,7 +90,7 @@ export function CourseFormModal({
       title={editId ? `แก้ไขวิชา — ${form.code}` : 'สร้างประกาศรับสมัคร'}
       size="lg"
     >
-      <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ display: 'grid', gridTemplateColumns: editId ? '1fr 1fr' : '1fr', gap: 14 }}>
           <CourseCodeAutocomplete
             value={form.code}
@@ -75,7 +108,7 @@ export function CourseFormModal({
             disabled={!!editId}
           />
           {editId && (
-            <Input label="ปีการศึกษา *" type="number" value={form.academic_year} onChange={set('academic_year')} required />
+            <Input label="ปีการศึกษา *" type="number" min="0" value={form.academic_year} onChange={set('academic_year')} onKeyDown={handleNonNegativeKeyDown} required />
           )}
         </div>
         <Input label="ชื่อวิชา *" value={form.title} onChange={set('title')} placeholder="การโปรแกรมคอมพิวเตอร์" required />
@@ -93,8 +126,10 @@ export function CourseFormModal({
             <Input
               label="ปีการศึกษา *"
               type="number"
+              min="0"
               value={form.academic_year}
               onChange={(e) => { set('academic_year')(e); setSectionIds([]) }}
+              onKeyDown={handleNonNegativeKeyDown}
               required
             />
           </div>
@@ -128,9 +163,18 @@ export function CourseFormModal({
         )}
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          {/* A text box, not type="number": React does not always write the
+              sanitized value back into a number input, so "-1" stayed on screen. */}
           <Input
-            label="Lab Boy Slots *" type="number" min="0" 
-            value={form.labboy_slots || ''} onChange={set('labboy_slots')} required
+            label="Lab Boy Slots *"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete="off"
+            value={slotsStr}
+            onChange={handleSlotsChange}
+            onKeyDown={handleNonNegativeKeyDown}
+            required
           />
           <Input label="วันปิดรับสมัคร" type="date" min={minDeadline} value={form.deadline ?? ''} onChange={set('deadline')} />
         </div>

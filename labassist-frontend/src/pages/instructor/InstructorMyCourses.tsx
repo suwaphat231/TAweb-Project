@@ -13,8 +13,9 @@ import { Skeleton } from '../../components/ui/Skeleton'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { useToast } from '../../hooks/useToast'
 import { displayCourseTitle } from '../../utils/courseDisplay'
-import type { Course, CourseRelation } from '../../types'
+import type { Course, CourseEditRequest, CourseRelation } from '../../types'
 import { formatSchedule } from '../../utils/schedule'
+import { CourseEditRequestModal } from './CourseEditRequestModal'
 
 function DeleteIcon() {
   return (
@@ -71,12 +72,49 @@ function errorDetail(err: unknown, fallback: string): string {
 
 const currentYear = new Date().getFullYear() + 543
 
+function DetailRow({ label, value }: { label: string; value?: string }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-400)' }}>{label}</span>
+      <span style={{ fontSize: 13, color: 'var(--ink-800)', whiteSpace: 'pre-line' }}>{value || '—'}</span>
+    </div>
+  )
+}
+
+// The latest edit request for a course — pending, rejected or approved.
+function EditRequestStatus({ req, onCancel, cancelling }: { req: CourseEditRequest; onCancel: () => void; cancelling: boolean }) {
+  const tone = {
+    pending:  { bg: '#EFF6FF', border: '#BFDBFE', color: '#1E40AF', text: 'คำขอแก้ไขรายละเอียดวิชากำลังรอแอดมินอนุมัติ' },
+    rejected: { bg: '#FEF2F2', border: '#FECACA', color: '#991B1B', text: 'แอดมินไม่อนุมัติคำขอแก้ไขล่าสุด' },
+    approved: { bg: '#F0FDF4', border: '#BBF7D0', color: '#166534', text: 'แอดมินอนุมัติคำขอแก้ไขล่าสุดแล้ว' },
+  }[req.status]
+  return (
+    <div style={{
+      display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+      background: tone.bg, border: `1px solid ${tone.border}`, borderRadius: 10, padding: '10px 14px', marginBottom: 14,
+    }}>
+      <div style={{ fontSize: 13, color: tone.color }}>
+        <div style={{ fontWeight: 600 }}>{tone.text}</div>
+        {req.status === 'rejected' && req.reject_reason && (
+          <div style={{ fontSize: 12, marginTop: 2 }}>เหตุผล: {req.reject_reason}</div>
+        )}
+      </div>
+      {req.status === 'pending' && (
+        <Button size="sm" variant="ghost" loading={cancelling} onClick={onCancel} style={{ color: tone.color }}>
+          ยกเลิกคำขอ
+        </Button>
+      )}
+    </div>
+  )
+}
+
 export default function InstructorMyCourses() {
   const [showPicker, setShowPicker] = useState(false)
   const [pickerSemester, setPickerSemester] = useState('1')
   const [pickerYear, setPickerYear] = useState(currentYear)
   const [pickerSearch, setPickerSearch] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<CourseRelation | null>(null)
+  const [editTarget, setEditTarget] = useState<Course | null>(null)
   const qc = useQueryClient()
   const showToast = useToast()
 
@@ -85,10 +123,26 @@ export default function InstructorMyCourses() {
     queryFn: () => instructorApi.myCourses(),
   })
 
-  // Only courses that have opened recruitment — a draft has never been opened
-  // so there are no Lab Boys to show yet. Closed rounds stay listed because
-  // their accepted Lab Boys are what this page is for.
-  const displayRelations = relations.filter((r) => r.course.status !== 'draft')
+  // Every course the instructor teaches is listed with its details — drafts
+  // included, since the details are worth checking before recruiting opens.
+  const displayRelations = relations
+
+  const { data: editRequests = [] } = useQuery({
+    queryKey: ['instructor-course-edit-requests'],
+    queryFn: () => instructorApi.myCourseEditRequests(),
+  })
+  // The API lists newest first, so the first one seen per course is the latest.
+  const latestRequest = new Map<number, CourseEditRequest>()
+  for (const r of editRequests) if (!latestRequest.has(r.course_id)) latestRequest.set(r.course_id, r)
+
+  const cancelRequestMut = useMutation({
+    mutationFn: (id: number) => instructorApi.cancelCourseEditRequest(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['instructor-course-edit-requests'] })
+      showToast('ยกเลิกคำขอแก้ไขแล้ว', 'success')
+    },
+    onError: (err) => showToast(errorDetail(err, 'ยกเลิกคำขอไม่สำเร็จ'), 'error'),
+  })
 
   // Only fetch applicants for 'imported' courses — self_added rows do not grant
   // management rights so the endpoint will 403 for those.
@@ -135,7 +189,7 @@ export default function InstructorMyCourses() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 4 }}>วิชาของฉัน</h1>
-          <p style={{ color: 'var(--ink-500)', fontSize: 14 }}>รายวิชาที่สอนทั้งหมด พร้อม Lab Boy ที่ผ่านการคัดเลือกในแต่ละวิชา</p>
+          <p style={{ color: 'var(--ink-500)', fontSize: 14 }}>รายวิชาที่สอนทั้งหมด พร้อมรายละเอียดวิชาและ Lab Boy ที่ผ่านการคัดเลือก — ขอแก้ไขรายละเอียดได้ โดยแอดมินเป็นผู้อนุมัติ</p>
         </div>
         <Button onClick={() => setShowPicker(true)}><LinkIcon /> <span style={{ marginLeft: 6 }}>เพิ่มวิชาเอง</span></Button>
       </div>
@@ -146,7 +200,7 @@ export default function InstructorMyCourses() {
         </div>
       ) : displayRelations.length === 0 ? (
         <EmptyState
-          title="ยังไม่มีวิชาที่เปิดรับสมัคร"
+          title="ยังไม่มีรายวิชา"
           icon="📚"
           action={{ label: 'เพิ่มวิชาเอง', onClick: () => setShowPicker(true) }}
         />
@@ -156,6 +210,8 @@ export default function InstructorMyCourses() {
             const c = rel.course
             const applicants = applicantQueries[i]?.data ?? []
             const accepted = applicants.filter((a) => a.status === 'accepted')
+            const editReq = latestRequest.get(c.id)
+            const pendingEdit = editReq?.status === 'pending'
             return (
               <Card key={rel.id} padding={0} style={rel.source === 'self_added' ? { borderColor: '#FDE68A' } : undefined}>
                 <CardHeader style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
@@ -184,6 +240,15 @@ export default function InstructorMyCourses() {
                         Lab Boy {c.labboy_accepted} / {c.labboy_slots} คน
                       </div>
                     )}
+                    {rel.source === 'imported' && (
+                      <Button
+                        size="sm" variant="outline" disabled={pendingEdit}
+                        title={pendingEdit ? 'มีคำขอแก้ไขรออนุมัติอยู่' : 'ขอแก้ไขรายละเอียดวิชา'}
+                        onClick={() => setEditTarget(c)}
+                      >
+                        แก้ไขรายละเอียด
+                      </Button>
+                    )}
                     {rel.source === 'self_added' && (
                       <Button
                         size="sm" variant="outline" title="ยกเลิกการเชื่อมโยงวิชา"
@@ -196,6 +261,24 @@ export default function InstructorMyCourses() {
                   </div>
                 </CardHeader>
                 <CardBody>
+                  {editReq && rel.source === 'imported' && (
+                    <EditRequestStatus
+                      req={editReq}
+                      onCancel={() => cancelRequestMut.mutate(editReq.id)}
+                      cancelling={cancelRequestMut.isPending && cancelRequestMut.variables === editReq.id}
+                    />
+                  )}
+                  <div style={{
+                    display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(180px,1fr))', gap: 12,
+                    paddingBottom: 14, marginBottom: 14, borderBottom: '1px solid var(--line-soft)',
+                  }}>
+                    <DetailRow label="ชื่อวิชา (ไทย)" value={c.title} />
+                    <DetailRow label="ชื่อวิชา (อังกฤษ)" value={c.english_title} />
+                    <DetailRow label="หน่วยกิต" value={c.credits} />
+                    <DetailRow label="วันและเวลาเรียน" value={formatSchedule(c.schedule)} />
+                    <DetailRow label="กลุ่มเรียน" value={c.section ? String(c.section) : undefined} />
+                    <DetailRow label="ภาค / ปีการศึกษา" value={`${c.semester} / ${c.academic_year}`} />
+                  </div>
                   {rel.source === 'self_added' ? (
                     <div style={{
                       display: 'flex', gap: 12, alignItems: 'flex-start',
@@ -319,6 +402,8 @@ export default function InstructorMyCourses() {
           </div>
         </div>
       </Modal>
+
+      <CourseEditRequestModal key={editTarget?.id ?? 0} course={editTarget} onClose={() => setEditTarget(null)} />
 
       {/* Unlink Confirm Modal — only for self_added relations */}
       <Modal

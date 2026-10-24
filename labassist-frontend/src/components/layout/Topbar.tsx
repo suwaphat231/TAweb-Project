@@ -110,7 +110,7 @@ function UserMenu() {
         }}>
           <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--line-soft)' }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {user.full_name}
+              {user.display_name || user.full_name}
             </div>
             <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 2 }}>{ROLE_LABEL[user.role] ?? user.role}</div>
           </div>

@@ -73,7 +73,7 @@ export function ReportList({
         display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap',
         background: '#fff', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-card)', padding: '10px 14px',
       }}>
-        <FilterChips options={statusOptions} value={status} onChange={withReset(setStatus)} />
+        {statusOptions.length > 1 && <FilterChips options={statusOptions} value={status} onChange={withReset(setStatus)} />}
         <div style={{ flex: 1 }} />
         {toolbarExtra}
       </div>

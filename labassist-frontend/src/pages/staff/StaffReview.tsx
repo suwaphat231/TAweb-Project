@@ -95,7 +95,7 @@ export default function StaffReview() {
   })
 
   function openCourse(form: FormReview) {
-    navigate(`/staff/course/${form.academic_year}/${form.semester}/${form.course_code}/${form.section}?course=${form.course_id}`)
+    navigate(`/staff/course/${form.academic_year}/${form.semester}/${encodeURIComponent(form.course_code)}/${form.section}?course=${form.course_id}`)
   }
 
   const verifyMut = useMutation({

@@ -3,15 +3,17 @@ import type { MakeupDay, MakeupDayPayload } from '../../types'
 import { formatThaiDate, thaiDayShort } from '../../utils/thaiDate'
 import { makeupProblem } from './makeupRules'
 import { DateInput } from '../ui/DateInput'
+import { TimeTextInput } from '../ui/TimeTextInput'
 
 interface Props {
   days: MakeupDay[]
-  /** Staff choose on the instructor's behalf; the wording follows. */
+  /** Staff only watch: the instructor alone picks makeup days. */
   mode: 'instructor' | 'staff'
   /** Show the course column (the instructor page lists every course). */
   showCourse?: boolean
-  onChoose: (occurrenceId: number, data: MakeupDayPayload) => Promise<unknown>
-  onDecline: (occurrenceId: number) => Promise<unknown>
+  /** Omit both to show the list read-only. */
+  onChoose?: (occurrenceId: number, data: MakeupDayPayload) => Promise<unknown>
+  onDecline?: (occurrenceId: number) => Promise<unknown>
 }
 
 const thCss: React.CSSProperties = {
@@ -48,7 +50,8 @@ export function MakeupDaysPanel({ days, mode, showCourse = false, onChoose, onDe
   const [busyId, setBusyId] = useState<number | null>(null)
   const [error, setError] = useState<{ id: number; text: string } | null>(null)
 
-  const cols = showCourse ? 5 : 4
+  const editable = !!onChoose && !!onDecline
+  const cols = (showCourse ? 5 : 4) - (editable ? 0 : 1)
 
   function openForm(d: MakeupDay) {
     setEditId(d.occurrence_id)
@@ -80,7 +83,7 @@ export function MakeupDaysPanel({ days, mode, showCourse = false, onChoose, onDe
             <th style={thCss}>วันที่ชนวันหยุด</th>
             <th style={thCss}>เวลาเดิม</th>
             <th style={thCss}>วันชดเชย</th>
-            <th style={{ ...thCss, textAlign: 'right' }}>จัดการ</th>
+            {editable && <th style={{ ...thCss, textAlign: 'right' }}>จัดการ</th>}
           </tr>
         </thead>
         <tbody>
@@ -103,17 +106,17 @@ export function MakeupDaysPanel({ days, mode, showCourse = false, onChoose, onDe
                   </td>
                   <td style={{ ...tdCss, color: 'var(--ink-600)' }}>{d.start_time.slice(0, 5)}–{d.end_time.slice(0, 5)}</td>
                   <td style={tdCss}><StatusCell day={d} mode={mode} /></td>
-                  <td style={{ ...tdCss, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  {editable && <td style={{ ...tdCss, textAlign: 'right', whiteSpace: 'nowrap' }}>
                     {!editing && (
                       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                         <button type="button" className="btn btn-primary btn-xs" disabled={busy} onClick={() => openForm(d)}>
-                          {d.status === 'pending' ? (mode === 'staff' ? 'เลือกแทน' : 'เลือกวันชดเชย') : 'เปลี่ยน'}
+                          {d.status === 'pending' ? 'เลือกวันชดเชย' : 'เปลี่ยน'}
                         </button>
                         {d.status !== 'no_makeup' && (
                           <button type="button" className="btn btn-outline btn-xs" disabled={busy}
                             onClick={() => {
                               if (window.confirm(`ยืนยันไม่ชดเชยวันที่ ${formatThaiDate(d.date)}?`)) {
-                                void run(d.occurrence_id, () => onDecline(d.occurrence_id))
+                                void run(d.occurrence_id, () => onDecline!(d.occurrence_id))
                               }
                             }}>
                             ไม่ชดเชย
@@ -124,7 +127,7 @@ export function MakeupDaysPanel({ days, mode, showCourse = false, onChoose, onDe
                     {error?.id === d.occurrence_id && !editing && (
                       <div role="alert" style={{ fontSize: 12, color: 'var(--red)', marginTop: 4, whiteSpace: 'normal' }}>{error.text}</div>
                     )}
-                  </td>
+                  </td>}
                 </tr>
                 {editing && (
                   <tr>
@@ -135,13 +138,14 @@ export function MakeupDaysPanel({ days, mode, showCourse = false, onChoose, onDe
                           onChange={(e) => setDate(e.target.value)} className="form-input"
                           style={{ width: 150, fontSize: 13, padding: '4px 8px' }} />
                         <span style={{ fontSize: 12, color: 'var(--ink-600)' }}>เวลา</span>
-                        <input type="time" aria-label="เวลาเริ่ม" value={start} onChange={(e) => setStart(e.target.value)}
-                          className="form-input" style={{ width: 104, fontSize: 13, padding: '4px 8px' }} />
+                        <TimeTextInput aria-label="เวลาเริ่ม" value={start} onChange={setStart}
+                          className="form-input" style={{ width: 72, fontSize: 13, padding: '4px 8px', textAlign: 'center' }} />
                         <span>–</span>
-                        <input type="time" aria-label="เวลาเลิก" value={end} onChange={(e) => setEnd(e.target.value)}
-                          className="form-input" style={{ width: 104, fontSize: 13, padding: '4px 8px' }} />
+                        <TimeTextInput aria-label="เวลาเลิก" value={end} onChange={setEnd}
+                          className="form-input" style={{ width: 72, fontSize: 13, padding: '4px 8px', textAlign: 'center' }} />
+                        <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>น.</span>
                         <button type="button" className="btn btn-primary btn-xs" disabled={busy || problem !== null}
-                          onClick={() => void run(d.occurrence_id, () => onChoose(d.occurrence_id, { date, start_time: start, end_time: end }))}>
+                          onClick={() => void run(d.occurrence_id, () => onChoose!(d.occurrence_id, { date, start_time: start, end_time: end }))}>
                           {busy ? 'กำลังบันทึก…' : 'บันทึก'}
                         </button>
                         <button type="button" className="btn btn-ghost btn-xs" disabled={busy} onClick={() => setEditId(null)}>ยกเลิก</button>

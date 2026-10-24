@@ -2,9 +2,11 @@ import type { MakeupDay } from '../../types'
 
 function minutes(hhmm: string): number | null {
   const m = /^(\d{2}):(\d{2})/.exec(hhmm)
-  if (!m) return null
+  if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) return null
   return Number(m[1]) * 60 + Number(m[2])
 }
+
+const TYPED_TIME = /^\d{2}:\d{2}$/
 
 /**
  * Why a makeup choice would be refused, or null when it is fine. Mirrors the
@@ -16,7 +18,11 @@ export function makeupProblem(day: MakeupDay, date: string, start: string, end: 
   const current = day.makeup?.scheduled_date.slice(0, 10)
   if (date !== current && day.blocked_dates.includes(date)) return 'วันที่เลือกเป็นวันหยุดหรือมีวันทำงานอยู่แล้ว'
   const s = minutes(start), e = minutes(end)
-  if (s === null || e === null || e <= s) return 'เวลาเลิกต้องหลังเวลาเริ่ม'
+  // Times are typed by hand, so an unfinished or impossible entry gets its own message.
+  if (!TYPED_TIME.test(start) || !TYPED_TIME.test(end) || s === null || e === null) {
+    return 'กรอกเวลาแบบ 24 ชั่วโมง เช่น 13:00'
+  }
+  if (e <= s) return 'เวลาเลิกต้องหลังเวลาเริ่ม'
   const os = minutes(day.start_time), oe = minutes(day.end_time)
   if (os !== null && oe !== null && e - s > oe - os) return 'ชั่วโมงวันชดเชยต้องไม่เกินชั่วโมงของวันเดิม'
   return null

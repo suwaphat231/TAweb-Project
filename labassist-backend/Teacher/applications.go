@@ -23,6 +23,8 @@ type BulkReviewResult struct {
 	SkippedNoProof int `json:"skipped_no_proof"`
 }
 
+const rosterLockedMsg = "ยืนยันรายชื่อ Lab Boy แล้ว รับหรือยกเลิกการรับเพิ่มไม่ได้ — ยกเลิกการยืนยันรายชื่อก่อน"
+
 // ReviewRequest is the request body for reviewing an application
 type ReviewRequest struct {
 	Status models.AppStatus `json:"status" binding:"required,oneof=accepted rejected" example:"accepted"`
@@ -100,6 +102,10 @@ func (h *Handler) Review(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "รอบรับสมัครนี้ถูกเก็บเป็นประวัติแล้ว"})
 		return
 	}
+	if txRes.RosterLocked {
+		c.JSON(http.StatusConflict, gin.H{"error": rosterLockedMsg})
+		return
+	}
 	if txRes.SlotsFull {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Lab Boy slots are full"})
 		return
@@ -171,6 +177,14 @@ func (h *Handler) CancelAcceptance(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "application has been withdrawn"})
 		return
 	}
+	if txRes.Archived {
+		c.JSON(http.StatusConflict, gin.H{"error": "รอบรับสมัครนี้ถูกเก็บเป็นประวัติแล้ว"})
+		return
+	}
+	if txRes.RosterLocked {
+		c.JSON(http.StatusConflict, gin.H{"error": rosterLockedMsg})
+		return
+	}
 
 	// The student was already told they were accepted; correct that.
 	if txRes.PrevStatus == models.AppAccepted {
@@ -233,6 +247,8 @@ func (h *Handler) ResolveWithdraw(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "ใบสมัครนี้ไม่มีคำขอถอนที่รอพิจารณา"})
 		case errors.Is(err, database.ErrPostingArchived):
 			c.JSON(http.StatusConflict, gin.H{"error": "รอบรับสมัครนี้ถูกเก็บเป็นประวัติแล้ว"})
+		case errors.Is(err, database.ErrWithdrawalRosterConfirmed):
+			c.JSON(http.StatusConflict, gin.H{"error": "ยืนยันรายชื่อแลปบอยแล้ว กรุณายกเลิกการยืนยันก่อนอนุมัติการถอน"})
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot save application"})
 		}
@@ -327,7 +343,7 @@ func (h *Handler) BulkReview(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot save application"})
 			return
 		}
-		if txRes.Archived || txRes.WasWithdrawn || txRes.SlotsFull || txRes.MissingProof {
+		if txRes.Archived || txRes.WasWithdrawn || txRes.SlotsFull || txRes.MissingProof || txRes.RosterLocked {
 			if txRes.SlotsFull {
 				result.SkippedFull++
 			}

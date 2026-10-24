@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"labassist/models"
+	"labassist/ws"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
@@ -34,9 +35,33 @@ func LabHoursFromCredits(credits string) int {
 
 var ErrConflict = errors.New("conflict")
 
-// ErrWithdrawalClosed is returned by WithdrawApplication when an accepted
-// student tries to withdraw after the instructor has manually closed the posting.
-var ErrWithdrawalClosed = errors.New("withdrawal not allowed after instructor closed the posting")
+// ErrWithdrawalClosed is returned by WithdrawApplication when the posting is
+// no longer accepting applications (closed, past its deadline or archived).
+var ErrWithdrawalClosed = errors.New("withdrawal allowed only while the posting is open")
+
+// ErrWithdrawalRosterConfirmed is returned when a withdrawal would change a
+// Lab Boy roster the instructor already confirmed.
+var ErrWithdrawalRosterConfirmed = errors.New("withdrawal not allowed after the instructor confirmed the roster")
+
+// postingAcceptsWithdrawal reports why a student may not withdraw from the
+// posting, or nil while it is still open for applications and its roster
+// is not yet confirmed.
+func postingAcceptsWithdrawal(p models.Posting) error {
+	if p.LabBoyRosterConfirmedAt != nil {
+		return ErrWithdrawalRosterConfirmed
+	}
+	if !p.IsActive || p.ClosedByInstructor ||
+		(p.Status != models.StatusOpen && p.Status != models.StatusClosingSoon) {
+		return ErrWithdrawalClosed
+	}
+	if p.Deadline != nil {
+		d := p.Deadline.In(bangkokLoc)
+		if time.Now().After(time.Date(d.Year(), d.Month(), d.Day(), 23, 59, 59, 0, bangkokLoc)) {
+			return ErrWithdrawalClosed
+		}
+	}
+	return nil
+}
 
 // bangkokLoc is UTC+7 with no DST — matches Asia/Bangkok without requiring
 // the system timezone database (safe in slim Docker images).
@@ -56,6 +81,7 @@ func applyPostingToCourse(p models.Posting, c *models.Course) {
 	c.RequireGradeProof = p.RequireGradeProof
 	c.ClosedByInstructor = p.ClosedByInstructor
 	c.LabBoyScheduleConfirmed = p.LabBoyScheduleConfirmed
+	c.LabBoyRosterConfirmedAt = p.LabBoyRosterConfirmedAt
 }
 
 // closeIfPastDeadline flips an open/closing_soon posting to closed once its
@@ -106,7 +132,7 @@ func countNonWithdrawnApplications(courseID uint) (int, error) {
 
 func enrichApplication(a models.Application) models.Application {
 	if u, ok := UserByID(a.StudentID); ok {
-		a.StudentName = u.FullName
+		a.StudentName = u.DisplayName()
 		if u.StudentID != nil {
 			a.StudentCode = *u.StudentID
 		}
@@ -125,6 +151,7 @@ func enrichApplication(a models.Application) models.Application {
 	// is populated correctly even after ResetCourseToDraft creates new postings.
 	if p, ok := postingByID(a.PostingID); ok {
 		a.PostingActive = p.IsActive
+		a.WithdrawOpen = postingAcceptsWithdrawal(p) == nil
 		a.RequireGradeProof = p.RequireGradeProof
 		a.CourseID = p.CourseID
 		if c, ok := CourseByID(p.CourseID); ok {
@@ -501,6 +528,11 @@ func deleteEmptyCourseTx(tx *gorm.DB, id uint) error {
 	if err := tx.Model(&models.Notification{}).Where("course_id = ?", id).Update("course_id", nil).Error; err != nil {
 		return err
 	}
+	if tx.Migrator().HasTable("course_edit_requests") {
+		if err := tx.Where("course_id = ?", id).Delete(&models.CourseEditRequest{}).Error; err != nil {
+			return err
+		}
+	}
 	if err := tx.Where("course_id = ?", id).Delete(&models.Posting{}).Error; err != nil {
 		return err
 	}
@@ -822,8 +854,7 @@ func CoursesTaughtBy(instructorID uint, fullName string, isAdmin bool) ([]models
 
 // CoreCourseCatalog returns every core_courses code, deduped (the same code
 // can appear once per program — see models.CoreCourse), code ascending. This
-// is the department's required-course reference list (seeded from
-// migrations/allcourse.sql), not the imported class-postings in the courses
+// is the department's required-course reference list, not the imported class-postings in the courses
 // table — it's what backs the "type a code, see suggestions" helper when an
 // admin adds a course by hand instead of importing it from Excel.
 func CoreCourseCatalog() ([]models.CoreCourse, error) {
@@ -850,9 +881,10 @@ func CoreCourseCatalog() ([]models.CoreCourse, error) {
 // the M:N table so unmatched-import nil-instructor rows are no longer exposed
 // to arbitrary instructors.
 func TaughtCourseSections(instructorID uint, fullName string, isAdmin bool, code, semester string, academicYear int) ([]models.Course, error) {
+	baseCode := strings.TrimSpace(strings.Split(code, "-")[0])
 	query := DB.Table("courses").
-		Where("(courses.code = ? OR courses.code LIKE ?) AND courses.semester = ? AND courses.academic_year = ?",
-			code, code+"-%", semester, academicYear).
+		Where("(courses.code = ? OR courses.code LIKE ? OR courses.code LIKE ?) AND courses.semester = ? AND courses.academic_year = ?",
+			code, code+"-%", baseCode+"-%", semester, academicYear).
 		Order("courses.section ASC, courses.slot ASC")
 	if !isAdmin {
 		query = query.Joins(
@@ -1125,14 +1157,14 @@ func WithdrawApplication(id, studentID uint, reason string) (models.Application,
 		if a.Status == models.AppWithdrawn {
 			return ErrAlreadyWithdrawn
 		}
-		// Accepted students may not withdraw once the instructor has
-		// deliberately closed the posting; deadline-based auto-close alone
-		// does not block withdrawal (ClosedByInstructor stays false).
-		if a.Status == models.AppAccepted {
-			var posting models.Posting
-			if err := tx.First(&posting, a.PostingID).Error; err == nil && posting.ClosedByInstructor {
-				return ErrWithdrawalClosed
-			}
+		// Students may withdraw only while the instructor is still taking
+		// applications; a confirmed roster can no longer be withdrawn from.
+		var posting models.Posting
+		if err := tx.First(&posting, a.PostingID).Error; err != nil {
+			return err
+		}
+		if err := postingAcceptsWithdrawal(posting); err != nil {
+			return err
 		}
 		// An accepted Lab Boy only files a request; the instructor decides
 		// in ResolveWithdrawRequest, so the slot stays taken until then.
@@ -1198,6 +1230,11 @@ func ResolveWithdrawRequest(appID uint, approve bool, reviewerID uint) (models.A
 		if !posting.IsActive {
 			return ErrPostingArchived
 		}
+		// Approving would change a confirmed roster; the instructor must
+		// reopen it first. Rejecting leaves the roster as it is.
+		if approve && posting.LabBoyRosterConfirmedAt != nil {
+			return ErrWithdrawalRosterConfirmed
+		}
 		now := time.Now()
 		a.WithdrawRequested = false
 		a.ReviewedAt = &now
@@ -1231,6 +1268,7 @@ type ReviewTxResult struct {
 	SlotsFull    bool // true when skipped because the course had no remaining slots
 	WasWithdrawn bool // true when skipped because the student withdrew after the pre-check
 	MissingProof bool // true when skipped because course requires grade proof but none uploaded
+	RosterLocked bool // true when skipped because the instructor already confirmed the Lab Boy roster
 }
 
 // ReviewApplicationTx atomically checks slot availability, updates the
@@ -1264,6 +1302,12 @@ func ReviewApplicationTx(appID uint, newStatus models.AppStatus, applyFields fun
 		}
 
 		prevStatus := app.Status
+
+		// A confirmed roster is final: nobody joins or leaves it by review.
+		if posting.LabBoyRosterConfirmedAt != nil && (prevStatus == models.AppAccepted) != (newStatus == models.AppAccepted) {
+			res.RosterLocked = true
+			return nil
+		}
 
 		if newStatus == models.AppAccepted && prevStatus != models.AppAccepted {
 			if app.RoleApplied == models.RoleLabBoy && posting.LabBoyAccepted >= posting.LabBoySlots {
@@ -1373,6 +1417,10 @@ func CreateNotifications(notifs []models.Notification) int {
 	}
 	if DB.Create(&notifs).Error != nil {
 		return 0
+	}
+	hub := ws.GetHub()
+	for _, n := range notifs {
+		hub.SendToUser(n.UserID, "notification", n)
 	}
 	return len(notifs)
 }
@@ -1525,6 +1573,8 @@ func migrateApplicationData(db *gorm.DB) error {
 		&models.LabBoyReportEvidence{},
 		&models.LabBoyReportReview{},
 		&models.LabBoyReportStatusHistory{},
+		&models.CourseEditRequest{},
+		&models.TranscriptImage{},
 	)
 }
 

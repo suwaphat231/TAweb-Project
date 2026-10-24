@@ -13,6 +13,7 @@ import { displayCourseTitle } from '../../utils/courseDisplay'
 import { isLabCourse } from '../../utils/labCourse'
 import type { Course, SkippedCourse } from '../../types'
 import { formatSchedule } from '../../utils/schedule'
+import { CourseEditRequestsModal } from './CourseEditRequestsModal'
 
 // Meeting days for a manually added course, stored in the classlist format
 // ("Tu 13:00 - 16:00", one line per meeting) like the Excel import, so each
@@ -40,6 +41,13 @@ export default function AdminCourses() {
   const { data: courses = [], isLoading } = useQuery({ queryKey: ['all-courses'], queryFn: () => coursesAPI.getAll() })
 
   const [semesterFilter, setSemesterFilter] = useState('1')
+
+  // Instructors' proposed course-detail changes, waiting for approval here.
+  const [showEditRequests, setShowEditRequests] = useState(false)
+  const { data: editRequests = [] } = useQuery({
+    queryKey: ['admin-course-edit-requests'],
+    queryFn: () => adminApi.courseEditRequests('pending'),
+  })
 
   // This page only manages lab courses, excludes RESEARCH PROJECT I/II, and
   // never mixes semesters — a semester must be picked explicitly (or "ทั้งหมด").
@@ -286,6 +294,17 @@ export default function AdminCourses() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
+          <Button variant="outline" onClick={() => setShowEditRequests(true)}>
+            คำขอแก้ไขวิชา
+            {editRequests.length > 0 && (
+              <span style={{
+                marginLeft: 6, minWidth: 20, padding: '0 6px', borderRadius: 999,
+                background: 'var(--red)', color: '#fff', fontSize: 12, fontWeight: 700, lineHeight: '20px',
+              }}>
+                {editRequests.length}
+              </span>
+            )}
+          </Button>
           <Button variant="ghost" style={{ color: 'var(--red)', border: '1px solid var(--line)' }} onClick={() => setShowBulkDelete(true)}>
             ลบทั้งเทอม
           </Button>
@@ -319,6 +338,8 @@ export default function AdminCourses() {
         ? <Skeleton lines={6} height={48} />
         : <Table columns={columns as never} data={visibleCourses as never} emptyText="ไม่มีวิชาที่มี Lab ในภาคการศึกษานี้" />
       }
+
+      <CourseEditRequestsModal isOpen={showEditRequests} onClose={() => setShowEditRequests(false)} requests={editRequests} />
 
       <Modal isOpen={showImport} onClose={() => setShowImport(false)} title="นำเข้ารายวิชาจากไฟล์ Excel" size="md">
         <form

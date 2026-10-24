@@ -1,6 +1,10 @@
 package database
 
-import "labassist/models"
+import (
+	"strings"
+
+	"labassist/models"
+)
 
 // TranscriptGrade returns the grade the student has on file for courseCode,
 // as read from transcripts submitted on the grade-check page.
@@ -10,6 +14,12 @@ func TranscriptGrade(userID uint, courseCode string) (string, bool) {
 		return "", false
 	}
 	grade, found := u.TranscriptGrades[courseCode]
+	if !found || grade == "" {
+		if idx := strings.IndexAny(courseCode, "-,"); idx != -1 {
+			base := strings.TrimSpace(courseCode[:idx])
+			grade, found = u.TranscriptGrades[base]
+		}
+	}
 	return grade, found && grade != ""
 }
 
@@ -40,13 +50,24 @@ func WithTranscriptCourseTitles(u models.User) models.User {
 	return u
 }
 
-// SaveTranscriptGrade records one course's grade among the student's
-// transcript grades, replacing any earlier grade for that course.
+// SaveTranscriptGrade records one course's OCR-read grade among the
+// student's transcript grades, replacing any earlier grade for that course.
 func SaveTranscriptGrade(userID uint, courseCode, grade string) {
 	UpdateUser(userID, func(u *models.User) {
 		if u.TranscriptGrades == nil {
 			u.TranscriptGrades = models.StringMap{}
 		}
+		if u.TranscriptOcrGrades == nil {
+			u.TranscriptOcrGrades = models.StringMap{}
+		}
 		u.TranscriptGrades[courseCode] = grade
+		u.TranscriptOcrGrades[courseCode] = grade
 	})
+}
+
+// TranscriptGradeEdited reports whether the student's grade on file for
+// courseCode was corrected by hand, and if so what OCR originally read.
+func TranscriptGradeEdited(u models.User, courseCode string) (ocrGrade string, edited bool) {
+	ocrGrade, ok := u.TranscriptOcrGrades[courseCode]
+	return ocrGrade, ok && ocrGrade != u.TranscriptGrades[courseCode]
 }

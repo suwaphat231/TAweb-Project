@@ -69,7 +69,7 @@ func enrichStaffCase(sc models.StaffCase) (StaffCaseResponse, error) {
 	resp := StaffCaseResponse{StaffCase: sc}
 
 	if p, ok := database.PostingByIDExported(sc.PostingID); ok {
-		resp.InstructorConfirmed = p.LabBoyAccepted > 0
+		resp.InstructorConfirmed = p.LabBoyAccepted > 0 && p.LabBoyRosterConfirmedAt != nil
 		if c, ok := database.CourseByID(p.CourseID); ok {
 			resp.CourseCode = c.Code
 			resp.CourseTitle = c.Title
@@ -597,7 +597,7 @@ func (h *Handler) InitCase(c *gin.Context) {
 		return
 	}
 
-	if posting.LabBoyAccepted < 1 {
+	if posting.LabBoyAccepted < 1 || posting.LabBoyRosterConfirmedAt == nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "ยังไม่มีนักศึกษา Lab Boy ที่ได้รับเลือก กรุณาให้อาจารย์ยืนยันรายชื่อก่อน"})
 		return
 	}
