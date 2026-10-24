@@ -28,7 +28,7 @@ const actionInfo: Record<ReportAction, { label: string; variant: 'primary' | 'ou
   submit:                  { label: 'ส่งรายงาน',                    variant: 'primary', needsReason: false, prompt: 'เมื่อส่งแล้วจะแก้ไขไม่ได้ นักศึกษาจะได้รับแจ้งและสามารถชี้แจงได้' },
   start_review:            { label: 'รับเรื่องตรวจสอบ',             variant: 'primary', needsReason: false, prompt: 'เริ่มพิจารณารายงานนี้' },
   request_info:            { label: 'ขอข้อมูลเพิ่มเติม',             variant: 'outline', needsReason: true,  prompt: 'ระบุข้อมูลที่ต้องการจากนักศึกษาหรือผู้รายงาน' },
-  confirm:                 { label: 'ยืนยันรายงาน',                 variant: 'primary', needsReason: true,  prompt: 'ระบุเหตุผลและหลักฐานที่ใช้ยืนยัน — ผลนี้จะแสดงแก่อาจารย์รายวิชาอื่นที่นักศึกษาสมัคร' },
+  confirm:                 { label: 'ยืนยันรายงาน',                 variant: 'primary', needsReason: false, prompt: 'ยืนยันตามรายละเอียดที่อาจารย์รายงานมา — ผลนี้จะแสดงแก่อาจารย์รายวิชาอื่นที่นักศึกษาสมัคร' },
   not_substantiated:       { label: 'ไม่ยืนยัน (ข้อมูลไม่เพียงพอ)', variant: 'outline', needsReason: true,  prompt: 'ระบุเหตุผลที่ข้อมูลไม่เพียงพอ' },
   reopen:                  { label: 'นำกลับมาตรวจสอบใหม่',          variant: 'outline', needsReason: true,  prompt: 'ผลเดิมจะยังถูกเก็บไว้ในประวัติ ระบุเหตุผลที่ต้องตรวจสอบใหม่' },
   decline_reconsideration: { label: 'คงผลเดิม',                     variant: 'outline', needsReason: true,  prompt: 'ระบุเหตุผลที่ไม่รับคำขอทบทวน' },
@@ -171,7 +171,9 @@ export default function ReportDetailPage() {
     ? [{ label: 'รายงานของฉัน', to: '/student/reports' }]
     : user?.role === 'instructor' || (user?.role === 'admin' && r.reporter_id === user.id)
       ? [{ label: 'บันทึกการปฏิบัติงาน', to: '/instructor/reports' }, { label: r.course_code, to: `/instructor/reports/courses/${r.course_id}` }]
-      : [{ label: 'ตรวจสอบรายงาน', to: '/staff/reports' }]
+      : user?.role === 'staff'
+        ? [{ label: 'นักศึกษาที่ถูก blacklist', to: '/staff/reports' }]
+        : [{ label: 'ตรวจสอบรายงาน', to: '/staff/reports' }]
   const isOpen = !['CONFIRMED', 'NOT_SUBSTANTIATED', 'WITHDRAWN'].includes(r.status)
 
   return (
@@ -288,7 +290,13 @@ export default function ReportDetailPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--line-soft)' }}>
                 {d.can_edit && <Button variant="outline" style={{ width: '100%', minHeight: 40 }} onClick={() => setEditing(true)}>แก้ไขร่าง</Button>}
                 {actions.map((a) => (
-                  <Button key={a} variant={actionInfo[a].variant} style={{ width: '100%', minHeight: 40 }} onClick={() => { setReason(''); setPendingAction(a) }}>
+                  <Button
+                    key={a} variant={actionInfo[a].variant} style={{ width: '100%', minHeight: 40 }}
+                    // Confirming needs no reason — the reporter already gave one — so it runs without a dialog.
+                    loading={a === 'confirm' && actMut.isPending && actMut.variables?.action === 'confirm'}
+                    disabled={actMut.isPending}
+                    onClick={() => a === 'confirm' ? actMut.mutate({ action: a, why: '' }) : (setReason(''), setPendingAction(a))}
+                  >
                     {actionInfo[a].label}
                   </Button>
                 ))}

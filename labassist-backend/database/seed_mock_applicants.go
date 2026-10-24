@@ -5,6 +5,7 @@ import (
 	"labassist/models"
 	"time"
 
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -26,26 +27,6 @@ var mockDemoStaff = struct {
 	Email    string
 }{"parinya", "ปริญญา สุภาวดี", "parinya@cp.su.ac.th"}
 
-// mockDemoCourseBase is the primary debug course: open, 6 Lab Boy slots,
-// mockDemoCourseBase is the primary debug course: open, 6 Lab Boy slots.
-var mockDemoCourseBase = models.Course{
-	Code:         "517122",
-	Title:        "ทักษะการเขียนโปรแกรมคอมพิวเตอร์ 2",
-	EnglishTitle: "COMPUTER PROGRAMMING SKILL II",
-	Semester:     "1",
-	AcademicYear: 2569,
-	LabBoySlots:  6,
-	Status:       models.StatusOpen,
-}
-
-var mockDemoSections = []struct {
-	Section  int
-	Schedule string
-}{
-	{1, "อ,พฤ 13:00-16:00"},
-	{2, "พ,ศ 13:00-16:00"},
-}
-
 type mockDemoStudent struct {
 	Username  string
 	FullName  string
@@ -55,27 +36,28 @@ type mockDemoStudent struct {
 	Faculty   string
 	Year      int8
 	Grade     string
+	Prefix    string
 }
 
-// 12 demo student accounts across Section 1 and Section 2
+// 12 demo student accounts, used by the Lab Boy report demo below
 var mockDemoStudents = []mockDemoStudent{
-	{"demo_std01", "ธนภัทร ศรีวิไล", "demo_std01@example.com", "6410123456", 3.85, "เทคโนโลยีสารสนเทศ", 3, "A"},
-	{"demo_std02", "ปวีณ์นุช อินทรสุวรรณ", "demo_std02@example.com", "6410123457", 3.42, "วิทยาการคอมพิวเตอร์", 3, "B+"},
-	{"demo_std03", "กิตติภูมิ ทองสุข", "demo_std03@example.com", "6410123458", 3.15, "วิทยาการคอมพิวเตอร์", 2, "B"},
-	{"demo_std04", "ศศิวิมล บุญมาก", "demo_std04@example.com", "6410123459", 3.67, "เทคโนโลยีสารสนเทศ", 3, "A"},
-	{"demo_std05", "อดิศร แก้วมณี", "demo_std05@example.com", "6410123460", 2.89, "วิทยาการคอมพิวเตอร์", 3, "B+"},
-	{"demo_std06", "ณัฐพล ทดสอบระบบ", "demo_std06@example.com", "6410123461", 3.50, "วิทยาการคอมพิวเตอร์", 3, "A"},
-	{"demo_std07", "วรัญญู สุขเกษม", "demo_std07@example.com", "6410123462", 3.75, "วิทยาการคอมพิวเตอร์", 3, "A"},
-	{"demo_std08", "ชลธิชา พงษ์สวัสดิ์", "demo_std08@example.com", "6410123463", 3.30, "เทคโนโลยีสารสนเทศ", 2, "B+"},
-	{"demo_std09", "รัฐศาสตร์ รุ่งเรือง", "demo_std09@example.com", "6410123464", 3.10, "วิทยาการคอมพิวเตอร์", 3, "B"},
-	{"demo_std10", "กัลยารัตน์ บุญสิริ", "demo_std10@example.com", "6410123465", 3.90, "เทคโนโลยีสารสนเทศ", 4, "A"},
-	{"demo_std11", "ภาณุพงศ์ เจริญผล", "demo_std11@example.com", "6410123466", 3.25, "วิทยาการคอมพิวเตอร์", 2, "B+"},
-	{"demo_std12", "สุจิตรา รัตนวงษ์", "demo_std12@example.com", "6410123467", 3.60, "วิทยาการคอมพิวเตอร์", 3, "A"},
+	{"demo_std01", "ธนภัทร ศรีวิไล", "demo_std01@example.com", "6410123456", 3.85, "เทคโนโลยีสารสนเทศ", 3, "A", models.NamePrefixMr},
+	{"demo_std02", "ปวีณ์นุช อินทรสุวรรณ", "demo_std02@example.com", "6410123457", 3.42, "วิทยาการคอมพิวเตอร์", 3, "B+", models.NamePrefixMiss},
+	{"demo_std03", "กิตติภูมิ ทองสุข", "demo_std03@example.com", "6410123458", 3.15, "วิทยาการคอมพิวเตอร์", 2, "B", models.NamePrefixMr},
+	{"demo_std04", "ศศิวิมล บุญมาก", "demo_std04@example.com", "6410123459", 3.67, "เทคโนโลยีสารสนเทศ", 3, "A", models.NamePrefixMiss},
+	{"demo_std05", "อดิศร แก้วมณี", "demo_std05@example.com", "6410123460", 2.89, "วิทยาการคอมพิวเตอร์", 3, "B+", models.NamePrefixMr},
+	{"demo_std06", "ณัฐพล ทดสอบระบบ", "demo_std06@example.com", "6410123461", 3.50, "วิทยาการคอมพิวเตอร์", 3, "A", models.NamePrefixMr},
+	{"demo_std07", "วรัญญู สุขเกษม", "demo_std07@example.com", "6410123462", 3.75, "วิทยาการคอมพิวเตอร์", 3, "A", models.NamePrefixMr},
+	{"demo_std08", "ชลธิชา พงษ์สวัสดิ์", "demo_std08@example.com", "6410123463", 3.30, "เทคโนโลยีสารสนเทศ", 2, "B+", models.NamePrefixMiss},
+	{"demo_std09", "รัฐศาสตร์ รุ่งเรือง", "demo_std09@example.com", "6410123464", 3.10, "วิทยาการคอมพิวเตอร์", 3, "B", models.NamePrefixMr},
+	{"demo_std10", "กัลยารัตน์ บุญสิริ", "demo_std10@example.com", "6410123465", 3.90, "เทคโนโลยีสารสนเทศ", 4, "A", models.NamePrefixMiss},
+	{"demo_std11", "ภาณุพงศ์ เจริญผล", "demo_std11@example.com", "6410123466", 3.25, "วิทยาการคอมพิวเตอร์", 2, "B+", models.NamePrefixMr},
+	{"demo_std12", "สุจิตรา รัตนวงษ์", "demo_std12@example.com", "6410123467", 3.60, "วิทยาการคอมพิวเตอร์", 3, "A", models.NamePrefixMiss},
 }
 
-// seedMockApplicants sets up the debug demo:
-// one instructor with open Lab Boy postings (6 slots, section 1 & section 2) and
-// 6 applicants per section.
+// seedMockApplicants sets up the debug demo accounts, the Lab Boy report
+// demo and applicants for postings an instructor has already opened. It never
+// opens a posting itself — that is the instructor's call.
 // Duplicate accounts/applications are skipped so restarting is safe.
 func seedMockApplicants() error {
 	if _, ok := UserByUsername(mockDemoStaff.Username); !ok {
@@ -93,8 +75,7 @@ func seedMockApplicants() error {
 		}
 	}
 
-	instructor, ok := UserByUsername(mockDemoInstructor.Username)
-	if !ok {
+	if _, ok := UserByUsername(mockDemoInstructor.Username); !ok {
 		created, err := CreateUser(models.User{
 			Username: &mockDemoInstructor.Username,
 			FullName: mockDemoInstructor.FullName,
@@ -104,105 +85,13 @@ func seedMockApplicants() error {
 		if err != nil {
 			return err
 		}
-		instructor = created
-		if err := setPassword(instructor.ID); err != nil {
+		if err := setPassword(created.ID); err != nil {
 			return err
 		}
 	}
 
-	// Create/open both section 1 and section 2 courses
-	var sec1Course models.Course
-	var sec2Course models.Course
-	for _, sec := range mockDemoSections {
-		for slot, schedule := range SplitScheduleDays(sec.Schedule) {
-			dayCourse, err := seedDemoCourseSlot(instructor.ID, sec.Section, slot, schedule)
-			if err != nil {
-				return err
-			}
-			if slot == 0 {
-				if sec.Section == 1 {
-					sec1Course = dayCourse
-				} else if sec.Section == 2 {
-					sec2Course = dayCourse
-				}
-			}
-		}
-	}
-
-	// Pre-create all demo student accounts
-	studentMap := make(map[string]models.User)
 	for _, s := range mockDemoStudents {
-		student, ok := UserByUsername(s.Username)
-		if !ok {
-			gpa := s.GPA
-			year := s.Year
-			created, err := CreateUser(models.User{
-				Username:  &s.Username,
-				FullName:  s.FullName,
-				Email:     s.Email,
-				Role:      models.RoleStudent,
-				StudentID: &s.StudentID,
-				GPA:       &gpa,
-				Faculty:   &s.Faculty,
-				Year:      &year,
-			})
-			if err != nil {
-				return err
-			}
-			student = created
-			if err := setPassword(student.ID); err != nil {
-				return err
-			}
-		}
-		studentMap[s.Username] = student
-	}
-
-	// Section 1: exactly 6 applicants
-	sec1Applicants := []string{"demo_std01", "demo_std02", "demo_std03", "demo_std04", "demo_std05", "demo_std06"}
-	for _, uname := range sec1Applicants {
-		student, ok := studentMap[uname]
-		if !ok {
-			continue
-		}
-		grade := "A"
-		for _, s := range mockDemoStudents {
-			if s.Username == uname {
-				grade = s.Grade
-				break
-			}
-		}
-		if _, err := CreateApplication(models.Application{
-			StudentID:   student.ID,
-			CourseID:    sec1Course.ID,
-			RoleApplied: models.RoleLabBoy,
-			Status:      models.AppPending,
-			Grade:       &grade,
-		}); err != nil && err != ErrConflict {
-			return err
-		}
-	}
-
-	// Section 2: exactly 6 applicants
-	sec2Applicants := []string{"demo_std01", "demo_std07", "demo_std08", "demo_std09", "demo_std10", "demo_std11"}
-	for _, uname := range sec2Applicants {
-		student, ok := studentMap[uname]
-		if !ok {
-			continue
-		}
-		grade := "A"
-		for _, s := range mockDemoStudents {
-			if s.Username == uname {
-				grade = s.Grade
-				break
-			}
-		}
-		if _, err := CreateApplication(models.Application{
-			StudentID:   student.ID,
-			CourseID:    sec2Course.ID,
-			RoleApplied: models.RoleLabBoy,
-			Status:      models.AppPending,
-			Grade:       &grade,
-		}); err != nil && err != ErrConflict {
+		if _, err := ensureDemoStudent(s); err != nil {
 			return err
 		}
 	}
@@ -211,50 +100,140 @@ func seedMockApplicants() error {
 		return err
 	}
 
+	if err := seedDemo517121Applicants(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
-// seedDemoCourseSlot creates (or initializes, if still an untouched draft) the
-// demo course for one meeting day and links its instructor.
-func seedDemoCourseSlot(instructorID uint, section int, slot int, schedule string) (models.Course, error) {
-	course, found := FindCourseSlot(mockDemoCourseBase.Code, mockDemoCourseBase.Semester, mockDemoCourseBase.AcademicYear, section, slot)
-	if !found {
-		deadline := time.Now().AddDate(0, 0, 21)
-		newCourse := mockDemoCourseBase
-		newCourse.InstructorID = &instructorID
-		newCourse.Section = section
-		newCourse.Slot = slot
-		newCourse.Schedule = schedule
-		newCourse.Deadline = &deadline
-		course = CreateCourse(newCourse)
-		if course.ID == 0 {
-			return course, fmt.Errorf("create demo course section %d slot %d", section, slot)
+// mockDemo517121Applicants are 5 applicants per section for the open
+// 517121 (1/2569) postings, kept separate from the 517122 demo students so
+// nobody's lab times clash between the two courses.
+var mockDemo517121Applicants = map[int][]mockDemoStudent{
+	1: {
+		{"demo_std13", "พิชญาภา วงศ์ทอง", "demo_std13@example.com", "6510123468", 3.72, "วิทยาการคอมพิวเตอร์", 2, "A", models.NamePrefixMiss},
+		{"demo_std14", "ธีรภัทร มั่นคง", "demo_std14@example.com", "6510123469", 3.18, "วิทยาการคอมพิวเตอร์", 2, "B+", models.NamePrefixMr},
+		{"demo_std15", "ณิชาภัทร แสงจันทร์", "demo_std15@example.com", "6510123470", 3.55, "เทคโนโลยีสารสนเทศ", 2, "A", models.NamePrefixMiss},
+		{"demo_std16", "กฤตเมธ พรหมวงศ์", "demo_std16@example.com", "6410123468", 2.95, "วิทยาการคอมพิวเตอร์", 3, "B", models.NamePrefixMr},
+		{"demo_std17", "สุพิชชา นาคสวัสดิ์", "demo_std17@example.com", "6410123469", 3.40, "เทคโนโลยีสารสนเทศ", 3, "B+", models.NamePrefixMiss},
+	},
+	2: {
+		{"demo_std18", "ปัณณวัฒน์ ศรีสุข", "demo_std18@example.com", "6510123471", 3.81, "เทคโนโลยีสารสนเทศ", 2, "A", models.NamePrefixMr},
+		{"demo_std19", "ชนิกานต์ ทองดี", "demo_std19@example.com", "6510123472", 3.27, "วิทยาการคอมพิวเตอร์", 2, "B+", models.NamePrefixMiss},
+		{"demo_std20", "วชิรวิทย์ บุญเรือง", "demo_std20@example.com", "6410123470", 3.05, "วิทยาการคอมพิวเตอร์", 3, "B", models.NamePrefixMr},
+		{"demo_std21", "อรปรียา จันทร์หอม", "demo_std21@example.com", "6410123471", 3.63, "เทคโนโลยีสารสนเทศ", 3, "A", models.NamePrefixMiss},
+		{"demo_std22", "ศุภวิชญ์ เกษมสันต์", "demo_std22@example.com", "6310123456", 3.12, "วิทยาการคอมพิวเตอร์", 4, "B+", models.NamePrefixMr},
+	},
+}
+
+// seedDemo517121Applicants adds pending applications to whichever 517121
+// sections of 1/2569 are open for recruitment; closed or draft sections are
+// left alone.
+func seedDemo517121Applicants() error {
+	for section, students := range mockDemo517121Applicants {
+		course, found := FindCourseSlot("517121", "1", 2569, section, 0)
+		if !found {
+			continue
 		}
-	} else {
-		// Seed only an untouched draft; retain existing recruitment decisions.
-		course = courseWithInstructor(course)
-		if course.Status == models.StatusDraft {
-			var saved bool
-			course, saved = UpdateCourse(course.ID, func(c *models.Course) {
-				c.InstructorID = &instructorID
-				c.Status = models.StatusOpen
-				c.LabBoySlots = mockDemoCourseBase.LabBoySlots
-			})
-			if !saved {
-				return course, fmt.Errorf("initialize demo posting section %d slot %d", section, slot)
+		posting, ok := ActivePostingForCourse(course.ID)
+		if !ok || (posting.Status != models.StatusOpen && posting.Status != models.StatusClosingSoon) {
+			continue
+		}
+		for _, s := range students {
+			student, err := ensureDemoStudent(s)
+			if err != nil {
+				return err
+			}
+			grade := s.Grade
+			if _, err := CreateApplication(models.Application{
+				StudentID:   student.ID,
+				CourseID:    course.ID,
+				RoleApplied: models.RoleLabBoy,
+				Status:      models.AppPending,
+				Grade:       &grade,
+			}); err != nil && err != ErrConflict {
+				return err
 			}
 		}
 	}
+	return nil
+}
 
-	// Guarantee the instructor has a course_instructors row so InstructorCourses
-	// (which JOINs on that table) can find this course regardless of whether
-	// backfillCourseInstructors ran before or after the demo course was created.
-	DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.CourseInstructor{
-		CourseID:     course.ID,
-		InstructorID: instructorID,
-		Source:       models.CourseInstructorImported,
+// relocateLegacyMockReports undoes an older seed that wrongly linked puriwat to
+// 517121 (2/2568), which he never taught: the demo applications, reports and
+// blacklist rows move to the 517122 past course and the bogus link is dropped.
+func relocateLegacyMockReports(instructorID, pastCourseID uint) error {
+	legacy, found := FindCourseSlot("517121", "2", 2568, 1, 0)
+	if !found {
+		return nil
+	}
+	var linked int64
+	DB.Model(&models.CourseInstructor{}).
+		Where("course_id = ? AND instructor_id = ?", legacy.ID, instructorID).Count(&linked)
+	if linked == 0 {
+		return nil
+	}
+
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var appIDs []uint
+		tx.Model(&models.Application{}).
+			Joins("JOIN users ON users.id = applications.student_id").
+			Where("applications.course_id = ? AND users.username LIKE ?", legacy.ID, "demo_std%").
+			Pluck("applications.id", &appIDs)
+		if len(appIDs) > 0 {
+			// A trigger requires applications.course_id to match its posting.
+			var posting models.Posting
+			if err := tx.Where("course_id = ? AND is_active = true", pastCourseID).First(&posting).Error; err != nil {
+				return fmt.Errorf("find posting for course %d: %w", pastCourseID, err)
+			}
+			if err := tx.Model(&models.Application{}).Where("id IN ?", appIDs).
+				Updates(map[string]any{"course_id": pastCourseID, "posting_id": posting.ID}).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&models.LabBoyReport{}).Where("application_id IN ?", appIDs).
+				Update("course_id", pastCourseID).Error; err != nil {
+				return err
+			}
+		}
+		// Older seeds also wrote blacklist rows without an application_id.
+		if err := tx.Model(&models.Blacklist{}).
+			Where("course_id = ? AND reported_by_id = ?", legacy.ID, instructorID).
+			Update("course_id", pastCourseID).Error; err != nil {
+			return err
+		}
+		return tx.Where("course_id = ? AND instructor_id = ?", legacy.ID, instructorID).
+			Delete(&models.CourseInstructor{}).Error
 	})
-	return course, nil
+}
+
+// ensureDemoStudent returns the demo student's account, creating it on first
+// run. Accounts seeded before titles existed get their นาย/นางสาว filled in.
+func ensureDemoStudent(s mockDemoStudent) (models.User, error) {
+	if student, ok := UserByUsername(s.Username); ok {
+		if student.NamePrefix == "" {
+			if updated, saved := UpdateUser(student.ID, func(u *models.User) { u.NamePrefix = s.Prefix }); saved {
+				student = updated
+			}
+		}
+		return student, nil
+	}
+	gpa, year := s.GPA, s.Year
+	created, err := CreateUser(models.User{
+		Username:   &s.Username,
+		NamePrefix: s.Prefix,
+		FullName:   s.FullName,
+		Email:      s.Email,
+		Role:       models.RoleStudent,
+		StudentID:  &s.StudentID,
+		GPA:        &gpa,
+		Faculty:    &s.Faculty,
+		Year:       &year,
+	})
+	if err != nil {
+		return created, err
+	}
+	return created, setPassword(created.ID)
 }
 
 // setPassword gives a freshly-created demo account the same login password
@@ -283,14 +262,15 @@ func seedMockReports() error {
 		return nil
 	}
 
-	// Course in a past semester (2/2568) where Lab Boy served
-	pastCourse, found := FindCourseSlot("517121", "2", 2568, 1, 0)
+	// Course in a past semester (2/2568) where Lab Boy served. puriwat really
+	// taught 517122 that term (per classlist2568_2IT), not 517121.
+	pastCourse, found := FindCourseSlot("517122", "2", 2568, 1, 0)
 	if !found {
 		pastDeadline := time.Now().AddDate(-1, 0, 0)
 		pastCourse = CreateCourse(models.Course{
-			Code:         "517121",
-			Title:        "ทักษะการเขียนโปรแกรมคอมพิวเตอร์ 1",
-			EnglishTitle: "COMPUTER PROGRAMMING SKILL I",
+			Code:         "517122",
+			Title:        "ทักษะการเขียนโปรแกรมคอมพิวเตอร์ 2",
+			EnglishTitle: "COMPUTER PROGRAMMING SKILL II",
 			Semester:     "2",
 			AcademicYear: 2568,
 			Section:      1,
@@ -311,6 +291,10 @@ func seedMockReports() error {
 		InstructorID: instructor.ID,
 		Source:       models.CourseInstructorImported,
 	})
+
+	if err := relocateLegacyMockReports(instructor.ID, pastCourse.ID); err != nil {
+		return err
+	}
 
 	// Case 1: demo_std03 (กิตติภูมิ ทองสุข) -> Confirmed Report (Blacklist History)
 	// When instructor puriwat reviews applicants for 517122 in 1/2569, this applicant

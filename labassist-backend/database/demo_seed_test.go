@@ -14,9 +14,9 @@ import (
 	"labassist/models"
 )
 
-// A section that meets on several days is one course row per day, so the demo
-// course must be seeded the same way the classlist import splits courses.
-func TestDemoSeedSplitsMultiDayCourseIntoOneRowPerDay(t *testing.T) {
+// The demo seed leaves every posting as a draft, and every seeded course is
+// one row per meeting day, the way the classlist import splits courses.
+func TestDemoSeedOpensNoPostingsAndSplitsDays(t *testing.T) {
 	dsn := os.Getenv("LABASSIST_TEST_MYSQL_DSN")
 	if dsn == "" {
 		t.Skip("set LABASSIST_TEST_MYSQL_DSN to a disposable MySQL server")
@@ -48,42 +48,14 @@ func TestDemoSeedSplitsMultiDayCourseIntoOneRowPerDay(t *testing.T) {
 	}
 	t.Cleanup(func() { conn, _ := DB.DB(); conn.Close() })
 
-	var demo []models.Course
-	if err := DB.Where("code = ? AND section = ?", "517122", 1).Order("slot").Find(&demo).Error; err != nil {
+	// The demo seed must never open a recruitment round itself — only an
+	// instructor does that.
+	var opened int64
+	if err := DB.Model(&models.Posting{}).Where("is_active = true AND status <> ?", models.StatusDraft).Count(&opened).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(demo) != 2 {
-		t.Fatalf("demo course rows = %d, want 2 (one per day)", len(demo))
-	}
-	for i, want := range []string{"อ 13:00-16:00", "พฤ 13:00-16:00"} {
-		if demo[i].Slot != i || demo[i].Schedule != want {
-			t.Fatalf("row %d = slot %d %q, want slot %d %q", i, demo[i].Slot, demo[i].Schedule, i, want)
-		}
-		posting, ok := ActivePostingForCourse(demo[i].ID)
-		if !ok || posting.Status != models.StatusOpen || posting.LabBoySlots != 6 {
-			t.Fatalf("row %d posting = %+v, want open with 6 slots", i, posting)
-		}
-	}
-
-	var onTuesday, onThursday int64
-	DB.Model(&models.Application{}).Where("course_id = ?", demo[0].ID).Count(&onTuesday)
-	DB.Model(&models.Application{}).Where("course_id = ?", demo[1].ID).Count(&onThursday)
-	if onTuesday != 6 || onThursday != 0 {
-		t.Fatalf("applications tue=%d thu=%d, want 6 and 0", onTuesday, onThursday)
-	}
-
-	// Staff pick a course from the review list, so each day must be its own
-	// entry that says which day it is.
-	reviews, err := ListFormReviews("", "517122")
-	if err != nil {
-		t.Fatal(err)
-	}
-	schedules := map[uint]string{}
-	for _, r := range reviews {
-		schedules[r.CourseID] = r.Schedule
-	}
-	if schedules[demo[0].ID] != "อ 13:00-16:00" || schedules[demo[1].ID] != "พฤ 13:00-16:00" {
-		t.Fatalf("staff review schedules = %v, want one entry per day", schedules)
+	if opened != 0 {
+		t.Fatalf("demo seed opened %d postings, want 0", opened)
 	}
 
 	var all []models.Course

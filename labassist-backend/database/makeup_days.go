@@ -90,9 +90,13 @@ func checkMakeupTime(origStart, origEnd, start, end string) error {
 	return nil
 }
 
+// makeupWindowMonthsAhead is how far past the last planned month a makeup day
+// may go. Instructors may pick a month staff have not planned yet (it is added
+// to the plan); the cap only catches a mistyped year.
+const makeupWindowMonthsAhead = 12
+
 // makeupWindow is the range a makeup date may fall in: from the first planned
-// month to the end of the month after the last one, so a holiday late in the
-// plan can still be made up just after it.
+// month to makeupWindowMonthsAhead months after the last one.
 func makeupWindow(months []models.ScheduleGroupMonth) (from, to time.Time, ok bool) {
 	if len(months) == 0 {
 		return time.Time{}, time.Time{}, false
@@ -107,7 +111,7 @@ func makeupWindow(months []models.ScheduleGroupMonth) (from, to time.Time, ok bo
 		}
 	}
 	from = time.Date(first.Year, time.Month(first.Month), 1, 0, 0, 0, 0, time.UTC)
-	to = time.Date(last.Year, time.Month(last.Month), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 2, -1)
+	to = time.Date(last.Year, time.Month(last.Month), 1, 0, 0, 0, 0, time.UTC).AddDate(0, makeupWindowMonthsAhead+1, -1)
 	return from, to, true
 }
 

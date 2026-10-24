@@ -247,6 +247,8 @@ func (h *Handler) ResolveWithdraw(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "ใบสมัครนี้ไม่มีคำขอถอนที่รอพิจารณา"})
 		case errors.Is(err, database.ErrPostingArchived):
 			c.JSON(http.StatusConflict, gin.H{"error": "รอบรับสมัครนี้ถูกเก็บเป็นประวัติแล้ว"})
+		case errors.Is(err, database.ErrWithdrawalRosterConfirmed):
+			c.JSON(http.StatusConflict, gin.H{"error": "ยืนยันรายชื่อแลปบอยแล้ว กรุณายกเลิกการยืนยันก่อนอนุมัติการถอน"})
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot save application"})
 		}

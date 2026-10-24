@@ -367,7 +367,7 @@ func (h *Handler) ListMine(c *gin.Context) {
 }
 
 // ReviewQueue godoc
-// @Summary      รายงานทั้งหมดสำหรับผู้ตรวจสอบ (เจ้าหน้าที่/แอดมิน) — ไม่รวมฉบับร่าง
+// @Summary      รายงานทั้งหมดสำหรับแอดมิน (ไม่รวมฉบับร่าง) — เจ้าหน้าที่เห็นเฉพาะที่ยืนยันแล้ว
 // @Tags         reports
 // @Produce      json
 // @Security     BearerAuth
@@ -382,7 +382,14 @@ func (h *Handler) ListMine(c *gin.Context) {
 // @Success      200  {object}  ReportPage
 // @Router       /staff/reports [get]
 func (h *Handler) ReviewQueue(c *gin.Context) {
-	h.list(c, func(f *database.ReportFilter) { f.ExcludeDraft = true })
+	actor := actorFrom(c)
+	h.list(c, func(f *database.ReportFilter) {
+		f.ExcludeDraft = true
+		if !actor.isAdmin() {
+			// Staff see only the confirmed blacklist, never pending reports.
+			f.Statuses = []models.ReportStatus{models.ReportConfirmed}
+		}
+	})
 }
 
 // MyReports godoc
@@ -417,7 +424,7 @@ type ReportDetail struct {
 
 // Detail godoc
 // @Summary      รายละเอียดรายงาน พร้อมหลักฐาน คำชี้แจง ผลการตรวจสอบ และไทม์ไลน์
-// @Description  ผู้รายงาน, นักศึกษาเจ้าของรายงาน (เมื่อส่งแล้ว), เจ้าหน้าที่ (เมื่อส่งแล้ว) และแอดมินเท่านั้น — ผู้อื่นได้ 404
+// @Description  ผู้รายงาน, นักศึกษาเจ้าของรายงาน (เมื่อส่งแล้ว), เจ้าหน้าที่ (เฉพาะที่ยืนยันแล้ว) และแอดมินเท่านั้น — ผู้อื่นได้ 404
 // @Tags         reports
 // @Produce      json
 // @Security     BearerAuth

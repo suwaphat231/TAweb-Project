@@ -206,6 +206,7 @@ export const adminAPI = {
     api.put<User>(`/admin/users/${id}`, data).then((r) => r.data),
   updateUserStatus: (id: number, is_active: boolean) =>
     api.put<User>(`/admin/users/${id}/status`, { is_active }).then((r) => r.data),
+  deleteUser: (id: number) => api.delete(`/admin/users/${id}`).then(() => undefined),
   userCourses: (id: number) => api.get<Course[]>(`/admin/users/${id}/courses`).then((r) => r.data),
   // For courses an instructor asked for, or that just aren't in the Excel
   // import — admin can add one directly and assign it to any instructor.

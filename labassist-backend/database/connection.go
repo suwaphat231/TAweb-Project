@@ -674,6 +674,10 @@ func Connect(cfg *config.Config) error {
 		time.Sleep(retryDelay)
 	}
 
+	if err := registerPostingEvents(db); err != nil {
+		return fmt.Errorf("register posting events: %w", err)
+	}
+
 	if cfg.ResetDBOnStart {
 		log.Printf("RESET_DB_ON_START enabled: dropping all tables in %q", cfg.DBName)
 		if err := resetSchema(db); err != nil {
@@ -759,6 +763,9 @@ func Connect(cfg *config.Config) error {
 
 	if err := seedCoursesFromClasslist(); err != nil {
 		return fmt.Errorf("seed courses from classlist: %w", err)
+	}
+	if err := backfillCourseCurriculumCodes(db); err != nil {
+		return fmt.Errorf("backfill course curriculum codes: %w", err)
 	}
 	if err := removeExcludedCourses(); err != nil {
 		return fmt.Errorf("remove excluded courses: %w", err)

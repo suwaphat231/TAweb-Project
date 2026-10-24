@@ -35,8 +35,8 @@ func TestMakeupWindow(t *testing.T) {
 		t.Error("no planned months must give no window")
 	}
 	from, to, ok := makeupWindow([]models.ScheduleGroupMonth{{Year: 2026, Month: 9}, {Year: 2026, Month: 12}, {Year: 2026, Month: 8}})
-	if !ok || from.Format("2006-01-02") != "2026-08-01" || to.Format("2006-01-02") != "2027-01-31" {
-		t.Errorf("window = %s – %s, want 2026-08-01 – 2027-01-31 (one month past the plan)", from, to)
+	if !ok || from.Format("2006-01-02") != "2026-08-01" || to.Format("2006-01-02") != "2027-12-31" {
+		t.Errorf("window = %s – %s, want 2026-08-01 – 2027-12-31 (12 months past the plan)", from, to)
 	}
 }
 
@@ -131,7 +131,8 @@ func TestMakeupDayLifecycle(t *testing.T) {
 	for date, want := range map[string]error{
 		"2026-08-10": ErrMakeupHoliday,
 		"2026-08-17": ErrMakeupDateTaken,
-		"2026-10-05": ErrMakeupOutOfRange,
+		"2026-07-20": ErrMakeupOutOfRange, // before the plan starts
+		"2027-10-05": ErrMakeupOutOfRange, // past the 12-month cap
 	} {
 		if _, _, err := ChooseMakeupDay(clash.ID, day(date), "13:00", "16:00", 1); !errors.Is(err, want) {
 			t.Errorf("makeup on %s: err = %v, want %v", date, err, want)
@@ -162,7 +163,7 @@ func TestMakeupDayLifecycle(t *testing.T) {
 	}
 	days, err := MakeupDaysForCases([]uint{sc.ID})
 	if err != nil || len(days) != 1 || days[0].Status != MakeupChosen || days[0].Makeup.ID != makeup.ID ||
-		days[0].HolidayName != "วันหยุดทดสอบ" || days[0].MaxDate != "2026-10-31" {
+		days[0].HolidayName != "วันหยุดทดสอบ" || days[0].MaxDate != "2027-09-30" {
 		t.Fatalf("days = %+v, err = %v", days, err)
 	}
 

@@ -41,13 +41,13 @@ func TestStateMachine(t *testing.T) {
 		{ActionWithdraw, models.ReportSubmitted}:           {reporter, models.ReportWithdrawn},
 		{ActionWithdraw, models.ReportUnderReview}:         {reporter, models.ReportWithdrawn},
 		{ActionWithdraw, models.ReportAwaitingResponse}:    {reporter, models.ReportWithdrawn},
-		{ActionStartReview, models.ReportSubmitted}:        {staffUser, models.ReportUnderReview},
-		{ActionStartReview, models.ReportAwaitingResponse}: {staffUser, models.ReportUnderReview},
-		{ActionRequestInfo, models.ReportUnderReview}:      {staffUser, models.ReportAwaitingResponse},
-		{ActionConfirm, models.ReportUnderReview}:          {staffUser, models.ReportConfirmed},
-		{ActionNotSubstantiated, models.ReportUnderReview}: {staffUser, models.ReportNotSubstantiated},
-		{ActionReopen, models.ReportConfirmed}:             {staffUser, models.ReportUnderReview},
-		{ActionReopen, models.ReportNotSubstantiated}:      {staffUser, models.ReportUnderReview},
+		{ActionStartReview, models.ReportSubmitted}:        {adminUser, models.ReportUnderReview},
+		{ActionStartReview, models.ReportAwaitingResponse}: {adminUser, models.ReportUnderReview},
+		{ActionRequestInfo, models.ReportUnderReview}:      {adminUser, models.ReportAwaitingResponse},
+		{ActionConfirm, models.ReportUnderReview}:          {adminUser, models.ReportConfirmed},
+		{ActionNotSubstantiated, models.ReportUnderReview}: {adminUser, models.ReportNotSubstantiated},
+		{ActionReopen, models.ReportConfirmed}:             {adminUser, models.ReportUnderReview},
+		{ActionReopen, models.ReportNotSubstantiated}:      {adminUser, models.ReportUnderReview},
 	}
 	for a := range rules {
 		if a == ActionDeclineReconsideration {
@@ -58,7 +58,7 @@ func TestStateMachine(t *testing.T) {
 			actor := want.by
 			if !ok {
 				// Try with the most privileged plausible actor for the action.
-				actor = staffUser
+				actor = adminUser
 				if rules[a].by == byReporter {
 					actor = reporter
 				}
@@ -76,7 +76,7 @@ func TestStateMachine(t *testing.T) {
 
 func TestCannotSkipToConfirmed(t *testing.T) {
 	for _, s := range []models.ReportStatus{models.ReportDraft, models.ReportSubmitted, models.ReportAwaitingResponse, models.ReportWithdrawn} {
-		if _, d := CheckAction(report(s), staffUser, ActionConfirm, "ok"); d == nil {
+		if _, d := CheckAction(report(s), adminUser, ActionConfirm, "ok"); d == nil {
 			t.Errorf("confirm from %s must be rejected", s)
 		}
 	}
@@ -133,11 +133,10 @@ func TestOnlyReporterSubmitsOrWithdraws(t *testing.T) {
 func TestReasonRequired(t *testing.T) {
 	cases := map[Action]models.ReportStatus{
 		ActionWithdraw: models.ReportSubmitted, ActionRequestInfo: models.ReportUnderReview,
-		ActionConfirm: models.ReportUnderReview, ActionNotSubstantiated: models.ReportUnderReview,
-		ActionReopen: models.ReportConfirmed,
+		ActionNotSubstantiated: models.ReportUnderReview, ActionReopen: models.ReportConfirmed,
 	}
 	for a, s := range cases {
-		actor := staffUser
+		actor := adminUser
 		if a == ActionWithdraw {
 			actor = reporter
 		}
@@ -147,21 +146,47 @@ func TestReasonRequired(t *testing.T) {
 	}
 }
 
+func TestStaffCannotReview(t *testing.T) {
+	for a, rule := range rules {
+		if rule.by != byReviewer {
+			continue
+		}
+		for _, s := range rule.from {
+			r := report(s)
+			now := time.Now()
+			r.ReconsiderationRequestedAt = &now
+			if _, d := CheckAction(r, staffUser, a, "x"); d == nil || !d.Forbidden {
+				t.Errorf("staff %s on %s: want forbidden, got %v", a, s, d)
+			}
+		}
+	}
+}
+
+func TestConfirmWithoutReason(t *testing.T) {
+	to, d := CheckAction(report(models.ReportUnderReview), adminUser, ActionConfirm, "")
+	if d != nil {
+		t.Fatalf("confirm without reason must be allowed: %v", d)
+	}
+	if to != models.ReportConfirmed {
+		t.Fatalf("got %s, want %s", to, models.ReportConfirmed)
+	}
+}
+
 func TestDeclineReconsiderationNeedsPendingRequest(t *testing.T) {
 	r := report(models.ReportConfirmed)
-	if _, d := CheckAction(r, staffUser, ActionDeclineReconsideration, "x"); d == nil {
+	if _, d := CheckAction(r, adminUser, ActionDeclineReconsideration, "x"); d == nil {
 		t.Fatal("decline without pending request must be rejected")
 	}
 	now := time.Now()
 	r.ReconsiderationRequestedAt = &now
-	to, d := CheckAction(r, staffUser, ActionDeclineReconsideration, "x")
+	to, d := CheckAction(r, adminUser, ActionDeclineReconsideration, "x")
 	if d != nil || to != models.ReportConfirmed {
 		t.Fatalf("decline: to=%s d=%v", to, d)
 	}
 }
 
 func TestCanView(t *testing.T) {
-	draft, sub := report(models.ReportDraft), report(models.ReportSubmitted)
+	draft, sub, conf := report(models.ReportDraft), report(models.ReportSubmitted), report(models.ReportConfirmed)
 	checks := []struct {
 		name string
 		r    models.LabBoyReport
@@ -175,7 +200,8 @@ func TestCanView(t *testing.T) {
 		{"student sees own submitted", sub, student, true},
 		{"other student never", sub, otherStu, false},
 		{"other instructor never", sub, otherInst, false},
-		{"staff sees submitted", sub, staffUser, true},
+		{"staff cannot see pending", sub, staffUser, false},
+		{"staff sees confirmed", conf, staffUser, true},
 	}
 	for _, c := range checks {
 		if got := CanView(c.r, c.a); got != c.want {

@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -165,8 +166,8 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 		var reviews []models.FormReview
 		_ = json.Unmarshal(expect(t, 200, "GET", "/staff/reviews", tokStaff, nil), &reviews)
 		for _, rv := range reviews {
-			if rv.CourseID == course.ID && rv.RosterConfirmed {
-				t.Fatal("review reports the roster confirmed before the instructor confirmed it")
+			if rv.CourseID == course.ID {
+				t.Fatal("review list shows the course before the instructor confirmed the roster")
 			}
 		}
 		expect(t, 200, "PUT", rosterPath, tokInst, nil)
@@ -482,11 +483,13 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 	})
 
 	t.Run("source changes are reported; replacing keeps the old version", func(t *testing.T) {
-		// A confirmed roster changes only by an approved withdrawal.
-		if _, err := database.WithdrawApplication(app2.ID, s2.ID, "ติดธุระ"); err != nil {
-			t.Fatal(err)
+		// Students cannot withdraw from a confirmed roster, so the roster
+		// change is made directly in the database.
+		if _, err := database.WithdrawApplication(app2.ID, s2.ID, "ติดธุระ"); !errors.Is(err, database.ErrWithdrawalRosterConfirmed) {
+			t.Fatalf("withdraw from confirmed roster err = %v", err)
 		}
-		if _, err := database.ResolveWithdrawRequest(app2.ID, true, inst.ID); err != nil {
+		if err := database.DB.Model(&models.Application{}).Where("id = ?", app2.ID).
+			Update("status", models.AppWithdrawn).Error; err != nil {
 			t.Fatal(err)
 		}
 		w := getWF(t)

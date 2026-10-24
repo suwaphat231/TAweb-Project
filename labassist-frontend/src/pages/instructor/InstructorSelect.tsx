@@ -33,6 +33,7 @@ export default function InstructorSelect() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [noteText, setNoteText] = useState('')
   const [profileTarget, setProfileTarget] = useState<Application | null>(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [showAcceptAll, setShowAcceptAll] = useState(false)
   const [showConfirmRoster, setShowConfirmRoster] = useState(false)
 
@@ -121,18 +122,37 @@ export default function InstructorSelect() {
   })
 
   const reviewMut = useMutation({
-    mutationFn: ({ id, status }: { id: number; status: 'accepted' | 'rejected' }) =>
-      instructorApi.review(id, { status, note: noteText }),
+    // reopen: the roster was confirmed, so it is reopened first — accepting
+    // someone changes the list staff work from.
+    mutationFn: async ({ id, status, reopen }: { id: number; status: 'accepted' | 'rejected'; reopen?: boolean }) => {
+      if (reopen) await instructorApi.reopenRoster(courseId)
+      return instructorApi.review(id, { status, note: noteText })
+    },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['applicants', courseId] })
       qc.invalidateQueries({ queryKey: ['instructor-courses'] })
       setProfileTarget(null)
       setNoteText('')
-      showToast(vars.status === 'accepted' ? 'รับผู้สมัครและแจ้งเตือนนักศึกษาเรียบร้อยแล้ว' : 'ปฏิเสธผู้สมัครเรียบร้อยแล้ว', 'success')
+      showToast(
+        vars.reopen
+          ? 'รับผู้สมัครแล้ว — ยกเลิกการยืนยันรายชื่อให้แล้ว กรุณากด "ยืนยันรายชื่อ Lab Boy" อีกครั้ง'
+          : vars.status === 'accepted' ? 'รับผู้สมัครและแจ้งเตือนนักศึกษาเรียบร้อยแล้ว' : 'ปฏิเสธผู้สมัครเรียบร้อยแล้ว',
+        'success',
+      )
     },
-    onError: (err: { response?: { data?: { error?: string } } }) =>
-      showToast(err?.response?.data?.error ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'),
+    onError: (err: { response?: { data?: { error?: string } } }) => {
+      // The reopen may have gone through before the accept failed.
+      qc.invalidateQueries({ queryKey: ['instructor-courses'] })
+      showToast(err?.response?.data?.error ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error')
+    },
   })
+
+  function accept(app: Application) {
+    if (rosterLocked && !window.confirm(
+      `รายชื่อ Lab Boy ยืนยันไปแล้ว — ระบบจะยกเลิกการยืนยันให้ก่อนแล้วรับ ${app.student_name}\nหลังจากนั้นกรุณากด "ยืนยันรายชื่อ Lab Boy" อีกครั้ง`,
+    )) return
+    reviewMut.mutate({ id: app.id, status: 'accepted', reopen: rosterLocked })
+  }
 
   // Confirming the roster hands the course to staff and freezes who is accepted.
   const rosterMut = useMutation({
@@ -186,6 +206,11 @@ export default function InstructorSelect() {
   const currentGroup = courseGroups.find((g) => g.sections.some((s) => s.id === courseId))
   const pendingCount = applicants.filter((a) => a.status === 'pending').length
   const rosterLocked = !!selectedCourse?.labboy_roster_confirmed_at
+  // Once staff have confirmed the work schedule the roster cannot be reopened,
+  // so accepting is off for good.
+  const acceptLockedReason = rosterLocked && selectedCourse?.labboy_schedule_confirmed
+    ? 'เจ้าหน้าที่ยืนยันตารางปฏิบัติงานแล้ว จึงรับเพิ่มไม่ได้'
+    : null
   const remainingSlots = selectedCourse ? Math.max(0, selectedCourse.labboy_slots - selectedCourse.labboy_accepted) : 0
   const slotFill = selectedCourse && selectedCourse.labboy_slots > 0
     ? selectedCourse.labboy_accepted / selectedCourse.labboy_slots
@@ -218,10 +243,13 @@ export default function InstructorSelect() {
     }
   }
 
-  function openProfile(app: Application) {
+  // showHistory opens the confirmed-record details straight away (from the
+  // red blacklist badge); otherwise the instructor expands them on request.
+  function openProfile(app: Application, showHistory = false) {
     setNoteText('')
     setGradeProofUrl(null)
     setLightboxOpen(false)
+    setHistoryOpen(showHistory)
     setProfileTarget(app)
   }
 
@@ -489,24 +517,25 @@ export default function InstructorSelect() {
                   const isPending  = row.status === 'pending'
                   const isAccepted = row.status === 'accepted'
                   const isSelected = selectedIds.has(row.id)
+                  const isBlacklisted = !!row.confirmed_record_count
+                  const rowBg = isSelected
+                    ? 'var(--primary-50)'
+                    : isBlacklisted ? '#FEF2F2' : isAccepted ? '#F0FDF4' : '#fff'
 
                   return (
                     <tr
                       key={row.id}
                       style={{
                         borderBottom: i < filtered.length - 1 ? '1px solid var(--line-soft)' : 'none',
-                        background: isSelected
-                          ? 'var(--primary-50)'
-                          : isAccepted ? '#F0FDF4' : '#fff',
+                        background: rowBg,
+                        boxShadow: isBlacklisted ? 'inset 4px 0 0 #DC2626' : undefined,
                         transition: 'background .12s',
                       }}
                       onMouseEnter={(e) => {
-                        if (!isSelected && !isAccepted) e.currentTarget.style.background = 'var(--line-soft)'
+                        if (!isSelected && !isAccepted && !isBlacklisted) e.currentTarget.style.background = 'var(--line-soft)'
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.background = isSelected
-                          ? 'var(--primary-50)'
-                          : isAccepted ? '#F0FDF4' : '#fff'
+                        e.currentTarget.style.background = rowBg
                       }}
                     >
                       {/* Checkbox */}
@@ -519,9 +548,6 @@ export default function InstructorSelect() {
                             onClick={(e) => e.stopPropagation()}
                             style={{ width: 15, height: 15, cursor: 'pointer', accentColor: 'var(--primary)' }}
                           />
-                        )}
-                        {isAccepted && (
-                          <span title="ผ่านการคัดเลือก" style={{ fontSize: 14 }}>✅</span>
                         )}
                       </td>
 
@@ -538,9 +564,18 @@ export default function InstructorSelect() {
                             <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--ink-900)' }}>{row.student_name}</div>
                             <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{row.student_code || '—'}</div>
                             {!!row.confirmed_record_count && (
-                              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--primary-700)', marginTop: 2 }}>
-                                มีประวัติที่ยืนยันแล้ว {row.confirmed_record_count} รายการ
-                              </div>
+                              <button
+                                type="button"
+                                title="กดเพื่อดูรายละเอียด"
+                                onClick={(e) => { e.stopPropagation(); openProfile(row, true) }}
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4,
+                                  padding: '3px 10px', borderRadius: 999, border: 'none', cursor: 'pointer',
+                                  background: '#DC2626', color: '#fff', fontSize: 11, fontWeight: 700,
+                                }}
+                              >
+                                ⚠ BLACKLIST · {row.confirmed_record_count} รายการ · ดูรายละเอียด
+                              </button>
                             )}
                           </div>
                         </div>
@@ -573,14 +608,16 @@ export default function InstructorSelect() {
                         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
 
                           {/* Accept — green solid pill */}
-                          {(row.status === 'pending' || row.status === 'rejected') && !rosterLocked && (
-                            <ActionBtn
-                              color="green"
-                              onClick={(e) => { e.stopPropagation(); reviewMut.mutate({ id: row.id, status: 'accepted' }) }}
-                              disabled={reviewMut.isPending}
-                              icon={<CheckIcon size={11} />}
-                              label="รับ"
-                            />
+                          {(row.status === 'pending' || row.status === 'rejected') && (
+                            <span title={acceptLockedReason ?? (rosterLocked ? 'รายชื่อยืนยันแล้ว — กดรับแล้วระบบจะยกเลิกการยืนยันให้' : undefined)}>
+                              <ActionBtn
+                                color="green"
+                                onClick={(e) => { e.stopPropagation(); accept(row) }}
+                                disabled={reviewMut.isPending || !!acceptLockedReason}
+                                icon={<CheckIcon size={11} />}
+                                label="รับ"
+                              />
+                            </span>
                           )}
 
                           {/* Withdraw request — approve/deny */}
@@ -813,6 +850,9 @@ export default function InstructorSelect() {
         {profileTarget && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             {/* Status banner */}
+            {!!profileTarget.confirmed_record_count && (
+              <StatusBanner color="#FEF2F2" border="#FCA5A5" icon="⚠️" text={`นักศึกษาคนนี้ถูก blacklist (${profileTarget.confirmed_record_count} รายการ) — ใช้ประกอบการตัดสินใจเท่านั้น อาจารย์ยังรับได้ตามปกติ ดูรายละเอียดด้านล่าง`} textColor="#B91C1C" />
+            )}
             {profileTarget.status === 'accepted' && <StatusBanner color="#F0FDF4" border="#BBF7D0" icon="✅" text="ผ่านการคัดเลือก" textColor="#15803D" />}
             {profileTarget.status === 'rejected' && <StatusBanner color="#FEF2F2" border="#FECACA" icon="❌" text="ไม่ผ่านการคัดเลือก" textColor="#DC2626" />}
             {profileTarget.status === 'pending'  && <StatusBanner color="#FFFBEB" border="#FDE68A" icon="⏳" text="รอการพิจารณา" textColor="#B45309" />}
@@ -858,7 +898,12 @@ export default function InstructorSelect() {
               <ProfileInfo label="วันที่สมัคร" value={new Date(profileTarget.applied_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })} />
             </div>
 
-            <ConfirmedHistory applicationId={profileTarget.id} count={profileTarget.confirmed_record_count ?? 0} />
+            <ConfirmedHistory
+              key={profileTarget.id}
+              applicationId={profileTarget.id}
+              count={profileTarget.confirmed_record_count ?? 0}
+              defaultOpen={historyOpen}
+            />
 
             {/* Grade proof */}
             {selectedCourse?.require_grade_proof && (
@@ -951,7 +996,12 @@ export default function InstructorSelect() {
               </div>
             )}
             {profileTarget.status !== 'withdrawn' && !profileTarget.withdraw_requested && (
-              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 4, borderTop: '1px solid var(--line-soft)' }}>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center', paddingTop: 4, borderTop: '1px solid var(--line-soft)' }}>
+                {rosterLocked && (profileTarget.status === 'pending' || profileTarget.status === 'rejected') && (
+                  <span style={{ fontSize: 12, color: 'var(--ink-500)', marginRight: 'auto' }}>
+                    {acceptLockedReason ?? 'รายชื่อยืนยันแล้ว — กดรับแล้วระบบจะยกเลิกการยืนยันให้'}
+                  </span>
+                )}
                 {(profileTarget.status === 'pending' || (profileTarget.status === 'accepted' && !rosterLocked)) && (
                   <Button
                     variant="ghost"
@@ -962,11 +1012,12 @@ export default function InstructorSelect() {
                     ไม่รับ
                   </Button>
                 )}
-                {(profileTarget.status === 'pending' || profileTarget.status === 'rejected') && !rosterLocked && (
+                {(profileTarget.status === 'pending' || profileTarget.status === 'rejected') && (
                   <Button
+                    disabled={!!acceptLockedReason}
                     style={{ background: 'var(--green)', borderColor: 'var(--green)' }}
                     loading={reviewMut.isPending && reviewMut.variables?.status === 'accepted'}
-                    onClick={() => reviewMut.mutate({ id: profileTarget.id, status: 'accepted' })}
+                    onClick={() => accept(profileTarget)}
                   >
                     รับเข้า
                   </Button>

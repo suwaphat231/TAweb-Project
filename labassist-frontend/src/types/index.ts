@@ -184,6 +184,7 @@ export interface Notification {
 export interface Application {
 	posting_id?: number
 	posting_active?: boolean
+	withdraw_open?: boolean
   id: number
   student_id: number
   student_name: string

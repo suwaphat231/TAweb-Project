@@ -35,9 +35,33 @@ func LabHoursFromCredits(credits string) int {
 
 var ErrConflict = errors.New("conflict")
 
-// ErrWithdrawalClosed is returned by WithdrawApplication when an accepted
-// student tries to withdraw after the instructor has manually closed the posting.
-var ErrWithdrawalClosed = errors.New("withdrawal not allowed after instructor closed the posting")
+// ErrWithdrawalClosed is returned by WithdrawApplication when the posting is
+// no longer accepting applications (closed, past its deadline or archived).
+var ErrWithdrawalClosed = errors.New("withdrawal allowed only while the posting is open")
+
+// ErrWithdrawalRosterConfirmed is returned when a withdrawal would change a
+// Lab Boy roster the instructor already confirmed.
+var ErrWithdrawalRosterConfirmed = errors.New("withdrawal not allowed after the instructor confirmed the roster")
+
+// postingAcceptsWithdrawal reports why a student may not withdraw from the
+// posting, or nil while it is still open for applications and its roster
+// is not yet confirmed.
+func postingAcceptsWithdrawal(p models.Posting) error {
+	if p.LabBoyRosterConfirmedAt != nil {
+		return ErrWithdrawalRosterConfirmed
+	}
+	if !p.IsActive || p.ClosedByInstructor ||
+		(p.Status != models.StatusOpen && p.Status != models.StatusClosingSoon) {
+		return ErrWithdrawalClosed
+	}
+	if p.Deadline != nil {
+		d := p.Deadline.In(bangkokLoc)
+		if time.Now().After(time.Date(d.Year(), d.Month(), d.Day(), 23, 59, 59, 0, bangkokLoc)) {
+			return ErrWithdrawalClosed
+		}
+	}
+	return nil
+}
 
 // bangkokLoc is UTC+7 with no DST — matches Asia/Bangkok without requiring
 // the system timezone database (safe in slim Docker images).
@@ -127,6 +151,7 @@ func enrichApplication(a models.Application) models.Application {
 	// is populated correctly even after ResetCourseToDraft creates new postings.
 	if p, ok := postingByID(a.PostingID); ok {
 		a.PostingActive = p.IsActive
+		a.WithdrawOpen = postingAcceptsWithdrawal(p) == nil
 		a.RequireGradeProof = p.RequireGradeProof
 		a.CourseID = p.CourseID
 		if c, ok := CourseByID(p.CourseID); ok {
@@ -814,9 +839,10 @@ func CoreCourseCatalog() ([]models.CoreCourse, error) {
 // the M:N table so unmatched-import nil-instructor rows are no longer exposed
 // to arbitrary instructors.
 func TaughtCourseSections(instructorID uint, fullName string, isAdmin bool, code, semester string, academicYear int) ([]models.Course, error) {
+	baseCode := strings.TrimSpace(strings.Split(code, "-")[0])
 	query := DB.Table("courses").
-		Where("(courses.code = ? OR courses.code LIKE ?) AND courses.semester = ? AND courses.academic_year = ?",
-			code, code+"-%", semester, academicYear).
+		Where("(courses.code = ? OR courses.code LIKE ? OR courses.code LIKE ?) AND courses.semester = ? AND courses.academic_year = ?",
+			code, code+"-%", baseCode+"-%", semester, academicYear).
 		Order("courses.section ASC, courses.slot ASC")
 	if !isAdmin {
 		query = query.Joins(
@@ -1089,14 +1115,14 @@ func WithdrawApplication(id, studentID uint, reason string) (models.Application,
 		if a.Status == models.AppWithdrawn {
 			return ErrAlreadyWithdrawn
 		}
-		// Accepted students may not withdraw once the instructor has
-		// deliberately closed the posting; deadline-based auto-close alone
-		// does not block withdrawal (ClosedByInstructor stays false).
-		if a.Status == models.AppAccepted {
-			var posting models.Posting
-			if err := tx.First(&posting, a.PostingID).Error; err == nil && posting.ClosedByInstructor {
-				return ErrWithdrawalClosed
-			}
+		// Students may withdraw only while the instructor is still taking
+		// applications; a confirmed roster can no longer be withdrawn from.
+		var posting models.Posting
+		if err := tx.First(&posting, a.PostingID).Error; err != nil {
+			return err
+		}
+		if err := postingAcceptsWithdrawal(posting); err != nil {
+			return err
 		}
 		// An accepted Lab Boy only files a request; the instructor decides
 		// in ResolveWithdrawRequest, so the slot stays taken until then.
@@ -1161,6 +1187,11 @@ func ResolveWithdrawRequest(appID uint, approve bool, reviewerID uint) (models.A
 		}
 		if !posting.IsActive {
 			return ErrPostingArchived
+		}
+		// Approving would change a confirmed roster; the instructor must
+		// reopen it first. Rejecting leaves the roster as it is.
+		if approve && posting.LabBoyRosterConfirmedAt != nil {
+			return ErrWithdrawalRosterConfirmed
 		}
 		now := time.Now()
 		a.WithdrawRequested = false

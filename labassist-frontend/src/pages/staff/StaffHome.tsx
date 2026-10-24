@@ -61,7 +61,7 @@ export default function StaffHome() {
   )
 
   function handleCourseAction(offering: CourseOffering) {
-    navigate(`/staff/course/${offering.academicYear}/${offering.semester}/${offering.courseCode}/${offering.sectionNo}?course=${offering.courseId}`)
+    navigate(`/staff/course/${offering.academicYear}/${offering.semester}/${encodeURIComponent(offering.courseCode)}/${offering.sectionNo}?course=${offering.courseId}`)
   }
 
   return (

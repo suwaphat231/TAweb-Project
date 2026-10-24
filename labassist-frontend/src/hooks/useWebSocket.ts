@@ -51,6 +51,12 @@ export function useWebSocket() {
             } else if (data.type === 'application_updated') {
               qc.invalidateQueries({ queryKey: ['student', 'applications'] })
               qc.invalidateQueries({ queryKey: ['instructor'] })
+            } else if (data.type === 'courses_updated') {
+              // A posting was opened, closed or changed: refresh course lists
+              // so students see newly opened courses without reloading.
+              qc.invalidateQueries({ queryKey: ['student-courses'] })
+              qc.invalidateQueries({ queryKey: ['student-dashboard'] })
+              qc.invalidateQueries({ queryKey: ['courses'] })
             }
           } catch (e) {
             console.error('[WebSocket] Failed to parse message', e)

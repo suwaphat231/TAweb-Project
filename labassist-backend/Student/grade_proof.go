@@ -197,7 +197,15 @@ func (h *Handler) GetGradeProof(c *gin.Context) {
 // found for courseCode. Returns ("", false) on any failure so callers can
 // treat OCR as best-effort without disrupting the upload flow.
 func ocrGradeFromImage(ocrURL, courseCode string, data []byte, filename string) (string, bool) {
-	codesJSON, err := json.Marshal([]string{courseCode})
+	baseCode := courseCode
+	if idx := strings.IndexAny(courseCode, "-,"); idx != -1 {
+		baseCode = strings.TrimSpace(courseCode[:idx])
+	}
+	codes := []string{courseCode}
+	if baseCode != courseCode && baseCode != "" {
+		codes = append(codes, baseCode)
+	}
+	codesJSON, err := json.Marshal(codes)
 	if err != nil {
 		return "", false
 	}
@@ -241,5 +249,8 @@ func ocrGradeFromImage(ocrURL, courseCode string, data []byte, filename string) 
 	}
 
 	grade, found := result.ExtractedData[courseCode]
+	if !found && baseCode != courseCode {
+		grade, found = result.ExtractedData[baseCode]
+	}
 	return grade, found
 }

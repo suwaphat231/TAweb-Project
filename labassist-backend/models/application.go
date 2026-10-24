@@ -19,7 +19,10 @@ const (
 
 type Application struct {
 	PostingActive bool `gorm:"-" json:"posting_active"`
-	ID            uint `gorm:"primaryKey" json:"id"`
+	// WithdrawOpen is true while the posting still takes applications and
+	// its Lab Boy roster is not confirmed, i.e. the student may withdraw.
+	WithdrawOpen bool `gorm:"-" json:"withdraw_open"`
+	ID          uint `gorm:"primaryKey" json:"id"`
 	StudentID     uint `gorm:"not null;index" json:"student_id"`
 	Student       User `gorm:"belongsTo:Student;foreignKey:StudentID;references:ID" json:"-"`
 	// PostingID is the recruitment round this application belongs to.

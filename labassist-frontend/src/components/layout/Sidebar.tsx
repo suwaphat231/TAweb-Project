@@ -68,7 +68,7 @@ const navMap: Record<UserRole, NavItem[]> = {
   staff: [
     { to: '/staff/home',     label: 'หน้าหลัก',          icon: 'home' },
     { to: '/staff/review',   label: 'ตรวจสอบแบบฟอร์ม',  icon: 'check-square' },
-    { to: '/staff/reports',  label: 'ตรวจสอบรายงาน Lab Boy', icon: 'clipboard', match: ['/reports/'] },
+    { to: '/staff/reports',  label: 'นักศึกษาที่ถูก blacklist', icon: 'clipboard', match: ['/reports/'] },
     { to: '/staff/settings', label: 'กำหนดวันหยุด',        icon: 'calendar' },
     { to: '/staff/profile',  label: 'ข้อมูลส่วนตัว',     icon: 'user' },
   ],

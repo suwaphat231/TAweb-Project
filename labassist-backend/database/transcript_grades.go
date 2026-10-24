@@ -1,6 +1,10 @@
 package database
 
-import "labassist/models"
+import (
+	"strings"
+
+	"labassist/models"
+)
 
 // TranscriptGrade returns the grade the student has on file for courseCode,
 // as read from transcripts submitted on the grade-check page.
@@ -10,6 +14,12 @@ func TranscriptGrade(userID uint, courseCode string) (string, bool) {
 		return "", false
 	}
 	grade, found := u.TranscriptGrades[courseCode]
+	if !found || grade == "" {
+		if idx := strings.IndexAny(courseCode, "-,"); idx != -1 {
+			base := strings.TrimSpace(courseCode[:idx])
+			grade, found = u.TranscriptGrades[base]
+		}
+	}
 	return grade, found && grade != ""
 }
 

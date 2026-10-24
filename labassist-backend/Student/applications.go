@@ -280,7 +280,11 @@ func (h *Handler) Withdraw(c *gin.Context) {
 			return
 		}
 		if errors.Is(err, database.ErrWithdrawalClosed) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "ไม่สามารถถอนใบสมัครได้หลังจากอาจารย์ปิดรับสมัครแล้ว"})
+			c.JSON(http.StatusForbidden, gin.H{"error": "ถอนใบสมัครได้เฉพาะช่วงที่อาจารย์เปิดรับสมัครเท่านั้น"})
+			return
+		}
+		if errors.Is(err, database.ErrWithdrawalRosterConfirmed) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "อาจารย์ยืนยันรายชื่อแลปบอยแล้ว ไม่สามารถถอนใบสมัครได้"})
 			return
 		}
 		if errors.Is(err, database.ErrWithdrawAlreadyRequested) {

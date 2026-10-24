@@ -3,6 +3,7 @@ import type { MakeupDay, MakeupDayPayload } from '../../types'
 import { formatThaiDate, thaiDayShort } from '../../utils/thaiDate'
 import { makeupProblem } from './makeupRules'
 import { DateInput } from '../ui/DateInput'
+import { TimeTextInput } from '../ui/TimeTextInput'
 
 interface Props {
   days: MakeupDay[]
@@ -137,11 +138,12 @@ export function MakeupDaysPanel({ days, mode, showCourse = false, onChoose, onDe
                           onChange={(e) => setDate(e.target.value)} className="form-input"
                           style={{ width: 150, fontSize: 13, padding: '4px 8px' }} />
                         <span style={{ fontSize: 12, color: 'var(--ink-600)' }}>เวลา</span>
-                        <input type="time" aria-label="เวลาเริ่ม" value={start} onChange={(e) => setStart(e.target.value)}
-                          className="form-input" style={{ width: 104, fontSize: 13, padding: '4px 8px' }} />
+                        <TimeTextInput aria-label="เวลาเริ่ม" value={start} onChange={setStart}
+                          className="form-input" style={{ width: 72, fontSize: 13, padding: '4px 8px', textAlign: 'center' }} />
                         <span>–</span>
-                        <input type="time" aria-label="เวลาเลิก" value={end} onChange={(e) => setEnd(e.target.value)}
-                          className="form-input" style={{ width: 104, fontSize: 13, padding: '4px 8px' }} />
+                        <TimeTextInput aria-label="เวลาเลิก" value={end} onChange={setEnd}
+                          className="form-input" style={{ width: 72, fontSize: 13, padding: '4px 8px', textAlign: 'center' }} />
+                        <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>น.</span>
                         <button type="button" className="btn btn-primary btn-xs" disabled={busy || problem !== null}
                           onClick={() => void run(d.occurrence_id, () => onChoose!(d.occurrence_id, { date, start_time: start, end_time: end }))}>
                           {busy ? 'กำลังบันทึก…' : 'บันทึก'}

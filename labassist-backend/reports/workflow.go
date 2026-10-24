@@ -77,8 +77,9 @@ var rules = map[Action]transitionRule{
 		by: byReviewer, needsReason: true, review: decision(models.DecisionRequestInfo),
 	},
 	ActionConfirm: {
+		// No reason required: the reporter's description already says why.
 		from: []models.ReportStatus{models.ReportUnderReview}, to: models.ReportConfirmed,
-		by: byReviewer, needsReason: true, review: decision(models.DecisionConfirm),
+		by: byReviewer, review: decision(models.DecisionConfirm),
 	},
 	ActionNotSubstantiated: {
 		from: []models.ReportStatus{models.ReportUnderReview}, to: models.ReportNotSubstantiated,
@@ -178,7 +179,8 @@ func CanView(r models.LabBoyReport, actor Actor) bool {
 	case r.ReporterID == actor.ID:
 		return true
 	case actor.Role == string(models.RoleStaff):
-		return r.Status != models.ReportDraft
+		// Staff only need to know who is blacklisted; reviewing is admin's job.
+		return r.Status == models.ReportConfirmed
 	case actor.Role == string(models.RoleStudent):
 		return r.StudentID == actor.ID && r.Status != models.ReportDraft
 	}

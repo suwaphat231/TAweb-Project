@@ -5,14 +5,17 @@
 package admin
 
 import (
+	"errors"
 	"labassist/config"
 	"labassist/database"
 	"labassist/models"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // CreateUserRequest is the request body for creating a user. Admins only set
@@ -172,6 +175,15 @@ func (h *Handler) UpdateUser(c *gin.Context) {
 		return
 	}
 
+	// Prevent an admin from changing their own role — avoids accidental
+	// lock-out and enforces the principle that role changes require another
+	// admin to approve.
+	callerID, _ := c.Get("user_id")
+	if body.Role != nil && callerID != nil && uint(id) == callerID.(uint) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "ไม่สามารถเปลี่ยนบทบาทของตัวเองได้"})
+		return
+	}
+
 	updated, ok := database.UpdateUser(uint(id), func(u *models.User) {
 		if body.FullName != nil {
 			u.FullName = *body.FullName
@@ -214,6 +226,40 @@ func (h *Handler) UpdateUserStatus(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, updated)
+}
+
+// DeleteUser godoc
+// @Summary      ลบผู้ใช้
+// @Description  ลบได้เฉพาะบัญชีที่ไม่มีข้อมูลที่ต้องเก็บไว้ (ใบสมัคร, วิชาที่สอน, เอกสาร, รายงาน ฯลฯ) — บัญชีที่มีประวัติให้ใช้การระงับแทน
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path  int  true  "User ID"
+// @Success      204
+// @Failure      404  {object}  handlers.ErrorResponse
+// @Failure      409  {object}  handlers.ErrorResponse
+// @Router       /admin/users/{id} [delete]
+func (h *Handler) DeleteUser(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	if uint(id) == c.GetUint("user_id") {
+		c.JSON(http.StatusConflict, gin.H{"error": "ลบบัญชีของตัวเองไม่ได้"})
+		return
+	}
+
+	if err := database.DeleteUser(uint(id)); err != nil {
+		var blocked *database.UserDeleteBlockedError
+		switch {
+		case errors.As(err, &blocked):
+			c.JSON(http.StatusConflict, gin.H{"error": blocked.Error()})
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		default:
+			log.Printf("delete user %d: %v", id, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "ลบผู้ใช้ไม่สำเร็จ กรุณาลองใหม่"})
+		}
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 // Logs godoc
