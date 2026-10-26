@@ -56,30 +56,41 @@ func (h *Hub) run() {
 
 		case client := <-h.unregister:
 			h.mu.Lock()
-			if _, ok := h.clients[client]; ok {
-				delete(h.clients, client)
-				close(client.send)
-				if uClients, exists := h.userClients[client.UserID]; exists {
-					delete(uClients, client)
-					if len(uClients) == 0 {
-						delete(h.userClients, client.UserID)
-					}
-				}
-			}
+			h.removeLocked(client)
+			total := len(h.clients)
 			h.mu.Unlock()
-			log.Printf("[WS] Client disconnected: user_id=%d, total=%d", client.UserID, len(h.clients))
+			log.Printf("[WS] Client disconnected: user_id=%d, total=%d", client.UserID, total)
 
 		case message := <-h.broadcast:
-			h.mu.RLock()
+			// A client whose buffer is full gets dropped, which closes its send
+			// channel; that needs the write lock so SendToUser (which holds the
+			// read lock) can never send on a channel closed under it.
+			h.mu.Lock()
 			for client := range h.clients {
 				select {
 				case client.send <- message:
 				default:
-					close(client.send)
-					delete(h.clients, client)
+					h.removeLocked(client)
 				}
 			}
-			h.mu.RUnlock()
+			h.mu.Unlock()
+		}
+	}
+}
+
+// removeLocked drops a client from both indexes and closes its send channel.
+// It is a no-op for a client already removed, so the channel closes once.
+// The caller must hold h.mu for writing.
+func (h *Hub) removeLocked(client *Client) {
+	if _, ok := h.clients[client]; !ok {
+		return
+	}
+	delete(h.clients, client)
+	close(client.send)
+	if uClients, exists := h.userClients[client.UserID]; exists {
+		delete(uClients, client)
+		if len(uClients) == 0 {
+			delete(h.userClients, client.UserID)
 		}
 	}
 }

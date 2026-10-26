@@ -17,6 +17,9 @@ type StudentInfoDocument struct {
 	ID       uint   `gorm:"primaryKey" json:"id"`
 	UserID   uint   `gorm:"uniqueIndex;not null" json:"user_id"`
 	FileName string `gorm:"size:255" json:"file_name"`
+	// FileKey is the image in object storage; FileData only holds images
+	// uploaded before that (see filestore).
+	FileKey  string `gorm:"size:255;not null;default:''" json:"-"`
 	FileData []byte `gorm:"type:longblob" json:"-"`
 	// PersonalFileName defaults to '' so AutoMigrate can add it to existing rows.
 	PersonalFileName   string  `gorm:"size:255;not null;default:''" json:"personal_file_name"`

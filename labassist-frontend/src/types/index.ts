@@ -66,16 +66,23 @@ export interface TranscriptImage {
   uploaded_at: string
 }
 
-/** Result of POST /student/profile/transcript (OCR). */
-export interface TranscriptOCRResult {
-  status: 'pass' | 'needs_review' | 'fail'
-  message: string
-  confidence_score: number
-  /** '' when the student's faculty matched neither curriculum. */
-  program: 'IT' | 'CS' | ''
-  courses: CourseGrade[]
-  updated_at: string
-  user: User
+/** A background OCR upload that is still running or that failed. */
+export interface OcrJobState {
+  status: 'processing' | 'failed'
+  error?: string
+  started_at: string
+}
+
+export type OcrJobKind = 'transcript' | 'student_info'
+
+/** GET /student/profile/ocr-jobs — null when nothing is pending for a kind. */
+export type OcrJobs = Record<OcrJobKind, OcrJobState | null>
+
+/** Payload of the "ocr_finished" WebSocket event. */
+export interface OcrFinishedEvent {
+  kind: OcrJobKind
+  status: 'done' | 'failed'
+  error?: string
 }
 
 export interface Course {

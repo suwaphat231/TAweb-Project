@@ -62,8 +62,11 @@ type Application struct {
 	// self-reported Grade above, required only on postings where the
 	// instructor turned RequireGradeProof on. Raw bytes never serialize —
 	// HasGradeProof below is what callers see; the image itself is only
-	// ever served through the dedicated download endpoints.
+	// ever served through the dedicated download endpoints. The image is in
+	// object storage under GradeProofKey; GradeProofData only holds images
+	// uploaded before that (see filestore).
 	GradeProofFileName string `json:"-"`
+	GradeProofKey      string `gorm:"size:255;not null;default:''" json:"-"`
 	GradeProofData     []byte `gorm:"type:longblob" json:"-"`
 
 	// OcrWarning is set after grade-proof upload when OCR detects a
@@ -141,6 +144,7 @@ type ApplicationHistory struct {
 	// GradeProofData is included so the instructor can still view proof
 	// from a rejected round when reconsidering.
 	GradeProofFileName string    `json:"grade_proof_file_name,omitempty"`
+	GradeProofKey      string    `gorm:"size:255;not null;default:''" json:"-"`
 	GradeProofData     []byte    `gorm:"type:longblob" json:"-"`
 	ArchivedAt         time.Time `json:"archived_at"`
 }

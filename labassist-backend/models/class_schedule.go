@@ -15,6 +15,9 @@ type ClassSchedule struct {
 	ID        uint           `gorm:"primaryKey" json:"id"`
 	UserID    uint           `gorm:"uniqueIndex;not null" json:"user_id"`
 	FileName  string         `gorm:"size:255" json:"file_name"`
+	// ImageKey is the image in object storage; ImageData only holds images
+	// uploaded before that (see filestore).
+	ImageKey  string         `gorm:"size:255;not null;default:''" json:"-"`
 	ImageData []byte         `gorm:"type:longblob" json:"-"`
 	Slots     []ScheduleSlot `gorm:"serializer:json;type:longtext" json:"slots"`
 	UpdatedAt time.Time      `gorm:"autoUpdateTime" json:"updated_at"`

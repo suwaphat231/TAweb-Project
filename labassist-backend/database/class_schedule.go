@@ -1,8 +1,11 @@
 package database
 
 import (
+	"log"
+	"net/http"
 	"time"
 
+	"labassist/filestore"
 	"labassist/models"
 )
 
@@ -12,25 +15,35 @@ func UpsertClassSchedule(userID uint, fileName string, imageData []byte, slots [
 	if slots == nil {
 		slots = []models.ScheduleSlot{}
 	}
+	key, blob, err := filestore.Save("class-schedules", imageData, http.DetectContentType(imageData))
+	if err != nil {
+		return models.ClassSchedule{}, err
+	}
 	var cs models.ClassSchedule
 	if DB.Where("user_id = ?", userID).First(&cs).Error == nil {
+		oldKey := cs.ImageKey
 		cs.FileName = fileName
-		cs.ImageData = imageData
+		cs.ImageKey = key
+		cs.ImageData = blob
 		cs.Slots = slots
 		cs.UpdatedAt = time.Now()
 		if err := DB.Save(&cs).Error; err != nil {
+			filestore.Remove(key)
 			return models.ClassSchedule{}, err
 		}
+		filestore.Remove(oldKey)
 		return cs, nil
 	}
 	cs = models.ClassSchedule{
 		UserID:    userID,
 		FileName:  fileName,
-		ImageData: imageData,
+		ImageKey:  key,
+		ImageData: blob,
 		Slots:     slots,
 		UpdatedAt: time.Now(),
 	}
 	if err := DB.Create(&cs).Error; err != nil {
+		filestore.Remove(key)
 		return models.ClassSchedule{}, err
 	}
 	return cs, nil
@@ -52,11 +65,16 @@ func ClassScheduleByUserID(userID uint) (models.ClassSchedule, bool) {
 // loads potentially large blobs unnecessarily.
 func ClassScheduleImageByUserID(userID uint) (fileName string, data []byte, ok bool) {
 	var cs models.ClassSchedule
-	if DB.Select("file_name", "image_data").Where("user_id = ?", userID).First(&cs).Error != nil {
+	if DB.Select("file_name", "image_key", "image_data").Where("user_id = ?", userID).First(&cs).Error != nil {
 		return "", nil, false
 	}
-	if len(cs.ImageData) == 0 {
+	if cs.ImageKey == "" && len(cs.ImageData) == 0 {
 		return "", nil, false
 	}
-	return cs.FileName, cs.ImageData, true
+	data, err := filestore.Load(cs.ImageKey, cs.ImageData)
+	if err != nil {
+		log.Printf("load class schedule image for user %d: %v", userID, err)
+		return "", nil, false
+	}
+	return cs.FileName, data, true
 }

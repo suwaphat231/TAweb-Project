@@ -104,6 +104,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			studentGroup.GET("/student/available-terms", studentH.GetAvailableTerms)
 			studentGroup.GET("/student/courses", studentH.StudentCourses)
 			// OCR: อ่านข้อมูลนักศึกษาจากเอกสาร/บัตรนักศึกษา
+			studentGroup.GET("/student/profile/ocr-jobs", studentH.GetOCRJobs)
 			studentGroup.POST("/student/profile/student-info", studentH.UploadStudentInfo)
 			studentGroup.GET("/student/profile/student-info", studentH.GetStudentInfo)
 			studentGroup.POST("/student/profile/student-info/confirm", studentH.ConfirmStudentInfo)
@@ -181,6 +182,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			staffGroup.PUT("/staff/documents/:id/status", staffH.UpdateDocumentStatus)
 			staffGroup.PUT("/staff/documents/:id/schedule", staffH.UpdateDocumentSchedule)
 			staffGroup.GET("/staff/documents/:id/file", staffH.DownloadDocument)
+			staffGroup.GET("/staff/documents/:id/evidence-file", staffH.DownloadEvidenceFile)
 			// Per-course document workflow (hiring notice → approval memo → …)
 			staffGroup.GET("/staff/courses/:courseId/document-workflow", staffH.GetDocumentWorkflow)
 			staffGroup.POST("/staff/courses/:courseId/document-workflow/:type", staffH.CreateWorkflowStep)

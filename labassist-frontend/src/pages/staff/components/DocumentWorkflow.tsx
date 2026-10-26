@@ -13,6 +13,7 @@ import { Button } from '../../../components/ui/Button'
 import { DocumentPreviewModal } from './DocumentPreviewModal'
 import { WorkScheduleModal } from './WorkScheduleModal'
 import { StaffMakeupSection } from './StaffMakeupSection'
+import { ActionMenu } from './ActionMenu'
 
 const STEP_STATUS_CONFIG: Record<DocStepStatus, { label: string; color: string; bg: string }> = {
   not_reached:         { label: 'ยังไม่ถึงขั้นตอน', color: 'var(--ink-400)',  bg: 'var(--line-soft)' },
@@ -80,6 +81,7 @@ export function DocumentWorkflow({
   const showToast = useToast()
   const [previewStep, setPreviewStep] = useState<DocumentWorkflowItem | null>(null)
   const [downloadingId, setDownloadingId] = useState<number | null>(null)
+  const [downloadingEvidenceId, setDownloadingEvidenceId] = useState<number | null>(null)
   const [showScheduleModal, setShowScheduleModal] = useState(false)
   const [showWorkDates, setShowWorkDates] = useState(false)
   const [createTarget, setCreateTarget] = useState<CreateTarget | null>(null)
@@ -141,7 +143,7 @@ export function DocumentWorkflow({
   const statusMut = useMutation({
     mutationFn: ({ id, status }: { id: number; status: string }) => staffApi.updateDocumentStatus(id, status),
     onSuccess: (_d, v) => {
-      showToast(v.status === 'signed' ? 'บันทึกลงนามแล้ว' : 'จัดการเอกสารเรียบร้อย', 'success')
+      showToast(v.status === 'signed' ? 'บันทึกลงนามแล้ว' : 'บันทึกว่าส่งลงนามแล้ว', 'success')
       refresh()
     },
     onError: async (err) => showToast(await getApiErrorMessage(err, 'เกิดข้อผิดพลาด กรุณาลองใหม่'), 'error'),
@@ -174,6 +176,19 @@ export function DocumentWorkflow({
       else showToast(await getApiErrorMessage(err, 'ดาวน์โหลดไม่สำเร็จ'), 'error')
     } finally {
       setDownloadingId(null)
+    }
+  }
+
+  // The ใบขวาง printed with a step-3 payment request, from the same plan.
+  async function downloadEvidence(doc: StaffDocument) {
+    setDownloadingEvidenceId(doc.id)
+    try {
+      const blob = await staffApi.downloadEvidenceFile(doc.id)
+      triggerBrowserDownload(blob, `หลักฐานการจ่ายเงิน ${doc.course_ref}.docx`)
+    } catch (err) {
+      showToast(await getApiErrorMessage(err, 'ดาวน์โหลดใบขวางไม่สำเร็จ'), 'error')
+    } finally {
+      setDownloadingEvidenceId(null)
     }
   }
 
@@ -276,7 +291,9 @@ export function DocumentWorkflow({
               ) : <>
               {isCurrent && doc && (
                 <div style={{ marginTop: 6, fontSize: 12, color: 'var(--ink-600)' }}>
-                  เมื่อได้รับเอกสารที่ลงนามแล้ว กด "บันทึกลงนามแล้ว" เพื่อเปิดขั้นตอนถัดไป
+                  {doc.status === 'awaiting_signature'
+                    ? 'เมื่อได้รับเอกสารที่ลงนามแล้ว กด "บันทึกลงนามแล้ว" เพื่อเปิดขั้นตอนถัดไป'
+                    : 'ดาวน์โหลดไปตรวจ/พิมพ์ แล้วกด "ส่งลงนาม" เมื่อส่งเอกสารให้ผู้มีอำนาจลงนาม'}
                 </div>
               )}
               {!doc && view.blocked_reasons.length > 0 && (
@@ -294,19 +311,12 @@ export function DocumentWorkflow({
                 <div style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-500)' }}>ยังไม่มี template .docx ของเอกสารนี้ — บันทึกข้อมูลและติดตามสถานะได้ แต่ยังดาวน์โหลดไฟล์ไม่ได้</div>
               )}
 
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+              {/* One action that moves the step forward, a download, and
+                  everything else under "⋯". */}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
                 {isHiringNotice && !planLocked && !doc && (
                   <button onClick={() => setShowScheduleModal(true)} style={actionBtn('var(--primary)', '#fff')}>กำหนดตารางปฏิบัติงาน</button>
                 )}
-                {isHiringNotice && planLocked && (
-                  <button onClick={() => setShowScheduleModal(true)} style={actionBtn('transparent', 'var(--ink-600)', '1px solid var(--line)')}>ดูตารางปฏิบัติงาน</button>
-                )}
-                {isHiringNotice && workDates.length > 0 && (
-                  <button onClick={() => setShowWorkDates((v) => !v)} style={actionBtn('transparent', 'var(--primary)', '1.5px solid var(--primary)')}>
-                    {showWorkDates ? 'ซ่อนวันที่ปฏิบัติงาน' : `วันที่ปฏิบัติงาน (${workDates.filter((d) => d.status === 'scheduled' || d.status === 'completed').length} วัน)`}
-                  </button>
-                )}
-
                 {!doc && (
                   <button
                     onClick={() => (oneClick(view.type) ? createMut.mutate({ type: view.type, body: {} }) : openCreate(view, false))}
@@ -317,39 +327,58 @@ export function DocumentWorkflow({
                     {createMut.isPending && createMut.variables?.type === view.type ? 'กำลังสร้าง...' : 'สร้างเอกสาร'}
                   </button>
                 )}
-                {doc && (
-                  <>
-                    <button onClick={() => setPreviewStep(item)} style={actionBtn('transparent', 'var(--primary)', '1.5px solid var(--primary)')}>ดูรายละเอียด</button>
-                    {view.has_template && (
-                      <button onClick={() => download(doc)} disabled={downloadingId === doc.id} style={actionBtn('transparent', 'var(--ink-600)', '1px solid var(--line)')}>
-                        {downloadingId === doc.id ? 'กำลังโหลด...' : 'ดาวน์โหลด DOCX'}
-                      </button>
-                    )}
-                    {(doc.status === 'draft' || doc.status === 'generated' || doc.status === 'approved') && (
-                      <button onClick={() => statusMut.mutate({ id: doc.id, status: 'awaiting_signature' })} disabled={statusMut.isPending} style={actionBtn('var(--amber)', '#fff')}>เรียบร้อย</button>
-                    )}
-                    {doc.status === 'awaiting_signature' && (
-                      <button onClick={() => statusMut.mutate({ id: doc.id, status: 'signed' })} disabled={statusMut.isPending} style={actionBtn('var(--green)', '#fff')}>บันทึกลงนามแล้ว</button>
-                    )}
-                    <button onClick={() => openCreate(view, true)} style={actionBtn('transparent', 'var(--ink-600)', '1px solid var(--line)')}>สร้างฉบับใหม่</button>
-                    <button
-                      onClick={() => {
-                        const reason = window.prompt('เหตุผลที่ยกเลิกเอกสารนี้ (เอกสารจะยังเก็บไว้ในประวัติ)')
-                        if (reason === null) return
-                        cancelMut.mutate({ id: doc.id, reason: reason.trim() })
-                      }}
-                      disabled={cancelMut.isPending}
-                      style={actionBtn('transparent', 'var(--red)', '1px solid var(--red)')}
-                    >
-                      ยกเลิกเอกสาร
-                    </button>
-                  </>
+                {doc && (doc.status === 'draft' || doc.status === 'generated' || doc.status === 'approved') && (
+                  <button onClick={() => statusMut.mutate({ id: doc.id, status: 'awaiting_signature' })} disabled={statusMut.isPending}
+                    title="ส่งเอกสารให้ผู้มีอำนาจลงนามแล้ว" style={actionBtn('var(--amber)', '#fff')}>ส่งลงนาม</button>
                 )}
-                {view.history.length > 0 && (
-                  <button onClick={() => setOpenHistory(openHistory === view.step ? null : view.step)} style={actionBtn('transparent', 'var(--ink-500)', '1px dashed var(--line)')}>
-                    ประวัติ {view.history.length} ฉบับ
+                {doc?.status === 'awaiting_signature' && (
+                  <button onClick={() => statusMut.mutate({ id: doc.id, status: 'signed' })} disabled={statusMut.isPending} style={actionBtn('var(--green)', '#fff')}>บันทึกลงนามแล้ว</button>
+                )}
+
+                {doc && view.has_template && (view.type === 'payment_request' ? (
+                  <ActionMenu
+                    label="ดาวน์โหลด"
+                    trigger={downloadingId === doc.id || downloadingEvidenceId === doc.id ? 'กำลังโหลด...' : 'ดาวน์โหลด ▾'}
+                    style={actionBtn('transparent', 'var(--ink-700)', '1px solid var(--line)')}
+                    items={[
+                      { label: 'บันทึกขออนุมัติเบิกจ่ายเงิน', hint: 'เดือนละ 1 หน้า (.docx)', onClick: () => download(doc) },
+                      { label: 'ใบขวาง (หลักฐานการจ่ายเงิน)', hint: 'เดือนละ 1 หน้า (.docx)', onClick: () => downloadEvidence(doc) },
+                    ]}
+                  />
+                ) : (
+                  <button onClick={() => download(doc)} disabled={downloadingId === doc.id} style={actionBtn('transparent', 'var(--ink-700)', '1px solid var(--line)')}>
+                    {downloadingId === doc.id ? 'กำลังโหลด...' : 'ดาวน์โหลด'}
                   </button>
-                )}
+                ))}
+
+                <ActionMenu
+                  label="ตัวเลือกเพิ่มเติม"
+                  trigger="⋯"
+                  style={{ ...actionBtn('transparent', 'var(--ink-600)', '1px solid var(--line)'), padding: '5px 12px', fontSize: 14, lineHeight: 1 }}
+                  items={[
+                    ...(doc ? [{ label: 'ดูรายละเอียด', onClick: () => setPreviewStep(item) }] : []),
+                    ...(isHiringNotice && planLocked ? [{ label: 'ดูตารางปฏิบัติงาน', onClick: () => setShowScheduleModal(true) }] : []),
+                    ...(isHiringNotice && workDates.length > 0 ? [{
+                      label: showWorkDates ? 'ซ่อนวันที่ปฏิบัติงาน' : `วันที่ปฏิบัติงาน (${workDates.filter((d) => d.status === 'scheduled' || d.status === 'completed').length} วัน)`,
+                      onClick: () => setShowWorkDates((v) => !v),
+                    }] : []),
+                    ...(view.history.length > 0 ? [{
+                      label: openHistory === view.step ? 'ซ่อนฉบับก่อนหน้า' : `ฉบับก่อนหน้า (${view.history.length})`,
+                      onClick: () => setOpenHistory(openHistory === view.step ? null : view.step),
+                    }] : []),
+                    ...(doc ? [
+                      { label: 'สร้างฉบับใหม่', hint: 'ฉบับนี้จะเก็บไว้ในประวัติ', onClick: () => openCreate(view, true), separated: true },
+                      {
+                        label: 'ยกเลิกเอกสาร', danger: true, disabled: cancelMut.isPending,
+                        onClick: () => {
+                          const reason = window.prompt('เหตุผลที่ยกเลิกเอกสารนี้ (เอกสารจะยังเก็บไว้ในประวัติ)')
+                          if (reason === null) return
+                          cancelMut.mutate({ id: doc.id, reason: reason.trim() })
+                        },
+                      },
+                    ] : []),
+                  ]}
+                />
               </div>
 
               {openHistory === view.step && (

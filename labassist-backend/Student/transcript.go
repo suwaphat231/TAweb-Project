@@ -125,6 +125,11 @@ func (h *Handler) DownloadTranscript(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "no transcript uploaded yet"})
 		return
 	}
+	data, err := database.TranscriptFile(t)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "โหลดไฟล์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"})
+		return
+	}
 	c.Header("Content-Disposition", `inline; filename="`+t.FileName+`"`)
-	c.Data(http.StatusOK, "application/pdf", t.FileData)
+	c.Data(http.StatusOK, "application/pdf", data)
 }

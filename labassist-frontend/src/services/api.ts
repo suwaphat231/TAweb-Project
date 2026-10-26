@@ -5,7 +5,7 @@ import type {
   CreateCoursePayload, ApplyPayload, ReviewPayload, BulkReviewPayload, BulkReviewResult,
   AdminStats, CourseStatus, Transcript, Notification,
   CreateUserPayload, UpdateUserPayload, ImportCoursesResponse, ImportCourseFields,
-  FormReview, StaffDocument, CreateStaffDocumentPayload, TranscriptOCRResult, CoreCourse, WorkDaySlot,
+  FormReview, StaffDocument, CreateStaffDocumentPayload, OcrJobs, CoreCourse, WorkDaySlot,
   WorkSession, TermSchedule, TermOption, ScheduleSlot, TermScheduleStatus,
   LabBoyAssignment, CourseRelation, StudentInfoUploadResult,
   StaffCaseResponse, ScheduleGroup, CalendarDate, WorkOccurrence, MonthlyPeriodResponse, StaffAuditLog,
@@ -165,13 +165,15 @@ export const studentAPI = {
     }>('/student/dashboard').then((r) => r.data),
   getProfile: () => api.get<User>('/student/profile').then((r) => r.data),
   updateProfile: (data: Partial<User>) => api.put<User>('/student/profile', data).then((r) => r.data),
-  // Runs the file through OCR and matches the grades against the student's
-  // core_courses catalog. The refreshed profile comes back on `.user`.
+  // Starts a background OCR of the grade sheet; the grades land on the profile
+  // and an "ocr_finished" WebSocket event follows (see ocrJobs).
   uploadTranscript: (file: File) => {
     const formData = new FormData()
     formData.append('file', file)
-    return api.post<TranscriptOCRResult>('/student/profile/transcript', formData).then((r) => r.data)
+    return api.post<{ status: 'processing' }>('/student/profile/transcript', formData).then((r) => r.data)
   },
+  // Background OCR uploads still running or that failed.
+  ocrJobs: () => api.get<OcrJobs>('/student/profile/ocr-jobs').then((r) => r.data),
   // Confirms the OCR-read grades, with any the student corrected by hand.
   confirmTranscriptGrades: (grades: Record<string, string>) =>
     api.put<User>('/student/profile/transcript/confirm', { grades }).then((r) => r.data),
@@ -271,6 +273,7 @@ export const studentApi = {
   uploadTranscript: transcriptAPI.upload,
   // Stores the PDF (above) vs. runs OCR and matches core_courses (below).
   ocrTranscript: studentAPI.uploadTranscript,
+  ocrJobs: studentAPI.ocrJobs,
   confirmTranscriptGrades: studentAPI.confirmTranscriptGrades,
   transcriptImages: studentAPI.transcriptImages,
   transcriptImageFile: studentAPI.transcriptImageFile,
@@ -292,7 +295,7 @@ export const studentApi = {
   uploadStudentInfo: (file: File) => {
     const formData = new FormData()
     formData.append('file', file)
-    return api.post<StudentInfoUploadResult>('/student/profile/student-info', formData).then((r) => r.data)
+    return api.post<{ status: 'processing' }>('/student/profile/student-info', formData).then((r) => r.data)
   },
   getStudentInfo: () =>
     api.get<StudentInfoUploadResult>('/student/profile/student-info').then((r) => r.data),
@@ -491,6 +494,9 @@ export const staffApi = {
 
   downloadDocument: (id: number) =>
     api.get(`/staff/documents/${id}/file`, { responseType: 'blob' }).then((r) => r.data as Blob),
+  // ใบขวาง (หลักฐานการจ่ายเงิน) that goes with a payment_request document.
+  downloadEvidenceFile: (id: number) =>
+    api.get(`/staff/documents/${id}/evidence-file`, { responseType: 'blob' }).then((r) => r.data as Blob),
 
   // Monthly plan aggregate
   getMonthlyPlan: (caseId: number) =>

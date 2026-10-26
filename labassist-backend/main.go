@@ -3,6 +3,7 @@ package main
 import (
 	"labassist/config"
 	"labassist/database"
+	"labassist/filestore"
 	"labassist/middleware"
 	"labassist/routes"
 	"log"
@@ -29,9 +30,22 @@ func main() {
 		log.Fatalf("invalid configuration: %v", err)
 	}
 
+	if err := filestore.Init(filestore.Config{
+		Endpoint:  cfg.S3Endpoint,
+		AccessKey: cfg.S3AccessKey,
+		SecretKey: cfg.S3SecretKey,
+		Bucket:    cfg.S3Bucket,
+		UseSSL:    cfg.S3UseSSL,
+	}); err != nil {
+		log.Fatalf("object storage failed: %v", err)
+	}
+
 	if err := database.Connect(cfg); err != nil {
 		log.Fatalf("database connection failed: %v", err)
 	}
+	// Move files uploaded before object storage was on out of MySQL. It runs
+	// in the background; until a row is moved it is still read from its blob.
+	go database.MigrateBlobsToFileStore()
 
 	r := gin.Default()
 	r.Use(middleware.CORS(cfg))

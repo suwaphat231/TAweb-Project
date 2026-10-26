@@ -115,29 +115,52 @@ func startOnNewPage(body string) string {
 	return body[:at] + "<w:pageBreakBefore/>" + body[at:]
 }
 
-// paymentMonths bills each month of the document's frozen plan: payable
-// hours x rate for every Lab Boy on the roster. Without a plan it falls back
-// to the document's own Period and TotalAmount.
-func paymentMonths(doc models.StaffDocument) ([]paymentMonth, error) {
+// planMonth is one month of a document's frozen plan, as every Lab Boy on
+// the roster works it: the same sessions for each.
+type planMonth struct {
+	date       time.Time       // first of the month
+	dayHours   map[int]float64 // payable hours by day of month
+	hours      float64
+	perStudent float64 // hours x rate, rounded to the satang
+}
+
+// planMonths groups the payable sessions of the document's plan by month,
+// in date order, with the plan's hourly rate (the default when unset).
+func planMonths(doc models.StaffDocument) ([]planMonth, float64, error) {
 	occs, rate, err := planOccurrences(doc)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if rate <= 0 {
 		rate = float64(database.DefaultHourlyRateSatang) / 100.0
 	}
-	var out []paymentMonth
-	hours := map[time.Time]float64{}
+	var out []planMonth
 	for _, s := range approvalMemoSessions(occs) {
 		first := time.Date(s.Date.Year(), s.Date.Month(), 1, 0, 0, 0, 0, time.UTC)
-		if _, ok := hours[first]; !ok {
-			out = append(out, paymentMonth{date: first})
+		if len(out) == 0 || !out[len(out)-1].date.Equal(first) {
+			out = append(out, planMonth{date: first, dayHours: map[int]float64{}})
 		}
-		hours[first] += s.Hours
+		m := &out[len(out)-1]
+		m.dayHours[s.Date.Day()] += s.Hours
+		m.hours += s.Hours
 	}
 	for i := range out {
-		perStudent := math.Round(hours[out[i].date]*rate*100) / 100
-		out[i].amount = perStudent * float64(len(doc.Roster))
+		out[i].perStudent = math.Round(out[i].hours*rate*100) / 100
+	}
+	return out, rate, nil
+}
+
+// paymentMonths bills each month of the document's frozen plan: payable
+// hours x rate for every Lab Boy on the roster. Without a plan it falls back
+// to the document's own Period and TotalAmount.
+func paymentMonths(doc models.StaffDocument) ([]paymentMonth, error) {
+	plan, _, err := planMonths(doc)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]paymentMonth, 0, len(plan))
+	for _, m := range plan {
+		out = append(out, paymentMonth{date: m.date, amount: m.perStudent * float64(len(doc.Roster))})
 	}
 	if len(out) == 0 && doc.Period != nil && doc.Period.Month >= 1 {
 		out = append(out, paymentMonth{

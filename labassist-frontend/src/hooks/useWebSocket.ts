@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../store/authStore'
 import { useToast } from './useToast'
+import { studentApi } from '../services/api'
+import type { OcrFinishedEvent } from '../types'
 
 export function useWebSocket() {
   const token = useAuthStore((s) => s.token)
@@ -21,6 +23,15 @@ export function useWebSocket() {
 
     const currentToken = token
     let isCancelled = false
+
+    function invalidateApplications() {
+      qc.invalidateQueries({ queryKey: ['my-applications'] })
+      qc.invalidateQueries({ queryKey: ['student', 'my-applications'] })
+      qc.invalidateQueries({ queryKey: ['student-dashboard'] })
+      qc.invalidateQueries({ queryKey: ['applicants'] })
+      qc.invalidateQueries({ queryKey: ['course-applicants'] })
+      qc.invalidateQueries({ queryKey: ['instructor-courses'] })
+    }
 
     function connect() {
       if (isCancelled) return
@@ -43,14 +54,35 @@ export function useWebSocket() {
             if (data.type === 'notification') {
               // Real-time cache invalidation so UI updates instantly
               qc.invalidateQueries({ queryKey: ['notifications'] })
-              qc.invalidateQueries({ queryKey: ['student', 'applications'] })
-              qc.invalidateQueries({ queryKey: ['instructor'] })
+              invalidateApplications()
 
               const title = data.payload?.title || 'มีการแจ้งเตือนใหม่'
               showToast(title, 'info')
             } else if (data.type === 'application_updated') {
-              qc.invalidateQueries({ queryKey: ['student', 'applications'] })
-              qc.invalidateQueries({ queryKey: ['instructor'] })
+              // An application was submitted, accepted, rejected or withdrawn:
+              // refresh both the student's own list and instructor/staff views.
+              invalidateApplications()
+            } else if (data.type === 'ocr_finished') {
+              // A background OCR upload ended — maybe while the student was on
+              // another page — so refresh what it wrote and say how it went.
+              const event = data.payload as OcrFinishedEvent
+              qc.invalidateQueries({ queryKey: ['ocr-jobs'] })
+              if (event.status === 'done') {
+                if (event.kind === 'transcript') {
+                  qc.invalidateQueries({ queryKey: ['transcript-images'] })
+                } else {
+                  qc.invalidateQueries({ queryKey: ['student-info-doc'] })
+                }
+                // The grades (and status) live on the profile, which the auth
+                // store also holds.
+                qc.fetchQuery({ queryKey: ['student-profile'], queryFn: studentApi.profile, staleTime: 0 })
+                  .then((user) => useAuthStore.getState().setUser(user))
+                  .catch(() => {})
+                showToast(event.kind === 'transcript' ? 'อ่านใบเกรดเสร็จแล้ว' : 'อ่านเอกสารสถานภาพเสร็จแล้ว', 'success')
+              } else {
+                const what = event.kind === 'transcript' ? 'อ่านใบเกรดไม่สำเร็จ' : 'อ่านเอกสารสถานภาพไม่สำเร็จ'
+                showToast(event.error ? `${what}: ${event.error}` : what, 'error')
+              }
             } else if (data.type === 'courses_updated') {
               // A posting was opened, closed or changed: refresh course lists
               // so students see newly opened courses without reloading.

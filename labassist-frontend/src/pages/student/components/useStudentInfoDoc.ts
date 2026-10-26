@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { studentApi } from '../../../services/api'
 import { useToast } from '../../../hooks/useToast'
+import { useOcrJob } from '../../../hooks/useOcrJobs'
+import type { OcrJobs } from '../../../types'
 
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'application/pdf']
 
@@ -21,11 +23,17 @@ export function useStudentInfoDoc() {
     },
   })
 
+  // The OCR runs on the server in the background, so the student may leave
+  // the page; the "ocr_finished" WebSocket event refreshes the document.
+  const job = useOcrJob('student_info')
   const uploadMut = useMutation({
     mutationFn: (file: File) => studentApi.uploadStudentInfo(file),
-    onSuccess: (result) => {
-      qc.setQueryData(['student-info-doc'], result)
-      showToast('อ่านข้อมูลจากเอกสารเรียบร้อยแล้ว', 'success')
+    onSuccess: () => {
+      qc.setQueryData<OcrJobs>(['ocr-jobs'], (old) => ({
+        transcript: old?.transcript ?? null,
+        student_info: { status: 'processing', started_at: new Date().toISOString() },
+      }))
+      showToast('กำลังอ่านเอกสาร ไปหน้าอื่นได้ ระบบจะแจ้งเมื่ออ่านเสร็จ', 'info')
     },
     onError: (err: { response?: { data?: { error?: string } } }) => {
       showToast(err?.response?.data?.error ?? 'อ่านเอกสารไม่สำเร็จ กรุณาลองใหม่', 'error')
@@ -63,7 +71,9 @@ export function useStudentInfoDoc() {
     doc: data?.document,
     cmp: data?.comparison,
     isLoading,
-    isUploading: uploadMut.isPending,
+    isUploading: uploadMut.isPending || job.processing,
+    /** Why the last background read failed, until the student retries. */
+    uploadError: job.processing ? undefined : job.error,
     isConfirming: confirmMut.isPending,
     confirm: () => confirmMut.mutate(),
     onFileChange,

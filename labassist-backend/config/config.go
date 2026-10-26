@@ -31,6 +31,14 @@ type Config struct {
 	SMTPUser     string
 	SMTPPassword string
 	SMTPFrom     string
+
+	// Object storage (MinIO / S3) for uploaded files. When S3Endpoint is
+	// empty, files are kept in MySQL instead.
+	S3Endpoint  string
+	S3AccessKey string
+	S3SecretKey string
+	S3Bucket    string
+	S3UseSSL    bool
 }
 
 func Load() (*Config, error) {
@@ -88,6 +96,12 @@ func Load() (*Config, error) {
 		SMTPUser:     getEnv("SMTP_USER", ""),
 		SMTPPassword: getEnv("SMTP_PASSWORD", ""),
 		SMTPFrom:     getEnv("SMTP_FROM", getEnv("SMTP_USER", "")),
+
+		S3Endpoint:  getEnv("S3_ENDPOINT", ""),
+		S3AccessKey: getEnv("S3_ACCESS_KEY", ""),
+		S3SecretKey: getEnv("S3_SECRET_KEY", ""),
+		S3Bucket:    getEnv("S3_BUCKET", "labassist-files"),
+		S3UseSSL:    os.Getenv("S3_USE_SSL") == "true",
 	}, nil
 }
 

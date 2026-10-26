@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
+	"labassist/filestore"
 	"labassist/models"
 
 	"gorm.io/gorm"
@@ -286,7 +288,11 @@ type NewReportResponse struct {
 // status change it implies, in one transaction.
 func AddReportResponse(n NewReportResponse) (models.LabBoyReportResponse, error) {
 	resp := n.Response
-	err := DB.Transaction(func(tx *gorm.DB) error {
+	keys, err := storeEvidenceFiles(n.Files)
+	if err != nil {
+		return models.LabBoyReportResponse{}, err
+	}
+	err = DB.Transaction(func(tx *gorm.DB) error {
 		var r models.LabBoyReport
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&r, resp.ReportID).Error; err != nil {
 			return err
@@ -342,16 +348,45 @@ func AddReportResponse(n NewReportResponse) (models.LabBoyReportResponse, error)
 		return nil
 	})
 	if err != nil {
+		removeFiles(keys)
 		return models.LabBoyReportResponse{}, err
 	}
 	resp.AuthorName = userName(resp.AuthorID)
 	return resp, nil
 }
 
+// storeEvidenceFiles puts the files' bytes in object storage before their rows
+// are inserted. If the insert then fails, the caller drops the returned keys.
+func storeEvidenceFiles(files []models.LabBoyReportEvidence) ([]string, error) {
+	keys := make([]string, 0, len(files))
+	for i := range files {
+		key, blob, err := filestore.Save("report-evidence", files[i].Data, files[i].ContentType)
+		if err != nil {
+			removeFiles(keys)
+			return nil, err
+		}
+		files[i].DataKey, files[i].Data = key, blob
+		if key != "" {
+			keys = append(keys, key)
+		}
+	}
+	return keys, nil
+}
+
+func removeFiles(keys []string) {
+	for _, k := range keys {
+		filestore.Remove(k)
+	}
+}
+
 // AddReportEvidence attaches the reporter's files while the report is still
 // in one of the allowed statuses.
 func AddReportEvidence(reportID, actorID uint, allowed []models.ReportStatus, files []models.LabBoyReportEvidence) error {
-	return DB.Transaction(func(tx *gorm.DB) error {
+	keys, err := storeEvidenceFiles(files)
+	if err != nil {
+		return err
+	}
+	err = DB.Transaction(func(tx *gorm.DB) error {
 		var r models.LabBoyReport
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&r, reportID).Error; err != nil {
 			return err
@@ -378,6 +413,10 @@ func AddReportEvidence(reportID, actorID uint, allowed []models.ReportStatus, fi
 		}
 		return writeReportAudit(tx, reportID, "add_evidence", actorID, "", strings.Join(names, ", "), "")
 	})
+	if err != nil {
+		removeFiles(keys)
+	}
+	return err
 }
 
 // CountReportEvidence is used to cap how many files one report can hold.
@@ -407,6 +446,12 @@ func ReportEvidenceFile(reportID, evidenceID uint) (models.LabBoyReportEvidence,
 	if DB.Where("id = ? AND report_id = ?", evidenceID, reportID).First(&e).Error != nil {
 		return e, false
 	}
+	data, err := filestore.Load(e.DataKey, e.Data)
+	if err != nil {
+		log.Printf("load report evidence %d: %v", e.ID, err)
+		return e, false
+	}
+	e.Data = data
 	return e, true
 }
 

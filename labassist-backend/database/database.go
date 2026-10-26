@@ -4,12 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"labassist/filestore"
 	"labassist/models"
 	"labassist/ws"
 
@@ -174,7 +176,7 @@ func enrichApplication(a models.Application) models.Application {
 			a.ReviewedByName = u.FullName
 		}
 	}
-	a.HasGradeProof = len(a.GradeProofData) > 0
+	a.HasGradeProof = hasGradeProof(a)
 	return a
 }
 
@@ -911,29 +913,44 @@ func TaughtCourseSections(instructorID uint, fullName string, isAdmin bool, code
 // second row.
 
 func UpsertTranscript(userID uint, fileName string, data []byte) (models.Transcript, error) {
+	key, blob, err := filestore.Save("transcripts", data, "application/pdf")
+	if err != nil {
+		return models.Transcript{}, err
+	}
 	var t models.Transcript
 	if err := DB.Where("user_id = ?", userID).First(&t).Error; err == nil {
+		oldKey := t.FileKey
 		t.FileName = fileName
-		t.FileData = data
+		t.FileKey = key
+		t.FileData = blob
 		t.FileSize = int64(len(data))
 		t.UploadedAt = time.Now()
 		if err := DB.Save(&t).Error; err != nil {
+			filestore.Remove(key)
 			return models.Transcript{}, err
 		}
+		filestore.Remove(oldKey)
 		return t, nil
 	}
 
 	t = models.Transcript{
 		UserID:     userID,
 		FileName:   fileName,
-		FileData:   data,
+		FileKey:    key,
+		FileData:   blob,
 		FileSize:   int64(len(data)),
 		UploadedAt: time.Now(),
 	}
 	if err := DB.Create(&t).Error; err != nil {
+		filestore.Remove(key)
 		return models.Transcript{}, err
 	}
 	return t, nil
+}
+
+// TranscriptFile returns the transcript's PDF bytes, wherever they are kept.
+func TranscriptFile(t models.Transcript) ([]byte, error) {
+	return filestore.Load(t.FileKey, t.FileData)
 }
 
 func TranscriptByUserID(userID uint) (models.Transcript, bool) {
@@ -1087,6 +1104,7 @@ func CreateApplication(a models.Application) (models.Application, error) {
 				WithdrawalReason:   existing.WithdrawalReason,
 				OcrWarning:         existing.OcrWarning,
 				GradeProofFileName: existing.GradeProofFileName,
+				GradeProofKey:      existing.GradeProofKey,
 				GradeProofData:     existing.GradeProofData,
 				ArchivedAt:         time.Now(),
 			}
@@ -1102,7 +1120,9 @@ func CreateApplication(a models.Application) (models.Application, error) {
 			existing.ReviewedByID = nil
 			existing.Note = nil
 			existing.OcrWarning = nil
+			// The old round's proof now belongs to the history row above.
 			existing.GradeProofFileName = ""
+			existing.GradeProofKey = ""
 			existing.GradeProofData = nil
 			a = existing
 			return tx.Omit(clause.Associations).Save(&existing).Error
@@ -1318,7 +1338,7 @@ func ReviewApplicationTx(appID uint, newStatus models.AppStatus, applyFields fun
 			// call or a race between upload and review cannot bypass it. A
 			// grade taken from the student's grade-check transcript counts
 			// as proof too.
-			if posting.RequireGradeProof && len(app.GradeProofData) == 0 && !app.GradeFromTranscript {
+			if posting.RequireGradeProof && !hasGradeProof(app) && !app.GradeFromTranscript {
 				res.MissingProof = true
 				return nil
 			}
@@ -1356,10 +1376,28 @@ func ReviewApplicationTx(appID uint, newStatus models.AppStatus, applyFields fun
 // application, replacing any previous upload. Ownership must be checked by
 // the caller before calling this (e.g. via ApplicationByIDForStudent).
 func SetApplicationGradeProof(id uint, fileName string, data []byte) (models.Application, bool) {
-	return UpdateApplication(id, func(a *models.Application) {
+	key, blob, err := filestore.Save("grade-proofs", data, http.DetectContentType(data))
+	if err != nil {
+		log.Printf("store grade proof for application %d: %v", id, err)
+		return models.Application{}, false
+	}
+	var oldKey string
+	a, ok := UpdateApplication(id, func(a *models.Application) {
+		oldKey = a.GradeProofKey
 		a.GradeProofFileName = fileName
-		a.GradeProofData = data
+		a.GradeProofKey = key
+		a.GradeProofData = blob
 	})
+	if !ok {
+		filestore.Remove(key)
+		return a, false
+	}
+	filestore.Remove(oldKey)
+	return a, true
+}
+
+func hasGradeProof(a models.Application) bool {
+	return a.GradeProofKey != "" || len(a.GradeProofData) > 0
 }
 
 // ApplicationGradeProofData returns the raw image bytes for an application's
@@ -1367,10 +1405,15 @@ func SetApplicationGradeProof(id uint, fileName string, data []byte) (models.App
 // checked by the caller first.
 func ApplicationGradeProofData(id uint) (fileName string, data []byte, ok bool) {
 	var a models.Application
-	if DB.Select("grade_proof_file_name", "grade_proof_data").First(&a, id).Error != nil || len(a.GradeProofData) == 0 {
+	if DB.Select("grade_proof_file_name", "grade_proof_key", "grade_proof_data").First(&a, id).Error != nil || !hasGradeProof(a) {
 		return "", nil, false
 	}
-	return a.GradeProofFileName, a.GradeProofData, true
+	data, err := filestore.Load(a.GradeProofKey, a.GradeProofData)
+	if err != nil {
+		log.Printf("load grade proof for application %d: %v", id, err)
+		return "", nil, false
+	}
+	return a.GradeProofFileName, data, true
 }
 
 func BulkUpdateApplications(ids []uint, fn func(a *models.Application)) int64 {

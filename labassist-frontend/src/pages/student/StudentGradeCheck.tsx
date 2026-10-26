@@ -12,6 +12,8 @@ import { Modal } from '../../components/ui/Modal'
 import { Badge, type BadgeVariant } from '../../components/ui/Badge'
 import { Icon } from '../../components/reports/ReportIcons'
 import { cleanCourseTitle } from '../../utils/courseTitle'
+import { useOcrJob } from '../../hooks/useOcrJobs'
+import type { OcrJobs } from '../../types'
 
 const statusBadges: Record<string, { variant: BadgeVariant; label: string }> = {
   pass: { variant: 'green', label: 'อ่านข้อมูลสำเร็จ' },
@@ -37,16 +39,21 @@ export default function StudentGradeCheck() {
     queryFn: () => studentApi.courses({ status: undefined }),
   })
   const openCodes = new Set(catalog.filter((c) => c.status === 'open' || c.status === 'closing_soon').map((c) => c.code))
+  // The OCR runs on the server in the background, so the student may leave
+  // the page; the "ocr_finished" WebSocket event refreshes the profile.
+  const ocrJob = useOcrJob('transcript')
   const upload = useMutation({
     mutationFn: studentApi.ocrTranscript,
-    onSuccess: (result) => {
-      setUser(result.user)
-      qc.setQueryData(['student-profile'], result.user)
-      qc.invalidateQueries({ queryKey: ['transcript-images'] })
+    onSuccess: () => {
+      qc.setQueryData<OcrJobs>(['ocr-jobs'], (old) => ({
+        student_info: old?.student_info ?? null,
+        transcript: { status: 'processing', started_at: new Date().toISOString() },
+      }))
       setFile(null)
       setDraft(null)
     },
   })
+  const reading = upload.isPending || ocrJob.processing
 
   // null = not editing; otherwise the grades being corrected, keyed by code.
   const [draft, setDraft] = useState<Record<string, string> | null>(null)
@@ -59,10 +66,9 @@ export default function StudentGradeCheck() {
     },
   })
 
-  const result = upload.data
-  const status = result?.status ?? profile.data?.transcript_status
-  const message = result?.message ?? profile.data?.transcript_message
-  const updatedAt = result?.updated_at ?? profile.data?.transcript_updated_at
+  const status = profile.data?.transcript_status
+  const message = profile.data?.transcript_message
+  const updatedAt = profile.data?.transcript_updated_at
   const confirmedAt = profile.data?.transcript_confirmed_at
   const ocrGrades = profile.data?.transcript_ocr_grades ?? {}
   // The profile is refreshed after every upload and confirmation, so it is
@@ -74,9 +80,9 @@ export default function StudentGradeCheck() {
     // Courses open for Lab Boy applications first — their grade is ready to use.
     .sort((a, b) => Number(openCodes.has(b.code)) - Number(openCodes.has(a.code)) || a.code.localeCompare(b.code))
   const openCount = courses.filter((course) => openCodes.has(course.code)).length
-  const uploadError = isAxiosError<{ error?: string }>(upload.error)
-    ? upload.error.response?.data?.error
-    : undefined
+  const uploadError = upload.isError
+    ? (isAxiosError<{ error?: string }>(upload.error) && upload.error.response?.data?.error) || 'ไม่สามารถอ่านใบเกรดได้ กรุณาลองใหม่อีกครั้ง'
+    : reading ? undefined : ocrJob.error
   const confirmError = isAxiosError<{ error?: string }>(confirm.error)
     ? confirm.error.response?.data?.error
     : undefined
@@ -121,7 +127,7 @@ export default function StudentGradeCheck() {
                 <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</div>
                 <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>{Math.max(1, Math.round(file.size / 1024))} KB</div>
               </div>
-              <button type="button" className="report-icon-btn" disabled={upload.isPending}
+              <button type="button" className="report-icon-btn" disabled={reading}
                 onClick={() => pickFile(null)} aria-label={`เอาไฟล์ ${file.name} ออก`}>
                 <Icon name="x" size={16} />
               </button>
@@ -147,7 +153,7 @@ export default function StudentGradeCheck() {
               <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>PNG, JPG หรือ PDF</span>
             </label>
           )}
-          <input id={fileInputId} type="file" accept=".png,.jpg,.jpeg,.pdf" className="sr-only" disabled={upload.isPending}
+          <input id={fileInputId} type="file" accept=".png,.jpg,.jpeg,.pdf" className="sr-only" disabled={reading}
             onChange={(event) => { pickFile(event.target.files?.[0] ?? null); event.target.value = '' }} />
           {fileError && <p role="alert" style={{ color: 'var(--red)', fontSize: 13 }}>{fileError}</p>}
 
@@ -160,11 +166,11 @@ export default function StudentGradeCheck() {
                   เอกสารอาจมีข้อมูลส่วนบุคคล เช่น ชื่อ รหัสนักศึกษา และผลการเรียน ระบบจะส่งไปอ่านด้วย OCR เพื่อตรวจสอบคุณสมบัติการสมัคร แล้วเก็บผลการอ่านและไฟล์ไว้ในบัญชีของคุณเพื่อใช้ตรวจสอบ
                 </p>
               </div>
-              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13, color: 'var(--ink-700)', cursor: upload.isPending ? 'not-allowed' : 'pointer', minHeight: 24 }}>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13, color: 'var(--ink-700)', cursor: reading ? 'not-allowed' : 'pointer', minHeight: 24 }}>
                 <input
                   type="checkbox"
                   checked={pdpaConsent}
-                  disabled={upload.isPending}
+                  disabled={reading}
                   onChange={(event) => {
                     setPdpaConsent(event.target.checked)
                     if (event.target.checked) setConsentError('')
@@ -177,17 +183,19 @@ export default function StudentGradeCheck() {
             </div>
           </div>
 
-          {upload.isError && (
+          {uploadError && (
             <p role="alert" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 8, background: 'var(--red-bg)', color: 'var(--red)', fontSize: 13 }}>
               <Icon name="alert" size={16} />
-              {uploadError ?? 'ไม่สามารถอ่านใบเกรดได้ กรุณาลองใหม่อีกครั้ง'}
+              {uploadError}
             </p>
           )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <Button type="submit" loading={upload.isPending} disabled={!file || !!fileError || !pdpaConsent}>อ่านใบเกรด</Button>
-            {upload.isPending && (
-              <span role="status" style={{ fontSize: 13, color: 'var(--ink-500)' }}>กำลังอ่านใบเกรด อาจใช้เวลาประมาณ 30 วินาที…</span>
+            <Button type="submit" loading={reading} disabled={!file || !!fileError || !pdpaConsent}>อ่านใบเกรด</Button>
+            {reading && (
+              <span role="status" style={{ fontSize: 13, color: 'var(--ink-500)' }}>
+                กำลังอ่านใบเกรด อาจใช้เวลาประมาณ 30 วินาที… ไปหน้าอื่นได้ ระบบจะแจ้งเมื่ออ่านเสร็จ
+              </span>
             )}
           </div>
         </form>
@@ -200,7 +208,7 @@ export default function StudentGradeCheck() {
           {statusBadge && <Badge variant={statusBadge.variant} showDot>{statusBadge.label}</Badge>}
         </div>
 
-        {profile.isLoading ? <div style={{ marginTop: 16 }}><Skeleton lines={3} /></div> : profile.isError && !result ? (
+        {profile.isLoading ? <div style={{ marginTop: 16 }}><Skeleton lines={3} /></div> : profile.isError ? (
           <div role="alert" style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <p style={{ fontSize: 14, color: 'var(--ink-600)' }}>โหลดผลการอ่านเกรดไม่สำเร็จ</p>
             <Button variant="outline" size="sm" onClick={() => profile.refetch()}>ลองอีกครั้ง</Button>

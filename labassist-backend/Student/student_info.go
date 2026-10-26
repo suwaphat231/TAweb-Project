@@ -3,6 +3,7 @@ package student
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -16,6 +17,7 @@ import (
 
 	"labassist/database"
 	"labassist/models"
+	"labassist/ocrjob"
 
 	"github.com/gin-gonic/gin"
 )
@@ -312,14 +314,16 @@ func normalizeFaculty(s string) string {
 
 // UploadStudentInfo godoc
 // @Summary      อัปโหลดเอกสารข้อมูลนักศึกษาเพื่อให้ระบบ OCR อ่านข้อมูล
+// @Description  OCR ทำงานเบื้องหลัง เมื่อเสร็จจะแจ้ง event "ocr_finished" ทาง WebSocket
+// @Description  และดูสถานะได้ที่ /student/profile/ocr-jobs
 // @Tags         student
 // @Accept       mpfd
 // @Produce      json
 // @Security     BearerAuth
 // @Param        file  formData  file    true   "รูปการ์ดโปรไฟล์จากระบบทะเบียน (PDF/PNG/JPG, สูงสุด 10 MB)"
-// @Success      200   {object}  StudentInfoUploadResponse
+// @Success      202   {object}  OCRJobAccepted
 // @Failure      400   {object}  map[string]string
-// @Failure      502   {object}  map[string]string
+// @Failure      409   {object}  map[string]string
 // @Router       /student/profile/student-info [post]
 func (h *Handler) UploadStudentInfo(c *gin.Context) {
 	userID, _ := c.Get("user_id")
@@ -367,33 +371,51 @@ func (h *Handler) UploadStudentInfo(c *gin.Context) {
 		return
 	}
 
+	// Rendering a PDF and the OCR can take a while, so they run as a
+	// background job: the student may leave the page, and is told over
+	// WebSocket when the document has been read.
+	fileName := fileHeader.Filename
+	started := ocrjob.Start(user.ID, ocrjob.StudentInfo, func() error {
+		return h.processStudentInfo(user.ID, fileName, ext, fileBytes)
+	})
+	if !started {
+		c.JSON(http.StatusConflict, gin.H{"error": "กำลังอ่านเอกสารที่อัปโหลดก่อนหน้าอยู่ กรุณารอให้เสร็จก่อน"})
+		return
+	}
+	c.JSON(http.StatusAccepted, OCRJobAccepted{Status: ocrjob.StatusProcessing})
+}
+
+// OCRJobAccepted answers an upload whose OCR now runs in the background.
+type OCRJobAccepted struct {
+	Status string `json:"status" example:"processing"`
+}
+
+// processStudentInfo reads the profile card (text layer or OCR) and stores it
+// with the fields read. Its error is shown to the student as is.
+func (h *Handler) processStudentInfo(uid uint, fileName, ext string, fileBytes []byte) error {
 	var ocrResult *ocrStudentInfoResponse
-	storeFileName := fileHeader.Filename
+	storeFileName := fileName
 	storeData := fileBytes
+	internalErr := errors.New("เกิดข้อผิดพลาดภายในระบบ กรุณาลองใหม่อีกครั้ง")
 
 	if ext == ".pdf" {
 		// Write to temp file — Go backend must process PDF, never forward raw PDF to OCR service
 		tmpFile, err := os.CreateTemp("", "labassist-si-*.pdf")
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
-			return
+			return internalErr
 		}
 		tmpPath := tmpFile.Name()
 		defer os.Remove(tmpPath)
 		if _, wErr := tmpFile.Write(fileBytes); wErr != nil {
 			tmpFile.Close()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
-			return
+			return internalErr
 		}
 		tmpFile.Close()
 
 		// Enforce page limit
 		pages, pErr := pdfPageCount(tmpPath)
 		if pErr == nil && pages > maxPDFPages {
-			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf(
-				"PDF มี %d หน้า กรุณาอัปโหลด PDF ที่มีไม่เกิน %d หน้า", pages, maxPDFPages,
-			)})
-			return
+			return fmt.Errorf("PDF มี %d หน้า กรุณาอัปโหลด PDF ที่มีไม่เกิน %d หน้า", pages, maxPDFPages)
 		}
 
 		// Render page 1 to PNG for storage and display
@@ -410,30 +432,28 @@ func (h *Handler) UploadStudentInfo(c *gin.Context) {
 			// No text layer — run OCR on the rendered PNG
 			ocrResult, err = callStudentInfoOCR(h.cfg.OCRServiceURL, "page.png", pngBytes)
 			if err != nil {
-				c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
-				return
+				return err
 			}
 		} else {
-			c.JSON(http.StatusBadGateway, gin.H{"error": "ไม่สามารถประมวลผล PDF ได้ กรุณาลองอัปโหลดไฟล์รูปภาพแทน"})
-			return
+			return errors.New("ไม่สามารถประมวลผล PDF ได้ กรุณาลองอัปโหลดไฟล์รูปภาพแทน")
 		}
 
 		// Always store the rendered PNG for display (not the original PDF)
 		if renderErr == nil {
 			storeData = pngBytes
-			base := strings.TrimSuffix(fileHeader.Filename, ext)
+			base := strings.TrimSuffix(fileName, ext)
 			storeFileName = base + "_p1.png"
 		}
 	} else {
 		// Image file — call OCR service directly (images are safe to forward)
-		ocrResult, err = callStudentInfoOCR(h.cfg.OCRServiceURL, fileHeader.Filename, fileBytes)
+		var err error
+		ocrResult, err = callStudentInfoOCR(h.cfg.OCRServiceURL, fileName, fileBytes)
 		if err != nil {
-			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
-			return
+			return err
 		}
 	}
 
-	doc, dbErr := database.UpsertStudentInfoDocument(uid, storeFileName, storeData, database.StudentInfoOCR{
+	if _, err := database.UpsertStudentInfoDocument(uid, storeFileName, storeData, database.StudentInfoOCR{
 		StudentID:      ocrResult.StudentID,
 		FullNameTh:     ocrResult.FullNameTh,
 		FullNameEn:     ocrResult.FullNameEn,
@@ -443,15 +463,32 @@ func (h *Handler) UploadStudentInfo(c *gin.Context) {
 		Campus:         ocrResult.Campus,
 		StudentStatus:  ocrResult.StudentStatus,
 		Confidence:     ocrResult.Confidence,
-	})
-	if dbErr != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกข้อมูลไม่สำเร็จ"})
-		return
+	}); err != nil {
+		return errors.New("บันทึกข้อมูลไม่สำเร็จ")
 	}
+	return nil
+}
 
-	c.JSON(http.StatusOK, StudentInfoUploadResponse{
-		Document:   doc,
-		Comparison: buildComparison(doc, user),
+// OCRJobsResponse is the student's OCR uploads still processing or that
+// failed; a kind is null when nothing is pending for it.
+type OCRJobsResponse struct {
+	Transcript  *ocrjob.State `json:"transcript"`
+	StudentInfo *ocrjob.State `json:"student_info"`
+}
+
+// GetOCRJobs godoc
+// @Summary      สถานะงาน OCR เบื้องหลังของนักศึกษา (ใบเกรด / เอกสารสถานภาพ)
+// @Tags         student
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  OCRJobsResponse
+// @Router       /student/profile/ocr-jobs [get]
+func (h *Handler) GetOCRJobs(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	uid := userID.(uint)
+	c.JSON(http.StatusOK, OCRJobsResponse{
+		Transcript:  ocrjob.Get(uid, ocrjob.Transcript),
+		StudentInfo: ocrjob.Get(uid, ocrjob.StudentInfo),
 	})
 }
 

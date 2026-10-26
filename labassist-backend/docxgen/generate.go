@@ -237,10 +237,25 @@ func escapeXML(s string) string {
 	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(s)
 }
 
-// The paper template only has example tokens for days 3, 17 and 24.
-// Populate every daily cell before expanding student rows.
+var runPattern = regexp.MustCompile(`(?s)<w:r>(?:(?:<w:rPr>.*?</w:rPr>)?<w:t[^>]*>[^<]*</w:t>)</w:r>`)
+
+// tokenRun is the <w:r> holding token, so a new cell can copy its formatting.
+func tokenRun(xml, token string) string {
+	for _, r := range runPattern.FindAllString(xml, -1) {
+		if strings.Contains(r, token) {
+			return r
+		}
+	}
+	return "<w:r><w:t>" + token + "</w:t></w:r>"
+}
+
+// The paper template only has example tokens for days 3, 17 and 24, and the
+// surname cell beside the name is empty. Populate them (formatted like the
+// example day and the name) before expanding student rows, and drop the
+// trailing page break that would add a blank page after the sheet.
 func preparePaymentEvidenceDays(docXML string) (string, error) {
 	cellPattern := regexp.MustCompile(`(?s)<w:tc\b.*?</w:tc>`)
+	docXML = strings.Replace(docXML, `<w:br w:type="page"/>`, "", 1)
 	for _, pos := range trPattern.FindAllStringIndex(docXML, -1) {
 		row := docXML[pos[0]:pos[1]]
 		if !strings.Contains(row, "{{STUDENT_NAME}}") {
@@ -250,18 +265,27 @@ func preparePaymentEvidenceDays(docXML string) (string, error) {
 		if len(cells) != 40 {
 			return "", fmt.Errorf("docxgen: unexpected payment evidence daily cell layout")
 		}
-		for day := 31; day >= 1; day-- {
-			cellPos := cells[day+3]
+		dayRun := tokenRun(row, "{{DAY_3}}")
+		// Right to left, so earlier cell offsets stay valid.
+		for i := 34; i >= 1; i-- {
+			token := fmt.Sprintf("{{DAY_%d}}", i-3)
+			run := strings.Replace(dayRun, "{{DAY_3}}", token, 1)
+			if i == 1 {
+				token = "{{STUDENT_SURNAME}}"
+				run = strings.Replace(tokenRun(row, "{{STUDENT_NAME}}"), "{{STUDENT_NAME}}", token, 1)
+			} else if i < 4 {
+				continue
+			}
+			cellPos := cells[i]
 			cell := row[cellPos[0]:cellPos[1]]
-			token := fmt.Sprintf("{{DAY_%d}}", day)
 			if strings.Contains(cell, token) {
 				continue
 			}
 			end := strings.LastIndex(cell, "</w:p>")
 			if end < 0 {
-				return "", fmt.Errorf("docxgen: payment evidence day %d has no paragraph", day)
+				return "", fmt.Errorf("docxgen: payment evidence cell %d has no paragraph", i)
 			}
-			cell = cell[:end] + "<w:r><w:t>" + token + "</w:t></w:r>" + cell[end:]
+			cell = cell[:end] + run + cell[end:]
 			row = row[:cellPos[0]] + cell + row[cellPos[1]:]
 		}
 		return docXML[:pos[0]] + row + docXML[pos[1]:], nil

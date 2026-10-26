@@ -22,6 +22,24 @@ services:
       retries: 10
       start_period: 30s
 
+  minio:
+    # Object storage for uploaded files (grade sheets, REG cards, grade proofs,
+    # report evidence). MinIO no longer publishes images on Docker Hub, so this
+    # is Chainguard's build, pinned by digest (MinIO RELEASE.2026-10-23).
+    image: cgr.dev/chainguard/minio@sha256:268d68a2a3b6fc65f905a61f84d7eab6345ce6bff14f551e2b028ec31e6a1341
+    container_name: labassist-minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-labassist}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD to a generated random secret of at least 8 characters}
+    # The S3 API (9000) is reachable only on the internal Docker network. The
+    # admin console is bound to localhost only.
+    ports:
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+
   backend:
     build:
       context: ./labassist-backend
@@ -31,6 +49,8 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      minio:
+        condition: service_started
       # OCR is optional (profile "ocr"); the backend starts without it and only
       # the document-upload OCR features are unavailable.
       ocr-service:
@@ -55,6 +75,11 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      S3_ENDPOINT: minio:9000
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-labassist}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      S3_BUCKET: ${S3_BUCKET:-labassist-files}
+      S3_USE_SSL: "false"
     ports:
       - "8080:8080"
 
@@ -91,4 +116,5 @@ services:
 
 volumes:
   mysql_data:
+  minio_data:
   easyocr_models:

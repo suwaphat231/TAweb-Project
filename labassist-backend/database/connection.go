@@ -752,6 +752,9 @@ func Connect(cfg *config.Config) error {
 	if err := ensurePostingCourseConsistency(db); err != nil {
 		return fmt.Errorf("ensure posting/course consistency: %w", err)
 	}
+	if err := migrateBlobColumnsNullable(db); err != nil {
+		return fmt.Errorf("make blob columns nullable: %w", err)
+	}
 	DB = db
 
 

@@ -1,8 +1,11 @@
 package database
 
 import (
+	"log"
+	"net/http"
 	"time"
 
+	"labassist/filestore"
 	"labassist/models"
 
 	"gorm.io/gorm/clause"
@@ -28,10 +31,17 @@ type StudentInfoOCR struct {
 // old two-screenshot flow is cleared. ConfirmedAt is always reset to nil on
 // each new upload.
 func UpsertStudentInfoDocument(userID uint, fileName string, fileData []byte, ocr StudentInfoOCR) (models.StudentInfoDocument, error) {
+	key, blob, err := filestore.Save("student-info", fileData, http.DetectContentType(fileData))
+	if err != nil {
+		return models.StudentInfoDocument{}, err
+	}
+	var oldKey string
+	DB.Model(&models.StudentInfoDocument{}).Where("user_id = ?", userID).Pluck("file_key", &oldKey)
 	doc := models.StudentInfoDocument{
 		UserID:            userID,
 		FileName:          fileName,
-		FileData:          fileData,
+		FileKey:           key,
+		FileData:          blob,
 		OcrStudentID:      ocr.StudentID,
 		OcrFullNameTh:     ocr.FullNameTh,
 		OcrFullNameEn:     ocr.FullNameEn,
@@ -46,14 +56,18 @@ func UpsertStudentInfoDocument(userID uint, fileName string, fileData []byte, oc
 	if err := DB.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "user_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
-			"file_name", "file_data",
+			"file_name", "file_key", "file_data",
 			"personal_file_name", "personal_file_data", "personal_confidence",
 			"ocr_student_id", "ocr_full_name_th", "ocr_full_name_en",
 			"ocr_education_level", "ocr_curriculum", "ocr_faculty", "ocr_campus",
 			"ocr_student_status", "confidence", "confirmed_at", "updated_at",
 		}),
 	}).Create(&doc).Error; err != nil {
+		filestore.Remove(key)
 		return models.StudentInfoDocument{}, err
+	}
+	if oldKey != key {
+		filestore.Remove(oldKey)
 	}
 	return mustStudentInfoDocument(userID, doc), nil
 }
@@ -81,11 +95,16 @@ func StudentInfoDocumentByUserID(userID uint) (models.StudentInfoDocument, bool)
 // StudentInfoImageByUserID returns only the raw file bytes for serving.
 func StudentInfoImageByUserID(userID uint) (string, []byte, bool) {
 	var doc models.StudentInfoDocument
-	if err := DB.Select("file_name", "file_data").
+	if err := DB.Select("file_name", "file_key", "file_data").
 		Where("user_id = ?", userID).First(&doc).Error; err != nil {
 		return "", nil, false
 	}
-	return doc.FileName, doc.FileData, len(doc.FileData) > 0
+	data, err := filestore.Load(doc.FileKey, doc.FileData)
+	if err != nil {
+		log.Printf("load student info image for user %d: %v", userID, err)
+		return "", nil, false
+	}
+	return doc.FileName, data, len(data) > 0
 }
 
 // ConfirmStudentInfoDocument stamps confirmed_at and returns the updated row.

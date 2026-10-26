@@ -78,16 +78,20 @@ function CardUpload({ info }: { info: StudentInfoDocState }) {
       <input ref={input} type="file" accept={info.accept} hidden onChange={info.onFileChange} />
 
       {!attached ? (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 10 }}>
-          <p style={{ fontSize: 13, color: 'var(--ink-600)', margin: 0, lineHeight: 1.6 }}>
-            แคปหน้าจอ<b>การ์ดโปรไฟล์ด้านซ้ายบน</b>ของระบบทะเบียน (reg.su.ac.th) ให้เห็นบรรทัดสถานภาพนักศึกษาชัดเจน
-          </p>
-          <Button type="button" size="sm" loading={uploading}
-            disabled={info.isUploading || info.isConfirming}
-            onClick={() => input.current?.click()}>
-            <Icon name="upload" size={14} /> {uploading ? 'กำลังอ่านรูป…' : 'แนบรูป'}
-          </Button>
-          {uploading && <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>อาจใช้เวลาสักครู่</span>}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, alignItems: 'start' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 10 }}>
+            <p style={{ fontSize: 13, color: 'var(--ink-600)', margin: 0, lineHeight: 1.6 }}>
+              แคปหน้าจอ<b>การ์ดโปรไฟล์ด้านซ้ายบน</b>ของระบบทะเบียน (reg.su.ac.th) ให้เห็นบรรทัดสถานภาพนักศึกษาชัดเจน ดูตัวอย่างได้ที่รูปด้านข้าง
+            </p>
+            <Button type="button" size="sm" loading={uploading}
+              disabled={info.isUploading || info.isConfirming}
+              onClick={() => input.current?.click()}>
+              <Icon name="upload" size={14} /> {uploading ? 'กำลังอ่านรูป…' : 'แนบรูป'}
+            </Button>
+            {uploading && <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>อาจใช้เวลาสักครู่ ไปหน้าอื่นได้ ระบบจะแจ้งเมื่ออ่านเสร็จ</span>}
+            {info.uploadError && <span role="alert" style={{ fontSize: 12, color: 'var(--red)' }}>{info.uploadError}</span>}
+          </div>
+          <ExampleCard />
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, alignItems: 'start' }}>
@@ -127,6 +131,48 @@ function StatusLine({ value }: { value?: string | null }) {
           : <Badge variant="red">สมัครไม่ได้</Badge>}
       </dd>
     </div>
+  )
+}
+
+// A mock of the REG profile card with placeholder data, so the student knows
+// what to capture. Drawn rather than a real screenshot to keep anyone's
+// personal details out of the bundle; the status line the OCR reads is ringed.
+function ExampleCard() {
+  return (
+    <figure style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <figcaption style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-500)' }}>ตัวอย่างรูปที่ต้องแนบ</figcaption>
+      <div aria-hidden style={{
+        position: 'relative', border: '1px solid var(--line)', borderRadius: 8, background: '#fff',
+        textAlign: 'center', overflow: 'hidden', maxWidth: 260, width: '100%',
+      }}>
+        <span style={{
+          position: 'absolute', top: 6, right: 6, fontSize: 10, fontWeight: 700, letterSpacing: 1,
+          color: 'var(--ink-400)', border: '1px solid var(--line)', borderRadius: 4, padding: '1px 5px',
+        }}>ตัวอย่าง</span>
+        <div style={{ padding: '14px 12px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+          <span style={{
+            width: 52, height: 52, borderRadius: '50%', background: 'var(--line-soft)', color: 'var(--ink-400)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 4,
+          }}>
+            <Icon name="user" size={26} />
+          </span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#0F766E' }}>นักศึกษา</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-500)' }}>6607XXXXX</span>
+          <span style={{ fontSize: 12, color: 'var(--ink-700)' }}>นายตัวอย่าง นามสมมติ</span>
+          <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>tuayang namsommut</span>
+          <span style={{
+            marginTop: 6, padding: '4px 8px', borderRadius: 6, outline: '2px solid var(--red)', outlineOffset: 2,
+            fontSize: 12, fontWeight: 700, color: '#1D4ED8', lineHeight: 1.5,
+          }}>
+            สถานภาพนักศึกษา : นักศึกษาปัจจุบัน<br />สถานะปกติ
+          </span>
+        </div>
+        <div style={{ borderTop: '1px solid var(--line)', padding: '8px 12px', fontSize: 11, color: 'var(--ink-500)' }}>
+          XXXXXXXX_X@su.ac.th
+        </div>
+      </div>
+      <span style={{ fontSize: 11, color: 'var(--red)' }}>บรรทัดในกรอบแดงต้องอ่านออกชัดเจน</span>
+    </figure>
   )
 }
 

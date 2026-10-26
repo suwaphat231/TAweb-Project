@@ -10,6 +10,9 @@ type TranscriptImage struct {
 	UserID      uint      `gorm:"index;not null" json:"-"`
 	FileName    string    `gorm:"size:255;not null" json:"file_name"`
 	ContentType string    `gorm:"size:100;not null" json:"content_type"`
-	FileData    []byte    `gorm:"type:longblob;not null" json:"-"`
+	// FileKey is the file in object storage; FileData only holds files
+	// uploaded before that (see filestore).
+	FileKey    string    `gorm:"size:255;not null;default:''" json:"-"`
+	FileData   []byte    `gorm:"type:longblob" json:"-"`
 	UploadedAt  time.Time `json:"uploaded_at"`
 }

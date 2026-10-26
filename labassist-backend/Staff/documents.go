@@ -412,6 +412,49 @@ func (h *Handler) DownloadDocument(c *gin.Context) {
 	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", data)
 }
 
+// DownloadEvidenceFile godoc
+// @Summary      ดาวน์โหลดใบขวาง (หลักฐานการจ่ายเงินค่าจ้างนักศึกษาปฏิบัติงาน) ที่คู่กับบันทึกขออนุมัติเบิกจ่ายเงิน (.docx)
+// @Description  เดือนละ 1 หน้า จากแผนชุดเดียวกับบันทึกขออนุมัติเบิกจ่ายเงิน (ขั้นที่ 3)
+// @Tags         staff
+// @Produce      application/vnd.openxmlformats-officedocument.wordprocessingml.document
+// @Security     BearerAuth
+// @Param        id  path  int  true  "Document ID (payment_request)"
+// @Success      200  {file}    file
+// @Failure      400  {object}  handlers.ErrorResponse
+// @Failure      404  {object}  handlers.ErrorResponse
+// @Failure      422  {object}  handlers.ErrorResponse
+// @Router       /staff/documents/{id}/evidence-file [get]
+func (h *Handler) DownloadEvidenceFile(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	doc, ok := database.StaffDocumentByID(uint(id))
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+		return
+	}
+
+	data, filename, err := docxgen.RenderPaymentRequestEvidence(doc)
+	if errors.Is(err, docxgen.ErrNoTemplate) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ใบขวางมีเฉพาะบันทึกขออนุมัติเบิกจ่ายเงิน"})
+		return
+	}
+	if errors.Is(err, docxgen.ErrIncompleteDocumentData) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "ข้อมูลของเอกสารไม่ครบ (ต้องมีรายชื่อนักศึกษาและวันปฏิบัติงาน) — กรุณาสร้างฉบับใหม่"})
+		return
+	}
+	if err != nil {
+		log.Printf("payment evidence download failed: document_id=%d: %v", id, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "generate document failed"})
+		return
+	}
+
+	c.Header("Content-Disposition", `attachment; filename="`+filename+`"`)
+	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", data)
+}
+
 // DeleteDocument godoc
 // @Summary      ยกเลิกเอกสาร (ไม่ลบจริง เก็บประวัติไว้)
 // @Tags         staff

@@ -77,9 +77,10 @@ func (c ReportCategory) Valid() bool {
 }
 
 // LabBoyReportEvidence is one file attached to a report, by the reporter or
-// by the student alongside a response. The bytes live in the database like
-// grade proofs do, so there is no public path to them — they are only served
-// through the report's evidence endpoint after a permission check.
+// by the student alongside a response. The bytes live in private object
+// storage (DataKey; Data only for files from before that), so there is no
+// public path to them — they are only served through the report's evidence
+// endpoint after a permission check.
 type LabBoyReportEvidence struct {
 	ID           uint `gorm:"primaryKey" json:"id"`
 	ReportID     uint `gorm:"not null;index" json:"report_id"`
@@ -89,7 +90,8 @@ type LabBoyReportEvidence struct {
 	FileName    string    `gorm:"size:255;not null" json:"file_name"`
 	ContentType string    `gorm:"size:100;not null" json:"content_type"`
 	SizeBytes   int64     `gorm:"not null" json:"size_bytes"`
-	Data        []byte    `gorm:"type:longblob;not null" json:"-"`
+	DataKey     string    `gorm:"size:255;not null;default:''" json:"-"`
+	Data        []byte    `gorm:"type:longblob" json:"-"`
 	CreatedAt   time.Time `json:"created_at"`
 
 	UploadedByName string `gorm:"-" json:"uploaded_by_name"`
