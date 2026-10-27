@@ -45,12 +45,19 @@ var ErrWithdrawalClosed = errors.New("withdrawal allowed only while the posting 
 // Lab Boy roster the instructor already confirmed.
 var ErrWithdrawalRosterConfirmed = errors.New("withdrawal not allowed after the instructor confirmed the roster")
 
+// ErrWithdrawalScheduleConfirmed is returned when a withdrawal would change a
+// Lab Boy schedule that staff already confirmed.
+var ErrWithdrawalScheduleConfirmed = errors.New("withdrawal not allowed after staff confirmed the schedule")
+
 // postingAcceptsWithdrawal reports why a student may not withdraw from the
-// posting, or nil while it is still open for applications and its roster
-// is not yet confirmed.
+// posting, or nil while it is still open for applications, its roster is not
+// confirmed and its schedule is not confirmed by staff.
 func postingAcceptsWithdrawal(p models.Posting) error {
 	if p.LabBoyRosterConfirmedAt != nil {
 		return ErrWithdrawalRosterConfirmed
+	}
+	if p.LabBoyScheduleConfirmed {
+		return ErrWithdrawalScheduleConfirmed
 	}
 	if !p.IsActive || p.ClosedByInstructor ||
 		(p.Status != models.StatusOpen && p.Status != models.StatusClosingSoon) {

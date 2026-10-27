@@ -230,7 +230,7 @@ func (h *Handler) UpdateUserStatus(c *gin.Context) {
 
 // DeleteUser godoc
 // @Summary      ลบผู้ใช้
-// @Description  ลบได้เฉพาะบัญชีที่ไม่มีข้อมูลที่ต้องเก็บไว้ (ใบสมัคร, วิชาที่สอน, เอกสาร, รายงาน ฯลฯ) — บัญชีที่มีประวัติให้ใช้การระงับแทน
+// @Description  ลบแบบซ่อน: ผู้ใช้จะหายจากรายการและเข้าสู่ระบบไม่ได้ แต่ใบสมัคร วิชาที่สอน รายงาน และประวัติอื่นๆ ยังคงอยู่
 // @Tags         admin
 // @Produce      json
 // @Security     BearerAuth
@@ -247,10 +247,7 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 	}
 
 	if err := database.DeleteUser(uint(id)); err != nil {
-		var blocked *database.UserDeleteBlockedError
 		switch {
-		case errors.As(err, &blocked):
-			c.JSON(http.StatusConflict, gin.H{"error": blocked.Error()})
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		default:

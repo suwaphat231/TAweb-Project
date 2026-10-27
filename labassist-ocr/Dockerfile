@@ -19,8 +19,10 @@ RUN apt-get update && apt-get install -y \
 # คัดลอกไฟล์ requirements.txt มาก่อนเพื่อใช้ประโยชน์จาก Docker Cache
 COPY requirements.txt .
 
-# ติดตั้ง PyTorch CPU-only ก่อน (เล็กกว่า GPU version มาก)
-RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+# ติดตั้ง PyTorch ก่อน ค่าเริ่มต้นเป็น CPU-only (เล็กกว่า GPU version มาก)
+# เครื่องที่มี NVIDIA GPU ใช้ docker-compose.gpu.yml ซึ่งส่ง TORCH_INDEX_URL เป็นเวอร์ชัน CUDA
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir torch torchvision --index-url ${TORCH_INDEX_URL}
 
 # ติดตั้งไลบรารี Python ที่เหลือ
 RUN pip install --no-cache-dir -r requirements.txt

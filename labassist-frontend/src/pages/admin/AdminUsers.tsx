@@ -262,10 +262,10 @@ export default function AdminUsers() {
       <Modal isOpen={!!deletingUser} onClose={() => setDeletingUser(null)} title="ลบผู้ใช้" size="md">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <p style={{ fontSize: 14, color: 'var(--ink-700)' }}>
-            ต้องการลบบัญชี <strong>{deletingUser?.full_name}</strong> ใช่หรือไม่? การลบไม่สามารถย้อนกลับได้
+            ต้องการลบบัญชี <strong>{deletingUser?.full_name}</strong> ใช่หรือไม่?
           </p>
           <p style={{ fontSize: 13, color: 'var(--ink-500)' }}>
-            บัญชีที่มีประวัติในระบบ (ใบสมัคร, วิชาที่สอน, เอกสาร, รายงาน ฯลฯ) จะลบไม่ได้ — ให้ใช้การระงับแทน
+            ระบบจะซ่อนบัญชีนี้ไว้ ผู้ใช้จะเข้าสู่ระบบไม่ได้ แต่ประวัติ (ใบสมัคร, วิชาที่สอน, เอกสาร, รายงาน ฯลฯ) ยังคงอยู่
           </p>
           {deleteError && (
             <div style={{ fontSize: 13, color: 'var(--red)', background: 'var(--red-bg)', borderRadius: 'var(--radius-input)', padding: '10px 12px' }}>

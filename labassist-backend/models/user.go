@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // StringMap stores a map[string]string as a JSON column in MySQL.
@@ -73,8 +75,12 @@ type User struct {
 	IsActive  bool      `gorm:"default:true" json:"is_active"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	// DeletedAt marks an account an admin deleted. GORM leaves these rows out
+	// of every query on User, so they vanish from lists and cannot sign in,
+	// while the records that point at them keep their history.
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
-	TranscriptGrades     StringMap  `gorm:"type:json" json:"transcript_grades,omitempty"`
+	TranscriptGrades    StringMap  `gorm:"type:json" json:"transcript_grades,omitempty"`
 	TranscriptStatus     *string    `gorm:"size:50" json:"transcript_status,omitempty"`
 	TranscriptMessage    *string    `gorm:"type:text" json:"transcript_message,omitempty"`
 	TranscriptConfidence *float64   `gorm:"type:decimal(5,4)" json:"transcript_confidence,omitempty"`
