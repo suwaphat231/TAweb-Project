@@ -60,18 +60,21 @@ func CoreCoursesForProgram(program string) []models.CoreCourse {
 	}
 
 	// Every course in the classlist can be posted for Lab Boy and may ask for
-	// a grade, so look for those codes too. Transcripts print 6-digit codes.
+	// a grade, so look for those codes too. Stored codes can carry a
+	// curriculum suffix ("520101-165"), which transcripts do not print, so
+	// reduce each one to its 6-digit code the same way the catalog import does.
 	var offered []struct{ Code, Title string }
 	if err := DB.Raw(`SELECT code, MIN(title) AS title FROM courses
-		WHERE code REGEXP '^[0-9]{6}$' GROUP BY code ORDER BY code`).Scan(&offered).Error; err != nil {
+		GROUP BY code ORDER BY code`).Scan(&offered).Error; err != nil {
 		return unique
 	}
 	for _, c := range offered {
-		if seen[c.Code] {
+		code := CatalogCodeFromCell(c.Code)
+		if code == "" || seen[code] {
 			continue
 		}
-		seen[c.Code] = true
-		unique = append(unique, models.CoreCourse{Program: program, Code: c.Code, Title: c.Title})
+		seen[code] = true
+		unique = append(unique, models.CoreCourse{Program: program, Code: code, Title: c.Title})
 	}
 	return unique
 }

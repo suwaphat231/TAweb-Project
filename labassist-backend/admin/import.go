@@ -170,6 +170,9 @@ type ImportCoursesResponse struct {
 	Skipped    []ImportSkippedRow   `json:"skipped"`
 	Duplicates []ImportDuplicate    `json:"duplicates"`
 	Conflicts  []ImportConflict     `json:"conflicts"`
+	// CatalogSaved is how many course codes from the file were saved to the
+	// OCR catalog (core_courses) for the program, lecture-only rows included.
+	CatalogSaved int `json:"catalog_saved"`
 }
 
 func diffImportFields(old, nw ImportCourseFields) []string {
@@ -215,6 +218,7 @@ func courseImportFields(c models.Course) ImportCourseFields {
 // @Param        file          formData  file    true  "ไฟล์ Excel รายวิชา .xlsx (คอลัมน์: รายวิชา, ชื่อรายวิชา, COURSENAME, หน่วยกิต, กลุ่ม, รับ, ลงทะเบียนแล้ว, เวลา, ผู้สอน)"
 // @Param        semester      formData  string  true  "ภาคการศึกษา"
 // @Param        academic_year formData  int     true  "ปีการศึกษา"
+// @Param        program       formData  string  false "สาขาที่บันทึกรายวิชาไว้ให้ OCR ตรวจเกรด: IT หรือ CS (ค่าเริ่มต้น CS)"
 // @Success      200  {object}  ImportCoursesResponse
 // @Failure      400  {object}  handlers.ErrorResponse
 // @Router       /admin/courses/import [post]
@@ -231,6 +235,17 @@ func (h *Handler) ImportCourses(c *gin.Context) {
 	academicYear, yearErr := strconv.Atoi(c.PostForm("academic_year"))
 	if semester == "" || yearErr != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "semester and academic_year are required"})
+		return
+	}
+
+	// The program whose catalog (core_courses) these codes are saved to.
+	// Defaults to CS (วิทยาการคอมพิวเตอร์) when the form leaves it out.
+	program := strings.ToUpper(strings.TrimSpace(c.PostForm("program")))
+	if program == "" {
+		program = models.ProgramCS
+	}
+	if program != models.ProgramIT && program != models.ProgramCS {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "program must be IT or CS"})
 		return
 	}
 
@@ -284,6 +299,7 @@ func (h *Handler) ImportCourses(c *gin.Context) {
 		log.Printf("course import: no section column in header %q; numbering sections by row order", rows[headerRow])
 	}
 	codeSeen := map[string]int{}
+	catalog := map[string]models.CoreCourse{}
 
 	instructors, err := database.ListUsers(string(models.RoleInstructor), "", 1000, 0)
 	if err != nil {
@@ -319,6 +335,17 @@ func (h *Handler) ImportCourses(c *gin.Context) {
 			resp.Skipped = append(resp.Skipped, ImportSkippedRow{Row: rowNum, Reason: "empty row"})
 			continue
 		}
+		// Every course with a 6-digit code and a title goes into the catalog
+		// the OCR matches against, including lecture-only rows that are
+		// skipped below. The catalog is per program, so one code is saved once.
+		if catalogCode := database.CatalogCodeFromCell(code); catalogCode != "" && title != "" {
+			if _, seen := catalog[catalogCode]; !seen {
+				catalog[catalogCode] = models.CoreCourse{
+					Program: program, Code: catalogCode, Title: title, Credits: get(row, "credits"),
+				}
+			}
+		}
+
 		if title == "" {
 			title = code
 		}
@@ -412,6 +439,17 @@ func (h *Handler) ImportCourses(c *gin.Context) {
 			})
 		}
 	}
+
+	catalogCourses := make([]models.CoreCourse, 0, len(catalog))
+	for _, cc := range catalog {
+		catalogCourses = append(catalogCourses, cc)
+	}
+	if err := database.UpsertCoreCourses(catalogCourses); err != nil {
+		log.Printf("course import: save core course catalog: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	resp.CatalogSaved = len(catalogCourses)
 
 	c.JSON(http.StatusOK, resp)
 }

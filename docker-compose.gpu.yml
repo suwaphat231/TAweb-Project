@@ -1,0 +1,16 @@
+# Run the OCR service on an NVIDIA GPU. Requires the NVIDIA driver and Docker
+# GPU support (check with: docker run --rm --gpus all python:3.11-slim nvidia-smi -L).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile ocr up -d --build
+services:
+  ocr-service:
+    build:
+      args:
+        TORCH_INDEX_URL: https://download.pytorch.org/whl/cu124
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

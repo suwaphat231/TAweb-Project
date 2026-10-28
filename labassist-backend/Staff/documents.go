@@ -471,7 +471,12 @@ func (h *Handler) DeleteDocument(c *gin.Context) {
 	}
 	// Documents are never hard-deleted: "delete" cancels the document and
 	// records who did it, so the issued history stays intact.
-	err = database.CancelStaffDocument(uint(id), c.GetUint("user_id"), strings.TrimSpace(c.Query("reason")))
+	reason := strings.TrimSpace(c.Query("reason"))
+	if reason == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาระบุเหตุผลที่ยกเลิกเอกสาร"})
+		return
+	}
+	err = database.CancelStaffDocument(uint(id), c.GetUint("user_id"), reason)
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound), errors.Is(err, database.ErrDocumentInactive):
 		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})

@@ -371,7 +371,10 @@ export function DocumentWorkflow({
                       {
                         label: 'ยกเลิกเอกสาร', danger: true, disabled: cancelMut.isPending,
                         onClick: () => {
-                          const reason = window.prompt('เหตุผลที่ยกเลิกเอกสารนี้ (เอกสารจะยังเก็บไว้ในประวัติ)')
+                          let reason = window.prompt('เหตุผลที่ยกเลิกเอกสารนี้ (เอกสารจะยังเก็บไว้ในประวัติ)')
+                          while (reason !== null && !reason.trim()) {
+                            reason = window.prompt('กรุณาระบุเหตุผลที่ยกเลิกเอกสาร (ต้องไม่เว้นว่าง)')
+                          }
                           if (reason === null) return
                           cancelMut.mutate({ id: doc.id, reason: reason.trim() })
                         },

@@ -54,17 +54,17 @@ func (h *AuthHandler) UploadTranscript(c *gin.Context) {
 	studentID, _ := c.Get("user_id")
 	sid := studentID.(uint)
 
-	user, ok := database.UserByID(sid)
+	_, ok := database.UserByID(sid)
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ไม่พบข้อมูลนักศึกษา"})
 		return
 	}
 
-	// Which courses to look for: the catalog for this student's program.
-	// An unrecognised/blank faculty falls back to every program's courses so
-	// the upload still returns something useful.
-	program := database.ProgramForFaculty(user.Faculty)
-	coreCourses := database.CoreCoursesForProgram(program)
+	// Which courses to look for: every course in the catalog, whatever the
+	// student's program. IT and CS students take different codes, and a
+	// student may take a course from the other program, so nothing is
+	// filtered by faculty.
+	coreCourses := database.CoreCoursesForProgram("")
 	if len(coreCourses) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ยังไม่ได้ตั้งค่ารายวิชาสำหรับตรวจเกรด กรุณาติดต่อผู้ดูแลระบบ"})
 		return
