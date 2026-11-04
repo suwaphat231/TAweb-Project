@@ -105,6 +105,8 @@ export interface Course {
   semester: string
   academic_year: number
   labboy_slots: number
+  /** สูตร: ลงทะเบียน ÷ 10 (วิชาปี 1) / ÷ 20 (ปี 2+) ปัดขึ้น; 0 = ไม่มีข้อมูล */
+  suggested_labboy_slots?: number
   labboy_accepted: number
   status: CourseStatus
   deadline?: string
@@ -280,6 +282,8 @@ export interface CreateCoursePayload {
   semester: string
   academic_year: number
   labboy_slots: number
+  /** ให้ backend ตั้งจำนวนตามสูตรของแต่ละ section เอง */
+  auto_labboy_slots?: boolean
   status?: CourseStatus
   deadline?: string
   description?: string

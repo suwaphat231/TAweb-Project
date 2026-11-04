@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { instructorApi } from '../../services/api'
 import { Modal } from '../../components/ui/Modal'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
@@ -44,10 +46,36 @@ export function CourseFormModal({
   // ยังคงค่าเดิมไว้ได้ เพื่อไม่ให้ฟอร์มส่งไม่ได้เพียงเพราะไม่ได้แตะช่องวันที่
   const [initialDeadline, setInitialDeadline] = useState('')
   const [slotsStr, setSlotsStr] = useState('')
+  const [slotsTouched, setSlotsTouched] = useState(false)
+
+  // จำนวน Lab Boy ตามสูตร (ลงทะเบียน ÷ 10 ปี 1 / ÷ 20 ปี 2+ ปัดขึ้น) ของ section ที่เลือก
+  const { data: catalog = [] } = useQuery({
+    queryKey: ['course-catalog-sections', form.code, form.semester, form.academic_year],
+    queryFn: () => instructorApi.courseCatalogSections({ code: form.code, semester: form.semester, academic_year: form.academic_year }),
+    enabled: isOpen && !editId && !!form.code && !!form.semester && !!form.academic_year,
+  })
+  const suggestions = catalog
+    .filter((s) => sectionIds.includes(s.id) && (s.suggested_labboy_slots ?? 0) > 0)
+    .map((s) => ({ sec: s.section ?? 0, n: s.suggested_labboy_slots as number }))
+  const suggestedMax = suggestions.reduce((m, s) => Math.max(m, s.n), 0)
+  const suggestionKey = suggestions.map((s) => `${s.sec}:${s.n}`).join(',')
+
+  // ยังไม่ได้แก้ช่องเอง → เติมค่าจากสูตรให้ และให้ backend คำนวณแยกแต่ละ section
+  useEffect(() => {
+    if (!isOpen || editId || slotsTouched) return
+    if (suggestedMax > 0) {
+      setSlotsStr(String(suggestedMax))
+      setForm((f) => ({ ...f, labboy_slots: suggestedMax, auto_labboy_slots: true }))
+    } else {
+      setForm((f) => ({ ...f, auto_labboy_slots: false }))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, editId, slotsTouched, suggestionKey])
 
   useEffect(() => {
     if (isOpen) {
       setInitialDeadline(editId ? form.deadline ?? '' : '')
+      setSlotsTouched(false)
       if (editId) {
         setSlotsStr(form.labboy_slots !== undefined && form.labboy_slots !== null ? String(form.labboy_slots) : '')
       } else {
@@ -62,8 +90,9 @@ export function CourseFormModal({
     // Strip everything except digits: no '-', '+', '.', 'e', etc.
     const sanitized = raw.replace(/[^0-9]/g, '')
     setSlotsStr(sanitized)
+    setSlotsTouched(true)
     const num = sanitized === '' ? 0 : parseInt(sanitized, 10)
-    setForm(f => ({ ...f, labboy_slots: Math.max(0, num) }))
+    setForm(f => ({ ...f, labboy_slots: Math.max(0, num), auto_labboy_slots: false }))
   }
 
   const handleNonNegativeKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -175,6 +204,9 @@ export function CourseFormModal({
             onChange={handleSlotsChange}
             onKeyDown={handleNonNegativeKeyDown}
             required
+            hint={!editId && suggestions.length > 0
+              ? `ตามสูตร: ${suggestions.map((s) => `${s.sec ? `Sec ${s.sec} ` : ''}${s.n} คน`).join(' · ')} (ลงทะเบียน ÷ 10 วิชาปี 1, ÷ 20 ปี 2 ขึ้นไป) — พิมพ์แก้ได้`
+              : undefined}
           />
           <Input label="วันปิดรับสมัคร" type="date" min={minDeadline} value={form.deadline ?? ''} onChange={set('deadline')} />
         </div>

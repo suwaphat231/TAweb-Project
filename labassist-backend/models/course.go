@@ -18,12 +18,12 @@ type Course struct {
 	// (code, section, slot, semester, academic_year) is the natural key for a
 	// teaching slot — exactly one row may exist per combination regardless
 	// of which instructor account is linked.
-	Code           string `gorm:"size:100;not null;uniqueIndex:idx_course_time_slot" json:"code"`
-	Title          string `gorm:"size:300;not null" json:"title"`
-	EnglishTitle   string `gorm:"size:300" json:"english_title,omitempty"`
-	GroupNote      string `gorm:"size:200" json:"group_note,omitempty"`
-	Credits        string `gorm:"size:20" json:"credits,omitempty"`
-	Section        int    `gorm:"default:0;uniqueIndex:idx_course_time_slot" json:"section"`
+	Code         string `gorm:"size:100;not null;uniqueIndex:idx_course_time_slot" json:"code"`
+	Title        string `gorm:"size:300;not null" json:"title"`
+	EnglishTitle string `gorm:"size:300" json:"english_title,omitempty"`
+	GroupNote    string `gorm:"size:200" json:"group_note,omitempty"`
+	Credits      string `gorm:"size:20" json:"credits,omitempty"`
+	Section      int    `gorm:"default:0;uniqueIndex:idx_course_time_slot" json:"section"`
 	// Slot is the index of this row's meeting time within its section. A
 	// section that meets at several times (e.g. "Tu 13:00 - 16:35" and
 	// "Fr 16:40 - 18:25") is stored as one row per time so instructors open
@@ -49,7 +49,11 @@ type Course struct {
 	// Recruitment-round fields are stored on the Posting model, not here.
 	// These gorm:"-" fields are populated at read time from the active Posting
 	// via applyPostingToCourse so the Course struct remains API-compatible.
-	LabBoySlots             int          `gorm:"-" json:"labboy_slots"`
+	LabBoySlots int `gorm:"-" json:"labboy_slots"`
+	// SuggestedLabBoySlots is the headcount the formula gives for this section
+	// (enrolled ÷ 10 for year-1 courses, ÷ 20 for year 2+, rounded up); 0 when
+	// unknown.
+	SuggestedLabBoySlots    int          `gorm:"-" json:"suggested_labboy_slots"`
 	LabBoyAccepted          int          `gorm:"-" json:"labboy_accepted"`
 	Status                  CourseStatus `gorm:"-" json:"status"`
 	Deadline                *time.Time   `gorm:"-" json:"deadline,omitempty"`
@@ -61,12 +65,12 @@ type Course struct {
 	LabBoyRosterConfirmedAt *time.Time   `gorm:"-" json:"labboy_roster_confirmed_at,omitempty"`
 	// ConflictDay is set server-side when the course schedule overlaps the
 	// requesting student's confirmed term schedule. Empty string = no conflict.
-	ConflictDay             string       `gorm:"-" json:"conflict_day,omitempty"`
+	ConflictDay string `gorm:"-" json:"conflict_day,omitempty"`
 	// ScheduleMissing is set server-side when the requesting student has not
 	// saved a schedule for this course's term, so they cannot apply yet.
-	ScheduleMissing         bool         `gorm:"-" json:"schedule_missing,omitempty"`
-	CreatedAt               time.Time    `json:"created_at"`
-	UpdatedAt               time.Time    `json:"updated_at"`
+	ScheduleMissing bool      `gorm:"-" json:"schedule_missing,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 func (Course) TableName() string { return "courses" }

@@ -108,11 +108,15 @@ type CreateCourseRequest struct {
 
 // UpdateCourseRequest is the request body for updating a course
 type UpdateCourseRequest struct {
-	Code              *string              `json:"code,omitempty" example:"517121"`
-	Title             *string              `json:"title,omitempty" example:"Introduction to Programming"`
-	Semester          *string              `json:"semester,omitempty" example:"1"`
-	AcademicYear      *int                 `json:"academic_year,omitempty" example:"2567"`
-	LabBoySlots       *int                 `json:"labboy_slots,omitempty" binding:"omitempty,min=0" example:"2"`
+	Code         *string `json:"code,omitempty" example:"517121"`
+	Title        *string `json:"title,omitempty" example:"Introduction to Programming"`
+	Semester     *string `json:"semester,omitempty" example:"1"`
+	AcademicYear *int    `json:"academic_year,omitempty" example:"2567"`
+	LabBoySlots  *int    `json:"labboy_slots,omitempty" binding:"omitempty,min=0" example:"2"`
+	// AutoLabBoySlots: set each section's own slots from the formula (enrolled
+	// ÷ 10 for year-1 courses, ÷ 20 for year 2+, rounded up). Sections with no
+	// headcount keep LabBoySlots (or their current value).
+	AutoLabBoySlots   *bool                `json:"auto_labboy_slots,omitempty"`
 	Status            *models.CourseStatus `json:"status,omitempty" binding:"omitempty,oneof=open closing_soon closed draft archived" example:"open"`
 	Description       *string              `json:"description,omitempty"`
 	Requirements      *string              `json:"requirements,omitempty"`
@@ -418,6 +422,10 @@ func (h *Handler) Update(c *gin.Context) {
 	if body.Deadline != nil && *body.Deadline != "" && parseDeadline(*body.Deadline) == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid deadline; use YYYY-MM-DD"})
 		return
+	}
+	if body.AutoLabBoySlots != nil && *body.AutoLabBoySlots && course.SuggestedLabBoySlots > 0 {
+		suggested := course.SuggestedLabBoySlots
+		body.LabBoySlots = &suggested
 	}
 	if body.LabBoySlots != nil && *body.LabBoySlots < course.LabBoyAccepted {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "slots cannot be less than accepted applicants"})

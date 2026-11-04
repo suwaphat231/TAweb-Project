@@ -147,8 +147,8 @@ export default function InstructorAnnounce() {
       updateMut.mutate({ id: editId, data })
     } else {
       if (sectionIds.length === 0) return
-      const { labboy_slots, status, deadline, description, requirements, require_grade_proof } = data
-      openSectionsMut.mutate({ ids: sectionIds, data: { labboy_slots, status, deadline, description, requirements, require_grade_proof } })
+      const { labboy_slots, auto_labboy_slots, status, deadline, description, requirements, require_grade_proof } = data
+      openSectionsMut.mutate({ ids: sectionIds, data: { labboy_slots, auto_labboy_slots, status, deadline, description, requirements, require_grade_proof } })
     }
   }
 

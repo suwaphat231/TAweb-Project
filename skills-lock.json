@@ -6,6 +6,18 @@
       "sourceType": "github",
       "skillPath": "skills/06-backend-dev/database-schema-designer/SKILL.md",
       "computedHash": "d4b3b320878464ee67882f22b244550380634717cb5f16482778212a5eac6686"
+    },
+    "goalrun": {
+      "source": "xtieume/testcase",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/goalrun/SKILL.md",
+      "computedHash": "ff17310215630b3a5a1f0bd138817faffaab86f055049fab4d0487e9d123ba1b"
+    },
+    "testcase": {
+      "source": "xtieume/testcase",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/testcase/SKILL.md",
+      "computedHash": "bc1d6c56e677d43a88ff717cb704349589b8f48c64abad28ad4fb5c88da13009"
     }
   }
 }
