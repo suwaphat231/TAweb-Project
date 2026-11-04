@@ -221,8 +221,10 @@ func (h *AuthHandler) processTranscript(sid uint, fileName, ext string, fileData
 		}
 		u.TranscriptGrades = allGrades
 		u.TranscriptOcrGrades = ocrGrades
-		// A new reading has to be checked by the student again.
+		// A new reading has to be checked by the student again — the whole
+		// set, so no single course needs to be tracked as pending.
 		u.TranscriptConfirmedAt = nil
+		u.TranscriptPendingGrades = nil
 		status := ocrResult.Status
 		u.TranscriptStatus = &status
 		message := ocrResult.Message
@@ -295,6 +297,7 @@ func (h *AuthHandler) ConfirmTranscriptGrades(c *gin.Context) {
 	updated, ok := database.UpdateUser(sid, func(u *models.User) {
 		u.TranscriptGrades = grades
 		u.TranscriptConfirmedAt = &now
+		u.TranscriptPendingGrades = nil
 	})
 	if !ok {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกเกรดไม่สำเร็จ"})

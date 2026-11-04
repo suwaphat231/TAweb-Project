@@ -7,3 +7,6 @@ __pycache__/
 .claude/
 .classlist2569_1_clean/
 *.exe
+
+# ใบเกรดจริงที่ใช้วัดความแม่นยำ OCR — มีชื่อ รูป และผลการเรียนของนักศึกษา ห้าม commit
+labassist-ocr/test-ocr-grade/

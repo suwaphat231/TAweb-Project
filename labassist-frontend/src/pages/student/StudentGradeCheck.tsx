@@ -71,6 +71,12 @@ export default function StudentGradeCheck() {
   const updatedAt = profile.data?.transcript_updated_at
   const confirmedAt = profile.data?.transcript_confirmed_at
   const ocrGrades = profile.data?.transcript_ocr_grades ?? {}
+  // Courses added from an application's grade image after the rest were
+  // confirmed — only these need checking, the others stay confirmed.
+  const pendingGrades = profile.data?.transcript_pending_grades ?? {}
+  const pendingCount = confirmedAt ? Object.keys(pendingGrades).length : 0
+  // The popup checks unconfirmed grades, or edits ones already confirmed.
+  const needsCheck = !confirmedAt || pendingCount > 0
   // The profile is refreshed after every upload and confirmation, so it is
   // always the latest set of grades. The OCR looks for every course in the
   // system, but only the ones it found are on file.
@@ -80,6 +86,7 @@ export default function StudentGradeCheck() {
     // Courses open for Lab Boy applications first — their grade is ready to use.
     .sort((a, b) => Number(openCodes.has(b.code)) - Number(openCodes.has(a.code)) || a.code.localeCompare(b.code))
   const openCount = courses.filter((course) => openCodes.has(course.code)).length
+  const draftChanged = !!draft && courses.some((course) => (draft[course.code] ?? course.grade) !== course.grade)
   const uploadError = upload.isError
     ? (isAxiosError<{ error?: string }>(upload.error) && upload.error.response?.data?.error) || 'ไม่สามารถอ่านใบเกรดได้ กรุณาลองใหม่อีกครั้ง'
     : reading ? undefined : ocrJob.error
@@ -241,7 +248,7 @@ export default function StudentGradeCheck() {
                     </Link>
                   </div>
                 )}
-                {confirmedAt ? (
+                {confirmedAt && pendingCount === 0 ? (
                   <div style={{ ...verifyBoxStyle, background: '#fff', border: '1px solid var(--line)' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink-700)' }}>
                       <Icon name="check" size={16} style={{ color: 'var(--green)' }} />
@@ -254,14 +261,20 @@ export default function StudentGradeCheck() {
                     <div style={{ display: 'flex', gap: 8, fontSize: 13, color: 'var(--ink-700)' }}>
                       <Icon name="alert" size={16} style={{ color: 'var(--amber)', marginTop: 2, flexShrink: 0 }} />
                       <div>
-                        <p style={{ fontWeight: 600, color: 'var(--ink-900)', marginBottom: 2 }}>เกรดที่ระบบอ่านได้ถูกต้องหรือไม่?</p>
-                        ตรวจสอบกับใบเกรดต้นฉบับ ถ้าไม่ถูกต้องให้กด "ไม่ถูกต้อง แก้ไขเอง"
+                        {pendingCount > 0 ? (
+                          <>
+                            <p style={{ fontWeight: 600, color: 'var(--ink-900)', marginBottom: 2 }}>มีเกรดใหม่ {pendingCount} วิชาที่ยังไม่ได้ยืนยัน</p>
+                            ระบบอ่านจากรูปภาพเกรดที่แนบตอนสมัคร กด "ตรวจสอบ" เพื่อดูรูปเทียบกับเกรด แก้ไขถ้าไม่ถูกต้อง แล้วยืนยัน
+                          </>
+                        ) : (
+                          <>
+                            <p style={{ fontWeight: 600, color: 'var(--ink-900)', marginBottom: 2 }}>เกรดที่ระบบอ่านได้ถูกต้องหรือไม่?</p>
+                            กด "ตรวจสอบ" เพื่อดูใบเกรดที่อัปโหลดเทียบกับเกรด แก้ไขถ้าไม่ถูกต้อง แล้วยืนยัน
+                          </>
+                        )}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <Button size="sm" variant="outline" disabled={confirm.isPending} onClick={() => { confirm.reset(); setDraft({ ...grades }) }}>ไม่ถูกต้อง แก้ไขเอง</Button>
-                      <Button size="sm" loading={confirm.isPending} onClick={() => confirm.mutate(grades)}>ถูกต้อง ยืนยันเกรด</Button>
-                    </div>
+                    <Button size="sm" onClick={() => { confirm.reset(); setDraft({ ...grades }) }}>ตรวจสอบ</Button>
                   </div>
                 )}
                 {confirm.isError && !draft && (
@@ -287,6 +300,7 @@ export default function StudentGradeCheck() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                               <span style={{ color: 'var(--ink-700)' }}>{course.title ? cleanCourseTitle(course.title) : '—'}</span>
                               {isOpen && <Badge variant="green" showDot>เปิดรับสมัครอยู่</Badge>}
+                              {confirmedAt && course.code in pendingGrades && <Badge variant="amber" showDot>ยังไม่ยืนยัน</Badge>}
                             </div>
                           </td>
                           <td style={{ ...tdStyle, textAlign: 'center' }}>
@@ -306,12 +320,14 @@ export default function StudentGradeCheck() {
                 <Modal
                   isOpen={!!draft}
                   onClose={() => { if (!confirm.isPending) setDraft(null) }}
-                  title="แก้ไขเกรด"
+                  title={needsCheck ? 'ตรวจสอบเกรด' : 'แก้ไขเกรด'}
                   size="xl"
                   footer={
                     <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                       <Button variant="ghost" disabled={confirm.isPending} onClick={() => setDraft(null)}>ยกเลิก</Button>
-                      <Button loading={confirm.isPending} onClick={() => draft && confirm.mutate(draft)}>บันทึกและยืนยันเกรด</Button>
+                      <Button loading={confirm.isPending} onClick={() => draft && confirm.mutate(draft)}>
+                        {draftChanged ? 'บันทึกและยืนยันเกรด' : 'ถูกต้อง ยืนยันเกรด'}
+                      </Button>
                     </div>
                   }
                 >
@@ -319,7 +335,7 @@ export default function StudentGradeCheck() {
                     {draft && <TranscriptPreview />}
                     <div>
                       <p style={{ fontSize: 13, color: 'var(--ink-500)', margin: '0 0 12px' }}>
-                        เทียบกับใบเกรดที่อัปโหลด แล้วเลือกเกรดให้ถูกต้อง — เกรดที่แก้เองจะแจ้งให้อาจารย์เห็นตอนสมัคร
+                        เทียบกับใบเกรดที่อัปโหลด ถ้าเกรดไหนไม่ถูกต้องให้เลือกเกรดใหม่ — เกรดที่แก้เองจะแจ้งให้อาจารย์เห็นตอนสมัคร
                       </p>
                       <div style={{ display: 'flex', flexDirection: 'column' }}>
                         {draft && courses.map((course) => {
@@ -329,7 +345,10 @@ export default function StudentGradeCheck() {
                           return (
                             <div key={course.code} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderTop: '1px solid var(--line-soft)' }}>
                               <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)', fontVariantNumeric: 'tabular-nums' }}>{course.code}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600, color: 'var(--ink-900)', fontVariantNumeric: 'tabular-nums' }}>
+                                  {course.code}
+                                  {confirmedAt && course.code in pendingGrades && <Badge variant="amber" showDot>ยังไม่ยืนยัน</Badge>}
+                                </div>
                                 <div style={{ fontSize: 13, color: 'var(--ink-600)' }}>{course.title ? cleanCourseTitle(course.title) : '—'}</div>
                                 {changed && <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 2 }}>OCR อ่านได้ {ocrGrade}</div>}
                               </div>

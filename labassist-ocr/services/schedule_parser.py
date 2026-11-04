@@ -41,12 +41,18 @@ def _add_minutes(t: str, minutes: int) -> str:
     return _fmt(total // 60 % 24, total % 60)
 
 
+# Short aliases such as "พ" or "อ" are single letters that also occur inside course
+# names and room labels, so they only match a whole cell. Longer aliases may match
+# a word inside the cell.
+_SUBSTRING_MIN_LEN = 4
+
+
 def _detect_day(text: str) -> Optional[str]:
     t = text.strip().lower().rstrip('.')
     if t in _DAY_ALIASES:
         return _DAY_ALIASES[t]
     for alias, abbr in _DAY_ALIASES.items():
-        if alias in t:
+        if len(alias) >= _SUBSTRING_MIN_LEN and alias in t:
             return abbr
     return None
 
@@ -102,9 +108,74 @@ def parse_schedule(ocr_results) -> List[ScheduleSlot]:
     if cx_spread >= cy_spread:
         # Days spread horizontally → they are column headers
         return _parse_column_days(boxes, day_boxes, time_boxes)
-    else:
-        # Days spread vertically → they are row headers
-        return _parse_row_days(boxes, day_boxes, time_boxes)
+    # Days spread vertically → they are row headers. Cells that print their own
+    # start and end time are read first; the header grid is only a fallback.
+    ranged = _parse_time_ranges(day_boxes, time_boxes)
+    if ranged:
+        return ranged
+    return _parse_row_days(boxes, day_boxes, time_boxes)
+
+
+def _parse_time_ranges(day_boxes, time_boxes) -> List[ScheduleSlot]:
+    """Row-day layout where each cell prints its own "start" and "end" time.
+
+    A row's label sits about a quarter of the way down its band, so a row covers
+    [label - spacing/4, next label - spacing/4). Time labels above the first row
+    are the column header and are skipped.
+    """
+    headers = sorted(day_boxes, key=lambda b: b['cy'])
+    if len(headers) < 2:
+        return []
+    gaps = sorted(b['cy'] - a['cy'] for a, b in zip(headers, headers[1:]))
+    spacing = gaps[len(gaps) // 2]
+    row_tops = [h['cy'] - spacing / 4 for h in headers]
+
+    def row_for(y: float) -> Optional[int]:
+        for i, top in enumerate(row_tops):
+            bottom = row_tops[i + 1] if i + 1 < len(row_tops) else float('inf')
+            if top <= y < bottom:
+                return i
+        return None
+
+    # Group boxes into text lines first: a start and end time on one line can sit a
+    # pixel apart vertically, so ordering by raw cy would put the end before the start.
+    line_height = spacing / 8
+    body = sorted(
+        (b for b in time_boxes if b['cy'] >= row_tops[0]),
+        key=lambda b: (round(b['cy'] / line_height), b['cx']),
+    )
+
+    slots: List[ScheduleSlot] = []
+    used: set = set()
+    for i, first in enumerate(body):
+        if i in used:
+            continue
+        row = row_for(first['cy'])
+        if row is None:
+            continue
+        times = first['times']
+        if len(times) >= 2:
+            start, end = times[0], times[1]
+        elif len(times) == 1:
+            partner = next(
+                (j for j in range(i + 1, len(body))
+                 if j not in used
+                 and abs(body[j]['cy'] - first['cy']) <= spacing / 8
+                 and 0 < body[j]['cx'] - first['cx'] <= spacing * 1.5
+                 and len(body[j]['times']) == 1),
+                None,
+            )
+            if partner is None:
+                continue
+            used.add(partner)
+            start, end = times[0], body[partner]['times'][0]
+        else:
+            continue
+        if start >= end:
+            continue
+        slots.append(ScheduleSlot(day=headers[row]['day'], start_time=start, end_time=end))
+
+    return sorted(slots, key=lambda s: (_DAY_ORDER.index(s.day) if s.day in _DAY_ORDER else 99, s.start_time))
 
 
 # ─── Column-days layout (landscape) ──────────────────────────────────────────
@@ -236,9 +307,23 @@ def _build_time_rows_vertical(time_boxes) -> List[Tuple[str, str, float]]:
     return rows
 
 
+def _header_line(boxes, key: str, tolerance: float = 40) -> list:
+    """Keep the boxes on the most crowded line along `key`.
+
+    A timetable can repeat its time labels further down the page; mixing those
+    in would add phantom columns, so only the header line is used.
+    """
+    best: list = []
+    for b in boxes:
+        line = [o for o in boxes if abs(o[key] - b[key]) <= tolerance]
+        if len(line) > len(best):
+            best = line
+    return best
+
+
 def _build_time_rows_horizontal(time_boxes) -> List[Tuple[str, str, float]]:
     """Build (start, end, cx) tuples from time-label boxes sorted left→right."""
-    sorted_boxes = sorted(time_boxes, key=lambda b: b['cx'])
+    sorted_boxes = sorted(_header_line(time_boxes, 'cy'), key=lambda b: b['cx'])
     cols: List[Tuple[str, str, float]] = []
     for i, tb in enumerate(sorted_boxes):
         times = tb['times']

@@ -9,9 +9,10 @@ import (
 	"labassist/models"
 )
 
-// UpsertClassSchedule saves or replaces a student's timetable image evidence.
-// Slots are no longer written here (they live in term_schedules); pass nil.
-func UpsertClassSchedule(userID uint, fileName string, imageData []byte, slots []models.ScheduleSlot) (models.ClassSchedule, error) {
+// UpsertClassSchedule saves or replaces a student's timetable image and the
+// slots OCR read from it. The slots are a draft until the student saves the
+// term schedule, which is stored separately.
+func UpsertClassSchedule(userID uint, fileName string, imageData []byte, slots []models.ScheduleSlot, consentAt time.Time) (models.ClassSchedule, error) {
 	if slots == nil {
 		slots = []models.ScheduleSlot{}
 	}
@@ -26,6 +27,7 @@ func UpsertClassSchedule(userID uint, fileName string, imageData []byte, slots [
 		cs.ImageKey = key
 		cs.ImageData = blob
 		cs.Slots = slots
+		cs.PDPAConsentAt = &consentAt
 		cs.UpdatedAt = time.Now()
 		if err := DB.Save(&cs).Error; err != nil {
 			filestore.Remove(key)
@@ -35,12 +37,13 @@ func UpsertClassSchedule(userID uint, fileName string, imageData []byte, slots [
 		return cs, nil
 	}
 	cs = models.ClassSchedule{
-		UserID:    userID,
-		FileName:  fileName,
-		ImageKey:  key,
-		ImageData: blob,
-		Slots:     slots,
-		UpdatedAt: time.Now(),
+		UserID:        userID,
+		FileName:      fileName,
+		ImageKey:      key,
+		ImageData:     blob,
+		Slots:         slots,
+		PDPAConsentAt: &consentAt,
+		UpdatedAt:     time.Now(),
 	}
 	if err := DB.Create(&cs).Error; err != nil {
 		filestore.Remove(key)
@@ -53,7 +56,7 @@ func UpsertClassSchedule(userID uint, fileName string, imageData []byte, slots [
 // image bytes (use ClassScheduleImageByUserID for the raw image).
 func ClassScheduleByUserID(userID uint) (models.ClassSchedule, bool) {
 	var cs models.ClassSchedule
-	if DB.Select("id", "user_id", "file_name", "slots", "updated_at").
+	if DB.Select("id", "user_id", "file_name", "slots", "pdpa_consent_at", "updated_at").
 		Where("user_id = ?", userID).First(&cs).Error != nil {
 		return models.ClassSchedule{}, false
 	}

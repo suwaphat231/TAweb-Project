@@ -17,7 +17,7 @@ import type {
   ReportResponse, ConfirmedRecord, DocumentWorkflowResponse, CreateWorkflowStepPayload, DocType,
   CalendarPreviewResponse, CalendarImportEntry, CalendarImportResponse, SkippedCourse,
   CourseEditRequest, CourseEditRequestPayload, CourseEditRequestStatus,
-  TranscriptImage,
+  TranscriptImage, ClassSchedule, ClassScheduleUpload,
 } from '../types'
 
 // Keep API calls on the same origin by default. This works both behind the
@@ -182,6 +182,17 @@ export const studentAPI = {
     api.get<TranscriptImage[]>('/student/profile/transcript/images').then((r) => r.data),
   transcriptImageFile: (id: number) =>
     api.get(`/student/profile/transcript/images/${id}`, { responseType: 'blob' }).then((r) => r.data as Blob),
+  // Timetable image: stored with the student's consent and read by OCR into draft slots.
+  uploadClassSchedule: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('consent', 'true')
+    return api.post<ClassScheduleUpload>('/student/profile/class-schedule', formData).then((r) => r.data)
+  },
+  // 404 when no image has been uploaded yet.
+  classSchedule: () => api.get<ClassSchedule>('/student/profile/class-schedule').then((r) => r.data),
+  classScheduleImageFile: () =>
+    api.get('/student/profile/class-schedule/file', { responseType: 'blob' }).then((r) => r.data as Blob),
 }
 
 export const transcriptAPI = {
@@ -282,6 +293,9 @@ export const studentApi = {
   gradeProof: applicationsAPI.gradeProof,
   workSchedule: () => api.get<WorkSession[]>('/student/work-schedule').then((r) => r.data),
   laboyAssignments: () => api.get<LabBoyAssignment[]>('/student/labboy-assignments').then((r) => r.data),
+  uploadClassSchedule: studentAPI.uploadClassSchedule,
+  classSchedule: studentAPI.classSchedule,
+  classScheduleImageFile: studentAPI.classScheduleImageFile,
   // Per-term manual schedule
   getTermSchedule: (semester: string, academicYear: number) =>
     api.get<TermSchedule>('/student/profile/term-schedule', { params: { semester, academic_year: academicYear } }).then((r) => r.data),

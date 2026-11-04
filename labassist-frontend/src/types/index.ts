@@ -36,6 +36,8 @@ export interface User {
   transcript_ocr_grades?: Record<string, string>
   /** Set once the student has checked the grades from the latest upload. */
   transcript_confirmed_at?: string
+  /** Courses added after the grades were confirmed (read from a grade image attached to an application), keyed by code — only these still need checking. */
+  transcript_pending_grades?: Record<string, string>
 }
 
 /** One course from the core_courses catalog paired with the grade OCR read. */
@@ -580,6 +582,25 @@ export interface ScheduleSlot {
   day: string        // MON TUE WED THU FRI SAT SUN
   start_time: string // HH:MM
   end_time: string   // HH:MM
+}
+
+/** The timetable image a student attached, with the slots OCR read from it. */
+export interface ClassSchedule {
+  file_name: string
+  slots: ScheduleSlot[]
+  updated_at: string
+  /** Null until the student consents; set when the image is uploaded. */
+  pdpa_consent_at: string | null
+}
+
+/** Answer to uploading a timetable image. Slots are a draft for the student to check. */
+export interface ClassScheduleUpload {
+  id: number
+  file_name: string
+  updated_at: string
+  slots: ScheduleSlot[]
+  /** Set when OCR could not read the image; the image is still stored. */
+  ocr_error?: string
 }
 
 /** Status of a student's term schedule entry. */

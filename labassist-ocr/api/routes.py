@@ -1,3 +1,4 @@
+from functools import partial
 from pathlib import Path
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
@@ -7,7 +8,7 @@ from models.schemas import (
     AcademicCalendarEntry, AcademicCalendarResponse,
 )
 from services.preprocessor import preprocess_image, preprocess_pages
-from services.ocr_engine import extract_text
+from services.ocr_engine import extract_text, extract_text_scaled, read_latin
 from services.processor import parse_transcript, evaluate_grades
 from services.schedule_parser import parse_schedule
 from services.student_info_parser import extract_student_info
@@ -80,7 +81,7 @@ async def process_transcript(
 
         # 1. อ่านไฟล์และ Preprocess (รองรับทั้งรูปภาพและ PDF ทุกหน้า เพราะทรานสคริปต์จริงมักมีหลายหน้า)
         file_bytes = await read_limited(file)
-        page_images = preprocess_pages(file_bytes)
+        page_images = preprocess_pages(file_bytes, denoise=False)
 
         # 2-5. ทำ OCR แต่ละหน้า แล้วสกัดรหัสวิชา/เกรด รวมผลทุกหน้าเข้าด้วยกัน
         # (หน้าหลังทับหน้าก่อนหน้า เผื่อกรณีลงทะเบียนเรียนซ้ำแล้วเกรดล่าสุดอยู่หน้าถัดไป)
@@ -88,8 +89,9 @@ async def process_transcript(
         confidence_weighted_sum = 0.0
         confidence_count = 0
         for page_image in page_images:
-            ocr_results = extract_text(page_image)
-            page_grades, page_avg_confidence = parse_transcript(ocr_results, known_codes)
+            # ขยายภาพเองถ้าตัวอักษรเล็กเกินไป แล้วให้ parser อ่านช่องรหัสวิชา/เกรดซ้ำบนภาพเดียวกัน
+            page_image, ocr_results = extract_text_scaled(page_image)
+            page_grades, page_avg_confidence = parse_transcript(ocr_results, known_codes, partial(read_latin, page_image))
             extracted_grades.update(page_grades)
             confidence_weighted_sum += page_avg_confidence * len(page_grades)
             confidence_count += len(page_grades)

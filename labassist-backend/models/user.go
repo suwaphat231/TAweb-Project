@@ -91,6 +91,10 @@ type User struct {
 	// TranscriptConfirmedAt is when the student confirmed (or corrected) the
 	// grades after the latest upload; nil means they still need checking.
 	TranscriptConfirmedAt *time.Time `json:"transcript_confirmed_at,omitempty"`
+	// TranscriptPendingGrades holds courses added after the grades were
+	// confirmed (read from a grade-proof image attached to an application),
+	// keyed by code. Only these still need checking; the rest stay confirmed.
+	TranscriptPendingGrades StringMap `gorm:"type:json" json:"transcript_pending_grades,omitempty"`
 	// TranscriptCourseTitles names the courses in TranscriptGrades, keyed by
 	// code. Filled in by the endpoints that show the grades, not stored.
 	TranscriptCourseTitles map[string]string `gorm:"-" json:"transcript_course_titles,omitempty"`

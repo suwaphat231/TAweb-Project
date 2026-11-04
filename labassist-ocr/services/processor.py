@@ -5,40 +5,45 @@ from utils.helpers import is_subject_code, group_into_lines
 VALID_GRADES = {'A', 'B+', 'B', 'C+', 'C', 'D+', 'D', 'F'}
 
 def normalize_grade(grade_text: str) -> str:
-    """Step 5: Normalize แก้ไขตัวอักษรที่มักอ่านผิดในคอลัมน์เกรด"""
-    grade_text = grade_text.strip().upper()
-    mapping = {
-        '8': 'B',
-        '0': 'D',
-        'O': 'D',
-        'Q': 'D',
-    }
-    if grade_text in mapping:
-        return mapping[grade_text]
+    """Step 5: Normalize ข้อความในช่องเกรด
 
-    # EasyOCR occasionally reads the '+' in "B+"/"C+"/"D+" as a trailing '.'
-    # instead (e.g. "D+" -> "d.") — only remap when doing so lands on an
-    # actual plus-grade, so a genuinely invalid "X." isn't silently rewritten.
-    if grade_text.endswith('.') and grade_text[:-1] + '+' in VALID_GRADES:
-        return grade_text[:-1] + '+'
-
-    return grade_text
+    ไม่เดาตัวเลขเป็นเกรด ('8' -> B, '0' -> D) เพราะตัวเลขในบรรทัดเดียวกันมาจาก
+    คอลัมน์หน่วยกิต/คะแนนเกรดรวม ไม่ใช่เกรดที่อ่านผิด
+    """
+    grade_text = re.sub(r'\s', '', grade_text).upper()
+    # จุดท้ายเกรดเป็นเศษจากขอบเซลล์ ("d." คือ D ธรรมดา ส่วน D+ จะอ่านได้ "d+")
+    return grade_text.rstrip('.')
 
 # ทรานสคริปต์/ใบเกรดบางแบบพิมพ์รหัสหลักสูตรต่อท้ายรหัสวิชามาด้วย เช่น
-# '517121-165' แต่ core_courses ฝั่ง backend เก็บเป็นรหัส 6 หลักล้วน
-CURRICULUM_SUFFIX_PATTERN = re.compile(r'^(\d{6})\s*[-–—]\s*\d{2,4}$')
+# '517121-165' หรือ 'SU102-162' แต่ core_courses ฝั่ง backend เก็บแค่รหัสวิชา
+CURRICULUM_SUFFIX_PATTERN = re.compile(r'^(\d{6}|[A-Z]{2,4}\d{3,4})\s*[-–—]\s*\d{2,4}$')
 
 def clean_code_text(text: str) -> str:
     """เตรียมข้อความหนึ่ง box ให้พร้อมเช็คว่าเป็นรหัสวิชาไหม
 
     ตัดรหัสหลักสูตรท้ายรหัสวิชาทิ้ง ('517121-165' -> '517121') ส่วนกรณีอื่น
-    แค่ลบ noise จาก OCR (เว้นวรรค ขีด จุด) ออกตามเดิม
+    แค่ลบ noise จาก OCR (เว้นวรรค ขีด จุด เส้นขอบตาราง) ออก
+    รหัสถูกแปลงเป็นตัวพิมพ์ใหญ่ เพราะโมเดลภาษาไทยอ่านอักษรอังกฤษเป็นตัวพิมพ์เล็ก ("su101")
     """
-    stripped = text.strip()
+    stripped = text.strip().upper()
     suffix_match = CURRICULUM_SUFFIX_PATTERN.match(stripped)
     if suffix_match:
         return suffix_match.group(1)
-    return re.sub(r'[\s\-\.\,\/]', '', stripped)
+    return fix_digit_confusions(re.sub(r'[\s\-\.\,\/\|]', '', stripped))
+
+
+# ตัวอักษรที่หน้าตาเหมือนตัวเลข — ใช้แก้เฉพาะส่วนที่ต้องเป็นตัวเลขของรหัสวิชา ("SU4O1" -> "SU401")
+DIGIT_LOOKALIKES = str.maketrans({'O': '0', 'Q': '0', 'D': '0', 'I': '1', 'L': '1', 'Z': '2', 'S': '5', 'B': '8'})
+# รหัสวิชา = ตัวอักษรนำหน้า 0-4 ตัว ตามด้วยส่วนตัวเลข (ที่อาจอ่านเพี้ยนเป็นตัวอักษร) 3-8 ตัว
+CODE_SHAPE_PATTERN = re.compile(r'^([A-Z]{2,4}?)([0-9OQDILZSB]{3,4})$|^()([0-9OQDILZSB]{6,8})$')
+
+
+def fix_digit_confusions(code: str) -> str:
+    match = CODE_SHAPE_PATTERN.match(code)
+    if not match or not any(ch.isdigit() for ch in code):
+        return code
+    prefix, digits = (match.group(1), match.group(2)) if match.group(2) else (match.group(3), match.group(4))
+    return prefix + digits.translate(DIGIT_LOOKALIKES)
 
 
 GRADE_HEADERS = {'เกรด', 'grade'}
@@ -48,32 +53,55 @@ def box_center_x(box) -> float:
     return (box[0][0] + box[1][0]) / 2
 
 
-def grade_column_xs(lines) -> list:
-    """หาตำแหน่งแกน X ของหัวคอลัมน์ "เกรด" ในหน้า (อาจมีหลายคอลัมน์ถ้าทรานสคริปต์แบ่งซ้าย-ขวา)
+def box_height(box) -> float:
+    return box[2][1] - box[0][1]
+
+
+def grade_column_headers(lines) -> list:
+    """หาหัวคอลัมน์ "เกรด" ในหน้า คืน [(center_x, width, top_y), ...] (อาจมีหลายตาราง/หลายคอลัมน์)
 
     ต้องตรงทั้งคำ — กัน "คะแนนเกรดรวม" ถูกนับเป็นหัวคอลัมน์เกรด
     """
     return [
-        box_center_x(box)
+        (box_center_x(box), box[1][0] - box[0][0], box[0][1])
         for line in lines
         for box, text, _confidence in line
         if text.strip().lower() in GRADE_HEADERS
     ]
 
 
-def parse_transcript(ocr_results, known_codes=None):
+# ตัวอักษรที่ยอมให้โมเดลอังกฤษอ่านในช่องรหัสวิชา/ช่องเกรด — จำกัดไว้กันอ่าน "D" เป็น "0" หรือ "O"
+CODE_ALLOWLIST = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-'
+# รวม W/U/S/I/* ด้วย ไม่งั้นช่องที่เป็น "W" หรือ "U*" จะถูกบังคับอ่านเป็นเกรดที่ใกล้ที่สุด
+GRADE_ALLOWLIST = 'ABCDFISUW+*'
+
+# อัตรากว้าง/สูงของหมึกในช่องเกรด: ตัวอักษรเดียว (A, B, C, D) วัดได้ไม่เกิน ~0.9 ส่วนเกรดที่มี "+"
+# วัดได้ตั้งแต่ ~1.1 ขึ้นไป (วัดจากใบเกรดตัวอย่างใน test-ocr-grade/)
+PLUS_CAPABLE = {'B', 'C', 'D'}
+PLUS_INK_ASPECT = 1.0
+INFERRED_PLUS_CONFIDENCE = 0.6
+
+# box ที่กว้างเกิน (ความสูง x ค่านี้) เป็นชื่อวิชา ไม่ต้องลองอ่านเป็นรหัสวิชาซ้ำ
+MAX_CODE_ASPECT = 8
+
+
+def parse_transcript(ocr_results, known_codes=None, read_region=None):
     """Step 3 & 4: จัดกลุ่มบรรทัดตามแกน Y, หารหัสวิชา (Anchor) แล้วดึงเกรดที่อยู่ในบรรทัดเดียวกัน
 
     known_codes (optional): set ของรหัสวิชาที่ backend สนใจ (มาจากตาราง core_courses)
     ถ้าส่งมา จะรับเฉพาะรหัสที่อยู่ในชุดนี้เป็น anchor — กันตัวเลข 6-8 หลักอื่นบน
     ทรานสคริปต์ (รหัสนักศึกษา, เลขที่เอกสาร) ถูกเข้าใจผิดว่าเป็นรหัสวิชา
+
+    read_region (optional): ฟังก์ชัน (region, allowlist) -> (text, confidence, ink_aspect) ที่อ่าน
+    กรอบ (x_min, x_max, y_min, y_max) บนภาพด้วยโมเดลอังกฤษ ใช้อ่านช่องรหัสวิชาที่
+    โมเดลไทยอ่านเพี้ยน และอ่านช่องเกรดซ้ำ (detector มักมองไม่เห็นเกรดตัวอักษรเดียว)
     """
     extracted_grades = {}
     total_confidence = 0
     count = 0
 
     lines = group_into_lines(ocr_results)
-    header_xs = grade_column_xs(lines)
+    headers = grade_column_headers(lines)
 
     def accept(candidate: str):
         """คืนรหัสวิชาถ้าใช้เป็น anchor ได้ ไม่งั้นคืน None"""
@@ -83,46 +111,94 @@ def parse_transcript(ocr_results, known_codes=None):
             return None
         return candidate
 
-    for line in lines:
-        # หา index ของข้อความที่หน้าตาเหมือนรหัสวิชาในบรรทัดนี้
-        # รองรับทั้งกรณีที่ EasyOCR อ่านเป็น box เดียว และกรณีที่แบ่งเป็น 2 box ติดกัน
-        subject_code = None
-        subject_index = None
-        for idx, (_box, text, _confidence) in enumerate(line):
+    def find_code(line):
+        """คืน (รหัสวิชา, index ของ box รหัสวิชา) ของบรรทัด หรือ (None, None)"""
+        for idx, (box, text, _confidence) in enumerate(line):
             cleaned = clean_code_text(text)
             matched = accept(cleaned)
             if matched:
-                subject_code = matched
-                subject_index = idx
-                break
+                return matched, idx
             # ลองรวมกับ box ถัดไป (กรณี EasyOCR แบ่งตัวเลขเป็น 2 ส่วน)
             if idx + 1 < len(line) and cleaned.isdigit():
                 matched = accept(cleaned + clean_code_text(line[idx + 1][1]))
                 if matched:
-                    subject_code = matched
-                    subject_index = idx + 1
-                    break
+                    return matched, idx + 1
+        if read_region is None:
+            return None, None
+        # โมเดลไทยอ่านรหัสอย่าง "SU102" เพี้ยน ("sū102") — อ่าน box สั้น ๆ ซ้ำด้วยโมเดลอังกฤษ
+        for idx, (box, text, _confidence) in enumerate(line):
+            height = box_height(box)
+            if height <= 0 or (box[1][0] - box[0][0]) > height * MAX_CODE_ASPECT:
+                continue
+            # รหัสวิชามีตัวเลขอย่างน้อย 3 ตัวเสมอ ("sū102") — ข้าม box อื่นเพื่อไม่ต้องอ่านซ้ำทั้งหน้า
+            if sum(ch.isdigit() for ch in text) < 3:
+                continue
+            pad = height * 0.2
+            text, _conf, _aspect = read_region((box[0][0] - pad, box[1][0] + pad, box[0][1] - pad, box[2][1] + pad), CODE_ALLOWLIST)
+            matched = accept(clean_code_text(text))
+            if matched:
+                return matched, idx
+        return None, None
 
-        if subject_code is None:
-            continue
+    # บรรทัดที่หารหัสวิชาเจอ: (รหัสวิชา, box รหัสวิชา, box ที่อยู่ทางขวาของรหัส)
+    rows = []
+    for line in lines:
+        subject_code, subject_index = find_code(line)
+        if subject_code is not None:
+            rows.append((subject_code, line[subject_index][0], line[subject_index + 1:]))
 
-        # รายการที่อยู่ถัดจากรหัสวิชาในบรรทัดเดียวกัน (ซ้ายไปขวา) ที่หน้าตาเป็นเกรด
-        candidates = [
+    def detected_candidates(rest):
+        """box ทางขวาของรหัสวิชาที่ detector อ่านได้หน้าตาเป็นเกรด"""
+        return [
             (box, normalize_grade(text), confidence)
-            for box, text, confidence in line[subject_index + 1:]
+            for box, text, confidence in rest
             if normalize_grade(text) in VALID_GRADES
         ]
-        if not candidates:
-            continue
-        if header_xs:
-            # เลือกตัวที่อยู่ตรงคอลัมน์ "เกรด" ที่สุด — คอลัมน์หน่วยกิตที่อยู่ก่อนหน้า
+
+    # ถ้าไม่มีหัวคอลัมน์ "เกรด" (ภาพครอปแค่บางแถว) ใช้ค่ากลางของตำแหน่งเกรดที่ detector อ่านได้ในแถวอื่น
+    fallback_x = None
+    xs = sorted(box_center_x(c[0]) for _code, _box, rest in rows for c in detected_candidates(rest)[-1:])
+    if xs:
+        fallback_x = xs[len(xs) // 2]
+
+    def grade_column_x(code_box):
+        """ตำแหน่ง X ของคอลัมน์เกรดสำหรับแถวนี้ — ใช้หัวคอลัมน์ที่อยู่เหนือแถวและใกล้ที่สุด
+        (ภาพเดียวอาจมีหลายตารางที่คอลัมน์ไม่ตรงกัน) หรือ None ถ้าไม่รู้"""
+        above = [h for h in headers if h[2] < code_box[0][1] and h[0] > code_box[1][0]]
+        if above:
+            return max(above, key=lambda h: h[2])[0]
+        return fallback_x
+
+    for subject_code, code_box, rest in rows:
+        candidates = detected_candidates(rest)
+        row_height = box_height(code_box)
+        column_x = grade_column_x(code_box)
+        if column_x is not None:
+            # เลือกเฉพาะตัวที่อยู่ในคอลัมน์ "เกรด" — คอลัมน์หน่วยกิต/คะแนนเกรดรวม
             # อาจถูกอ่านเป็นตัวอักษรที่หน้าตาเหมือนเกรด เช่น "4" -> "a"
-            _box, grade, confidence = min(
-                candidates,
-                key=lambda c: min(abs(box_center_x(c[0]) - x) for x in header_xs),
+            candidates = [c for c in candidates if abs(box_center_x(c[0]) - column_x) <= row_height * 2.5]
+        detected = candidates[0] if candidates else None
+
+        grade = confidence = None
+        if read_region is not None and column_x is not None:
+            # กรอบกว้างพอสำหรับเกรดที่ไม่ได้อยู่ตรงกลางหัวคอลัมน์พอดี read_region ตัดให้พอดีกับหมึกเอง
+            code_y = (code_box[0][1] + code_box[2][1]) / 2
+            half_width, half_height = row_height * 2.5, row_height * 0.8
+            text, conf, ink_aspect = read_region(
+                (column_x - half_width, column_x + half_width, code_y - half_height, code_y + half_height),
+                GRADE_ALLOWLIST,
             )
-        else:
-            _box, grade, confidence = candidates[0]
+            text = normalize_grade(text)
+            if text in PLUS_CAPABLE and ink_aspect > PLUS_INK_ASPECT:
+                # หมึกกว้างเกินกว่าตัวอักษรเดียว แปลว่ามี "+" ที่เล็กจนโมเดลมองไม่เห็น
+                # ลด confidence ลงเพื่อให้นักศึกษาตรวจเกรดนี้อีกครั้ง
+                text, conf = text + '+', min(conf, INFERRED_PLUS_CONFIDENCE)
+            if text in VALID_GRADES:
+                grade, confidence = text, conf
+        if grade is None and detected is not None:
+            _box, grade, confidence = detected
+        if grade is None:
+            continue
         extracted_grades[subject_code] = grade
         total_confidence += confidence
         count += 1

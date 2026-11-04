@@ -1,10 +1,12 @@
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect, useId, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { isAxiosError } from 'axios'
 import { studentApi } from '../../../services/api'
 import { Card } from '../../../components/ui/Card'
 import { Button } from '../../../components/ui/Button'
 import { Select } from '../../../components/ui/Select'
 import { Skeleton } from '../../../components/ui/Skeleton'
+import { Icon } from '../../../components/reports/ReportIcons'
 import { useToast } from '../../../hooks/useToast'
 import { WeeklyCalendarPreview } from './WeeklyCalendarPreview'
 import { SlotRow } from './SlotRow'
@@ -168,6 +170,61 @@ export function ScheduleTab() {
   // A saved schedule is shown read-only until the student presses "แก้ไข".
   const [editing, setEditing] = useState(false)
 
+  // Timetable image: the stored copy shown for comparison, and the upload form.
+  const classSchedule = useQuery({
+    queryKey: ['class-schedule'],
+    queryFn: studentApi.classSchedule,
+    retry: false,
+  })
+  const classImage = useQuery({
+    queryKey: ['class-schedule-image', classSchedule.data?.updated_at],
+    queryFn: async () => URL.createObjectURL(await studentApi.classScheduleImageFile()),
+    enabled: !!classSchedule.data,
+    staleTime: Infinity,
+    gcTime: 0,
+  })
+  const [scheduleFile, setScheduleFile] = useState<File | null>(null)
+  const [scheduleConsent, setScheduleConsent] = useState(false)
+  const [scheduleNotice, setScheduleNotice] = useState('')
+  const [scheduleFileError, setScheduleFileError] = useState('')
+  const [dragging, setDragging] = useState(false)
+  const scheduleInputId = useId()
+  // Preview of the picked file; the object URL is released when the file changes.
+  const schedulePreviewUrl = useMemo(() => (scheduleFile ? URL.createObjectURL(scheduleFile) : ''), [scheduleFile])
+  useEffect(() => () => { if (schedulePreviewUrl) URL.revokeObjectURL(schedulePreviewUrl) }, [schedulePreviewUrl])
+  function pickScheduleFile(selected: File | null) {
+    const valid = !selected || /\.(png|jpe?g)$/i.test(selected.name)
+    setScheduleFile(valid ? selected : null)
+    setScheduleFileError(valid ? '' : 'กรุณาเลือกไฟล์ PNG หรือ JPG')
+  }
+  const uploadMut = useMutation({
+    mutationFn: (file: File) => studentApi.uploadClassSchedule(file),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: ['class-schedule'] })
+      // The OCR slots become the draft for the selected term; the student checks them before saving.
+      setDrafts(result.slots.map((s) => ({ _id: nextId(), ...s })))
+      setNoClass(false)
+      setConfirmed(false)
+      setEditing(true)
+      setErrors({ slots: {}, global: '' })
+      setScheduleFile(null)
+      setScheduleNotice(result.ocr_error ?? '')
+      showToast(result.ocr_error ? 'เก็บรูปตารางเรียนแล้ว กรุณากรอกช่วงเวลาเอง' : 'อ่านช่วงเวลาจากรูปแล้ว กรุณาตรวจสอบก่อนบันทึก', 'success')
+    },
+  })
+  // Pulls the stored OCR slots of the attached image into the selected term's draft.
+  function loadImageSlots() {
+    const slots = classSchedule.data?.slots ?? []
+    setDrafts(slots.map((s) => ({ _id: nextId(), ...s })))
+    setNoClass(false)
+    setConfirmed(false)
+    setEditing(true)
+    setErrors({ slots: {}, global: '' })
+  }
+  const uploadError = uploadMut.isError
+    ? (isAxiosError<{ error?: string }>(uploadMut.error) && uploadMut.error.response?.data?.error) || 'อัปโหลดรูปตารางเรียนไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'
+    : ''
+
   // Discards local edits and returns to the saved schedule in read-only mode.
   const resetToSaved = useCallback(() => {
     if (!savedSchedule) return
@@ -312,6 +369,162 @@ export function ScheduleTab() {
           </span>
         )}
       </div>
+
+      {/* Timetable image: stored with consent, read by OCR into the draft below */}
+      <Card style={{ padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+            <span style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--primary-50)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Icon name="upload" size={18} />
+            </span>
+            <div>
+              <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink-900)', lineHeight: 1.4 }}>รูปตารางเรียน</h2>
+              <p style={{ fontSize: 13, color: 'var(--ink-500)' }}>ระบบจะอ่านช่วงเวลาเรียนจากรูปให้เป็นร่าง ตรวจและแก้ไขก่อนบันทึก</p>
+            </div>
+          </div>
+          <span style={{
+            fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 20,
+            background: classSchedule.data ? 'var(--green-bg)' : 'var(--line-soft)',
+            color: classSchedule.data ? 'var(--green)' : 'var(--ink-500)',
+          }}>
+            {classSchedule.data ? 'แนบรูปแล้ว' : 'ยังไม่ได้แนบรูป'}
+          </span>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          {scheduleFile ? (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 12, padding: 12, borderRadius: 10,
+              border: '1.5px solid var(--primary-100)', background: 'var(--primary-50)',
+            }}>
+              <img
+                src={schedulePreviewUrl}
+                alt={`ตัวอย่างรูปตารางเรียน ${scheduleFile.name}`}
+                style={{ width: 88, height: 88, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--line)', background: '#fff', flexShrink: 0 }}
+              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{scheduleFile.name}</div>
+                <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>{Math.max(1, Math.round(scheduleFile.size / 1024))} KB · ยังไม่ได้อ่าน</div>
+              </div>
+              <button
+                type="button" className="report-icon-btn" disabled={uploadMut.isPending}
+                onClick={() => pickScheduleFile(null)} aria-label={`เอาไฟล์ ${scheduleFile.name} ออก`}
+              >
+                <Icon name="x" size={16} />
+              </button>
+            </div>
+          ) : (
+            <label
+              htmlFor={scheduleInputId}
+              className={`grade-dropzone${dragging ? ' is-dragging' : ''}`}
+              onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault()
+                setDragging(false)
+                pickScheduleFile(e.dataTransfer.files?.[0] ?? null)
+              }}
+            >
+              <span style={{ width: 48, height: 48, borderRadius: '50%', background: '#fff', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow-sm)' }}>
+                <Icon name="upload" size={22} />
+              </span>
+              <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink-900)' }}>
+                ลากรูปตารางเรียนมาวางที่นี่ หรือ <span style={{ color: 'var(--primary)', textDecoration: 'underline' }}>เลือกรูป</span>
+              </span>
+              <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>PNG หรือ JPG</span>
+            </label>
+          )}
+          <input
+            id={scheduleInputId} type="file" accept=".png,.jpg,.jpeg" className="sr-only" disabled={uploadMut.isPending}
+            onChange={(e) => { pickScheduleFile(e.target.files?.[0] ?? null); e.target.value = '' }}
+          />
+          {scheduleFileError && (
+            <p role="alert" style={{ color: 'var(--red)', fontSize: 13, marginTop: 8 }}>{scheduleFileError}</p>
+          )}
+        </div>
+
+        <div role="note" style={{ display: 'flex', gap: 12, padding: '14px 16px', borderRadius: 10, background: 'var(--line-soft)', marginTop: 16 }}>
+          <Icon name="alert" size={18} style={{ color: 'var(--primary)', marginTop: 2, flexShrink: 0 }} />
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13, color: 'var(--ink-700)', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={scheduleConsent}
+              disabled={uploadMut.isPending}
+              onChange={(e) => setScheduleConsent(e.target.checked)}
+              style={{ marginTop: 3, width: 16, height: 16, accentColor: 'var(--primary)', flexShrink: 0 }}
+            />
+            <span>ฉันยินยอมให้ระบบเก็บรูปตารางเรียนไว้เป็นหลักฐาน และส่งไปอ่านด้วย OCR เพื่อเติมช่วงเวลาเรียน</span>
+          </label>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 16 }}>
+          <Button
+            loading={uploadMut.isPending}
+            disabled={!scheduleFile || !scheduleConsent || !parsedTerm}
+            onClick={() => { if (scheduleFile) uploadMut.mutate(scheduleFile) }}
+          >
+            อ่านช่วงเวลาจากรูป
+          </Button>
+          {!parsedTerm && (
+            <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>เลือกภาคเรียนก่อนอ่านรูป</span>
+          )}
+        </div>
+
+        {uploadError && (
+          <p role="alert" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 8, background: 'var(--red-bg)', color: 'var(--red)', fontSize: 13, marginTop: 12 }}>
+            <Icon name="alert" size={16} />
+            {uploadError}
+          </p>
+        )}
+        {scheduleNotice && (
+          <p role="status" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 8, background: 'var(--amber-bg)', color: 'var(--ink-700)', fontSize: 13, marginTop: 12 }}>
+            <Icon name="alert" size={16} style={{ color: 'var(--amber)' }} />
+            {scheduleNotice}
+          </p>
+        )}
+
+        {classSchedule.data && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--line-soft)' }}>
+            {classImage.data ? (
+              <a href={classImage.data} target="_blank" rel="noreferrer" aria-label="เปิดรูปตารางเรียนที่แนบไว้ในแท็บใหม่" style={{ flexShrink: 0 }}>
+                <img
+                  src={classImage.data}
+                  alt={`รูปตารางเรียน ${classSchedule.data.file_name}`}
+                  style={{ display: 'block', width: 88, height: 88, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--line)' }}
+                />
+              </a>
+            ) : (
+              <div style={{ width: 88, height: 88, borderRadius: 8, background: 'var(--line-soft)', flexShrink: 0 }} />
+            )}
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{classSchedule.data.file_name}</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>
+                แนบเมื่อ {new Date(classSchedule.data.updated_at).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </div>
+              {classSchedule.data.pdpa_consent_at && (
+                <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>
+                  ยินยอมเมื่อ {new Date(classSchedule.data.pdpa_consent_at).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginLeft: 'auto', alignItems: 'flex-end' }}>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!parsedTerm || !classSchedule.data.slots.length || formDisabled}
+                onClick={loadImageSlots}
+              >
+                ใส่ช่วงเวลาจากรูปลงตาราง
+              </Button>
+              {!classSchedule.data.slots.length ? (
+                <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>รูปนี้ยังอ่านช่วงเวลาไม่ได้ กรอกเองได้</span>
+              ) : !parsedTerm ? (
+                <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>เลือกภาคเรียนก่อน แล้วจะดึงช่วงเวลาลงตารางได้</span>
+              ) : null}
+            </div>
+          </div>
+        )}
+      </Card>
 
       {!parsedTerm ? null : scheduleLoading ? (
         <Skeleton lines={4} height={16} />
