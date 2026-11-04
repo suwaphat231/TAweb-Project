@@ -120,7 +120,7 @@ func courseWithInstructor(c models.Course) models.Course {
 	// Per-row enrichment has no error path; a failed count shows as 0 and the
 	// failure itself is logged by gormLogger.
 	c.ApplicantCount, _ = countNonWithdrawnApplications(c.ID)
-	c.SuggestedLabBoySlots = SuggestedLabBoySlots(c.Code, c.Enrolled)
+	c.SuggestedLabBoySlots = SuggestedLabBoySlots(c.Code, c.Title, c.EnglishTitle, c.Enrolled)
 	c = closeIfPastDeadline(c)
 	if c.InstructorID != nil {
 		if u, ok := UserByID(*c.InstructorID); ok {
