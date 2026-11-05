@@ -55,3 +55,41 @@ func TestPanicBecomesFailure(t *testing.T) {
 	Start(3, Transcript, func() error { panic("boom") })
 	waitGone(t, 3, Transcript, StatusFailed)
 }
+
+func TestStartResultKeepsResultUntilCleared(t *testing.T) {
+	if !StartResult(10, Calendar, "calendar.pdf", func() (any, error) { return map[string]int{"entries": 3}, nil }) {
+		t.Fatal("job should start")
+	}
+	s := waitGone(t, 10, Calendar, StatusDone)
+	if s.Result == nil || s.Meta != "calendar.pdf" {
+		t.Fatalf("want result and meta kept, got %+v", s)
+	}
+	// Still there when asked again: the admin may come back to it later.
+	if Get(10, Calendar) == nil {
+		t.Fatal("done job must stay until cleared")
+	}
+	if !Clear(10, Calendar) || Get(10, Calendar) != nil {
+		t.Fatal("Clear should remove a done job")
+	}
+}
+
+func TestStartResultRejectsSecondAndKeepsFailure(t *testing.T) {
+	release := make(chan struct{})
+	StartResult(11, Calendar, nil, func() (any, error) { <-release; return nil, errors.New("OCR ล่ม") })
+	if StartResult(11, Calendar, nil, func() (any, error) { return nil, nil }) {
+		t.Fatal("second job must not start while processing")
+	}
+	if Clear(11, Calendar) {
+		t.Fatal("a running job cannot be cleared")
+	}
+	close(release)
+	s := waitGone(t, 11, Calendar, StatusFailed)
+	if s.Error != "OCR ล่ม" || s.Result != nil {
+		t.Fatalf("want error kept and no result, got %+v", s)
+	}
+	if !StartResult(11, Calendar, nil, func() (any, error) { return 1, nil }) {
+		t.Fatal("a failed job can be retried")
+	}
+	waitGone(t, 11, Calendar, StatusDone)
+	Clear(11, Calendar)
+}

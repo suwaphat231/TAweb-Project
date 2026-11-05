@@ -176,6 +176,13 @@ func (h *Handler) DeleteCalendarDate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
+	// A deleted imported holiday must not come back on the next sync.
+	if cd, ok := database.CalendarDateByID(uint(id)); ok {
+		if err := database.RememberDeletedExternalHoliday(cd, c.GetUint("user_id")); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
+	}
 	// Restore occurrences cancelled by this holiday before deleting it; stop
 	// if that fails so the work days are not left cancelled with no holiday.
 	if err := database.RestoreOccurrencesForHoliday(uint(id)); err != nil {

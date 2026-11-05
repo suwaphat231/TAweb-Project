@@ -3,6 +3,7 @@ package admin
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -15,6 +16,7 @@ import (
 
 	"labassist/database"
 	"labassist/models"
+	"labassist/ocrjob"
 
 	"github.com/gin-gonic/gin"
 )
@@ -50,6 +52,21 @@ type CalendarPreviewEntry struct {
 	Exists bool `json:"exists" example:"false"`
 }
 
+// CalendarPreviewTerm is the open and close date of one semester read from the
+// PDF. A date the file did not give is empty so the admin can fill it in.
+type CalendarPreviewTerm struct {
+	Semester  string `json:"semester" example:"1"`
+	OpenDate  string `json:"open_date,omitempty" example:"2026-06-22"`
+	CloseDate string `json:"close_date,omitempty" example:"2026-10-30"`
+	// OpenName / CloseName are the calendar rows the dates were read from.
+	OpenName  string `json:"open_name,omitempty"`
+	CloseName string `json:"close_name,omitempty"`
+	Page      int    `json:"page,omitempty"`
+	// Saved dates already in the system for this semester, if any.
+	SavedOpenDate  string `json:"saved_open_date,omitempty"`
+	SavedCloseDate string `json:"saved_close_date,omitempty"`
+}
+
 // CalendarPreviewResponse is what was read from the uploaded PDF.
 type CalendarPreviewResponse struct {
 	AcademicYear int `json:"academic_year" example:"2569"`
@@ -57,6 +74,14 @@ type CalendarPreviewResponse struct {
 	DetectedAcademicYear *int                   `json:"detected_academic_year,omitempty" example:"2569"`
 	UsedOCR              bool                   `json:"used_ocr" example:"false"`
 	Entries              []CalendarPreviewEntry `json:"entries"`
+	// Terms always has the three semesters (1, 2, S).
+	Terms []CalendarPreviewTerm `json:"terms"`
+	// Activities are the other rows of the calendar (registration, exams,
+	// deadlines, ...), saved as academic events.
+	Activities []CalendarPreviewActivity `json:"activities"`
+	// SavedEvents is how many academic events are already saved for the year
+	// (a new import replaces them).
+	SavedEvents int `json:"saved_events"`
 }
 
 // CalendarImportEntry is one reviewed holiday to save. A range is saved as one
@@ -70,15 +95,30 @@ type CalendarImportEntry struct {
 	AffectsWork bool                    `json:"affects_work" example:"true"`
 }
 
-// CalendarImportRequest is the reviewed list confirmed by the admin.
+// CalendarImportTerm is the reviewed open/close date of one semester. At least
+// one of the two dates is required.
+type CalendarImportTerm struct {
+	Semester  string `json:"semester" binding:"required" example:"1"`
+	OpenDate  string `json:"open_date" example:"2026-06-22"`
+	CloseDate string `json:"close_date" example:"2026-10-30"`
+}
+
+// CalendarImportRequest is the reviewed list confirmed by the admin. Holidays
+// and semester dates are both optional, but not both empty.
 type CalendarImportRequest struct {
 	AcademicYear int                   `json:"academic_year" binding:"required" example:"2569"`
-	Entries      []CalendarImportEntry `json:"entries" binding:"required"`
+	Entries      []CalendarImportEntry `json:"entries"`
+	Terms        []CalendarImportTerm  `json:"terms"`
+	Events       []CalendarImportEvent `json:"events"`
 }
 
 // CalendarImportResponse summarises a confirmed import.
 type CalendarImportResponse struct {
 	Created int `json:"created" example:"24"`
+	// TermsSaved counts semesters whose open/close dates were saved.
+	TermsSaved int `json:"terms_saved" example:"3"`
+	// EventsSaved counts academic events saved (replacing the year's earlier ones).
+	EventsSaved int `json:"events_saved" example:"40"`
 	// Skipped counts days already in the system (same date, semester and name).
 	Skipped int `json:"skipped" example:"3"`
 	// Warning is set when the dates were saved but cancelling clashing work
@@ -87,16 +127,17 @@ type CalendarImportResponse struct {
 }
 
 // PreviewCalendarImport godoc
-// @Summary      อ่านวันหยุดจากไฟล์ปฏิทินการศึกษา (PDF) ทั้งปีการศึกษา เพื่อให้ตรวจทานก่อนบันทึก
+// @Summary      อ่านวันหยุดและวันเปิด-ปิดภาคเรียนจากไฟล์ปฏิทินการศึกษา (PDF) เบื้องหลัง
+// @Description  ตอบ 202 ทันที ผลอ่านดูได้ที่ GET /admin/calendar/import/job และแจ้ง event "ocr_finished" (kind = calendar) ทาง WebSocket เมื่อเสร็จ
 // @Tags         admin
 // @Accept       multipart/form-data
 // @Produce      json
 // @Security     BearerAuth
 // @Param        file           formData  file    true  "ไฟล์ PDF ปฏิทินการศึกษา"
 // @Param        academic_year  formData  int     true  "ปีการศึกษา (พ.ศ.)"
-// @Success      200  {object}  CalendarPreviewResponse
+// @Success      202  {object}  map[string]string
 // @Failure      400  {object}  handlers.ErrorResponse
-// @Failure      502  {object}  handlers.ErrorResponse
+// @Failure      409  {object}  handlers.ErrorResponse
 // @Router       /admin/calendar/import/preview [post]
 func (h *Handler) PreviewCalendarImport(c *gin.Context) {
 	year, err := strconv.Atoi(c.PostForm("academic_year"))
@@ -123,20 +164,48 @@ func (h *Handler) PreviewCalendarImport(c *gin.Context) {
 		return
 	}
 	defer src.Close()
-
-	result, status, msg := h.extractCalendar(src, fileHeader.Filename, year)
-	if msg != "" {
-		c.JSON(status, gin.H{"error": msg})
+	pdf, err := io.ReadAll(io.LimitReader(src, maxCalendarPDFBytes+1))
+	if err != nil || len(pdf) > maxCalendarPDFBytes {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ไฟล์ใหญ่เกิน 10 MB"})
 		return
+	}
+
+	// Reading a scanned calendar takes minutes, so it runs in the background:
+	// the admin may leave this page and is told over WebSocket when it ends
+	// (the result waits at GET /admin/calendar/import/job).
+	filename := fileHeader.Filename
+	meta := CalendarJobMeta{FileName: filename, AcademicYear: year}
+	started := ocrjob.StartResult(c.GetUint("user_id"), ocrjob.Calendar, meta, func() (any, error) {
+		return h.buildCalendarPreview(bytes.NewReader(pdf), filename, year)
+	})
+	if !started {
+		c.JSON(http.StatusConflict, gin.H{"error": "กำลังอ่านไฟล์ปฏิทินที่อัปโหลดก่อนหน้าอยู่ กรุณารอให้เสร็จก่อน"})
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{"status": ocrjob.StatusProcessing})
+}
+
+// CalendarJobMeta describes the file a calendar job is reading.
+type CalendarJobMeta struct {
+	FileName     string `json:"file_name"`
+	AcademicYear int    `json:"academic_year"`
+}
+
+// buildCalendarPreview reads the PDF through the OCR service and marks what
+// is already saved. Its error is shown to the admin as is.
+func (h *Handler) buildCalendarPreview(src io.Reader, filename string, year int) (*CalendarPreviewResponse, error) {
+	result, _, msg := h.extractCalendar(src, filename, year)
+	if msg != "" {
+		return nil, errors.New(msg)
 	}
 
 	semesters := []string{"1", "2", "S"}
 	existing, err := database.ExistingCalendarKeys(year, semesters)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
-		return
+		return nil, errors.New("ตรวจรายการที่มีอยู่แล้วไม่สำเร็จ กรุณาลองใหม่")
 	}
 	entries := make([]CalendarPreviewEntry, 0, len(result.Entries))
+	activities := make([]CalendarPreviewActivity, 0)
 	for _, e := range result.Entries {
 		start, err1 := time.Parse("2006-01-02", e.StartDate)
 		end, err2 := time.Parse("2006-01-02", e.EndDate)
@@ -144,7 +213,11 @@ func (h *Handler) PreviewCalendarImport(c *gin.Context) {
 			continue
 		}
 		if !calendarImportTypes[e.DateType] {
-			continue // not a holiday
+			// Not a holiday: kept as an academic event.
+			if a, ok := previewActivity(e); ok {
+				activities = append(activities, a)
+			}
+			continue
 		}
 		e.Exists = true
 		for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
@@ -158,16 +231,57 @@ func (h *Handler) PreviewCalendarImport(c *gin.Context) {
 		}
 		entries = append(entries, e)
 	}
-	c.JSON(http.StatusOK, CalendarPreviewResponse{
+	terms, err := previewTerms(year, result.Terms)
+	if err != nil {
+		return nil, errors.New("ตรวจวันเปิด-ปิดภาคเรียนที่มีอยู่แล้วไม่สำเร็จ กรุณาลองใหม่")
+	}
+	savedEvents, err := database.CountAcademicEvents(year)
+	if err != nil {
+		return nil, errors.New("ตรวจกิจกรรมที่มีอยู่แล้วไม่สำเร็จ กรุณาลองใหม่")
+	}
+	return &CalendarPreviewResponse{
 		AcademicYear:         year,
 		DetectedAcademicYear: result.DetectedAcademicYear,
 		UsedOCR:              result.UsedOCR,
 		Entries:              entries,
-	})
+		Terms:                terms,
+		Activities:           activities,
+		SavedEvents:          savedEvents,
+	}, nil
+}
+
+// CalendarJob godoc
+// @Summary      งานอ่านปฏิทินการศึกษา (OCR) เบื้องหลังของแอดมิน
+// @Description  คืน null เมื่อไม่มีงาน; status = processing | failed | done (done มี result เป็นผลที่ต้องตรวจทาน)
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  ocrjob.State
+// @Router       /admin/calendar/import/job [get]
+func (h *Handler) CalendarJob(c *gin.Context) {
+	c.JSON(http.StatusOK, ocrjob.Get(c.GetUint("user_id"), ocrjob.Calendar))
+}
+
+// ClearCalendarJob godoc
+// @Summary      ล้างงานอ่านปฏิทินที่เสร็จหรือล้มเหลวแล้ว (หลังบันทึกหรือยกเลิก)
+// @Tags         admin
+// @Security     BearerAuth
+// @Success      204
+// @Failure      409  {object}  handlers.ErrorResponse
+// @Router       /admin/calendar/import/job [delete]
+func (h *Handler) ClearCalendarJob(c *gin.Context) {
+	uid := c.GetUint("user_id")
+	if s := ocrjob.Get(uid, ocrjob.Calendar); s != nil && s.Status == ocrjob.StatusProcessing {
+		c.JSON(http.StatusConflict, gin.H{"error": "กำลังอ่านไฟล์อยู่ ยังยกเลิกไม่ได้"})
+		return
+	}
+	ocrjob.Clear(uid, ocrjob.Calendar)
+	c.Status(http.StatusNoContent)
 }
 
 type ocrCalendarResponse struct {
 	Entries              []CalendarPreviewEntry `json:"entries"`
+	Terms                []CalendarPreviewTerm  `json:"terms"`
 	DetectedAcademicYear *int                   `json:"detected_academic_year"`
 	UsedOCR              bool                   `json:"used_ocr"`
 }
@@ -241,21 +355,57 @@ func (h *Handler) ImportCalendar(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	rows, msg := calendarRows(body, c.GetUint("user_id"))
+	if len(body.Entries) == 0 && len(body.Terms) == 0 && len(body.Events) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ไม่มีรายการที่เลือก"})
+		return
+	}
+	userID := c.GetUint("user_id")
+	var rows []models.CalendarDate
+	if len(body.Entries) > 0 {
+		var msg string
+		if rows, msg = calendarRows(body, userID); msg != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+			return
+		}
+	}
+	termRows, msg := academicTermRows(body, userID)
+	if msg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	}
+	eventRows, msg := academicEventRows(body, userID)
 	if msg != "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
 		return
 	}
 
-	created, skipped, err := database.ImportCalendarDates(body.AcademicYear, rows)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกวันหยุดไม่สำเร็จ"})
+	// Events are replaced only when some were chosen; choosing none keeps the saved ones.
+	if len(eventRows) > 0 {
+		if err := database.ReplaceAcademicEvents(body.AcademicYear, eventRows); err != nil {
+			log.Printf("save academic events: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกกิจกรรมวิชาการไม่สำเร็จ"})
+			return
+		}
+	}
+	var created []models.CalendarDate
+	var skipped int
+	if len(rows) > 0 {
+		var err error
+		created, skipped, err = database.ImportCalendarDates(body.AcademicYear, rows)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกวันหยุดไม่สำเร็จ"})
+			return
+		}
+	}
+	if err := database.UpsertAcademicTerms(termRows); err != nil {
+		log.Printf("save academic terms: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "บันทึกวันเปิด-ปิดภาคเรียนไม่สำเร็จ"})
 		return
 	}
 
 	// Same follow-up as adding one holiday by hand: cancel the work days that
 	// fall on it and ask the instructors of those courses for makeup days.
-	resp := CalendarImportResponse{Created: len(created), Skipped: skipped}
+	resp := CalendarImportResponse{Created: len(created), Skipped: skipped, TermsSaved: len(termRows), EventsSaved: len(eventRows)}
 	var notifs []models.Notification
 	for _, cd := range created {
 		if err := database.CancelOccurrencesForHoliday(cd); err != nil {
@@ -340,4 +490,135 @@ func calendarRows(body CalendarImportRequest, userID uint) ([]models.CalendarDat
 		}
 	}
 	return rows, ""
+}
+
+// academicYearWindow is the range of dates accepted for an academic year: its
+// whole span plus the summer session that ends in the next calendar year.
+func academicYearWindow(academicYear int) (time.Time, time.Time) {
+	ce := academicYear - 543
+	return time.Date(ce, time.January, 1, 0, 0, 0, 0, time.UTC), time.Date(ce+1, time.December, 31, 0, 0, 0, 0, time.UTC)
+}
+
+// parseTermDate reads an optional YYYY-MM-DD date inside the academic year.
+// ok is false (with a nil date) for an empty string; err is set for a bad or
+// out-of-range one.
+func parseTermDate(raw string, academicYear int) (*time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	d, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		return nil, fmt.Errorf("วันที่ไม่ถูกต้อง")
+	}
+	first, last := academicYearWindow(academicYear)
+	if d.Before(first) || d.After(last) {
+		return nil, fmt.Errorf("วันที่อยู่นอกปีการศึกษา %d", academicYear)
+	}
+	return &d, nil
+}
+
+// academicTermRows validates the reviewed semester dates. msg is "" when valid.
+func academicTermRows(body CalendarImportRequest, userID uint) ([]models.AcademicTerm, string) {
+	var rows []models.AcademicTerm
+	seen := map[string]bool{}
+	for _, t := range body.Terms {
+		label := "ภาค " + t.Semester
+		if !calendarSemesters[t.Semester] {
+			return nil, "ภาคการศึกษาของวันเปิด-ปิดภาคเรียนไม่ถูกต้อง"
+		}
+		if seen[t.Semester] {
+			return nil, label + ": ระบุซ้ำ"
+		}
+		seen[t.Semester] = true
+		open, err := parseTermDate(t.OpenDate, body.AcademicYear)
+		if err != nil {
+			return nil, label + " วันเปิดภาคเรียน: " + err.Error()
+		}
+		closeDate, err := parseTermDate(t.CloseDate, body.AcademicYear)
+		if err != nil {
+			return nil, label + " วันปิดภาคเรียน: " + err.Error()
+		}
+		if open == nil && closeDate == nil {
+			continue // nothing entered for this semester
+		}
+		if open != nil && closeDate != nil && closeDate.Before(*open) {
+			return nil, label + ": วันปิดภาคเรียนต้องไม่ก่อนวันเปิดภาคเรียน"
+		}
+		rows = append(rows, models.AcademicTerm{
+			AcademicYear: body.AcademicYear, Semester: t.Semester,
+			OpenDate: open, CloseDate: closeDate, CreatedByID: userID,
+		})
+	}
+	return rows, ""
+}
+
+// previewTerms returns the three semesters read from the PDF (dates outside
+// the academic year are dropped as misreads) with the dates already saved.
+func previewTerms(academicYear int, read []CalendarPreviewTerm) ([]CalendarPreviewTerm, error) {
+	saved, err := database.ListAcademicTerms(academicYear)
+	if err != nil {
+		return nil, err
+	}
+	savedBy := map[string]models.AcademicTerm{}
+	for _, t := range saved {
+		savedBy[t.Semester] = t
+	}
+	fmtDate := func(d *time.Time) string {
+		if d == nil {
+			return ""
+		}
+		return d.Format("2006-01-02")
+	}
+	out := make([]CalendarPreviewTerm, 0, 3)
+	for _, sem := range []string{"1", "2", "S"} {
+		t := CalendarPreviewTerm{Semester: sem}
+		for _, r := range read {
+			if r.Semester != sem {
+				continue
+			}
+			t = r
+			if d, err := parseTermDate(r.OpenDate, academicYear); err != nil || d == nil {
+				t.OpenDate, t.OpenName = "", ""
+			}
+			if d, err := parseTermDate(r.CloseDate, academicYear); err != nil || d == nil {
+				t.CloseDate, t.CloseName = "", ""
+			}
+			break
+		}
+		if s, ok := savedBy[sem]; ok {
+			t.SavedOpenDate, t.SavedCloseDate = fmtDate(s.OpenDate), fmtDate(s.CloseDate)
+		}
+		out = append(out, t)
+	}
+	return out, nil
+}
+
+// ListAcademicTerms godoc
+// @Summary      วันเปิด-ปิดภาคเรียนที่บันทึกไว้ (จากปฏิทินการศึกษา)
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Param        years  query  string  true  "ปีการศึกษา (พ.ศ.) คั่นด้วย , เช่น 2568,2569"
+// @Success      200  {array}  models.AcademicTerm
+// @Router       /admin/calendar/terms [get]
+func (h *Handler) ListAcademicTerms(c *gin.Context) {
+	var years []int
+	for _, p := range strings.Split(c.Query("years"), ",") {
+		y, err := strconv.Atoi(strings.TrimSpace(p))
+		if err != nil || y < 2500 || y > 2700 || len(years) >= 5 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid years"})
+			return
+		}
+		years = append(years, y)
+	}
+	rows, err := database.ListAcademicTermsForYears(years)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	if rows == nil {
+		rows = []models.AcademicTerm{}
+	}
+	c.JSON(http.StatusOK, rows)
 }

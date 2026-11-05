@@ -420,10 +420,16 @@ func deleteDraftOccurrences(tx *gorm.DB, groupID uint, from, to time.Time) error
 // ListCalendarDatesBySemester returns global + semester-scoped dates for a given semester.
 // Used by the settings page to manage semester-level holidays independently of any case.
 func ListCalendarDatesBySemester(semester string, academicYear int) ([]models.CalendarDate, error) {
+	// Holidays imported by the sync cover several years; keep to the ones that
+	// fall in this academic year (June to the July after, which holds the
+	// summer term). Staff-made global rows are returned as before.
+	ce := academicYear - 543
+	from := fmt.Sprintf("%d-06-01", ce)
+	to := fmt.Sprintf("%d-07-31", ce+1)
 	var out []models.CalendarDate
 	if err := DB.Where(
-		"scope = ? OR (scope = ? AND semester = ? AND academic_year = ?)",
-		models.DateScopeGlobal,
+		"(scope = ? AND (source <> ? OR date BETWEEN ? AND ?)) OR (scope = ? AND semester = ? AND academic_year = ?)",
+		models.DateScopeGlobal, models.DateSourceExternal, from, to,
 		models.DateScopeSemester, semester, academicYear,
 	).Order("date ASC").Find(&out).Error; err != nil {
 		return nil, err

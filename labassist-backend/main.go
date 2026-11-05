@@ -4,9 +4,12 @@ import (
 	"labassist/config"
 	"labassist/database"
 	"labassist/filestore"
+	"labassist/holidaysync"
 	"labassist/middleware"
 	"labassist/routes"
+	"context"
 	"log"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -46,6 +49,20 @@ func main() {
 	// Move files uploaded before object storage was on out of MySQL. It runs
 	// in the background; until a row is moved it is still read from its blob.
 	go database.MigrateBlobsToFileStore()
+
+	// Thai public holidays: refreshed on a schedule, and by staff on demand.
+	holidaySvc, err := holidaysync.New(holidaysync.Config{
+		Enabled:     cfg.HolidaySyncEnabled,
+		URLTemplate: cfg.HolidaySyncURL,
+		Interval:    time.Duration(cfg.HolidaySyncIntervalHours) * time.Hour,
+		YearsBack:   1,
+		YearsAhead:  1,
+	})
+	if err != nil {
+		log.Fatalf("invalid holiday sync configuration: %v", err)
+	}
+	holidaysync.SetShared(holidaySvc)
+	go holidaySvc.Start(context.Background())
 
 	r := gin.Default()
 	r.Use(middleware.CORS(cfg))

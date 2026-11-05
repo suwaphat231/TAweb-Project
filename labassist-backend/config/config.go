@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -39,6 +40,11 @@ type Config struct {
 	S3SecretKey string
 	S3Bucket    string
 	S3UseSSL    bool
+
+	// Thai public holiday sync (see package holidaysync).
+	HolidaySyncEnabled       bool
+	HolidaySyncURL           string // one %d for the calendar year
+	HolidaySyncIntervalHours int
 }
 
 func Load() (*Config, error) {
@@ -102,6 +108,10 @@ func Load() (*Config, error) {
 		S3SecretKey: getEnv("S3_SECRET_KEY", ""),
 		S3Bucket:    getEnv("S3_BUCKET", "labassist-files"),
 		S3UseSSL:    os.Getenv("S3_USE_SSL") == "true",
+
+		HolidaySyncEnabled:       os.Getenv("HOLIDAY_SYNC_ENABLED") != "false",
+		HolidaySyncURL:           getEnv("HOLIDAY_SYNC_URL", ""),
+		HolidaySyncIntervalHours: holidaySyncHours(),
 	}, nil
 }
 
@@ -122,6 +132,14 @@ func validateJWTSecret(secret string) error {
 		return errors.New("JWT_SECRET must be at least 32 bytes; generate a random secret")
 	}
 	return nil
+}
+
+// holidaySyncHours reads HOLIDAY_SYNC_INTERVAL_HOURS (default 24).
+func holidaySyncHours() int {
+	if n, err := strconv.Atoi(os.Getenv("HOLIDAY_SYNC_INTERVAL_HOURS")); err == nil && n > 0 {
+		return n
+	}
+	return 24
 }
 
 func getEnv(key, fallback string) string {

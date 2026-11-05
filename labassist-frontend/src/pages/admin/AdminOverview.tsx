@@ -10,8 +10,10 @@ import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { Avatar } from '../../components/ui/Avatar'
+import { Table } from '../../components/ui/Table'
+import { AdminIcon } from '../../components/admin/AdminIcon'
 import { useToast } from '../../hooks/useToast'
-import type { UserRole } from '../../types'
+import type { Course, UserRole } from '../../types'
 
 export default function AdminOverview() {
   const [showCreate, setShowCreate] = useState(false)
@@ -24,9 +26,14 @@ export default function AdminOverview() {
     queryFn: adminApi.stats,
   })
   const { data: courses = [], isLoading: coursesLoading } = useQuery({
-    queryKey: ['all-courses'],
-    queryFn: () => coursesAPI.getAll(),
+    queryKey: ['all-courses', { has_lab: true }],
+    queryFn: () => coursesAPI.getAll({ has_lab: true }),
   })
+  // The overview is a glance, not the course list: courses taking applications first.
+  const RECRUITING = ['open', 'closing_soon']
+  const shownCourses = [...courses]
+    .sort((a, b) => Number(RECRUITING.includes(b.status)) - Number(RECRUITING.includes(a.status)))
+    .slice(0, 8)
   const { data: users = [], isLoading: usersLoading } = useQuery({
     queryKey: ['admin-users', { limit: 7 }],
     queryFn: () => adminApi.users({ limit: 7 }),
@@ -63,58 +70,53 @@ export default function AdminOverview() {
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(180px,1fr))', gap: 16, marginBottom: 28 }}>
-          <StatCard label="ผู้ใช้งานทั้งหมด"  value={stats?.total_users ?? 0}            iconColor="var(--primary)" icon="👥" />
-          <StatCard label="วิชาที่เปิดรับ"     value={stats?.open_courses ?? 0}           iconColor="var(--green)"   icon="📚" />
-          <StatCard label="ผู้สมัครทั้งหมด"   value={stats?.total_applications ?? 0}     iconColor="var(--amber)"   icon="📋" />
-          <StatCard label="รอพิจารณา"          value={stats?.pending_applications ?? 0}  iconColor="var(--red)"     icon="⏳" />
+          <StatCard label="ผู้ใช้งานทั้งหมด"  value={stats?.total_users ?? 0}            iconColor="var(--primary)" icon={<AdminIcon name="users" />} />
+          <StatCard label="วิชาที่เปิดรับ"     value={stats?.open_courses ?? 0}           iconColor="var(--green)"   icon={<AdminIcon name="book" />} />
+          <StatCard label="ผู้สมัครทั้งหมด"   value={stats?.total_applications ?? 0}     iconColor="var(--amber)"   icon={<AdminIcon name="clipboard" />} />
+          <StatCard label="รอพิจารณา"          value={stats?.pending_applications ?? 0}  iconColor="var(--red)"     icon={<AdminIcon name="clock" />} />
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 20, alignItems: 'start' }}>
+      <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         {/* Courses table */}
-        <div>
+        <div style={{ flex: '2 1 520px', minWidth: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink-900)' }}>รายวิชา</h2>
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink-900)' }}>
+              รายวิชา
+              {courses.length > shownCourses.length && (
+                <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-500)', marginLeft: 8 }}>
+                  แสดง {shownCourses.length} จาก {courses.length}
+                </span>
+              )}
+            </h2>
             <Link to="/admin/courses" style={{ fontSize: 13, color: 'var(--primary)', fontWeight: 600 }}>ดูทั้งหมด →</Link>
           </div>
-          <div style={{ background: '#fff', borderRadius: 'var(--radius-card)', overflow: 'hidden', boxShadow: 'var(--shadow-md)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: 'var(--bg)', borderBottom: '1.5px solid var(--line)' }}>
-                  {['รหัส', 'ชื่อวิชา', 'อาจารย์', 'ผู้สมัคร', 'สถานะ'].map((h) => (
-                    <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--ink-500)', whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {coursesLoading && Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid var(--line-soft)' }}>
-                    {[1,2,3,4,5].map((j) => <td key={j} style={{ padding: '12px 14px' }}><Skeleton height={12} /></td>)}
-                  </tr>
-                ))}
-                {!coursesLoading && courses.map((c, i) => (
-                  <tr key={c.id} style={{ borderBottom: i < courses.length - 1 ? '1px solid var(--line-soft)' : 'none' }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg)')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}
-                  >
-                    <td style={{ padding: '11px 14px', fontSize: 12, fontWeight: 700, color: 'var(--primary)' }}>{c.code}</td>
-                    <td style={{ padding: '11px 14px', fontSize: 13, fontWeight: 500, color: 'var(--ink-900)', maxWidth: 200 }}>
-                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.title}</div>
-                    </td>
-                    <td style={{ padding: '11px 14px', fontSize: 12, color: 'var(--ink-500)' }}>{c.instructor_name}</td>
-                    <td style={{ padding: '11px 14px', fontSize: 12, color: 'var(--ink-700)' }}>
-                      {c.labboy_accepted} / {c.labboy_slots}
-                    </td>
-                    <td style={{ padding: '11px 14px' }}><StatusBadge value={c.status} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table
+            label="รายวิชาที่เปิดรับสมัคร"
+            loading={coursesLoading}
+            emptyText="ยังไม่มีรายวิชา"
+            columns={[
+              { key: 'title', header: 'วิชา', render: (c: Course) => (
+                <div style={{ minWidth: 0 }}>
+                  <div className="cell-title" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 280 }} title={c.title}>{c.title}</div>
+                  <div className="cell-sub">
+                    <span className="cell-code">{c.code.split('-')[0]}</span>
+                    {c.section ? ` · Sec ${c.section}` : ''}
+                    {c.instructor_name ? ` · ${c.instructor_name}` : ''}
+                  </div>
+                </div>
+              ) },
+              { key: 'labboy', header: 'Lab Boy', align: 'center', render: (c: Course) => (
+                <span style={{ fontWeight: 600, color: 'var(--ink-900)' }}>{c.labboy_accepted}<span style={{ color: 'var(--ink-400)', fontWeight: 400 }}> / {c.labboy_slots}</span></span>
+              ) },
+              { key: 'status', header: 'สถานะ', render: (c: Course) => <StatusBadge value={c.status} /> },
+            ] as never}
+            data={shownCourses as never}
+          />
         </div>
 
         {/* Users list */}
-        <div>
+        <div style={{ flex: '1 1 320px', minWidth: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
             <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink-900)' }}>ผู้ใช้งาน</h2>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

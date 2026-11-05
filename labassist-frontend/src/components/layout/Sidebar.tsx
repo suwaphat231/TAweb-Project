@@ -5,6 +5,7 @@ import { useLogout } from '../../hooks/useLogout'
 import { useQuery } from '@tanstack/react-query'
 import { instructorApi } from '../../services/api'
 import { MAKEUP_DAYS_KEY, pendingCount } from '../makeup/makeupRules'
+import { useCalendarJob } from '../../hooks/useCalendarJob'
 import { Avatar } from '../ui/Avatar'
 import type { UserRole } from '../../types'
 
@@ -44,7 +45,7 @@ interface NavItem {
   /** Extra path prefixes that also count as this item (nested pages). */
   match?: string[]
   /** Shows a count next to the label: 'makeup' = holiday clashes waiting for a makeup day. */
-  badge?: 'makeup'
+  badge?: 'makeup' | 'calendar'
 }
 
 const navMap: Record<UserRole, NavItem[]> = {
@@ -75,7 +76,7 @@ const navMap: Record<UserRole, NavItem[]> = {
   admin: [
     { to: '/admin/overview',     label: 'ภาพรวม',         icon: 'layout' },
     { to: '/admin/courses',      label: 'จัดการรายวิชา',  icon: 'book' },
-    { to: '/admin/calendar',     label: 'ปฏิทินการศึกษา', icon: 'calendar' },
+    { to: '/admin/calendar',     label: 'ปฏิทินการศึกษา', icon: 'calendar', badge: 'calendar' },
     { to: '/admin/users',        label: 'จัดการผู้ใช้งาน', icon: 'users' },
     { to: '/staff/reports',      label: 'ตรวจสอบรายงาน Lab Boy', icon: 'clipboard', match: ['/reports/'] },
     { to: '/instructor/profile', label: 'ข้อมูลส่วนตัว',   icon: 'user' },
@@ -99,7 +100,9 @@ export function Sidebar({ collapsed = false, onClose }: Props) {
     queryFn: instructorApi.makeupDays,
     enabled: showsMakeup,
   })
-  const badgeCount = { makeup: pendingCount(makeupDays) }
+  const badgeCount = { makeup: pendingCount(makeupDays), calendar: 0 }
+  // An admin's calendar PDF is read in the background: show how it is going.
+  const { data: calendarJob } = useCalendarJob(items.some((i) => i.badge === 'calendar'))
 
   const { requestLogout: handleLogout, logoutDialog } = useLogout()
 
@@ -183,11 +186,18 @@ export function Sidebar({ collapsed = false, onClose }: Props) {
           >
             <span style={{ flexShrink: 0, display: 'flex' }}><Ico name={item.icon} /></span>
             {!collapsed && item.label}
-            {!collapsed && item.badge && badgeCount[item.badge] > 0 && (
-              <span aria-label={`รอดำเนินการ ${badgeCount[item.badge]} รายการ`} style={{
+            {!collapsed && item.badge === 'calendar' && calendarJob && (
+              <span role="status" style={{
+                marginLeft: 'auto', padding: '1px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700, textAlign: 'center',
+                background: calendarJob.status === 'processing' ? '#38BDF8' : calendarJob.status === 'done' ? '#22C55E' : '#EF4444',
+                color: '#0B1220',
+              }}>{calendarJob.status === 'processing' ? 'กำลังอ่าน…' : calendarJob.status === 'done' ? 'พร้อมตรวจ' : 'ไม่สำเร็จ'}</span>
+            )}
+            {!collapsed && item.badge === 'makeup' && badgeCount.makeup > 0 && (
+              <span aria-label={`รอดำเนินการ ${badgeCount.makeup} รายการ`} style={{
                 marginLeft: 'auto', minWidth: 20, padding: '1px 6px', borderRadius: 10,
                 background: '#F59E0B', color: '#fff', fontSize: 11, fontWeight: 700, textAlign: 'center',
-              }}>{badgeCount[item.badge]}</span>
+              }}>{badgeCount.makeup}</span>
             )}
           </NavLink>
         ))}

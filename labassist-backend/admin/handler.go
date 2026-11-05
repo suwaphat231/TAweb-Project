@@ -363,3 +363,59 @@ func (h *Handler) DeleteCoursesByTerm(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, DeleteCoursesByTermResponse{Deleted: deleted, Skipped: skipped})
 }
+
+// StudentTermSchedules godoc
+// @Summary      ตารางเรียนที่นักศึกษาบันทึกไว้ในแต่ละเทอม พร้อมจำนวนครั้งที่แก้ไปแล้ว
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path  int  true  "User ID ของนักศึกษา"
+// @Success      200  {array}  models.TermSchedule
+// @Failure      404  {object}  handlers.ErrorResponse
+// @Router       /admin/users/{id}/term-schedules [get]
+func (h *Handler) StudentTermSchedules(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	u, ok := database.UserByID(uint(id))
+	if !ok || u.Role != models.RoleStudent {
+		c.JSON(http.StatusNotFound, gin.H{"error": "student not found"})
+		return
+	}
+	c.JSON(http.StatusOK, database.TermSchedulesByUser(u.ID))
+}
+
+// ResetStudentTermScheduleSaves godoc
+// @Summary      รีเซ็ตโควตาการแก้ตารางเรียนของนักศึกษาในเทอมหนึ่ง
+// @Description  คืนจำนวนครั้งที่แก้ตารางได้ให้เต็ม (ตัวตารางไม่ถูกแตะ) ทุกครั้งที่เรียกจะถูกบันทึกใน activity log พร้อมชื่อแอดมิน นักศึกษา และเทอมใน path
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id        path  int     true  "User ID ของนักศึกษา"
+// @Param        year      path  int     true  "ปีการศึกษา"
+// @Param        semester  path  string  true  "ภาคเรียน"
+// @Success      200  {object}  models.TermSchedule
+// @Failure      404  {object}  handlers.ErrorResponse
+// @Router       /admin/users/{id}/term-schedules/{year}/{semester}/reset-saves [post]
+func (h *Handler) ResetStudentTermScheduleSaves(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	year, yerr := strconv.Atoi(c.Param("year"))
+	semester := c.Param("semester")
+	if yerr != nil || year <= 0 || semester == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid term"})
+		return
+	}
+	u, ok := database.UserByID(uint(id))
+	if !ok || u.Role != models.RoleStudent {
+		c.JSON(http.StatusNotFound, gin.H{"error": "student not found"})
+		return
+	}
+	found, err := database.ResetTermScheduleSaves(u.ID, semester, year)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not reset"})
+		return
+	}
+	if !found {
+		c.JSON(http.StatusNotFound, gin.H{"error": "นักศึกษายังไม่เคยบันทึกตารางเรียนในเทอมนี้"})
+		return
+	}
+	c.JSON(http.StatusOK, database.TermScheduleByUserTerm(u.ID, semester, year))
+}

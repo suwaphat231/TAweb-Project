@@ -97,3 +97,24 @@ func DistinctCourseTerms() ([]TermOption, error) {
 	}
 	return rows, nil
 }
+
+// TermSchedulesByUser lists every term a student has saved a schedule for,
+// newest first, with SaveLimit filled in.
+func TermSchedulesByUser(userID uint) []models.TermSchedule {
+	var rows []models.TermSchedule
+	DB.Where("user_id = ?", userID).Order("academic_year DESC, semester ASC").Find(&rows)
+	for i := range rows {
+		rows[i].SaveLimit = models.MaxTermScheduleSaves
+	}
+	return rows
+}
+
+// ResetTermScheduleSaves gives the student their full save allowance back for
+// one term (the schedule itself is left as it is). found is false when the
+// student has no saved schedule for that term.
+func ResetTermScheduleSaves(userID uint, semester string, academicYear int) (found bool, err error) {
+	res := DB.Model(&models.TermSchedule{}).
+		Where("user_id = ? AND semester = ? AND academic_year = ?", userID, semester, academicYear).
+		Update("save_count", 0)
+	return res.RowsAffected > 0, res.Error
+}

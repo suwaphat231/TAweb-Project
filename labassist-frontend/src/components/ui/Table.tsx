@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
 import { Skeleton } from './Skeleton'
 import { EmptyState } from './EmptyState'
 
@@ -16,18 +16,28 @@ interface Props<T> {
   onRowClick?: (row: T) => void
   loading?: boolean
   emptyText?: string
+  /** Names the table for screen readers (and for the keyboard-scrollable region). */
+  label?: string
 }
 
+// Styles live in globals.css (.data-table) so hover/focus need no JS handlers.
 export function Table<T extends Record<string, unknown>>({
-  columns, data, onRowClick, loading, emptyText = 'ไม่มีข้อมูล',
+  columns, data, onRowClick, loading, emptyText = 'ไม่มีข้อมูล', label = 'ตารางข้อมูล',
 }: Props<T>) {
+  function onKey(e: KeyboardEvent<HTMLTableRowElement>, row: T) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      onRowClick?.(row)
+    }
+  }
+
   return (
-    <div style={{ overflow: 'auto', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-md)', background: '#fff' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+    <div className="data-table-wrap" role="region" aria-label={label} tabIndex={0}>
+      <table className="data-table">
         <thead>
-          <tr style={{ background: 'var(--bg)', borderBottom: '1.5px solid var(--line)' }}>
+          <tr>
             {columns.map((col) => (
-              <th key={col.key} style={{ padding: '11px 16px', textAlign: col.align ?? 'left', fontSize: 12, fontWeight: 700, color: 'var(--ink-500)', whiteSpace: 'nowrap', width: col.width }}>
+              <th key={col.key} scope="col" style={{ textAlign: col.align ?? 'left', width: col.width }}>
                 {col.header}
               </th>
             ))}
@@ -35,11 +45,9 @@ export function Table<T extends Record<string, unknown>>({
         </thead>
         <tbody>
           {loading && Array.from({ length: 5 }).map((_, i) => (
-            <tr key={i} style={{ borderBottom: '1px solid var(--line-soft)' }}>
+            <tr key={i}>
               {columns.map((col) => (
-                <td key={col.key} style={{ padding: '14px 16px' }}>
-                  <Skeleton height={14} />
-                </td>
+                <td key={col.key}><Skeleton height={14} /></td>
               ))}
             </tr>
           ))}
@@ -53,17 +61,13 @@ export function Table<T extends Record<string, unknown>>({
           {!loading && data.map((row, i) => (
             <tr
               key={i}
-              style={{
-                borderBottom: i < data.length - 1 ? '1px solid var(--line-soft)' : 'none',
-                transition: 'background .12s',
-                cursor: onRowClick ? 'pointer' : undefined,
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}
+              className={onRowClick ? 'is-clickable' : undefined}
+              tabIndex={onRowClick ? 0 : undefined}
               onClick={() => onRowClick?.(row)}
+              onKeyDown={onRowClick ? (e) => onKey(e, row) : undefined}
             >
               {columns.map((col) => (
-                <td key={col.key} style={{ padding: '12px 16px', fontSize: 14, color: 'var(--ink-700)', verticalAlign: 'middle', textAlign: col.align ?? 'left', width: col.width }}>
+                <td key={col.key} style={{ textAlign: col.align ?? 'left', width: col.width }}>
                   {col.render ? col.render(row) : String(row[col.key] ?? '')}
                 </td>
               ))}

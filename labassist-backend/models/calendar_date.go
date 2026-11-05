@@ -4,6 +4,7 @@ import "time"
 
 type CalendarDateType string
 type CalendarDateScope string
+type CalendarDateSource string
 
 const (
 	DateTypePublicHoliday     CalendarDateType = "public_holiday"
@@ -11,6 +12,9 @@ const (
 	DateTypeNoClass           CalendarDateType = "no_class"
 	DateTypeCaseException     CalendarDateType = "case_exception"
 	DateTypeMakeup            CalendarDateType = "makeup"
+
+	DateSourceManual   CalendarDateSource = "manual"
+	DateSourceExternal CalendarDateSource = "external"
 
 	DateScopeGlobal   CalendarDateScope = "global"
 	DateScopeSemester CalendarDateScope = "semester"
@@ -40,6 +44,17 @@ type CalendarDate struct {
 
 	// OriginalDateID links a makeup CalendarDate back to the holiday it compensates for.
 	OriginalDateID *uint `gorm:"index" json:"original_date_id,omitempty"`
+
+	// Source tells staff-made rows ("manual") from rows the holiday sync
+	// imported ("external"). The sync only ever touches external rows.
+	Source CalendarDateSource `gorm:"size:20;not null;default:'manual';index" json:"source"`
+	// ExternalKey identifies an imported row across syncs (NULL for manual rows;
+	// MySQL allows many NULLs in a unique index).
+	ExternalKey *string `gorm:"size:64;uniqueIndex:idx_calendar_dates_external_key" json:"-"`
+	// ExternalType is the type the data source gave (e.g. substitution_holiday).
+	ExternalType string `gorm:"size:30" json:"external_type,omitempty"`
+	// SyncedAt is the last time the sync saw this row in the source.
+	SyncedAt *time.Time `json:"synced_at,omitempty"`
 
 	CreatedByID uint      `gorm:"not null" json:"created_by_id"`
 	EditReason  string    `gorm:"size:500" json:"edit_reason,omitempty"`

@@ -224,6 +224,10 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			staffGroup.GET("/staff/cases/:id/calendar-dates", staffH.ListCalendarDates)
 			staffGroup.POST("/staff/calendar-dates", staffH.CreateCalendarDate)
 			staffGroup.DELETE("/staff/calendar-dates/:id", staffH.DeleteCalendarDate)
+			// Thai public holidays imported automatically from a JSON source
+			staffGroup.GET("/staff/holiday-sync", staffH.HolidaySyncStatus)
+			staffGroup.POST("/staff/holiday-sync", staffH.RunHolidaySync)
+			staffGroup.GET("/staff/holiday-sync/holidays", staffH.ListImportedHolidays)
 
 			// Work occurrences
 			staffGroup.GET("/staff/cases/:id/occurrences", staffH.ListOccurrences)
@@ -253,6 +257,8 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			adminGroup.DELETE("/admin/users/:id", adminH.DeleteUser)
 			adminGroup.PUT("/admin/users/:id/status", adminH.UpdateUserStatus)
 			adminGroup.GET("/admin/users/:id/courses", adminH.InstructorCourses)
+			adminGroup.GET("/admin/users/:id/term-schedules", adminH.StudentTermSchedules)
+			adminGroup.POST("/admin/users/:id/term-schedules/:year/:semester/reset-saves", adminH.ResetStudentTermScheduleSaves)
 			adminGroup.GET("/admin/core-courses", adminH.CoreCourseCatalog)
 			adminGroup.GET("/admin/logs", adminH.Logs)
 			adminGroup.POST("/admin/courses/import", adminH.ImportCourses)
@@ -263,7 +269,15 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			adminGroup.POST("/admin/course-edit-requests/:id/reject", adminH.RejectCourseEditRequest)
 			// Academic calendar: read the PDF for review, then save the chosen dates
 			adminGroup.POST("/admin/calendar/import/preview", adminH.PreviewCalendarImport)
+			adminGroup.GET("/admin/calendar/import/job", adminH.CalendarJob)
+			adminGroup.DELETE("/admin/calendar/import/job", adminH.ClearCalendarJob)
 			adminGroup.POST("/admin/calendar/import", adminH.ImportCalendar)
+			// Holiday overview and the Thai public holiday sync (same handlers staff use)
+			adminGroup.GET("/admin/calendar/holidays", adminH.ListYearHolidays)
+			adminGroup.GET("/admin/calendar/terms", adminH.ListAcademicTerms)
+			adminGroup.GET("/admin/calendar/events", adminH.ListAcademicEvents)
+			adminGroup.GET("/admin/holiday-sync", staffH.HolidaySyncStatus)
+			adminGroup.POST("/admin/holiday-sync", staffH.RunHolidaySync)
 		}
 	}
 }

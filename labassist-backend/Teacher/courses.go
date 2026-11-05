@@ -427,6 +427,14 @@ func (h *Handler) Update(c *gin.Context) {
 		suggested := course.SuggestedLabBoySlots
 		body.LabBoySlots = &suggested
 	}
+	// Where the formula applies the headcount is fixed by it: the instructor may
+	// not change the number to anything else (an unchanged legacy value stays
+	// editable so other fields can still be saved).
+	if body.LabBoySlots != nil && course.SuggestedLabBoySlots > 0 &&
+		*body.LabBoySlots != course.SuggestedLabBoySlots && *body.LabBoySlots != course.LabBoySlots {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("จำนวน Lab Boy ของวิชานี้ต้องเป็น %d คน ตามสูตร (ลงทะเบียน ÷ 10 วิชาปี 1, ÷ 20 ปี 2 ขึ้นไป)", course.SuggestedLabBoySlots)})
+		return
+	}
 	if body.LabBoySlots != nil && *body.LabBoySlots < course.LabBoyAccepted {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "slots cannot be less than accepted applicants"})
 		return

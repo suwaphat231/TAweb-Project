@@ -5,6 +5,7 @@ import { useToast } from '../../hooks/useToast'
 import type { CalendarDate, CalendarDateType } from '../../types'
 import { DateInput } from '../../components/ui/DateInput'
 import { CALENDAR_IMPORT_REASON, semesterMonthKeys } from '../../utils/academicCalendar'
+import HolidaySyncPanel from './components/HolidaySyncPanel'
 
 const SEMESTER_MONTHS: Record<string, { label: string; months: number[] }> = {
   '1': { label: 'ภาคต้น',      months: [7, 8, 9, 10] },
@@ -144,6 +145,8 @@ export default function StaffSettings() {
           กำหนดวันหยุดและวันงดสอนประจำภาคการศึกษา
         </p>
       </div>
+
+      <HolidaySyncPanel />
 
       {/* Semester picker */}
       <div style={{
@@ -337,6 +340,13 @@ export default function StaffSettings() {
                               background: 'var(--primary-50)', color: 'var(--primary)',
                               fontSize: 10, fontWeight: 600,
                             }}>จากปฏิทินการศึกษา</span>
+                          )}
+                          {d.source === 'external' && (
+                            <span style={{
+                              padding: '0 5px', borderRadius: 4,
+                              background: '#ECFDF5', color: '#047857',
+                              fontSize: 10, fontWeight: 600,
+                            }}>นำเข้าอัตโนมัติ</span>
                           )}
                           {!d.affects_work && (
                             <span style={{

@@ -204,8 +204,9 @@ export function CourseFormModal({
             onChange={handleSlotsChange}
             onKeyDown={handleNonNegativeKeyDown}
             required
+            readOnly={!editId && suggestions.length > 0}
             hint={!editId && suggestions.length > 0
-              ? `ตามสูตร: ${suggestions.map((s) => `${s.sec ? `Sec ${s.sec} ` : ''}${s.n} คน`).join(' · ')} (ลงทะเบียน ÷ 10 วิชาปี 1, ÷ 20 ปี 2 ขึ้นไป) — พิมพ์แก้ได้`
+              ? `ล็อกตามสูตร: ${suggestions.map((s) => `${s.sec ? `Sec ${s.sec} ` : ''}${s.n} คน`).join(' · ')} (ลงทะเบียน ÷ 10 วิชาปี 1, ÷ 20 ปี 2 ขึ้นไป)`
               : undefined}
           />
           <Input label="วันปิดรับสมัคร" type="date" min={minDeadline} value={form.deadline ?? ''} onChange={set('deadline')} />

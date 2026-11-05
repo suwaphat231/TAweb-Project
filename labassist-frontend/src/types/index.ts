@@ -82,7 +82,7 @@ export type OcrJobs = Record<OcrJobKind, OcrJobState | null>
 
 /** Payload of the "ocr_finished" WebSocket event. */
 export interface OcrFinishedEvent {
-  kind: OcrJobKind
+  kind: OcrJobKind | 'calendar'
   status: 'done' | 'failed'
   error?: string
 }
@@ -751,10 +751,43 @@ export interface CalendarDate {
   staff_case_id?: number
   affects_work: boolean
   original_date_id?: number
+  /** 'external' = imported by the holiday sync; 'manual' = made by staff. */
+  source: 'manual' | 'external'
+  /** Type given by the data source, e.g. substitution_holiday. */
+  external_type?: string
+  /** Last time the sync saw this holiday in the source. */
+  synced_at?: string
   created_by_id: number
   edit_reason?: string
   created_at: string
   updated_at: string
+}
+
+export type HolidaySyncRunStatus = 'success' | 'no_data' | 'failed'
+
+export interface HolidaySyncRun {
+  id: number
+  /** Calendar year (ค.ศ.). */
+  year: number
+  status: HolidaySyncRunStatus
+  trigger: 'scheduled' | 'manual'
+  message?: string
+  total: number
+  created: number
+  updated: number
+  unchanged: number
+  skipped_manual: number
+  skipped_deleted: number
+  missing: number
+  started_at: string
+  finished_at: string
+}
+
+export interface HolidaySyncStatus {
+  enabled: boolean
+  interval_hours: number
+  last_success_at: string | null
+  runs: HolidaySyncRun[]
 }
 
 export type OccurrenceStatus = 'scheduled' | 'cancelled_holiday' | 'rescheduled' | 'completed' | 'absent' | 'cancelled_other'
@@ -931,6 +964,82 @@ export interface CalendarPreviewResponse {
   detected_academic_year?: number
   used_ocr: boolean
   entries: CalendarPreviewEntry[]
+  /** Always the three semesters (1, 2, S). */
+  terms: CalendarPreviewTerm[]
+  /** Other rows of the calendar (registration, exams, deadlines, ...). */
+  activities: CalendarPreviewActivity[]
+  /** Academic events already saved for the year; importing replaces them. */
+  saved_events: number
+}
+
+export type AcademicEventCategory = 'registration' | 'exam' | 'deadline' | 'other'
+
+/** A non-holiday row of the calendar PDF, offered for review. */
+export interface CalendarPreviewActivity {
+  start_date: string
+  end_date: string
+  name: string
+  semester: string
+  category: AcademicEventCategory
+  page: number
+}
+
+export interface CalendarImportEvent {
+  start_date: string
+  end_date: string
+  name: string
+  semester: string
+  category: AcademicEventCategory
+}
+
+/** A saved academic event shown on the admin calendar. */
+export interface AcademicEvent {
+  id: number
+  academic_year: number
+  semester: string
+  start_date: string
+  end_date: string
+  name: string
+  category: AcademicEventCategory
+}
+
+/** Open/close date of one semester read from the calendar PDF (empty = not found). */
+export interface CalendarPreviewTerm {
+  semester: string
+  open_date?: string
+  close_date?: string
+  /** The calendar rows the dates were read from. */
+  open_name?: string
+  close_name?: string
+  page?: number
+  /** Dates already saved for this semester. */
+  saved_open_date?: string
+  saved_close_date?: string
+}
+
+/** The admin's background calendar-PDF job (GET /admin/calendar/import/job); null when none. */
+export interface CalendarJob {
+  status: 'processing' | 'failed' | 'done'
+  error?: string
+  started_at: string
+  meta?: { file_name: string; academic_year: number }
+  /** Present when status is 'done': what was read, waiting for review. */
+  result?: CalendarPreviewResponse
+}
+
+export interface CalendarImportTerm {
+  semester: string
+  open_date: string
+  close_date: string
+}
+
+/** Saved open/close date of a semester (dates are RFC3339 from the API; use the first 10 chars). */
+export interface AcademicTerm {
+  id: number
+  academic_year: number
+  semester: string
+  open_date: string | null
+  close_date: string | null
 }
 
 export interface CalendarImportEntry {
@@ -944,6 +1053,8 @@ export interface CalendarImportEntry {
 
 export interface CalendarImportResponse {
   created: number
+  terms_saved: number
+  events_saved: number
   skipped: number
   warning?: string
 }

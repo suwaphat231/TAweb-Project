@@ -3,6 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
 import { adminApi, coursesAPI } from '../../services/api'
 import { Table } from '../../components/ui/Table'
+import { FilterChips } from '../../components/ui/FilterChips'
+import { AdminPageHeader } from '../../components/admin/AdminPageHeader'
+import { AdminIcon } from '../../components/admin/AdminIcon'
 import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
 import { Input } from '../../components/ui/Input'
@@ -251,32 +254,33 @@ export default function AdminCourses() {
   })
 
   const columns = [
-    { key: 'code',  header: 'รหัสวิชา', render: (c: Course) => <span style={{ fontWeight: 700, color: 'var(--primary)' }}>{c.code}</span> },
     {
-      key: 'title', header: 'ชื่อวิชา', width: 300,
+      key: 'title', header: 'วิชา', width: 320,
       render: (c: Course) => (
         <div>
-          <div style={{ fontWeight: 600 }}>{c.title}</div>
-          {c.english_title && <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{c.english_title}</div>}
+          <div className="cell-title">{c.title}</div>
+          {c.english_title && <div className="cell-sub">{c.english_title}</div>}
+          <div className="cell-sub">
+            <span className="cell-code">{c.code}</span>
+            {` · ภาคเรียนที่ ${c.semester}${c.section ? ` · กลุ่ม ${c.section}` : ''}`}
+          </div>
         </div>
       ),
     },
-    { key: 'credits', header: 'หน่วยกิต', render: (c: Course) => <span style={{ fontSize: 13 }}>{c.credits || '—'}</span> },
-    { key: 'schedule', header: 'เวลาเรียน', render: (c: Course) => <span style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{formatSchedule(c.schedule) || '—'}</span> },
+    { key: 'schedule', header: 'เวลาเรียน', render: (c: Course) => <span style={{ whiteSpace: 'pre-wrap' }}>{formatSchedule(c.schedule) || '—'}</span> },
     {
       key: 'instructor_name', header: 'อาจารย์',
-      render: (c: Course) => <span style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{c.instructors_raw || c.instructor_name || '—'}</span>,
+      render: (c: Course) => <span style={{ whiteSpace: 'pre-wrap' }}>{c.instructors_raw || c.instructor_name || '—'}</span>,
     },
-    { key: 'term', header: 'เทอม', render: (c: Course) => <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>ภาคเรียนที่ {c.semester}{c.section ? ` · กลุ่ม ${c.section}` : ''}</span> },
+    { key: 'credits', header: 'หน่วยกิต', align: 'center' as const, render: (c: Course) => c.credits || '—' },
     {
-      key: 'actions', header: '',
+      key: 'actions', header: '', align: 'right' as const,
       render: (c: Course) => (
         <Button
-          size="sm" variant="ghost"
+          size="sm" variant="danger-ghost"
           onClick={() => {
             if (confirm(`ยืนยันลบวิชา ${c.code} - ${c.title}?`)) deleteMut.mutate(c.id)
           }}
-          style={{ color: 'var(--red)', border: '1px solid var(--line)' }}
         >
           ลบ
         </Button>
@@ -286,57 +290,36 @@ export default function AdminCourses() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink-900)' }}>จัดการรายวิชา</h1>
-          <p style={{ fontSize: 14, color: 'var(--ink-500)', marginTop: 4 }}>
-            {visibleCourses.length} วิชา{courses.length !== visibleCourses.length ? ` (จากทั้งหมด ${courses.length} วิชา — ซ่อนวิชาที่ไม่มี Lab)` : ''}
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <Button variant="outline" onClick={() => setShowEditRequests(true)}>
-            คำขอแก้ไขวิชา
-            {editRequests.length > 0 && (
-              <span style={{
-                marginLeft: 6, minWidth: 20, padding: '0 6px', borderRadius: 999,
-                background: 'var(--red)', color: '#fff', fontSize: 12, fontWeight: 700, lineHeight: '20px',
-              }}>
-                {editRequests.length}
-              </span>
-            )}
-          </Button>
-          <Button variant="ghost" style={{ color: 'var(--red)', border: '1px solid var(--line)' }} onClick={() => setShowBulkDelete(true)}>
-            ลบทั้งเทอม
-          </Button>
-          <Button variant="outline" onClick={() => setShowAddCourse(true)}>+ เพิ่มวิชา</Button>
-          <Button onClick={() => setShowImport(true)}>นำเข้าจาก Excel</Button>
-        </div>
-      </div>
+      <AdminPageHeader
+        title="จัดการรายวิชา"
+        description={`${visibleCourses.length} วิชา${courses.length !== visibleCourses.length ? ` (จากทั้งหมด ${courses.length} วิชา — ซ่อนวิชาที่ไม่มี Lab)` : ''}`}
+        actions={
+          <>
+            <Button variant="danger-ghost" onClick={() => setShowBulkDelete(true)}>ลบทั้งเทอม</Button>
+            <Button variant="outline" onClick={() => setShowEditRequests(true)}>
+              คำขอแก้ไขวิชา
+              {editRequests.length > 0 && (
+                <span style={{
+                  marginLeft: 6, minWidth: 20, padding: '0 6px', borderRadius: 999,
+                  background: 'var(--red)', color: '#fff', fontSize: 12, fontWeight: 700, lineHeight: '20px',
+                }}>
+                  {editRequests.length}
+                </span>
+              )}
+            </Button>
+            <Button variant="outline" onClick={() => setShowAddCourse(true)}>+ เพิ่มวิชา</Button>
+            <Button onClick={() => setShowImport(true)}>นำเข้าจาก Excel</Button>
+          </>
+        }
+      />
 
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
-        {SEMESTER_TABS.map((tab) => (
-          <button
-            key={tab.value}
-            onClick={() => setSemesterFilter(tab.value)}
-            style={{
-              padding: '6px 14px',
-              borderRadius: 999,
-              fontSize: 13,
-              fontWeight: 600,
-              border: '1.5px solid var(--line)',
-              background: semesterFilter === tab.value ? 'var(--primary)' : '#fff',
-              color: semesterFilter === tab.value ? '#fff' : 'var(--ink-700)',
-              cursor: 'pointer',
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div style={{ marginBottom: 16 }}>
+        <FilterChips options={SEMESTER_TABS} value={semesterFilter} onChange={setSemesterFilter} />
       </div>
 
       {isLoading
         ? <Skeleton lines={6} height={48} />
-        : <Table columns={columns as never} data={visibleCourses as never} emptyText="ไม่มีวิชาที่มี Lab ในภาคการศึกษานี้" />
+        : <Table label="รายวิชา" columns={columns as never} data={visibleCourses as never} emptyText="ไม่มีวิชาที่มี Lab ในภาคการศึกษานี้" />
       }
 
       <CourseEditRequestsModal isOpen={showEditRequests} onClose={() => setShowEditRequests(false)} requests={editRequests} />
@@ -373,7 +356,7 @@ export default function AdminCourses() {
 
       <Modal isOpen={duplicateNotice !== null} onClose={() => setDuplicateNotice(null)} title="แจ้งเตือน" size="sm">
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, textAlign: 'center' }}>
-          <div style={{ fontSize: 40, lineHeight: 1 }}>⚠️</div>
+          <div style={{ color: 'var(--amber)' }}><AdminIcon name="alert" size={40} /></div>
           <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink-900)' }}>รายวิชานี้มีอยู่ในระบบแล้ว</div>
           {duplicateNotice && (
             <div style={{ fontSize: 14, color: 'var(--ink-500)' }}>

@@ -8,14 +8,14 @@ import type {
   FormReview, StaffDocument, CreateStaffDocumentPayload, OcrJobs, CoreCourse, WorkDaySlot,
   WorkSession, TermSchedule, TermOption, ScheduleSlot, TermScheduleStatus,
   LabBoyAssignment, CourseRelation, StudentInfoUploadResult,
-  StaffCaseResponse, ScheduleGroup, CalendarDate, WorkOccurrence, MonthlyPeriodResponse, StaffAuditLog,
+  StaffCaseResponse, ScheduleGroup, CalendarDate, HolidaySyncStatus, HolidaySyncRun, WorkOccurrence, MonthlyPeriodResponse, StaffAuditLog,
   UpdateCasePayload, AddScheduleGroupPayload, UpdateScheduleGroupPayload, CreateCalendarDatePayload, GenerateOccurrencesPayload,
   ScheduleGroupMonth, AddGroupMonthPayload, MonthOccurrenceSummary,
   GroupMonthPlan, AddGroupMonthOccurrencePayload, PatchOccurrencePayload, HiringNoticePlanSnapshot,
   LabBoyReport, ReportDetail, ReportPage, ReportListParams, ReportInput, ReportAction, ReportEvidence,
   MakeupDay, MakeupDayPayload,
   ReportResponse, ConfirmedRecord, DocumentWorkflowResponse, CreateWorkflowStepPayload, DocType,
-  CalendarPreviewResponse, CalendarImportEntry, CalendarImportResponse, SkippedCourse,
+  CalendarImportEntry, CalendarImportResponse, SkippedCourse,
   CourseEditRequest, CourseEditRequestPayload, CourseEditRequestStatus,
   TranscriptImage, ClassSchedule, ClassScheduleUpload,
 } from '../types'
@@ -221,6 +221,12 @@ export const adminAPI = {
     api.put<User>(`/admin/users/${id}/status`, { is_active }).then((r) => r.data),
   deleteUser: (id: number) => api.delete(`/admin/users/${id}`).then(() => undefined),
   userCourses: (id: number) => api.get<Course[]>(`/admin/users/${id}/courses`).then((r) => r.data),
+  // ตารางเรียนที่นักศึกษาบันทึกไว้แต่ละเทอม + จำนวนครั้งที่แก้ไปแล้ว
+  studentTermSchedules: (id: number) =>
+    api.get<import('../types').TermSchedule[]>(`/admin/users/${id}/term-schedules`).then((r) => r.data),
+  // คืนโควตาการแก้ตารางให้เต็ม (ตารางไม่ถูกแตะ) — บันทึกใน activity log
+  resetTermScheduleSaves: (id: number, academicYear: number, semester: string) =>
+    api.post<import('../types').TermSchedule>(`/admin/users/${id}/term-schedules/${academicYear}/${semester}/reset-saves`).then((r) => r.data),
   // For courses an instructor asked for, or that just aren't in the Excel
   // import — admin can add one directly and assign it to any instructor.
   createCourse: (data: CreateCoursePayload) =>
@@ -253,10 +259,26 @@ export const adminAPI = {
     const formData = new FormData()
     formData.append('file', file)
     formData.append('academic_year', String(academicYear))
-    return api.post<CalendarPreviewResponse>('/admin/calendar/import/preview', formData).then((r) => r.data)
+    // The server reads the file in the background and answers 202 at once.
+    return api.post<{ status: string }>('/admin/calendar/import/preview', formData).then((r) => r.data)
   },
-  importCalendar: (academicYear: number, entries: CalendarImportEntry[]) =>
-    api.post<CalendarImportResponse>('/admin/calendar/import', { academic_year: academicYear, entries }).then((r) => r.data),
+  calendarJob: () => api.get<import('../types').CalendarJob | null>('/admin/calendar/import/job').then((r) => r.data),
+  clearCalendarJob: () => api.delete('/admin/calendar/import/job').then(() => undefined),
+  importCalendar: (academicYear: number, entries: CalendarImportEntry[], terms: import('../types').CalendarImportTerm[] = [], events: import('../types').CalendarImportEvent[] = []) =>
+    api.post<CalendarImportResponse>('/admin/calendar/import', { academic_year: academicYear, entries, terms, events }).then((r) => r.data),
+  // วันเปิด-ปิดภาคเรียนที่บันทึกไว้ ของปีการศึกษา (พ.ศ.) ที่ระบุ
+  listAcademicTerms: (years: number[]) =>
+    api.get<import('../types').AcademicTerm[]>('/admin/calendar/terms', { params: { years: years.join(',') } }).then((r) => r.data),
+  // กิจกรรมวิชาการที่บันทึกไว้ (ลงทะเบียน สอบ กำหนดส่ง ฯลฯ)
+  listAcademicEvents: (years: number[]) =>
+    api.get<import('../types').AcademicEvent[]>('/admin/calendar/events', { params: { years: years.join(',') } }).then((r) => r.data),
+  // วันหยุดทั้งหมดของปี ค.ศ. (ซิงก์อัตโนมัติ + เจ้าหน้าที่ + นำเข้าจาก PDF)
+  listYearHolidays: (year: number) =>
+    api.get<import('../types').CalendarDate[]>('/admin/calendar/holidays', { params: { year } }).then((r) => r.data),
+  getHolidaySyncStatus: () =>
+    api.get<import('../types').HolidaySyncStatus>('/admin/holiday-sync').then((r) => r.data),
+  runHolidaySync: () =>
+    api.post<{ runs: import('../types').HolidaySyncRun[] }>('/admin/holiday-sync').then((r) => r.data),
 }
 
 export const notificationApi = {
@@ -464,6 +486,13 @@ export const staffApi = {
     api.post<CalendarDate>('/staff/calendar-dates', data).then((r) => r.data),
   deleteCalendarDate: (id: number) =>
     api.delete(`/staff/calendar-dates/${id}`).then((r) => r.data),
+  // Thai public holidays imported automatically from a JSON source
+  getHolidaySyncStatus: () =>
+    api.get<HolidaySyncStatus>('/staff/holiday-sync').then((r) => r.data),
+  runHolidaySync: () =>
+    api.post<{ runs: HolidaySyncRun[] }>('/staff/holiday-sync').then((r) => r.data),
+  listImportedHolidays: (year: number) =>
+    api.get<CalendarDate[]>('/staff/holiday-sync/holidays', { params: { year } }).then((r) => r.data),
 
   // Work occurrences
   listOccurrences: (caseId: number) =>

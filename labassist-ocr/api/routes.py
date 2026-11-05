@@ -5,14 +5,14 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 import json
 from models.schemas import (
     OCRResponse, SubjectCriteria, ScheduleOCRResponse, StudentInfoExtractResult,
-    AcademicCalendarEntry, AcademicCalendarResponse,
+    AcademicCalendarEntry, AcademicCalendarResponse, AcademicCalendarTerm,
 )
 from services.preprocessor import preprocess_image, preprocess_pages
 from services.ocr_engine import extract_text, extract_text_scaled, read_latin
 from services.processor import parse_transcript, evaluate_grades
 from services.schedule_parser import parse_schedule
 from services.student_info_parser import extract_student_info
-from services.calendar_parser import tokens_from_pdf, tokens_from_ocr, parse_calendar, detect_academic_year
+from services.calendar_parser import tokens_from_pdf, tokens_from_ocr, parse_calendar, extract_terms, detect_academic_year
 
 router = APIRouter()
 
@@ -232,6 +232,17 @@ async def extract_academic_calendar(
                 page=e.page,
             )
             for e in entries
+        ],
+        terms=[
+            AcademicCalendarTerm(
+                semester=t.semester,
+                open_date=t.open_date.isoformat() if t.open_date else None,
+                close_date=t.close_date.isoformat() if t.close_date else None,
+                open_name=t.open_name,
+                close_name=t.close_name,
+                page=t.page,
+            )
+            for t in extract_terms(entries)
         ],
         detected_academic_year=detect_academic_year(tokens),
         used_ocr=used_ocr,

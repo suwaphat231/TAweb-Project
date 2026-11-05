@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { CalendarPreviewEntry } from '../types'
 import {
-  currentAcademicYear, entryDays, formatEntryRange, importSummary, semesterMonthKeys, toDraftRows, toImportPayload,
+  academicYearOfMonth, currentAcademicYear, entryDays, filledTerms, formatEntryRange, importSummary, semesterMonthKeys,
+  termIssue, toDraftRows, toImportPayload, toTermDrafts, toTermPayload,
 } from './academicCalendar'
 
 const entry = (over: Partial<CalendarPreviewEntry>): CalendarPreviewEntry => ({
@@ -60,5 +61,58 @@ describe('academic calendar import helpers', () => {
       { date: '2026-08-12', scope: 'semester' },
       { date: '2025-12-31', scope: 'global' },
     ])).toEqual(['2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11'])
+  })
+})
+
+describe('semester open/close dates', () => {
+  it('always gives the three semesters, empty where the file had none', () => {
+    const drafts = toTermDrafts([{ semester: '2', open_date: '2026-11-09' }])
+    expect(drafts.map((d) => d.semester)).toEqual(['1', '2', 'S'])
+    expect(drafts[1].open_date).toBe('2026-11-09')
+    expect(drafts[0].open_date).toBe('')
+    expect(toTermDrafts(undefined)).toHaveLength(3)
+  })
+
+  it('sends only semesters that have at least one date', () => {
+    const drafts = toTermDrafts([{ semester: '1', open_date: '2026-06-22', close_date: '2026-10-30' }, { semester: 'S', close_date: '2027-06-01' }])
+    expect(filledTerms(drafts).map((d) => d.semester)).toEqual(['1', 'S'])
+    expect(toTermPayload(drafts)).toEqual([
+      { semester: '1', open_date: '2026-06-22', close_date: '2026-10-30' },
+      { semester: 'S', open_date: '', close_date: '2027-06-01' },
+    ])
+  })
+
+  it('flags a close date before the open date', () => {
+    const base = { semester: '1', open_date: '2026-10-30', close_date: '2026-06-22' }
+    expect(termIssue(base)).not.toBe('')
+    expect(termIssue({ ...base, close_date: '2026-11-01' })).toBe('')
+    expect(termIssue({ ...base, close_date: '' })).toBe('')
+  })
+
+  it('maps a calendar month to its academic year (starts in June)', () => {
+    expect(academicYearOfMonth(2026, 5)).toBe(2569) // June 2026
+    expect(academicYearOfMonth(2026, 4)).toBe(2568) // May 2026
+    expect(academicYearOfMonth(2027, 0)).toBe(2569) // Jan 2027
+  })
+})
+
+describe('academic events', () => {
+  const act = (category: 'exam' | 'other') => ({
+    start_date: '2026-08-22', end_date: '2026-09-05', name: ' สอบกลางภาค ', semester: '1', category, page: 2,
+  })
+
+  it('selects categorised rows only and trims names for the payload', async () => {
+    const { toEventDrafts, toEventPayload } = await import('./academicCalendar')
+    const drafts = toEventDrafts([act('exam'), act('other')])
+    expect(drafts.map((d) => d.include)).toEqual([true, false])
+    expect(toEventPayload(drafts)).toEqual([
+      { start_date: '2026-08-22', end_date: '2026-09-05', name: 'สอบกลางภาค', semester: '1', category: 'exam' },
+    ])
+  })
+
+  it('lists every day of a range and a single day otherwise', async () => {
+    const { eventDays } = await import('./academicCalendar')
+    expect(eventDays('2026-08-30', '2026-09-02')).toEqual(['2026-08-30', '2026-08-31', '2026-09-01', '2026-09-02'])
+    expect(eventDays('2026-08-30', '2026-08-01')).toEqual(['2026-08-30'])
   })
 })

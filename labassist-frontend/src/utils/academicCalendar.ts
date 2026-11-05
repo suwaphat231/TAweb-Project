@@ -1,4 +1,4 @@
-import type { CalendarImportEntry, CalendarImportType, CalendarPreviewEntry } from '../types'
+import type { CalendarImportEntry, CalendarImportTerm, CalendarImportType, CalendarPreviewEntry, CalendarPreviewTerm } from '../types'
 import { formatThaiDate } from './thaiDate'
 
 /** A holiday read from the calendar file that the admin can edit before saving. */
@@ -76,4 +76,82 @@ export function semesterMonthKeys(defaults: string[], dates: { date: string; sco
     if (d.scope === 'semester') keys.add(d.date.slice(0, 7))
   }
   return [...keys].sort()
+}
+
+// ── Semester open / close dates ────────────────────────────────────────
+
+/** One semester's open/close date while the admin reviews it (YYYY-MM-DD, '' = empty). */
+export interface TermDraft {
+  semester: string
+  open_date: string
+  close_date: string
+  /** Where the dates were read from, for display. */
+  open_name?: string
+  close_name?: string
+  page?: number
+  saved_open_date?: string
+  saved_close_date?: string
+}
+
+export function toTermDrafts(terms: CalendarPreviewTerm[] | undefined): TermDraft[] {
+  return ['1', '2', 'S'].map((semester) => {
+    const t = (terms ?? []).find((x) => x.semester === semester)
+    return {
+      semester,
+      open_date: t?.open_date ?? '', close_date: t?.close_date ?? '',
+      open_name: t?.open_name, close_name: t?.close_name, page: t?.page,
+      saved_open_date: t?.saved_open_date, saved_close_date: t?.saved_close_date,
+    }
+  })
+}
+
+/** Problem with one semester's dates, or '' when fine (a blank pair is fine). */
+export function termIssue(t: TermDraft): string {
+  if (t.open_date && t.close_date && t.close_date < t.open_date) return 'วันปิดภาคเรียนต้องไม่ก่อนวันเปิดภาคเรียน'
+  return ''
+}
+
+export function filledTerms(terms: TermDraft[]): TermDraft[] {
+  return terms.filter((t) => t.open_date || t.close_date)
+}
+
+export function toTermPayload(terms: TermDraft[]): CalendarImportTerm[] {
+  return filledTerms(terms).map((t) => ({ semester: t.semester, open_date: t.open_date, close_date: t.close_date }))
+}
+
+/** Academic year (พ.ศ.) a calendar month belongs to: the year starts in June. */
+export function academicYearOfMonth(ceYear: number, month0: number): number {
+  return (month0 >= 5 ? ceYear : ceYear - 1) + 543
+}
+
+// ── Academic events (registration, exams, deadlines, ...) ─────────────────────
+
+export const EVENT_CATEGORY_LABEL: Record<import('../types').AcademicEventCategory, string> = {
+  registration: 'ลงทะเบียน / ถอน', exam: 'สอบ', deadline: 'กำหนดส่ง / วันสุดท้าย', other: 'อื่น ๆ',
+}
+
+export interface EventDraft {
+  activity: import('../types').CalendarPreviewActivity
+  include: boolean
+}
+
+/** Rows start selected except the uncategorised ones, which are mostly noise. */
+export function toEventDrafts(activities: import('../types').CalendarPreviewActivity[] = []): EventDraft[] {
+  return activities.map((activity) => ({ activity, include: activity.category !== 'other' }))
+}
+
+export function toEventPayload(drafts: EventDraft[]): import('../types').CalendarImportEvent[] {
+  return drafts.filter((d) => d.include).map(({ activity: a }) => ({
+    start_date: a.start_date, end_date: a.end_date, name: a.name.trim(), semester: a.semester, category: a.category,
+  }))
+}
+
+/** Every ISO day (YYYY-MM-DD) from start to end inclusive; one day when end is missing or earlier. */
+export function eventDays(startIso: string, endIso: string): string[] {
+  const start = new Date(`${startIso.slice(0, 10)}T00:00:00Z`)
+  const end = new Date(`${endIso.slice(0, 10)}T00:00:00Z`)
+  if (Number.isNaN(start.getTime())) return []
+  const days: string[] = []
+  for (let d = start; !(d > end) && days.length < 400; d = new Date(d.getTime() + 86400000)) days.push(d.toISOString().slice(0, 10))
+  return days.length > 0 ? days : [start.toISOString().slice(0, 10)]
 }

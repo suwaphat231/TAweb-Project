@@ -80,6 +80,9 @@ services:
       S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
       S3_BUCKET: ${S3_BUCKET:-labassist-files}
       S3_USE_SSL: "false"
+      HOLIDAY_SYNC_ENABLED: ${HOLIDAY_SYNC_ENABLED:-true}
+      HOLIDAY_SYNC_INTERVAL_HOURS: ${HOLIDAY_SYNC_INTERVAL_HOURS:-24}
+      HOLIDAY_SYNC_URL: ${HOLIDAY_SYNC_URL:-}
     ports:
       - "8080:8080"
 

@@ -4,7 +4,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
 import { adminApi } from '../../services/api'
 import { Table } from '../../components/ui/Table'
-import { StatusBadge } from '../../components/ui/Badge'
+import { FilterChips } from '../../components/ui/FilterChips'
+import { AdminPageHeader } from '../../components/admin/AdminPageHeader'
+import { Badge, StatusBadge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
 import { Input } from '../../components/ui/Input'
@@ -46,6 +48,7 @@ export default function AdminUsers() {
 
   const [viewingUser, setViewingUser] = useState<User | null>(null)
   const [deletingUser, setDeletingUser] = useState<User | null>(null)
+  const [quotaUser, setQuotaUser] = useState<User | null>(null)
 
   const qc = useQueryClient()
 
@@ -95,6 +98,19 @@ export default function AdminUsers() {
   const deleteError = deleteMut.error
     ? (isAxiosError(deleteMut.error) && deleteMut.error.response?.data?.error) || 'ลบผู้ใช้ไม่สำเร็จ กรุณาลองใหม่'
     : ''
+  const { data: termSchedules = [], isLoading: quotaLoading } = useQuery({
+    queryKey: ['admin-term-schedules', quotaUser?.id],
+    queryFn: () => adminApi.studentTermSchedules(quotaUser!.id),
+    enabled: !!quotaUser,
+  })
+  const resetQuotaMut = useMutation({
+    mutationFn: ({ id, year, semester }: { id: number; year: number; semester: string }) =>
+      adminApi.resetTermScheduleSaves(id, year, semester),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-term-schedules', quotaUser?.id] }),
+  })
+  const resetQuotaError = resetQuotaMut.error
+    ? (isAxiosError(resetQuotaMut.error) && resetQuotaMut.error.response?.data?.error) || 'รีเซ็ตไม่สำเร็จ กรุณาลองใหม่'
+    : ''
   const toggleMut = useMutation({
     mutationFn: ({ id, is_active }: { id: number; is_active: boolean }) => adminApi.updateUserStatus(id, is_active),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-users'] }),
@@ -117,49 +133,55 @@ export default function AdminUsers() {
       key: 'full_name', header: 'ชื่อ',
       render: (u: User) => (
         <div>
-          <span style={{ fontWeight: 600 }}>{u.full_name}</span>
-          {u.full_name_en && <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{u.full_name_en}</div>}
+          <div className="cell-title">{u.full_name}</div>
+          {u.full_name_en && <div className="cell-sub">{u.full_name_en}</div>}
         </div>
       ),
     },
-    { key: 'username',  header: 'Username', render: (u: User) => <code style={{ fontSize: 13 }}>{u.username || '—'}</code> },
-    { key: 'email',     header: 'อีเมล',    render: (u: User) => <span style={{ fontSize: 13 }}>{u.email || '—'}</span> },
-  
-    { key: 'role',      header: 'บทบาท',    render: (u: User) => <StatusBadge value={u.role} /> },
     {
-      key: 'is_active', header: 'สถานะ',
+      key: 'account', header: 'บัญชี',
       render: (u: User) => (
-        <span style={{ fontSize: 12, fontWeight: 600, color: u.is_active ? 'var(--green)' : 'var(--red)' }}>
-          {u.is_active ? 'ใช้งาน' : 'ระงับ'}
-        </span>
+        <div>
+          <div style={{ fontSize: 14 }}>{u.email || '—'}</div>
+          {u.username && <div className="cell-sub"><code>{u.username}</code></div>}
+        </div>
       ),
     },
+    { key: 'role', header: 'บทบาท', render: (u: User) => <StatusBadge value={u.role} /> },
     {
-      key: 'actions', header: '',
+      key: 'is_active', header: 'สถานะ',
+      render: (u: User) => <Badge variant={u.is_active ? 'green' : 'red'} showDot>{u.is_active ? 'ใช้งาน' : 'ระงับ'}</Badge>,
+    },
+    {
+      key: 'actions', header: 'การจัดการ', align: 'right' as const,
       render: (u: User) => (
-        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
           {u.role === 'instructor' && (
-            <Button size="sm" variant="ghost" onClick={() => setViewingUser(u)} style={{ border: '1px solid var(--line)' }}>
+            <Button size="sm" variant="outline" onClick={() => setViewingUser(u)}>
               วิชาที่สอน
             </Button>
           )}
+          {u.role === 'student' && (
+            <Button size="sm" variant="outline" onClick={() => { resetQuotaMut.reset(); setQuotaUser(u) }}>
+              โควตาตารางเรียน
+            </Button>
+          )}
           {u.role !== 'admin' && (
-            <Button size="sm" variant="ghost" onClick={() => openEdit(u)} style={{ border: '1px solid var(--line)' }}>
+            <Button size="sm" variant="outline" onClick={() => openEdit(u)}>
               แก้ไข
             </Button>
           )}
           <Button
             size="sm" variant="danger-ghost"
             onClick={() => { deleteMut.reset(); setDeletingUser(u) }}
-            style={{ border: '1px solid var(--line)' }}
           >
             ลบ
           </Button>
           {!u.is_active && (
             <Button
-              size="sm" variant="ghost"
+              size="sm" variant="outline"
               onClick={() => toggleMut.mutate({ id: u.id, is_active: true })}
-              style={{ color: 'var(--green)', border: '1px solid var(--line)' }}
+              style={{ color: 'var(--green)' }}
             >
               เปิดใช้
             </Button>
@@ -171,42 +193,23 @@ export default function AdminUsers() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink-900)' }}>จัดการผู้ใช้งาน</h1>
-          <p style={{ fontSize: 14, color: 'var(--ink-500)', marginTop: 4 }}>{users.length} บัญชี</p>
-        </div>
-        <Button onClick={() => setShowCreate(true)}>+ เพิ่มผู้ใช้</Button>
-      </div>
+      <AdminPageHeader
+        title="จัดการผู้ใช้งาน"
+        description={`${filteredUsers.length} บัญชี${q ? ` (จากการค้นหา — ทั้งหมด ${users.length})` : ''}`}
+        actions={<Button onClick={() => setShowCreate(true)}>+ เพิ่มผู้ใช้</Button>}
+      />
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {ROLE_TABS.map((tab) => (
-            <button
-              key={tab.value}
-              onClick={() => setRoleFilter(tab.value)}
-              style={{
-                padding: '6px 14px',
-                borderRadius: 999,
-                fontSize: 13,
-                fontWeight: 600,
-                border: '1.5px solid var(--line)',
-                background: roleFilter === tab.value ? 'var(--primary)' : '#fff',
-                color: roleFilter === tab.value ? '#fff' : 'var(--ink-700)',
-                cursor: 'pointer',
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        <FilterChips options={ROLE_TABS.map((t) => ({ value: t.value, label: t.label }))} value={roleFilter} onChange={(v) => setRoleFilter(v as UserRole | '')} />
         <input
+          type="search"
+          aria-label="ค้นหาผู้ใช้"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="ค้นหาชื่อ (ไทย/อังกฤษ) / username / อีเมล..."
+          placeholder="ค้นหาชื่อ / username / อีเมล"
           style={{
-            padding: '7px 12px', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-input)',
-            fontSize: 13, color: 'var(--ink-900)', outline: 'none', minWidth: 240,
+            padding: '8px 12px', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-input)',
+            fontSize: 14, color: 'var(--ink-900)', outline: 'none', minWidth: 260, maxWidth: '100%',
           }}
           onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--primary)')}
           onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
@@ -218,7 +221,7 @@ export default function AdminUsers() {
       ) : filteredUsers.length === 0 ? (
         <EmptyState title="ไม่พบผู้ใช้" description={q ? 'ไม่มีชื่อ, username หรืออีเมลที่ตรงกับคำค้นหา' : 'ยังไม่มีผู้ใช้ในหมวดนี้'} />
       ) : (
-        <Table columns={columns as never} data={filteredUsers as never} />
+        <Table label="รายชื่อผู้ใช้งาน" columns={columns as never} data={filteredUsers as never} />
       )}
 
       <Modal isOpen={showCreate} onClose={() => setShowCreate(false)} title="เพิ่มผู้ใช้ใหม่" size="md">
@@ -282,6 +285,45 @@ export default function AdminUsers() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      <Modal isOpen={!!quotaUser} onClose={() => setQuotaUser(null)} title={`โควตาแก้ตารางเรียน — ${quotaUser?.full_name ?? ''}`} size="md">
+        {quotaLoading ? (
+          <Skeleton lines={3} height={44} />
+        ) : termSchedules.length === 0 ? (
+          <EmptyState title="ยังไม่มีตารางที่บันทึกไว้" description="นักศึกษาคนนี้ยังไม่เคยบันทึกตารางเรียนในเทอมใดเลย" />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>
+              รีเซ็ตแล้วนักศึกษาแก้ตารางเทอมนั้นได้เต็มโควตาอีกครั้ง (ตัวตารางไม่ถูกเปลี่ยน) และระบบบันทึกการรีเซ็ตใน activity log พร้อมชื่อแอดมิน
+            </div>
+            {termSchedules.map((t) => (
+              <div key={`${t.academic_year}-${t.semester}`} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                border: '1px solid var(--line)', borderRadius: 'var(--radius-card)', padding: '10px 14px',
+              }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)' }}>ภาคเรียนที่ {t.semester}/{t.academic_year}</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>ใช้สิทธิ์แก้ไปแล้ว {t.save_count}/{t.save_limit} ครั้ง</div>
+                </div>
+                <Button
+                  size="sm" variant="ghost"
+                  disabled={t.save_count === 0}
+                  loading={resetQuotaMut.isPending && resetQuotaMut.variables?.year === t.academic_year && resetQuotaMut.variables?.semester === t.semester}
+                  onClick={() => quotaUser && resetQuotaMut.mutate({ id: quotaUser.id, year: t.academic_year, semester: t.semester })}
+                  style={{ border: '1px solid var(--line)' }}
+                >
+                  รีเซ็ตโควตา
+                </Button>
+              </div>
+            ))}
+            {resetQuotaError && (
+              <div style={{ fontSize: 13, color: 'var(--red)', background: 'var(--red-bg)', borderRadius: 'var(--radius-input)', padding: '10px 12px' }}>
+                {resetQuotaError}
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
 
       <Modal isOpen={!!viewingUser} onClose={() => setViewingUser(null)} title={`วิชาที่สอน — ${viewingUser?.full_name ?? ''}`} size="lg">

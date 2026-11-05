@@ -50,7 +50,16 @@ class AcademicCalendarEntry(BaseModel):
     include: bool                # suggested default: the date stops teaching
     page: int
 
+class AcademicCalendarTerm(BaseModel):
+    semester: str                        # "1", "2" or "S"
+    open_date: Optional[str] = None      # YYYY-MM-DD (Christian era); None = not found in the file
+    close_date: Optional[str] = None
+    open_name: Optional[str] = None      # the row the date was read from
+    close_name: Optional[str] = None
+    page: int = 0
+
 class AcademicCalendarResponse(BaseModel):
     entries: List[AcademicCalendarEntry]
+    terms: List[AcademicCalendarTerm] = []   # semester open/close dates
     detected_academic_year: Optional[int] = None  # "ปีการศึกษา 2569" found in the file
     used_ocr: bool               # True when the PDF had no text layer (scanned)

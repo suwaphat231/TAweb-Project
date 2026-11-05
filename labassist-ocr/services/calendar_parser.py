@@ -577,6 +577,59 @@ def _dedupe(entries: list[CalendarEntry]) -> list[CalendarEntry]:
 
 
 # ---------------------------------------------------------------------------
+# Semester open / close dates
+# ---------------------------------------------------------------------------
+
+@dataclass
+class TermPeriod:
+    semester: str                 # "1", "2" or "S"
+    open_date: Optional[date]     # วันเปิดภาคการศึกษา
+    close_date: Optional[date]    # วันปิดภาคการศึกษา (first day of the row's range)
+    open_name: Optional[str] = None
+    close_name: Optional[str] = None
+    page: int = 0
+
+
+# Registration and similar rows also contain "เปิด"/"ปิด": only the rows that
+# open or close the *term* itself count.
+_TERM_OPEN = re.compile(
+    r"^(?:วัน)?(?:เปิด(?:ภาค(?:การศึกษา|เรียน)?|เรียน|การเรียน(?:การสอน)?)"
+    r"|เริ่ม(?:ภาค(?:การศึกษา|เรียน)|เรียน|การเรียนการสอน))"
+)
+_TERM_CLOSE = re.compile(
+    r"^(?:วัน)?(?:ปิด(?:ภาค(?:การศึกษา|เรียน)?|เรียน|การเรียน(?:การสอน)?)"
+    r"|สิ้นสุด(?:ภาค(?:การศึกษา|เรียน)|การเรียนการสอน)"
+    r"|สุดท้ายของ(?:การเรียน|ภาค))"
+)
+_TERM_NOISE = re.compile(r"ลงทะเบียน|ก่อน|ล่วงหน้า|ชำระ|ระบบ|ผล|สอบ|คำร้อง|คําร้อง|ขอ")
+
+
+def extract_terms(entries: list[CalendarEntry]) -> list[TermPeriod]:
+    """Open and close date of each semester, read from the rows named
+    "วันเปิดภาคการศึกษา" / "วันปิดภาคการศึกษา". Always returns the three
+    semesters; a date the file does not give is None so the admin can fill it."""
+    out: list[TermPeriod] = []
+    for sem in ("1", "2", "S"):
+        mine = [e for e in entries if e.semester == sem and not _TERM_NOISE.search(e.name)]
+        opens = sorted((e for e in mine if _TERM_OPEN.match(e.name)), key=lambda e: e.start_date)
+        o = opens[0] if opens else None
+        closes = sorted(
+            (e for e in mine if _TERM_CLOSE.match(e.name) and (o is None or e.start_date >= o.start_date)),
+            key=lambda e: e.start_date,
+        )
+        c = closes[0] if closes else None
+        out.append(TermPeriod(
+            semester=sem,
+            open_date=o.start_date if o else None,
+            close_date=c.start_date if c else None,
+            open_name=o.name if o else None,
+            close_name=c.name if c else None,
+            page=(o or c).page if (o or c) else 0,
+        ))
+    return out
+
+
+# ---------------------------------------------------------------------------
 # PDF → tokens
 # ---------------------------------------------------------------------------
 

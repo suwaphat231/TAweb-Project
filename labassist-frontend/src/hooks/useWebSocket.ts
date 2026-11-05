@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../store/authStore'
 import { useToast } from './useToast'
 import { studentApi } from '../services/api'
+import { CALENDAR_JOB_KEY } from './useCalendarJob'
 import type { OcrFinishedEvent } from '../types'
 
 export function useWebSocket() {
@@ -66,6 +67,13 @@ export function useWebSocket() {
               // A background OCR upload ended — maybe while the student was on
               // another page — so refresh what it wrote and say how it went.
               const event = data.payload as OcrFinishedEvent
+              if (event.kind === 'calendar') {
+                // An admin's calendar PDF: the result waits on the calendar page.
+                qc.invalidateQueries({ queryKey: CALENDAR_JOB_KEY })
+                if (event.status === 'done') showToast('อ่านไฟล์ปฏิทินการศึกษาเสร็จแล้ว — ไปตรวจทานที่หน้า “ปฏิทินการศึกษา”', 'success')
+                else showToast(event.error ? `อ่านไฟล์ปฏิทินไม่สำเร็จ: ${event.error}` : 'อ่านไฟล์ปฏิทินไม่สำเร็จ', 'error')
+                return
+              }
               qc.invalidateQueries({ queryKey: ['ocr-jobs'] })
               if (event.status === 'done') {
                 if (event.kind === 'transcript') {

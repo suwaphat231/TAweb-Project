@@ -12,7 +12,7 @@ from datetime import date
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.calendar_parser import (  # noqa: E402
-    Token, classify, detect_academic_year, find_dates, parse_calendar, tokens_from_pdf,
+    CalendarEntry, Token, classify, detect_academic_year, extract_terms, find_dates, parse_calendar, tokens_from_pdf,
 )
 
 AY = 2569
@@ -246,6 +246,56 @@ class ScannedSilpakornCalendarTest(unittest.TestCase):
         self.assertEqual(classify("วันเปิดเรียน"), (None, False))
         self.assertEqual(classify("วันสุดท้ายของการยื่นคำร้อง"), (None, False))
         self.assertEqual(classify("วันมหิดล (วันพิธีการ)"), ("university_holiday", False))
+
+
+class ExtractTermsTest(unittest.TestCase):
+    def setUp(self):
+        self.terms = {t.semester: t for t in extract_terms(parse_calendar(TABLE, AY))}
+
+    def test_always_three_semesters(self):
+        self.assertEqual(sorted(self.terms), ["1", "2", "S"])
+
+    def test_open_and_close(self):
+        t1, t2 = self.terms["1"], self.terms["2"]
+        self.assertEqual((t1.open_date, t1.close_date), (date(2026, 6, 22), date(2026, 10, 30)))
+        # A cross-year closing range: the term closes on its first day.
+        self.assertEqual((t2.open_date, t2.close_date), (date(2026, 11, 9), date(2026, 12, 30)))
+
+    def test_missing_date_is_none(self):
+        s = self.terms["S"]
+        self.assertEqual(s.open_date, date(2027, 4, 20))
+        self.assertIsNone(s.close_date)
+
+    def test_registration_rows_are_not_term_dates(self):
+        for t in self.terms.values():
+            self.assertNotIn("ลงทะเบียน", t.open_name or "")
+            self.assertNotIn("ลงทะเบียน", t.close_name or "")
+
+    def test_close_never_before_open(self):
+        def entry(name, d):
+            return CalendarEntry(d, d, name, "1", None, False, 1)
+        t = extract_terms([entry("ปิดภาคการศึกษา", date(2026, 5, 1)), entry("วันเปิดภาคการศึกษา", date(2026, 6, 22)),
+                           entry("ปิดภาคการศึกษา", date(2026, 10, 30))])[0]
+        self.assertEqual((t.open_date, t.close_date), (date(2026, 6, 22), date(2026, 10, 30)))
+
+    def test_wording_of_the_real_2569_calendar(self):
+        # Row 7 "วันเปิดเรียน" opens the term; row 21 "วันปิดเรียนภาคการศึกษา" closes it.
+        # The "วันสุดท้ายของการแก้ผลการศึกษา (วันเปิดภาคการศึกษา" row and the
+        # exam-end row must not be mistaken for either.
+        def entry(name, sem, d):
+            return CalendarEntry(d, d, name, sem, None, False, 1)
+        rows = [
+            entry("วันเปิดเรียน", "1", date(2026, 7, 6)),
+            entry("วันสุดท้ายของการแก้ผลการศึกษา (วันเปิดภาคการศึกษา", "1", date(2026, 7, 6)),
+            entry("วันสุดท้ายของการสอบ,วันสุดท้ายของภาค", "1", date(2026, 11, 7)),
+            entry("วันปิดเรียนภาคการศึกษา", "1", date(2026, 11, 8)),
+        ]
+        t = extract_terms(rows)[0]
+        self.assertEqual((t.open_date, t.close_date), (date(2026, 7, 6), date(2026, 11, 8)))
+        self.assertEqual((t.open_name, t.close_name), ("วันเปิดเรียน", "วันปิดเรียนภาคการศึกษา"))
+
+    def test_nothing_found(self):
+        self.assertTrue(all(t.open_date is None and t.close_date is None for t in extract_terms([])))
 
 
 @unittest.skipUnless(os.environ.get("THAI_FONT"), "set THAI_FONT to a Thai .ttf to run")
