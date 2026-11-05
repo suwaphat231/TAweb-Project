@@ -58,6 +58,8 @@ export function CourseFormModal({
     .filter((s) => sectionIds.includes(s.id) && (s.suggested_labboy_slots ?? 0) > 0)
     .map((s) => ({ sec: s.section ?? 0, n: s.suggested_labboy_slots as number }))
   const suggestedMax = suggestions.reduce((m, s) => Math.max(m, s.n), 0)
+  // เพดานที่ทุก section ที่เลือกรับได้ = ค่าสูตรที่น้อยที่สุด (0 = ไม่มีเพดาน)
+  const slotCap = suggestions.reduce((m, s) => (m === 0 ? s.n : Math.min(m, s.n)), 0)
   const suggestionKey = suggestions.map((s) => `${s.sec}:${s.n}`).join(',')
 
   // ยังไม่ได้แก้ช่องเอง → เติมค่าจากสูตรให้ และให้ backend คำนวณแยกแต่ละ section
@@ -91,7 +93,11 @@ export function CourseFormModal({
     const sanitized = raw.replace(/[^0-9]/g, '')
     setSlotsStr(sanitized)
     setSlotsTouched(true)
-    const num = sanitized === '' ? 0 : parseInt(sanitized, 10)
+    let num = sanitized === '' ? 0 : parseInt(sanitized, 10)
+    if (!editId && slotCap > 0 && num > slotCap) {
+      num = slotCap
+      setSlotsStr(String(slotCap))
+    }
     setForm(f => ({ ...f, labboy_slots: Math.max(0, num), auto_labboy_slots: false }))
   }
 
@@ -204,9 +210,8 @@ export function CourseFormModal({
             onChange={handleSlotsChange}
             onKeyDown={handleNonNegativeKeyDown}
             required
-            readOnly={!editId && suggestions.length > 0}
             hint={!editId && suggestions.length > 0
-              ? `ล็อกตามสูตร: ${suggestions.map((s) => `${s.sec ? `Sec ${s.sec} ` : ''}${s.n} คน`).join(' · ')} (ลงทะเบียน ÷ 10 วิชาปี 1, ÷ 20 ปี 2 ขึ้นไป)`
+              ? `กรอกได้ไม่เกินตามสูตร: ${suggestions.map((s) => `${s.sec ? `Sec ${s.sec} ` : ''}${s.n} คน`).join(' · ')} (ลงทะเบียน ÷ 10 วิชาปี 1, ÷ 20 ปี 2 ขึ้นไป)`
               : undefined}
           />
           <Input label="วันปิดรับสมัคร" type="date" min={minDeadline} value={form.deadline ?? ''} onChange={set('deadline')} />

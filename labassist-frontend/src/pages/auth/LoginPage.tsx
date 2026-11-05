@@ -120,84 +120,50 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      fontFamily: "'Sarabun', sans-serif",
-      background: 'var(--bg)',
-      padding: '24px 16px',
-      position: 'relative',
-      overflow: 'hidden',
-    }}>
-      {/* Card */}
-      <div style={{
-        width: '100%',
-        maxWidth: 440,
-        background: '#fff',
-        borderRadius: 12,
-        border: '1px solid var(--line)',
-        boxShadow: 'var(--shadow-sm)',
-        overflow: 'hidden',
-        position: 'relative',
-        zIndex: 1,
-      }}>
-        {/* Card header */}
-        <div style={{
-          background: 'var(--brand-gradient)',
-          padding: '32px 40px 28px',
-          textAlign: 'center',
-          color: '#fff',
-        }}>
-          <div style={{
-            width: 56, height: 56,
-            background: 'var(--accent)', color: '#fff',
-            borderRadius: 16,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 28, fontWeight: 700,
-            border: 'none',
-            marginBottom: 14,
-            backdropFilter: 'blur(4px)',
-          }}>
-            L
+    <div className="lg-root">
+      {/* Brand panel (hidden on small screens) */}
+      <aside className="lg-brand" aria-hidden="true">
+        <span className="lg-orb lg-orb-a" />
+        <span className="lg-orb lg-orb-b" />
+        <div className="lg-brand-inner">
+          <div className="lg-logo-row">
+            <span className="lg-logo">L</span>
+            <span className="lg-logo-text">LabAssist</span>
           </div>
-          <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.3px', marginBottom: 4 }}>
-            LabAssist
-          </div>
-          <div style={{ fontSize: 13, opacity: 0.75 }}>
-            ระบบจัดการผู้ช่วยปฏิบัติการ · ภาควิชาคอมพิวเตอร์ ม.ศิลปากร
-          </div>
+          <h1 className="lg-hero">ระบบจัดการ<br />ผู้ช่วยปฏิบัติการ</h1>
+          <p className="lg-hero-sub">ภาควิชาคอมพิวเตอร์ คณะวิทยาศาสตร์ มหาวิทยาลัยศิลปากร</p>
+          <ul className="lg-points">
+            {[
+              'สมัครเป็น Lab Boy และติดตามสถานะได้ในที่เดียว',
+              'อาจารย์ประกาศรับสมัครและคัดเลือกผู้ช่วยได้ง่าย',
+              'เอกสารและตารางปฏิบัติงานครบ จบในระบบเดียว',
+            ].map((t) => (
+              <li key={t}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+                <span>{t}</span>
+              </li>
+            ))}
+          </ul>
         </div>
+      </aside>
 
-        {/* Card body */}
-        <div style={{ padding: '28px 32px 32px' }}>
-          <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 4, textAlign: 'center' }}>
-            เข้าสู่ระบบ
-          </h2>
-          <p style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 24, textAlign: 'center' }}>
-            เลือกวิธีเข้าสู่ระบบตามบทบาทของคุณ
-          </p>
+      <main className="lg-main">
+        <div className="lg-card">
+          <div className="lg-mobile-logo">
+            <span className="lg-logo">L</span>
+            <span className="lg-logo-text-dark">LabAssist</span>
+          </div>
+
+          <h2 className="lg-title">เข้าสู่ระบบ</h2>
+          <p className="lg-sub">เลือกวิธีเข้าสู่ระบบตามบทบาทของคุณ</p>
 
           {/* Section A: นักศึกษา */}
-          <div style={{
-            border: '1px solid var(--line)',
-            borderRadius: 12,
-            padding: '18px 20px',
-            marginBottom: 14,
-            background: 'var(--bg)',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-900)' }}>นักศึกษา</span>
-              <span style={{
-                fontSize: 10, fontWeight: 700,
-                background: 'var(--bg)', color: 'var(--primary)',
-                padding: '2px 8px', borderRadius: 999, letterSpacing: '0.3px',
-              }}>
-                Google Sign-In
-              </span>
+          <section className="lg-section" aria-labelledby="lg-student">
+            <div className="lg-section-head">
+              <span id="lg-student" className="lg-section-title">นักศึกษา</span>
+              <span className="lg-badge">Google Sign-In</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <div className="lg-google">
               {import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() ? <GoogleLogin
                 onSuccess={(resp) => {
                   if (resp.credential) void handleGoogle(resp.credential)
@@ -211,145 +177,78 @@ export default function LoginPage() {
                 {...{ hd: 'silpakorn.edu' }}
                 size="large"
                 width={340}
-              /> : <p role="status">Google Sign-In ยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแลระบบ</p>}
+              /> : <p role="status" className="lg-hint">Google Sign-In ยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแลระบบ</p>}
             </div>
-            <p style={{ fontSize: 11, color: 'var(--ink-400)', textAlign: 'center', marginTop: 10 }}>
-              ต้องใช้อีเมลมหาวิทยาลัย (@silpakorn.edu) เท่านั้น
-            </p>
-            {googleNotice && (
-              <div role="status" style={{
-                background: 'var(--primary-50)', color: 'var(--ink-700)', border: '1px solid var(--line)',
-                padding: '9px 13px', borderRadius: 8, fontSize: 13, marginTop: 10,
-              }}>
-                {googleNotice}
-              </div>
-            )}
-          </div>
+            <p className="lg-hint">ต้องใช้อีเมลมหาวิทยาลัย (@silpakorn.edu) เท่านั้น</p>
+            {googleNotice && <div role="status" className="lg-notice">{googleNotice}</div>}
+          </section>
 
-          {/* Divider */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-            <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />
-            <span style={{ fontSize: 11, color: 'var(--ink-400)', fontWeight: 500 }}>หรือ</span>
-            <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />
-          </div>
+          <div className="lg-divider"><span>หรือ</span></div>
 
           {/* Section B: บุคลากร */}
-          <div style={{
-            border: '1px solid var(--line)',
-            borderRadius: 12,
-            padding: '18px 20px',
-            marginBottom: 20,
-            background: 'var(--bg)',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-900)' }}>บุคลากร</span>
-              <span style={{
-                fontSize: 10, fontWeight: 700,
-                background: 'var(--bg)', color: 'var(--primary)',
-                padding: '2px 8px', borderRadius: 999, letterSpacing: '0.3px',
-              }}>
-                อาจารย์ / เจ้าหน้าที่
-              </span>
+          <section className="lg-section" aria-labelledby="lg-staff">
+            <div className="lg-section-head">
+              <span id="lg-staff" className="lg-section-title">บุคลากร</span>
+              <span className="lg-badge">อาจารย์ / เจ้าหน้าที่</span>
             </div>
 
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)' }}>ชื่อผู้ใช้</label>
-                <div style={{ position: 'relative' }}>
-                  <span style={{
-                    position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)',
-                    color: 'var(--ink-400)', fontSize: 14,
-                  }}>👤</span>
+            <form onSubmit={handleSubmit} className="lg-form">
+              <div className="lg-field">
+                <label htmlFor="lg-username">ชื่อผู้ใช้</label>
+                <div className="lg-input-wrap">
+                  <svg className="lg-ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>
                   <input
+                    id="lg-username"
+                    className="lg-input"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     placeholder="username"
                     autoComplete="username"
                     required
-                    style={{
-                      width: '100%', padding: '9px 12px 9px 34px',
-                      border: '1.5px solid var(--line)', borderRadius: 'var(--radius-input)',
-                      fontSize: 14, color: 'var(--ink-900)', outline: 'none', background: '#fff',
-                      boxSizing: 'border-box',
-                    }}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--primary)')}
-                    onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
                   />
                 </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-700)' }}>รหัสผ่าน</label>
-                <div style={{ position: 'relative' }}>
-                  <span style={{
-                    position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)',
-                    color: 'var(--ink-400)', fontSize: 14,
-                  }}>🔒</span>
+              <div className="lg-field">
+                <label htmlFor="lg-password">รหัสผ่าน</label>
+                <div className="lg-input-wrap">
+                  <svg className="lg-ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
                   <input
+                    id="lg-password"
+                    className="lg-input lg-input-pw"
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
                     autoComplete="current-password"
                     required
-                    style={{
-                      width: '100%', padding: '9px 38px 9px 34px',
-                      border: '1.5px solid var(--line)', borderRadius: 'var(--radius-input)',
-                      fontSize: 14, color: 'var(--ink-900)', outline: 'none', background: '#fff',
-                      boxSizing: 'border-box',
-                    }}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--primary)')}
-                    onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
                   />
                   <button
                     type="button"
+                    className="lg-eye"
                     onClick={() => setShowPassword(!showPassword)}
-                    style={{
-                      position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
-                      background: 'none', border: 'none', cursor: 'pointer',
-                      color: 'var(--ink-400)', fontSize: 14, padding: 2,
-                    }}
+                    aria-label={showPassword ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
+                    aria-pressed={showPassword}
                   >
-                    {showPassword ? '🙈' : '👁️'}
+                    {showPassword ? (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M17.9 17.9A10.9 10.9 0 0 1 12 20C5 20 1 12 1 12a18.5 18.5 0 0 1 5.1-5.9M9.9 4.2A10.9 10.9 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.2 3.2M1 1l22 22" /></svg>
+                    ) : (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z" /><circle cx="12" cy="12" r="3" /></svg>
+                    )}
                   </button>
                 </div>
               </div>
 
-              {error && (
-                <div style={{
-                  background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA',
-                  padding: '9px 13px', borderRadius: 8,
-                  fontSize: 13,
-                }}>
-                  {error}
-                </div>
-              )}
+              {error && <div role="alert" className="lg-error">{error}</div>}
 
-              <button
-                type="submit"
-                disabled={loading}
-                style={{
-                  width: '100%', padding: '10px 0',
-                  background: loading ? 'var(--ink-400)' : 'var(--primary)',
-                  color: '#fff', border: 'none', borderRadius: 8,
-                  fontSize: 14, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
-                  marginTop: 2, transition: 'opacity .15s',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  boxShadow: 'none',
-                }}
-              >
-                {loading && (
-                  <span style={{
-                    display: 'inline-block', width: 15, height: 15,
-                    border: '2px solid rgba(255,255,255,.4)', borderTopColor: '#fff',
-                    borderRadius: '50%', animation: 'spin 0.7s linear infinite',
-                  }} />
-                )}
+              <button type="submit" disabled={loading} className="lg-submit">
+                {loading && <span className="lg-spinner" />}
                 {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
               </button>
             </form>
-          </div>
+          </section>
 
+          <div style={{ height: 16 }} />
           {/* Dev Quick Login panel — only shown when VITE_DEV_LOGIN=true */}
           {DEV_LOGIN_ENABLED ? (
             <div style={{
@@ -504,10 +403,73 @@ export default function LoginPage() {
             </details>
           )}
         </div>
-      </div>
+      </main>
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes lg-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-14px); } }
+        @keyframes lg-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+        .lg-root { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); font-family: 'Sarabun', sans-serif; background: var(--bg); }
+        .lg-brand { position: relative; overflow: hidden; display: flex; align-items: center; padding: 56px; color: #fff;
+          background: radial-gradient(900px 500px at 10% 0%, rgba(56,135,190,.45), transparent 60%), var(--brand-gradient); }
+        .lg-orb { position: absolute; border-radius: 50%; background: rgba(255,255,255,.08); animation: lg-float 9s ease-in-out infinite; }
+        .lg-orb-a { width: 340px; height: 340px; right: -90px; top: -80px; }
+        .lg-orb-b { width: 220px; height: 220px; left: -60px; bottom: -70px; animation-delay: -4s; background: rgba(255,255,255,.06); }
+        .lg-brand-inner { position: relative; max-width: 460px; }
+        .lg-logo-row { display: flex; align-items: center; gap: 12px; margin-bottom: 44px; }
+        .lg-logo { width: 44px; height: 44px; border-radius: 13px; display: inline-flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 700; color: #fff; background: var(--accent); box-shadow: 0 6px 16px rgba(56,135,190,.4); }
+        .lg-logo-text { font-size: 22px; font-weight: 700; letter-spacing: -.2px; }
+        .lg-logo-text-dark { font-size: 22px; font-weight: 700; color: var(--ink-900); }
+        .lg-hero { font-size: 40px; line-height: 1.25; font-weight: 700; margin: 0 0 14px; letter-spacing: -.5px; }
+        .lg-hero-sub { font-size: 15px; line-height: 1.6; opacity: .8; margin: 0 0 36px; }
+        .lg-points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+        .lg-points li { display: flex; align-items: flex-start; gap: 12px; font-size: 15px; line-height: 1.5; }
+        .lg-points li svg { flex-shrink: 0; margin-top: 0; padding: 4px; border-radius: 50%; background: rgba(255,255,255,.18); }
+
+        .lg-main { display: flex; align-items: center; justify-content: center; padding: 32px 20px; background: var(--primary-50); }
+        .lg-card { width: 100%; max-width: 440px; background: var(--bg); border: 1px solid var(--line); border-radius: 20px; padding: 36px 36px 32px; box-shadow: 0 20px 50px -20px rgba(42,34,98,.25), 0 2px 6px rgba(42,34,98,.05); animation: lg-in .35s ease-out; }
+        .lg-mobile-logo { display: none; align-items: center; justify-content: center; gap: 10px; margin-bottom: 20px; }
+        .lg-title { font-size: 26px; font-weight: 700; color: var(--ink-900); margin: 0 0 4px; text-align: center; }
+        .lg-sub { font-size: 14px; color: var(--ink-500); margin: 0 0 24px; text-align: center; }
+
+        .lg-section { border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; background: var(--bg); }
+        .lg-section-head { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+        .lg-section-title { font-size: 15px; font-weight: 700; color: var(--ink-900); }
+        .lg-badge { font-size: 11px; font-weight: 600; color: var(--primary); background: var(--primary-50); padding: 3px 10px; border-radius: 999px; }
+        .lg-google { display: flex; justify-content: center; min-height: 44px; max-width: 100%; overflow: hidden; }
+        .lg-hint { font-size: 12px; color: var(--ink-500); text-align: center; margin: 10px 0 0; }
+        .lg-notice { background: var(--primary-50); color: var(--ink-700); border: 1px solid var(--line); padding: 9px 13px; border-radius: 10px; font-size: 13px; margin-top: 10px; }
+        .lg-divider { display: flex; align-items: center; gap: 12px; margin: 16px 0; color: var(--ink-500); font-size: 12px; }
+        .lg-divider::before, .lg-divider::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+
+        .lg-form { display: flex; flex-direction: column; gap: 14px; }
+        .lg-field { display: flex; flex-direction: column; gap: 6px; }
+        .lg-field label { font-size: 13px; font-weight: 600; color: var(--ink-700); }
+        .lg-input-wrap { position: relative; }
+        .lg-ic { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--ink-500); pointer-events: none; }
+        .lg-input { width: 100%; box-sizing: border-box; height: 46px; padding: 0 14px 0 42px; border: 1.5px solid var(--line); border-radius: 12px; font-size: 15px; font-family: inherit; color: var(--ink-900); background: var(--bg); transition: border-color .15s, box-shadow .15s; }
+        .lg-input-pw { padding-right: 46px; }
+        .lg-input::placeholder { color: var(--ink-400); opacity: .7; }
+        .lg-input:hover { border-color: var(--ink-400); }
+        .lg-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px rgba(56,65,157,.14); }
+        .lg-eye { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 38px; height: 38px; display: inline-flex; align-items: center; justify-content: center; background: none; border: none; border-radius: 10px; color: var(--ink-500); cursor: pointer; }
+        .lg-eye:hover { background: var(--primary-50); color: var(--primary); }
+        .lg-eye:focus-visible, .lg-submit:focus-visible { outline: 3px solid rgba(56,65,157,.35); outline-offset: 2px; }
+        .lg-error { background: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA; padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.5; }
+        .lg-submit { width: 100%; height: 48px; display: flex; align-items: center; justify-content: center; gap: 8px; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; font-family: inherit; color: #fff; cursor: pointer; background: var(--brand-gradient); box-shadow: 0 8px 20px -8px rgba(56,65,157,.6); transition: transform .15s, box-shadow .15s, opacity .15s; }
+        .lg-submit:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 24px -8px rgba(56,65,157,.65); }
+        .lg-submit:active:not(:disabled) { transform: translateY(0); }
+        .lg-submit:disabled { opacity: .65; cursor: not-allowed; }
+        .lg-spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+
+        @media (max-width: 960px) {
+          .lg-root { grid-template-columns: 1fr; }
+          .lg-brand { display: none; }
+          .lg-mobile-logo { display: flex; }
+        }
+        @media (max-width: 480px) { .lg-card { padding: 28px 20px 24px; border-radius: 16px; } .lg-main { padding: 20px 16px; } }
+        @media (prefers-reduced-motion: reduce) { .lg-orb, .lg-card, .lg-spinner { animation: none; } .lg-submit { transition: none; } }
       `}</style>
 
       <Modal

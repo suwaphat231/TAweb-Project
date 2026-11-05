@@ -285,7 +285,7 @@ export function HolidayOverview() {
           <div className="cmd-table-wrap">
             <table className="cmd-table">
               <thead>
-                <tr><th scope="col">วันที่</th><th scope="col">วัน</th><th scope="col">ชื่อวันหยุด</th><th scope="col">ประเภท</th><th scope="col">ที่มา</th></tr>
+                <tr><th scope="col">วันที่</th><th scope="col">วัน</th><th scope="col">ชื่อวันหยุด</th><th scope="col">ประเภท</th></tr>
               </thead>
               <tbody>
                 {holidays.map((h) => {
@@ -296,9 +296,7 @@ export function HolidayOverview() {
                       <td className="nowrap"><b>{d.getDate()}</b> {MONTHS_SHORT[d.getMonth()]}</td>
                       <td>{DOW[d.getDay()]}.</td>
                       <td>{h.name}</td>
-                      <td><span className={`cmd-chip ${t}`}>{TONE_LABEL[t]}</span></td>
-                      <td className="cmd-muted">{h.source === 'external' ? 'ซิงก์อัตโนมัติ' : 'เพิ่มเอง / PDF'}</td>
-                    </tr>
+                      <td><span className={`cmd-chip ${t}`}>{TONE_LABEL[t]}</span></td>                    </tr>
                   )
                 })}
               </tbody>

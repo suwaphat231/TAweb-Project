@@ -12,6 +12,7 @@ interface Props {
   breadcrumb?: string
   actions?: ReactNode
   onHamburgerClick?: () => void
+  menuOpen?: boolean
 }
 
 const routeMeta: Record<string, { title: string; breadcrumb: string }> = {
@@ -319,7 +320,7 @@ function NotificationBell() {
   )
 }
 
-export function Topbar({ title, breadcrumb, actions, onHamburgerClick }: Props) {
+export function Topbar({ title, breadcrumb, actions, onHamburgerClick, menuOpen }: Props) {
   const { pathname } = useLocation()
   const { user } = useAuth()
 
@@ -347,7 +348,9 @@ export function Topbar({ title, breadcrumb, actions, onHamburgerClick }: Props) 
         {onHamburgerClick && (
           <button
             onClick={onHamburgerClick}
-            aria-label="เปิดเมนู"
+            aria-label={menuOpen ? 'ย่อเมนู' : 'เปิดเมนู'}
+            aria-expanded={menuOpen}
+            title={menuOpen ? 'ย่อเมนู' : 'ขยายเมนู'}
             style={{
               background: 'none', border: 'none', cursor: 'pointer',
               color: 'var(--ink-700)', padding: 6, borderRadius: 8,

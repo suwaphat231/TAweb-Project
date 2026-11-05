@@ -4,6 +4,8 @@ import { Topbar } from './Topbar'
 import { useBreakpoint } from '../../hooks/useBreakpoint'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 
+const SIDEBAR_KEY = 'labassist.sidebarCollapsed'
+
 interface Props { children: ReactNode }
 
 export function AppShell({ children }: Props) {
@@ -11,7 +13,21 @@ export function AppShell({ children }: Props) {
   const { isMobile, isTablet } = useBreakpoint()
   const isOnline = useOnlineStatus()
 
-  const sidebarCol = isMobile ? '0px' : isTablet ? '64px' : '248px'
+  // null = follow the screen size; true/false = the person's own choice.
+  const [collapsePref, setCollapsePref] = useState<boolean | null>(() => {
+    try {
+      const v = localStorage.getItem(SIDEBAR_KEY)
+      return v === null ? null : v === '1'
+    } catch { return null }
+  })
+  const collapsed = collapsePref ?? isTablet
+  function toggleCollapsed() {
+    const next = !collapsed
+    setCollapsePref(next)
+    try { localStorage.setItem(SIDEBAR_KEY, next ? '1' : '0') } catch { /* private mode */ }
+  }
+
+  const sidebarCol = isMobile ? '0px' : collapsed ? '64px' : '248px'
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
@@ -33,10 +49,11 @@ export function AppShell({ children }: Props) {
       <div style={{
         display: 'grid',
         gridTemplateColumns: isMobile ? '1fr' : `${sidebarCol} 1fr`,
+        transition: 'grid-template-columns .2s ease',
         minHeight: '100vh',
       }}>
         {/* Sidebar (desktop / tablet in-grid) */}
-        {!isMobile && <Sidebar collapsed={isTablet} />}
+        {!isMobile && <Sidebar collapsed={collapsed} />}
 
         {/* Mobile drawer overlay */}
         {isMobile && drawerOpen && (
@@ -59,7 +76,8 @@ export function AppShell({ children }: Props) {
         {/* Main content */}
         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <Topbar
-            onHamburgerClick={isMobile ? () => setDrawerOpen((d) => !d) : undefined}
+            onHamburgerClick={isMobile ? () => setDrawerOpen((d) => !d) : toggleCollapsed}
+            menuOpen={isMobile ? drawerOpen : !collapsed}
           />
           <main style={{ flex: 1, padding: isMobile ? '24px 16px' : '36px 40px', width: '100%', maxWidth: 1440, margin: '0 auto' }}>
             {children}
