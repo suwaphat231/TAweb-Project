@@ -140,15 +140,6 @@ export function DocumentWorkflow({
     onError: async (err) => showToast(await getApiErrorMessage(err, 'สร้างเอกสารไม่สำเร็จ'), 'error'),
   })
 
-  const statusMut = useMutation({
-    mutationFn: ({ id, status }: { id: number; status: string }) => staffApi.updateDocumentStatus(id, status),
-    onSuccess: (_d, v) => {
-      showToast(v.status === 'signed' ? 'บันทึกลงนามแล้ว' : 'บันทึกว่าส่งลงนามแล้ว', 'success')
-      refresh()
-    },
-    onError: async (err) => showToast(await getApiErrorMessage(err, 'เกิดข้อผิดพลาด กรุณาลองใหม่'), 'error'),
-  })
-
   const confirmScheduleMut = useMutation({
     mutationFn: () => staffApi.confirmSchedule(courseId),
     onSuccess: (data) => {
@@ -223,8 +214,8 @@ export function DocumentWorkflow({
 
   const views = workflow.steps
   // Timeline: documents are finished one at a time. The current step is the
-  // first one not signed yet; later steps stay locked until it is.
-  const currentIdx = views.findIndex((v) => v.document?.status !== 'signed')
+  // first one without a document yet; later steps stay locked until it exists.
+  const currentIdx = views.findIndex((v) => !v.document)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -237,7 +228,7 @@ export function DocumentWorkflow({
         const isLast = idx === views.length - 1
         const doc = view.document
         const isHiringNotice = view.type === 'hiring_notice'
-        const done = status === 'signed' || status === 'completed'
+        const done = !!doc
         const item: DocumentWorkflowItem = {
           step: view.step, label: view.label, docType: view.type, status,
           documentId: doc?.id, documentName: doc?.name, createdAt: doc?.created_at,
@@ -286,16 +277,9 @@ export function DocumentWorkflow({
 
               {locked ? (
                 <div style={{ marginTop: 6, fontSize: 12, color: 'var(--ink-500)' }}>
-                  เปิดให้สร้างเมื่อขั้นตอนที่ {views[idx - 1].step} บันทึกลงนามแล้ว
+                  เปิดให้สร้างเมื่อสร้างเอกสารขั้นตอนที่ {views[idx - 1].step} แล้ว
                 </div>
               ) : <>
-              {isCurrent && doc && (
-                <div style={{ marginTop: 6, fontSize: 12, color: 'var(--ink-600)' }}>
-                  {doc.status === 'awaiting_signature'
-                    ? 'เมื่อได้รับเอกสารที่ลงนามแล้ว กด "บันทึกลงนามแล้ว" เพื่อเปิดขั้นตอนถัดไป'
-                    : 'ดาวน์โหลดไปตรวจ/พิมพ์ แล้วกด "ส่งลงนาม" เมื่อส่งเอกสารให้ผู้มีอำนาจลงนาม'}
-                </div>
-              )}
               {!doc && view.blocked_reasons.length > 0 && (
                 <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12, color: 'var(--ink-500)', lineHeight: 1.6 }}>
                   {view.blocked_reasons.map((r, i) => <li key={i}>{r}</li>)}
@@ -314,25 +298,16 @@ export function DocumentWorkflow({
               {/* One action that moves the step forward, a download, and
                   everything else under "⋯". */}
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
-                {isHiringNotice && !planLocked && !doc && (
-                  <button onClick={() => setShowScheduleModal(true)} style={actionBtn('var(--primary)', '#fff')}>กำหนดตารางปฏิบัติงาน</button>
-                )}
                 {!doc && (
                   <button
-                    onClick={() => (oneClick(view.type) ? createMut.mutate({ type: view.type, body: {} }) : openCreate(view, false))}
-                    disabled={!view.can_create || createMut.isPending}
-                    title={!view.can_create ? view.blocked_reasons[0] : undefined}
-                    style={view.can_create ? actionBtn('var(--accent)', '#fff') : disabledBtn}
+                    onClick={() => (isHiringNotice ? setShowScheduleModal(true)
+                      : oneClick(view.type) ? createMut.mutate({ type: view.type, body: {} }) : openCreate(view, false))}
+                    disabled={(!view.can_create && !isHiringNotice) || createMut.isPending}
+                    title={!view.can_create && !isHiringNotice ? view.blocked_reasons[0] : undefined}
+                    style={view.can_create || isHiringNotice ? actionBtn('var(--accent)', '#fff') : disabledBtn}
                   >
                     {createMut.isPending && createMut.variables?.type === view.type ? 'กำลังสร้าง...' : 'สร้างเอกสาร'}
                   </button>
-                )}
-                {doc && (doc.status === 'draft' || doc.status === 'generated' || doc.status === 'approved') && (
-                  <button onClick={() => statusMut.mutate({ id: doc.id, status: 'awaiting_signature' })} disabled={statusMut.isPending}
-                    title="ส่งเอกสารให้ผู้มีอำนาจลงนามแล้ว" style={actionBtn('var(--amber)', '#fff')}>ส่งลงนาม</button>
-                )}
-                {doc?.status === 'awaiting_signature' && (
-                  <button onClick={() => statusMut.mutate({ id: doc.id, status: 'signed' })} disabled={statusMut.isPending} style={actionBtn('var(--green)', '#fff')}>บันทึกลงนามแล้ว</button>
                 )}
 
                 {doc && view.has_template && (view.type === 'payment_request' ? (
@@ -424,8 +399,8 @@ export function DocumentWorkflow({
                   {confirmed
                     ? 'ยืนยันแล้ว — นักศึกษาเห็นตารางปฏิบัติงานและได้รับแจ้งเตือนแล้ว'
                     : ready
-                      ? `เอกสารลงนามครบแล้ว — ยืนยันเพื่อแจ้งตารางปฏิบัติงานให้ Lab Boy ${workflow.course.labboy_count} คน`
-                      : 'ยืนยันได้เมื่อเอกสารทุกขั้นของรายวิชาลงนามเรียบร้อยแล้ว'}
+                      ? `สร้างเอกสารครบแล้ว — ยืนยันเพื่อแจ้งตารางปฏิบัติงานให้ Lab Boy ${workflow.course.labboy_count} คน`
+                      : 'ยืนยันได้เมื่อสร้างเอกสารทุกขั้นของรายวิชาครบแล้ว'}
                 </div>
               </div>
               {!confirmed && (
@@ -507,6 +482,10 @@ export function DocumentWorkflow({
           labBoyCount={labBoyCount ?? staffCase?.lab_boys?.length ?? 0}
           courseSchedule={courseSchedule}
           onClose={() => setShowScheduleModal(false)}
+          onCreateDocument={views.find((v) => v.type === 'hiring_notice')?.document ? undefined : () => {
+            setShowScheduleModal(false)
+            createMut.mutate({ type: 'hiring_notice', body: {} })
+          }}
           onSaved={() => {
             qc.invalidateQueries({ queryKey: ['staff-cases'] })
             refresh()

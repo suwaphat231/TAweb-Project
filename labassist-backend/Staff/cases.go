@@ -2,6 +2,7 @@ package staff
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -551,6 +552,14 @@ func (h *Handler) UpdateScheduleGroup(c *gin.Context) {
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "schedule group not found or already locked"})
 		return
+	}
+	// A new weekly time applies to every planned day of the group.
+	if len(body.WeekDaySlots) > 0 || body.WeekDay != nil || body.StartTime != nil || body.EndTime != nil {
+		if err := database.ApplyGroupSlotTimes(sg); err != nil {
+			log.Printf("update schedule group %d: apply slot times: %v", sg.ID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
 	}
 	resp, err := enrichScheduleGroup(sg, sc.PostingID)
 	if err != nil {

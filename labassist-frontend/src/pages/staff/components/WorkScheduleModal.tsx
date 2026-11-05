@@ -86,6 +86,9 @@ export interface WorkScheduleModalProps {
   courseSchedule?: string
   onClose: () => void
   onSaved: () => void
+  /** When set, the modal is a review step before creating the document:
+   *  confirming the plan (or an already confirmed one) offers to create it. */
+  onCreateDocument?: () => void
 }
 
 type TabKey = 'plan' | 'summary'
@@ -483,7 +486,7 @@ function AddMonthWizard({
 export function WorkScheduleModal({
   caseId, courseId, courseCode, courseTitle, sectionNo,
   semester, academicYear, labBoyCount, courseSchedule,
-  onClose, onSaved,
+  onClose, onSaved, onCreateDocument,
 }: WorkScheduleModalProps) {
   const qc = useQueryClient()
   const [activeTab, setActiveTab] = useState<TabKey>('plan')
@@ -559,7 +562,8 @@ export function WorkScheduleModal({
       qc.invalidateQueries({ queryKey: ['staff-case', innerCaseId] })
       qc.invalidateQueries({ queryKey: ['staff-cases'] })
       onSaved()
-      onClose()
+      if (onCreateDocument) onCreateDocument()
+      else onClose()
     },
   })
 
@@ -589,6 +593,9 @@ export function WorkScheduleModal({
   }
 
   const planLocked = staffCase?.status === 'plan_locked' || staffCase?.status === 'done'
+  // Until the document is created the plan can still be corrected, even if it
+  // was confirmed before.
+  const readOnly = planLocked && !onCreateDocument
 
   const usedMonthKeys = new Set(
     monthlyPlan.flatMap(gp => gp.months.map(m => `${m.month.year}-${m.month.month}`)),
@@ -797,11 +804,11 @@ export function WorkScheduleModal({
                       group={group}
                       entry={entry}
                       calDates={calDates}
-                      isReadOnly={planLocked}
+                      isReadOnly={readOnly}
                     />
                   ))}
 
-                  {!planLocked && (
+                  {!readOnly && (
                     showAddMonth ? (
                       <AddMonthWizard
                         caseId={innerCaseId}
@@ -905,7 +912,12 @@ export function WorkScheduleModal({
                     disabled={confirmMut.isPending || confirmErrors.length > 0}
                     className="btn btn-green"
                     title={confirmErrors.length > 0 ? confirmErrors.join(' | ') : undefined}>
-                    {confirmMut.isPending ? 'กำลังยืนยัน...' : 'ยืนยันแผนปฏิบัติงาน'}
+                    {confirmMut.isPending ? 'กำลังยืนยัน...' : onCreateDocument ? 'ยืนยันแผนและสร้างเอกสาร' : 'ยืนยันแผนปฏิบัติงาน'}
+                  </button>
+                )}
+                {planLocked && onCreateDocument && (
+                  <button type="button" onClick={onCreateDocument} className="btn btn-green">
+                    สร้างเอกสาร
                   </button>
                 )}
               </div>
