@@ -206,13 +206,13 @@ func scheduleConfirmBlockers(accepted []models.Application, docs []models.StaffD
 	for _, st := range preWorkSteps {
 		signed := false
 		for _, d := range docs {
-			if d.Type == st.Type && d.Status == models.DocSigned && !isMonthlyDoc(d) {
+			if d.Type == st.Type && database.IsActiveDocStatus(d.Status) && !isMonthlyDoc(d) {
 				signed = true
 				break
 			}
 		}
 		if !signed {
-			reasons = append(reasons, "เอกสารขั้นที่ "+strconv.Itoa(st.Step)+" \""+st.Label+"\" ยังไม่ได้ลงนาม")
+			reasons = append(reasons, "เอกสารขั้นที่ "+strconv.Itoa(st.Step)+" \""+st.Label+"\" ยังไม่ได้สร้าง")
 		}
 	}
 	return reasons
@@ -322,10 +322,8 @@ func (h *Handler) GetDocumentWorkflow(c *gin.Context) {
 			v.BlockedReasons = append(v.BlockedReasons, blocked...)
 			if st.Requires != nil {
 				prev, _ := stepFor(*st.Requires)
-				if pd := active[*st.Requires]; pd == nil {
+				if active[*st.Requires] == nil {
 					v.BlockedReasons = append(v.BlockedReasons, "ต้องสร้าง \""+prev.Label+"\" ก่อน")
-				} else if pd.Status != models.DocSigned {
-					v.BlockedReasons = append(v.BlockedReasons, notSignedReason(prev))
 				}
 			}
 			v.CanCreate = len(v.BlockedReasons) == 0
@@ -479,7 +477,8 @@ func buildStepDocument(step workflowStep, course models.Course, posting models.P
 		CourseID:    &courseID,
 		StaffCaseID: &caseID,
 		StaffID:     actorID,
-		Status:      models.DocDraft,
+		// Creating the document finishes the step: no separate send/sign clicks.
+		Status: models.DocSigned,
 	}
 	for _, a := range accepted {
 		doc.Roster = append(doc.Roster, models.RosterEntry{StudentID: a.StudentID, StudentName: a.StudentName, StudentCode: a.StudentCode})

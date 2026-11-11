@@ -58,9 +58,10 @@ function thaiDayShort(dateStr: string): string {
   return thaiDayShortFn(dateStr)
 }
 
-// Per-day actions (หยุด / เลื่อน / แก้เวลา / ลบ) are hidden for now: holiday
-// clashes will be handled by the instructor choosing a makeup day, which is
-// not designed yet. Set to true to bring the column back.
+// Per-day actions (หยุด / เลื่อน / แก้เวลา / ลบ) are hidden for now: holiday clashes
+// will be handled by the instructor choosing a makeup day, which is not
+// designed yet. Set to true to bring them back. Times are edited once, in the
+// weekly schedule, and apply to every day.
 const SHOW_DAY_ACTIONS = false
 
 const thCss: React.CSSProperties = {
@@ -80,6 +81,7 @@ interface Props {
 
 export function MonthlyWorkPlanCard({ caseId, group, entry, calDates, isReadOnly }: Props) {
   const showDayActions = SHOW_DAY_ACTIONS && !isReadOnly
+  const showOtherActions = showDayActions
   const qc = useQueryClient()
   const { month: sgm, occurrences, summary } = entry
   const slots = parseGroupSlots(group)
@@ -430,7 +432,7 @@ export function MonthlyWorkPlanCard({ caseId, group, entry, calDates, isReadOnly
                                 </div>
                               ) : !isRs ? (
                                 <div style={{ display: 'flex', gap: 3, justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
-                                  {occ.status === 'scheduled' && (
+                                  {showOtherActions && occ.status === 'scheduled' && (
                                     <>
                                       <button type="button"
                                         onClick={() => patchMut.mutate({ id: occ.id, data: { status: 'cancelled_holiday' } })}
@@ -446,7 +448,7 @@ export function MonthlyWorkPlanCard({ caseId, group, entry, calDates, isReadOnly
                                       </button>
                                     </>
                                   )}
-                                  {(occ.status === 'cancelled_holiday' || occ.status === 'cancelled_other') && (
+                                  {showOtherActions && (occ.status === 'cancelled_holiday' || occ.status === 'cancelled_other') && (
                                     <button type="button"
                                       onClick={() => patchMut.mutate({ id: occ.id, data: { status: 'scheduled' } })}
                                       disabled={patchMut.isPending}
@@ -455,14 +457,16 @@ export function MonthlyWorkPlanCard({ caseId, group, entry, calDates, isReadOnly
                                     </button>
                                   )}
                                   <button type="button" onClick={() => startEditOcc(occ)}
-                                    className="btn btn-ghost btn-xs" title="แก้ไขเวลา">✏</button>
-                                  <button type="button"
-                                    onClick={() => { if (window.confirm('ลบวันนี้?')) delOccMut.mutate(occ.id) }}
-                                    disabled={delOccMut.isPending}
-                                    className="btn btn-xs"
-                                    style={{ background: 'var(--red-bg)', color: 'var(--red)', border: '1px solid #FCA5A5' }}>
-                                    ✕
-                                  </button>
+                                    className="btn btn-ghost btn-xs" title="แก้ไขเวลา">✏ แก้เวลา</button>
+                                  {showOtherActions && (
+                                    <button type="button"
+                                      onClick={() => { if (window.confirm('ลบวันนี้?')) delOccMut.mutate(occ.id) }}
+                                      disabled={delOccMut.isPending}
+                                      className="btn btn-xs"
+                                      style={{ background: 'var(--red-bg)', color: 'var(--red)', border: '1px solid #FCA5A5' }}>
+                                      ✕
+                                    </button>
+                                  )}
                                 </div>
                               ) : null}
                             </td>

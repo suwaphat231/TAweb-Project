@@ -20,7 +20,7 @@ export interface DocProgress {
   phase: 'form_pending' | 'in_progress' | 'done'
   signed: number
   total: number
-  /** The step being worked on: the first one not signed yet. */
+  /** The step being worked on: the first one not created yet. */
   current: (typeof PRE_WORK_STEPS)[number] | null
   currentStatus: DocStatus | 'not_created'
 }
@@ -42,12 +42,12 @@ export function docProgress(review: FormReview, allDocs: StaffDocument[]): DocPr
   let signed = 0
   for (const step of PRE_WORK_STEPS) {
     const d = active.find((x) => x.type === step.docType)
-    if (d?.status !== 'signed') {
-      return { phase: 'in_progress', signed, total, current: step, currentStatus: d?.status ?? 'not_created' }
+    if (!d) {
+      return { phase: 'in_progress', signed, total, current: step, currentStatus: 'not_created' }
     }
     signed++
   }
-  return { phase: 'done', signed, total, current: null, currentStatus: 'signed' }
+  return { phase: 'done', signed, total, current: null, currentStatus: 'generated' }
 }
 
 export const WORKFLOW_STEPS = [...PRE_WORK_STEPS, ...MONTHLY_STEPS]
@@ -55,9 +55,9 @@ export const TOTAL_DOC_STEPS = WORKFLOW_STEPS.length
 
 const PRE_WORK_DOC_TYPES = new Set<DocType>(PRE_WORK_STEPS.map((s) => s.docType))
 
-/** A doc counts as "done" once it has been signed (or at minimum approved). */
+/** A doc counts as "done" once it has been created and is still the active version. */
 function isDocDone(doc: StaffDocument): boolean {
-  return doc.status === 'signed' || doc.status === 'approved'
+  return doc.status !== 'cancelled' && doc.status !== 'superseded'
 }
 
 export function buildCourseOffering(review: FormReview, allDocs: StaffDocument[]): CourseOffering {

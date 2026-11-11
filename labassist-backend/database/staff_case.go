@@ -1074,6 +1074,31 @@ func resolveSlotForDate(sg models.ScheduleGroup, date time.Time) (startTime, end
 	return slots[0].StartTime, slots[0].EndTime
 }
 
+// ApplyGroupSlotTimes rewrites the start/end time of a group's planned work
+// days to match its weekly slots, so editing the weekly schedule changes every
+// day at once. Only plain scheduled days move; finished, cancelled and makeup
+// (replacement) days keep the time they were given.
+func ApplyGroupSlotTimes(sg models.ScheduleGroup) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var occs []models.WorkOccurrence
+		if err := tx.Where("schedule_group_id = ? AND status = ? AND rescheduled_from_occurrence_id IS NULL",
+			sg.ID, models.OccurrenceScheduled).Find(&occs).Error; err != nil {
+			return err
+		}
+		for _, o := range occs {
+			start, end := resolveSlotForDate(sg, o.ScheduledDate)
+			if o.StartTime == start && o.EndTime == end {
+				continue
+			}
+			if err := tx.Model(&models.WorkOccurrence{}).Where("id = ?", o.ID).
+				Updates(map[string]any{"start_time": start, "end_time": end}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // SetGroupMonthDates replaces the draft occurrences for a schedule group in one
 // calendar month with occurrences at exactly the staff-picked dates. Terminal
 // occurrences (completed, absent, cancelled_other) and replacement rows

@@ -98,9 +98,6 @@ func CreateWorkflowDocument(n NewWorkflowDocument) (models.StaffDocument, error)
 			if !ok {
 				return ErrPrerequisiteMissing
 			}
-			if prev.Status != models.DocSigned {
-				return ErrPrerequisiteNotSigned
-			}
 			doc.BasedOnDocumentID = &prev.ID
 			inheritStepData(&doc, prev)
 		}
