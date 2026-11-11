@@ -46,15 +46,13 @@ export default function StaffCourseDetail() {
   const [searchParams] = useSearchParams()
   const courseIdParam = searchParams.get('course')
   const [activeTab, setActiveTab] = useState<Tab>('documents')
-  const [docRefreshKey, setDocRefreshKey] = useState(0)
-
   const { data: reviews = [], isLoading: reviewsLoading } = useQuery({
     queryKey: ['staff-reviews'],
     queryFn: () => staffApi.listReviews(),
   })
 
   const { data: allDocs = [], isLoading: docsLoading } = useQuery({
-    queryKey: ['staff-documents', docRefreshKey],
+    queryKey: ['staff-documents'],
     queryFn: () => staffApi.listDocuments(),
   })
 
@@ -280,7 +278,6 @@ export default function StaffCourseDetail() {
               <DocumentWorkflow
                 courseId={offering.courseId}
                 courseRef={courseRef}
-                onDocumentCreated={() => setDocRefreshKey((k) => k + 1)}
                 staffCase={staffCase}
                 courseCode={offering.courseCode}
                 courseTitle={offering.courseTitle}

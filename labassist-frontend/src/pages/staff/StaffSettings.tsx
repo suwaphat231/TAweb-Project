@@ -93,8 +93,8 @@ export default function StaffSettings() {
         ['semester-cal-dates', semester, year],
         (old = []) => [...old, created].sort((a, b) => a.date.localeCompare(b.date)),
       )
-      // Holidays cancel or restore work days, which changes the makeup lists.
-      for (const key of ['monthly-plan', 'case-makeup-days', 'instructor-makeup-days']) qc.invalidateQueries({ queryKey: [key] })
+      // Holidays cancel or restore work days, which changes the plans.
+      for (const key of ['monthly-plan']) qc.invalidateQueries({ queryKey: [key] })
       setOpenMonth(null)
       setForm({ date: '', name: '', date_type: 'public_holiday', affects_work: true })
     },
@@ -107,8 +107,8 @@ export default function StaffSettings() {
         ['semester-cal-dates', semester, year],
         (old = []) => old.filter(d => d.id !== id),
       )
-      // Holidays cancel or restore work days, which changes the makeup lists.
-      for (const key of ['monthly-plan', 'case-makeup-days', 'instructor-makeup-days']) qc.invalidateQueries({ queryKey: [key] })
+      // Holidays cancel or restore work days, which changes the plans.
+      for (const key of ['monthly-plan']) qc.invalidateQueries({ queryKey: [key] })
     },
     onError: () => showToast('ลบวันหยุดไม่สำเร็จ กรุณาลองใหม่', 'error'),
   })

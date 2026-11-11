@@ -1,16 +1,15 @@
 import type { WorkOccurrence } from '../types'
 
 // Mirrors models.MaxLabSessionsPerTerm: a term holds at most 15 lab sessions
-// per schedule group (the server refuses more). A day that falls on a holiday
-// takes a slot until a makeup day replaces it.
+// per schedule group (the server refuses more). Holiday-cancelled days do not
+// take a slot.
 export const MAX_LAB_SESSIONS_PER_TERM = 15
 
 const LAB_DAY = new Set<WorkOccurrence['status']>(['scheduled', 'completed', 'absent'])
 
 /** Slots used toward MAX_LAB_SESSIONS_PER_TERM, counted like the server does. */
 export function sessionSlotsUsed(occs: WorkOccurrence[]): number {
-  const madeUp = new Set(occs.map((o) => o.rescheduled_from_occurrence_id).filter((id) => id != null))
-  return occs.filter((o) => LAB_DAY.has(o.status) || (o.status === 'cancelled_holiday' && !madeUp.has(o.id))).length
+  return occs.filter((o) => LAB_DAY.has(o.status)).length
 }
 
 /**

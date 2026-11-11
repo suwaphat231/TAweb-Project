@@ -361,60 +361,40 @@ func CancelOccurrencesForHoliday(cd models.CalendarDate) error {
 // RestoreOccurrencesForHoliday resets occurrences that were cancelled by this
 // holiday back to 'scheduled', used when the holiday is deleted.
 //
-// Makeup days chosen for those occurrences are removed, since the original
-// day is worked again; if a makeup day was already worked the original is
-// kept off the plan (cancelled_other) so the hours are not counted twice.
 func RestoreOccurrencesForHoliday(holidayID uint) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
-		var clashes []models.WorkOccurrence
-		if err := tx.Where("calendar_date_id = ? AND status = ?", holidayID, models.OccurrenceCancelledHoliday).
-			Find(&clashes).Error; err != nil {
-			return err
-		}
-		ids := make([]uint, 0, len(clashes))
-		for _, c := range clashes {
-			ids = append(ids, c.ID)
-		}
-		children, err := makeupChildren(tx, ids)
-		if err != nil {
-			return err
-		}
-		for _, c := range clashes {
-			updates := map[string]interface{}{"status": models.OccurrenceScheduled, "calendar_date_id": nil, "no_makeup": false}
-			if child, has := children[c.ID]; has {
-				if child.Status == models.OccurrenceCompleted || child.Status == models.OccurrenceAbsent {
-					updates["status"] = models.OccurrenceCancelledOther
-					updates["reason"] = "ชดเชยไปแล้ววันที่ " + ThaiShortDate(child.ScheduledDate)
-				} else if err := tx.Delete(&models.WorkOccurrence{}, child.ID).Error; err != nil {
-					return err
-				}
-			}
-			if err := tx.Model(&models.WorkOccurrence{}).Where("id = ?", c.ID).Updates(updates).Error; err != nil {
-				return err
-			}
-		}
-		return nil
+		return tx.Model(&models.WorkOccurrence{}).
+			Where("calendar_date_id = ? AND status = ?", holidayID, models.OccurrenceCancelledHoliday).
+			Updates(map[string]interface{}{"status": models.OccurrenceScheduled, "calendar_date_id": nil}).Error
 	})
 }
 
 // deleteDraftOccurrences removes the group's draft occurrences between from
-// and to before a month is regenerated. Terminal rows, makeup days and
-// holiday clashes that already have a makeup decision are kept.
+// and to before a month is regenerated. Terminal rows are kept.
 func deleteDraftOccurrences(tx *gorm.DB, groupID uint, from, to time.Time) error {
-	keep, err := decidedClashIDs(tx, groupID, from, to)
-	if err != nil {
-		return err
-	}
-	q := tx.Where(
+	return tx.Where(
 		"schedule_group_id = ? AND scheduled_date >= ? AND scheduled_date <= ?"+
 			" AND status IN ? AND rescheduled_from_occurrence_id IS NULL",
 		groupID, from.Format("2006-01-02"), to.Format("2006-01-02"),
 		[]string{string(models.OccurrenceScheduled), string(models.OccurrenceCancelledHoliday)},
-	)
-	if len(keep) > 0 {
-		q = q.Where("id NOT IN ?", keep)
+	).Delete(&models.WorkOccurrence{}).Error
+}
+
+// occupiedDates returns the dates the group already has an occurrence on
+// between from and to.
+func occupiedDates(tx *gorm.DB, groupID uint, from, to time.Time) (map[string]bool, error) {
+	var dates []time.Time
+	if err := tx.Model(&models.WorkOccurrence{}).
+		Where("schedule_group_id = ? AND scheduled_date >= ? AND scheduled_date <= ?",
+			groupID, from.Format("2006-01-02"), to.Format("2006-01-02")).
+		Pluck("scheduled_date", &dates).Error; err != nil {
+		return nil, err
 	}
-	return q.Delete(&models.WorkOccurrence{}).Error
+	out := make(map[string]bool, len(dates))
+	for _, d := range dates {
+		out[d.Format("2006-01-02")] = true
+	}
+	return out, nil
 }
 
 // ListCalendarDatesBySemester returns global + semester-scoped dates for a given semester.
@@ -821,8 +801,7 @@ func RegenerateGroupMonthOccurrences(
 		if err := deleteDraftOccurrences(tx, groupID, startDate, endDate); err != nil {
 			return err
 		}
-		// Days still holding a row (worked days, makeup days, decided
-		// holiday clashes) are not generated again.
+		// Days still holding a row (worked days) are not generated again.
 		taken, err := occupiedDates(tx, groupID, startDate, endDate)
 		if err != nil {
 			return err
@@ -1379,18 +1358,6 @@ func BuildHiringNoticeSnapshot(caseID uint) HiringNoticePlanSnapshot {
 	snap.TotalValidDays = totalValid
 	if totalValid == 0 {
 		snap.BlockingReasons = append(snap.BlockingReasons, "ยังไม่มีวันทำงานที่นับได้ในแผน")
-	}
-
-	// Every holiday clash needs a makeup decision before documents are made,
-	// since they list the work days and count the hours per month.
-	pending, err := PendingMakeupCount(caseID)
-	if err != nil {
-		snap.BlockingReasons = append(snap.BlockingReasons, errSnapshotRead)
-		return snap
-	}
-	if pending > 0 {
-		snap.BlockingReasons = append(snap.BlockingReasons,
-			fmt.Sprintf("มีวันทำงานชนวันหยุด %d วันที่ยังไม่ได้กำหนดวันชดเชย (รออาจารย์เลือก หรือเจ้าหน้าที่เลือกแทน)", pending))
 	}
 
 	numMonths := len(monthKeys)

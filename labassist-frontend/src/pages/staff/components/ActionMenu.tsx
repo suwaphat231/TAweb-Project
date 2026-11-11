@@ -14,11 +14,12 @@ export interface ActionMenuItem {
  * A button that opens a small list of actions, so a row keeps one obvious
  * action in view and tucks the rest away. Closes on outside click or Escape.
  */
-export function ActionMenu({ trigger, items, label, style }: {
+export function ActionMenu({ trigger, items, label, style, className }: {
   trigger: ReactNode
   items: ActionMenuItem[]
   label: string
   style?: React.CSSProperties
+  className?: string
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -43,7 +44,7 @@ export function ActionMenu({ trigger, items, label, style }: {
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <button type="button" aria-haspopup="menu" aria-expanded={open} aria-label={label} title={label}
-        onClick={() => setOpen((v) => !v)} style={style}>
+        onClick={() => setOpen((v) => !v)} style={style} className={className}>
         {trigger}
       </button>
       {open && (

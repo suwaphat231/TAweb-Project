@@ -22,7 +22,6 @@ type WorkSession struct {
 	WorkTimeEnd   string `json:"work_time_end"`
 	// Status is scheduled, completed or absent.
 	Status          models.OccurrenceStatus `json:"status"`
-	IsMakeup        bool                    `json:"is_makeup"`
 	HoursPerSession float64                 `json:"hours_per_session"`
 }
 
@@ -84,8 +83,7 @@ func LabBoyAssignmentsForStudent(studentUserID uint) ([]LabBoyAssignment, error)
 
 // WorkScheduleForStudent returns the student's work days from the work plan
 // of every course where they are an accepted Lab Boy and staff have confirmed
-// the schedule, oldest first. Days cancelled for a holiday are left out; a
-// makeup day shows up as its own session. A schedule group with students
+// the schedule, oldest first. Days cancelled for a holiday are left out. A schedule group with students
 // assigned covers only them; one without covers every Lab Boy of the course.
 func WorkScheduleForStudent(studentUserID uint) ([]WorkSession, error) {
 	var apps []models.Application
@@ -152,7 +150,6 @@ func WorkScheduleForStudent(studentUserID uint) ([]WorkSession, error) {
 				WorkTimeStart:   o.StartTime,
 				WorkTimeEnd:     o.EndTime,
 				Status:          o.Status,
-				IsMakeup:        o.RescheduledFromOccurrenceID != nil,
 				HoursPerSession: hours,
 			})
 		}

@@ -35,7 +35,7 @@ const RUN_LABEL: Record<HolidaySyncRunStatus, string> = {
 
 // Keys whose cached data a holiday change affects (same set the PDF import refreshes).
 const AFFECTED_QUERIES = ['academic-terms', 'academic-events', 'admin-year-holidays', 'holiday-sync-status', 'semester-cal-dates',
-  'staff-calendar-dates', 'calendar-dates', 'monthly-plan', 'case-makeup-days', 'instructor-makeup-days']
+  'staff-calendar-dates', 'calendar-dates', 'monthly-plan']
 
 const dayKey = (iso: string) => iso.slice(0, 10)
 const keyOf = (y: number, m: number, d: number) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`

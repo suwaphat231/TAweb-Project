@@ -68,7 +68,7 @@ export default function HolidaySyncPanel() {
       if (failed > 0) showToast(`ซิงก์ไม่สำเร็จ ${failed} ปี (ข้อมูลเดิมไม่เปลี่ยนแปลง) ดูรายละเอียดในแผงสถานะ`, 'warning')
       else showToast(created > 0 ? `ซิงก์สำเร็จ เพิ่มวันหยุดใหม่ ${created} วัน` : 'ซิงก์สำเร็จ ข้อมูลเป็นปัจจุบันแล้ว', 'success')
       for (const key of ['holiday-sync-status', 'imported-holidays', 'semester-cal-dates', 'staff-calendar-dates', 'calendar-dates',
-        'monthly-plan', 'case-makeup-days', 'instructor-makeup-days']) qc.invalidateQueries({ queryKey: [key] })
+        'monthly-plan']) qc.invalidateQueries({ queryKey: [key] })
     },
     onError: (err: unknown) => {
       const status = (err as { response?: { status?: number } })?.response?.status

@@ -24,18 +24,13 @@ describe('capSessionDates', () => {
 })
 
 describe('sessionSlotsUsed', () => {
-  const occ = (id: number, status: WorkOccurrence['status'], from?: number) =>
-    ({ id, status, rescheduled_from_occurrence_id: from }) as WorkOccurrence
+  const occ = (id: number, status: WorkOccurrence['status']) => ({ id, status }) as WorkOccurrence
 
-  it('counts lab days and holiday clashes not yet made up', () => {
-    expect(sessionSlotsUsed([occ(1, 'scheduled'), occ(2, 'completed'), occ(3, 'absent'), occ(4, 'cancelled_holiday')])).toBe(4)
+  it('counts scheduled, completed and absent lab days', () => {
+    expect(sessionSlotsUsed([occ(1, 'scheduled'), occ(2, 'completed'), occ(3, 'absent')])).toBe(3)
   })
 
-  it('counts a made-up clash once, through its makeup day', () => {
-    expect(sessionSlotsUsed([occ(4, 'cancelled_holiday'), occ(5, 'scheduled', 4)])).toBe(1)
-  })
-
-  it('skips cancelled and rescheduled days', () => {
-    expect(sessionSlotsUsed([occ(1, 'cancelled_other'), occ(2, 'rescheduled'), occ(3, 'scheduled', 2)])).toBe(1)
+  it('skips holiday-cancelled, cancelled and rescheduled days', () => {
+    expect(sessionSlotsUsed([occ(1, 'cancelled_holiday'), occ(2, 'cancelled_other'), occ(3, 'rescheduled'), occ(4, 'scheduled')])).toBe(1)
   })
 })

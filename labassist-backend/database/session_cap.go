@@ -15,13 +15,11 @@ var ErrSessionCap = fmt.Errorf("ใน 1 ภาคเรียนมี lab ไ�
 
 // countedSessions counts the session slots of a schedule group, or of a
 // case's group-less occurrences when groupID is nil: every lab day, plus
-// every holiday clash that has no makeup day yet (the makeup day, a
-// scheduled row pointing back at the clash, counts in its place).
+// the days that count as a session (holiday-cancelled days do not).
 func countedSessions(tx *gorm.DB, staffCaseID uint, groupID *uint) (int, error) {
 	q := tx.Model(&models.WorkOccurrence{}).Where(
-		"status IN ? OR (status = ? AND NOT EXISTS (SELECT 1 FROM work_occurrences mk WHERE mk.rescheduled_from_occurrence_id = work_occurrences.id))",
+		"status IN ?",
 		[]string{string(models.OccurrenceScheduled), string(models.OccurrenceCompleted), string(models.OccurrenceAbsent)},
-		string(models.OccurrenceCancelledHoliday),
 	)
 	if groupID != nil {
 		q = q.Where("schedule_group_id = ?", *groupID)
@@ -50,8 +48,7 @@ func checkSessionCap(tx *gorm.DB, staffCaseID uint, groupID *uint) error {
 }
 
 // trimToSessionCap sorts generated occurrences by date and drops the rows past
-// the cap, so weekly expansion stops at the term's last allowed session. A
-// generated holiday clash has no makeup day yet, so it takes a slot too.
+// the cap, so weekly expansion stops at the term's last allowed session.
 func trimToSessionCap(tx *gorm.DB, staffCaseID uint, groupID *uint, occs []models.WorkOccurrence) ([]models.WorkOccurrence, error) {
 	n, err := countedSessions(tx, staffCaseID, groupID)
 	if err != nil {
@@ -61,7 +58,7 @@ func trimToSessionCap(tx *gorm.DB, staffCaseID uint, groupID *uint, occs []model
 	sort.SliceStable(occs, func(i, j int) bool { return occs[i].ScheduledDate.Before(occs[j].ScheduledDate) })
 	out := occs[:0]
 	for _, o := range occs {
-		if o.Status.CountsAsSession() || o.Status == models.OccurrenceCancelledHoliday {
+		if o.Status.CountsAsSession() {
 			if left <= 0 {
 				break
 			}

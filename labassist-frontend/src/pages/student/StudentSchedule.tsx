@@ -522,7 +522,6 @@ export default function StudentSchedule() {
                                 {s.hours_per_session > 0 ? ` · ${s.hours_per_session} ชม.` : ''}
                               </div>
                             </div>
-                            {s.is_makeup && <Badge variant="purple">วันชดเชย</Badge>}
                             {s.status === 'completed' && <Badge variant="green">ปฏิบัติงานแล้ว</Badge>}
                             {s.status === 'absent' && <Badge variant="red">ขาด</Badge>}
                           </div>

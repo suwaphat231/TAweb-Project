@@ -624,10 +624,8 @@ export function WorkScheduleModal({
         week_day_slots: weekDaySlots,
         hours_per_session: hoursPerSession > 0 ? hoursPerSession : undefined,
       })
-      // A term holds at most 15 lab sessions, and a week that falls on a
-      // holiday is one of them (it stays in the plan as a holiday clash so
-      // the instructor can pick a makeup day, which then takes its place).
-      // Weeks past the 15th are left out, and months with none left are not added.
+      // A term holds at most 15 lab sessions. Weeks past the 15th are left
+      // out, and months with none left are not added.
       const years = months.map(m => monthCEYear(m, semester, academicYear))
       const datesByMonth = capSessionDates(months.map((m, i) => candidateDates(years[i], m, weekdays)))
       try {

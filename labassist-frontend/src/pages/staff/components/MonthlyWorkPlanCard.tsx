@@ -58,10 +58,9 @@ function thaiDayShort(dateStr: string): string {
   return thaiDayShortFn(dateStr)
 }
 
-// Per-day actions (หยุด / เลื่อน / แก้เวลา / ลบ) are hidden for now: holiday clashes
-// will be handled by the instructor choosing a makeup day, which is not
-// designed yet. Set to true to bring them back. Times are edited once, in the
-// weekly schedule, and apply to every day.
+// Per-day actions (หยุด / เลื่อน / แก้เวลา / ลบ) are hidden for now. Set to true
+// to bring them back. Times are edited once, in the weekly schedule, and apply
+// to every day.
 const SHOW_DAY_ACTIONS = false
 
 const thCss: React.CSSProperties = {
@@ -110,7 +109,6 @@ export function MonthlyWorkPlanCard({ caseId, group, entry, calDates, isReadOnly
 
   function inv() {
     qc.invalidateQueries({ queryKey: ['monthly-plan', caseId] })
-    qc.invalidateQueries({ queryKey: ['case-makeup-days', caseId] })
   }
 
   const genMut = useMutation({
@@ -407,14 +405,6 @@ export function MonthlyWorkPlanCard({ caseId, group, entry, calDates, isReadOnly
                               <span style={{ fontSize: 11, color: 'var(--ink-500)', marginLeft: 6 }}>
                                 → {thaiFmt(occ.rescheduled_to_date)}
                               </span>
-                            )}
-                            {occ.rescheduled_from_occurrence_id && occ.reason?.startsWith('ชดเชยวันหยุด') && (
-                              <span className="badge badge-green" style={{ marginLeft: 5, fontSize: 10 }} title={occ.reason}>
-                                ชดเชย (แทน {occ.reason.replace('ชดเชยวันหยุด ', '')})
-                              </span>
-                            )}
-                            {occ.status === 'cancelled_holiday' && occ.no_makeup && (
-                              <span style={{ fontSize: 11, color: 'var(--ink-500)', marginLeft: 6 }}>ไม่ชดเชย</span>
                             )}
                           </td>
                           {showDayActions && (

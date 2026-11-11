@@ -805,44 +805,11 @@ export interface WorkOccurrence {
   rescheduled_to_start?: string
   rescheduled_to_end?: string
   rescheduled_from_occurrence_id?: number
-  /** Set on a holiday clash the instructor (or staff) chose not to make up. */
-  no_makeup?: boolean
   reason?: string
   actual_hours?: number
   updated_by_id?: number
   updated_at: string
   created_at: string
-}
-
-export type MakeupStatus = 'pending' | 'makeup' | 'no_makeup'
-
-/** A work day that fell on a holiday, with its makeup decision. */
-export interface MakeupDay {
-  occurrence_id: number
-  staff_case_id: number
-  schedule_group_id: number
-  course_id: number
-  course_code: string
-  course_title: string
-  section: number
-  semester: string
-  academic_year: number
-  date: string
-  start_time: string
-  end_time: string
-  holiday_name: string
-  status: MakeupStatus
-  makeup?: WorkOccurrence
-  /** The makeup date must fall in [min_date, max_date] and not in blocked_dates. */
-  min_date: string
-  max_date: string
-  blocked_dates: string[]
-}
-
-export interface MakeupDayPayload {
-  date: string
-  start_time: string
-  end_time: string
 }
 
 export type MonthlyPeriodStatus = 'open' | 'closed'
@@ -1115,7 +1082,6 @@ export interface WorkSession {
   work_time_end: string
   status: 'scheduled' | 'completed' | 'absent'
   /** A day added to make up for a work day that fell on a holiday. */
-  is_makeup: boolean
   hours_per_session: number
 }
 

@@ -33,9 +33,9 @@ const CELL_INPUT: React.CSSProperties = {
 }
 
 // Keys invalidated after an import: semester holidays shown to staff, and
-// the plans/makeup lists that holidays change.
+// the plans that holidays change.
 const AFFECTED_QUERIES = ['academic-terms', 'admin-year-holidays', 'semester-cal-dates', 'staff-calendar-dates', 'calendar-dates',
-  'monthly-plan', 'case-makeup-days', 'instructor-makeup-days']
+  'monthly-plan']
 
 function errorText(err: unknown, fallback: string): string {
   if (!isAxiosError(err)) return fallback

@@ -21,7 +21,6 @@ const InstructorSelect = lazy(() => import('../pages/instructor/InstructorSelect
 const InstructorProfile = lazy(() => import('../pages/instructor/InstructorProfile'))
 const InstructorReports = lazy(() => import('../pages/instructor/InstructorReports'))
 const InstructorReportCourse = lazy(() => import('../pages/instructor/InstructorReportCourse'))
-const InstructorMakeupDays = lazy(() => import('../pages/instructor/InstructorMakeupDays'))
 const ReportDetailPage = lazy(() => import('../pages/reports/ReportDetailPage'))
 const StaffReports = lazy(() => import('../pages/staff/StaffReports'))
 const StudentReports = lazy(() => import('../pages/student/StudentReports'))
@@ -84,7 +83,6 @@ export function AppRouter() {
       <Route path="/instructor/courses"  element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorMyCourses /></ProtectedRoute>} />
       <Route path="/instructor/announce" element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorAnnounce /></ProtectedRoute>} />
       <Route path="/instructor/select"   element={<ProtectedRoute roles={['instructor', 'staff', 'admin']}><InstructorSelect /></ProtectedRoute>} />
-      <Route path="/instructor/makeup-days" element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorMakeupDays /></ProtectedRoute>} />
       <Route path="/instructor/profile"  element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorProfile /></ProtectedRoute>} />
       <Route path="/instructor/reports"  element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorReports /></ProtectedRoute>} />
       <Route path="/instructor/reports/courses/:courseId" element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorReportCourse /></ProtectedRoute>} />

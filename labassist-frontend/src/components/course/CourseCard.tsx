@@ -129,13 +129,6 @@ export function CourseCard({ group, onApply, appliedSections = [] }: Props) {
         )}
       </div>
 
-      {/* Slot info */}
-      <div style={{ fontSize: 12, color: 'var(--ink-500)', display: 'flex', gap: 10 }}>
-        {group.totalSlots > 0 && (
-          <SlotBar label="Lab Boy" filled={group.totalAccepted} total={group.totalSlots} />
-        )}
-      </div>
-
       {/* Footer actions */}
       <div style={{ paddingTop: 4, borderTop: '1px solid var(--line-soft)' }}>
         {group.status === 'closed' || group.status === 'draft' ? (
@@ -169,19 +162,5 @@ export function CourseCard({ group, onApply, appliedSections = [] }: Props) {
         )}
       </div>
     </Card>
-  )
-}
-
-function SlotBar({ label, filled, total }: { label: string; filled: number; total: number }) {
-  const pct = Math.min((filled / total) * 100, 100)
-  const full = filled >= total
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-      <span style={{ fontWeight: 600 }}>{label}</span>
-      <span style={{ color: full ? 'var(--red)' : 'var(--ink-400)' }}>{filled}/{total}</span>
-      <div style={{ width: 36, height: 4, background: 'var(--line)', borderRadius: 4 }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: full ? 'var(--red)' : 'var(--green)', borderRadius: 4 }} />
-      </div>
-    </div>
   )
 }

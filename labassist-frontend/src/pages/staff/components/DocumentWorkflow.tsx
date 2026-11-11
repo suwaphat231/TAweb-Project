@@ -12,7 +12,6 @@ import { Textarea } from '../../../components/ui/Textarea'
 import { Button } from '../../../components/ui/Button'
 import { DocumentPreviewModal } from './DocumentPreviewModal'
 import { WorkScheduleModal } from './WorkScheduleModal'
-import { StaffMakeupSection } from './StaffMakeupSection'
 import { ActionMenu } from './ActionMenu'
 
 const STEP_STATUS_CONFIG: Record<DocStepStatus, { label: string; color: string; bg: string }> = {
@@ -55,7 +54,6 @@ function fmtDate(iso?: string) {
 
 interface Props {
   courseId: number
-  onDocumentCreated: () => void
   staffCase?: StaffCaseResponse
   courseCode?: string
   courseTitle?: string
@@ -73,7 +71,7 @@ type CreateTarget = { view: WorkflowStepView; replace: boolean }
 // steps, what blocks each one and whether an existing document is out of
 // date all come from the server, which enforces the same rules on create.
 export function DocumentWorkflow({
-  courseId, onDocumentCreated,
+  courseId,
   staffCase, courseCode, courseTitle, sectionNo,
   semester, academicYear, labBoyCount, courseSchedule, courseRef = '',
 }: Props) {
@@ -124,8 +122,6 @@ export function DocumentWorkflow({
   function refresh() {
     qc.invalidateQueries({ queryKey: ['document-workflow', courseId] })
     qc.invalidateQueries({ queryKey: ['staff-documents'] })
-    qc.invalidateQueries({ queryKey: ['case-makeup-days'] })
-    onDocumentCreated()
   }
 
   const createMut = useMutation({
@@ -207,7 +203,7 @@ export function DocumentWorkflow({
   if (isError || !workflow) {
     return (
       <div style={{ fontSize: 13, color: 'var(--red)' }}>
-        โหลด workflow เอกสารไม่สำเร็จ <button onClick={() => refetch()} style={actionBtn('transparent', 'var(--primary)', '1px solid var(--line)')}>ลองใหม่</button>
+        โหลด workflow เอกสารไม่สำเร็จ <button onClick={() => refetch()} className="btn btn-outline btn-sm">ลองใหม่</button>
       </div>
     )
   }
@@ -219,7 +215,6 @@ export function DocumentWorkflow({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      {staffCase?.id && <StaffMakeupSection caseId={staffCase.id} />}
       {views.map((view, idx) => {
         const locked = currentIdx >= 0 && idx > currentIdx
         const isCurrent = idx === currentIdx
@@ -261,7 +256,7 @@ export function DocumentWorkflow({
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
                 <div style={{ flex: 1, minWidth: 200 }}>
                   {isCurrent && <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>ขั้นตอนปัจจุบัน</div>}
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)', lineHeight: 1.4 }}>{view.label}</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)', lineHeight: 1.4 }}>{view.label}</div>
                   {doc && (
                     <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 3 }}>
                       {doc.name}{doc.version && doc.version > 1 ? ` · ฉบับที่ ${doc.version}` : ''}
@@ -281,9 +276,10 @@ export function DocumentWorkflow({
                 </div>
               ) : <>
               {!doc && view.blocked_reasons.length > 0 && (
-                <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12, color: 'var(--ink-500)', lineHeight: 1.6 }}>
-                  {view.blocked_reasons.map((r, i) => <li key={i}>{r}</li>)}
-                </ul>
+                <div role="note" style={{ marginTop: 8, padding: '8px 12px', background: 'var(--amber-bg)', border: '1px solid #FDE68A', borderRadius: 8, fontSize: 13, color: '#92400E', lineHeight: 1.6 }}>
+                  <b>ต้องทำก่อนจึงจะสร้างได้</b>
+                  <ul style={{ margin: '2px 0 0', paddingLeft: 18 }}>{view.blocked_reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
+                </div>
               )}
               {doc && view.stale_reasons.length > 0 && (
                 <div role="note" style={{ marginTop: 8, padding: '8px 12px', background: 'var(--amber-bg)', border: '1px solid #FDE68A', borderRadius: 8, fontSize: 12, color: '#92400E', lineHeight: 1.6 }}>
@@ -297,16 +293,18 @@ export function DocumentWorkflow({
 
               {/* One action that moves the step forward, a download, and
                   everything else under "⋯". */}
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 12 }}>
                 {!doc && (
                   <button
                     onClick={() => (isHiringNotice ? setShowScheduleModal(true)
                       : oneClick(view.type) ? createMut.mutate({ type: view.type, body: {} }) : openCreate(view, false))}
                     disabled={(!view.can_create && !isHiringNotice) || createMut.isPending}
                     title={!view.can_create && !isHiringNotice ? view.blocked_reasons[0] : undefined}
-                    style={view.can_create || isHiringNotice ? actionBtn('var(--accent)', '#fff') : disabledBtn}
+                    className="btn btn-primary"
+                    style={{ fontSize: 14, padding: '9px 22px' }}
                   >
-                    {createMut.isPending && createMut.variables?.type === view.type ? 'กำลังสร้าง...' : 'สร้างเอกสาร'}
+                    {createMut.isPending && createMut.variables?.type === view.type ? 'กำลังสร้าง...'
+                      : isHiringNotice ? 'จัดตารางปฏิบัติงาน แล้วสร้างเอกสาร' : 'สร้างเอกสาร'}
                   </button>
                 )}
 
@@ -314,24 +312,31 @@ export function DocumentWorkflow({
                   <ActionMenu
                     label="ดาวน์โหลด"
                     trigger={downloadingId === doc.id || downloadingEvidenceId === doc.id ? 'กำลังโหลด...' : 'ดาวน์โหลด ▾'}
-                    style={actionBtn('transparent', 'var(--ink-700)', '1px solid var(--line)')}
+                    className="btn btn-outline"
+                    style={{ fontSize: 14, padding: '9px 18px' }}
                     items={[
                       { label: 'บันทึกขออนุมัติเบิกจ่ายเงิน', hint: 'เดือนละ 1 หน้า (.docx)', onClick: () => download(doc) },
                       { label: 'ใบขวาง (หลักฐานการจ่ายเงิน)', hint: 'เดือนละ 1 หน้า (.docx)', onClick: () => downloadEvidence(doc) },
                     ]}
                   />
                 ) : (
-                  <button onClick={() => download(doc)} disabled={downloadingId === doc.id} style={actionBtn('transparent', 'var(--ink-700)', '1px solid var(--line)')}>
+                  <button onClick={() => download(doc)} disabled={downloadingId === doc.id} className="btn btn-outline" style={{ fontSize: 14, padding: '9px 18px' }}>
                     {downloadingId === doc.id ? 'กำลังโหลด...' : 'ดาวน์โหลด'}
                   </button>
                 ))}
 
+                {doc && (
+                  <button onClick={() => setPreviewStep(item)} className="btn btn-ghost" style={{ fontSize: 14, padding: '9px 18px' }}>
+                    ดูรายละเอียด
+                  </button>
+                )}
+
                 <ActionMenu
                   label="ตัวเลือกเพิ่มเติม"
-                  trigger="⋯"
-                  style={{ ...actionBtn('transparent', 'var(--ink-600)', '1px solid var(--line)'), padding: '5px 12px', fontSize: 14, lineHeight: 1 }}
+                  trigger="เพิ่มเติม ▾"
+                  className="btn btn-ghost"
+                  style={{ fontSize: 14, padding: '9px 18px' }}
                   items={[
-                    ...(doc ? [{ label: 'ดูรายละเอียด', onClick: () => setPreviewStep(item) }] : []),
                     ...(isHiringNotice && planLocked ? [{ label: 'ดูตารางปฏิบัติงาน', onClick: () => setShowScheduleModal(true) }] : []),
                     ...(isHiringNotice && workDates.length > 0 ? [{
                       label: showWorkDates ? 'ซ่อนวันที่ปฏิบัติงาน' : `วันที่ปฏิบัติงาน (${workDates.filter((d) => d.status === 'scheduled' || d.status === 'completed').length} วัน)`,
@@ -430,7 +435,7 @@ export function DocumentWorkflow({
                 {d.period && <span style={{ color: 'var(--ink-500)' }}>{d.period.month}/{d.period.year}</span>}
                 <span style={{ color: 'var(--ink-500)' }}>{DOC_STATUS_LABEL[d.status] ?? d.status}</span>
                 <span style={{ color: 'var(--ink-400)', fontSize: 12 }}>{fmtDate(d.created_at)}</span>
-                <button onClick={() => download(d)} disabled={downloadingId === d.id} style={{ ...actionBtn('transparent', 'var(--ink-600)', '1px solid var(--line)'), marginLeft: 'auto' }}>ดาวน์โหลด</button>
+                <button onClick={() => download(d)} disabled={downloadingId === d.id} className="btn btn-outline" style={{ marginLeft: 'auto' }}>ดาวน์โหลด</button>
               </li>
             ))}
           </ul>
@@ -502,22 +507,6 @@ function CheckIcon() {
       <polyline points="20 6 9 17 4 12"/>
     </svg>
   )
-}
-
-const disabledBtn: React.CSSProperties = {
-  padding: '5px 12px', fontSize: 12, fontWeight: 500,
-  borderRadius: 'var(--radius-btn)', cursor: 'not-allowed',
-  background: 'var(--line-soft)', color: 'var(--ink-400)',
-  border: '1px solid var(--line)', opacity: 0.7,
-}
-
-function actionBtn(bg: string, color: string, border?: string): React.CSSProperties {
-  return {
-    padding: '5px 14px', fontSize: 12, fontWeight: 600,
-    borderRadius: 'var(--radius-btn)', cursor: 'pointer',
-    background: bg, color, border: border ?? 'none',
-    transition: 'opacity .15s',
-  }
 }
 
 // ─── WorkDatesPanel ───────────────────────────────────────────────────────────

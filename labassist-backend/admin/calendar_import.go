@@ -404,23 +404,15 @@ func (h *Handler) ImportCalendar(c *gin.Context) {
 	}
 
 	// Same follow-up as adding one holiday by hand: cancel the work days that
-	// fall on it and ask the instructors of those courses for makeup days.
+	// fall on it.
 	resp := CalendarImportResponse{Created: len(created), Skipped: skipped, TermsSaved: len(termRows), EventsSaved: len(eventRows)}
-	var notifs []models.Notification
 	for _, cd := range created {
 		if err := database.CancelOccurrencesForHoliday(cd); err != nil {
 			log.Printf("cancel occurrences for imported holiday %d: %v", cd.ID, err)
 			resp.Warning = "บันทึกวันหยุดแล้ว แต่ยกเลิกวันทำงานที่ตรงกับวันหยุดบางวันไม่สำเร็จ กรุณาตรวจสอบแผนงาน"
 			continue
 		}
-		n, err := database.HolidayClashNotifications(cd)
-		if err != nil {
-			log.Printf("imported holiday %d clash notifications: %v", cd.ID, err)
-			continue
-		}
-		notifs = append(notifs, n...)
 	}
-	database.CreateNotifications(notifs)
 	c.JSON(http.StatusCreated, resp)
 }
 

@@ -235,13 +235,12 @@ func (s *Service) SyncYear(ctx context.Context, year int, trigger string, userID
 }
 
 // followUp does for new holidays what adding one by hand does: cancel the work
-// days that fall on it and ask the affected instructors for makeup days. Only
+// days that fall on it. Only
 // holidays from today on are handled; a past holiday is stored for reference
 // but must not cancel work that may already have been done.
 func (s *Service) followUp(created []models.CalendarDate) error {
 	today := s.now().In(bangkok)
 	today = time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.UTC)
-	var notifs []models.Notification
 	failed := false
 	for _, cd := range created {
 		if cd.Date.Before(today) {
@@ -252,14 +251,7 @@ func (s *Service) followUp(created []models.CalendarDate) error {
 			failed = true
 			continue
 		}
-		n, err := database.HolidayClashNotifications(cd)
-		if err != nil {
-			log.Printf("holiday sync: clash notifications for %d: %v", cd.ID, err)
-			continue
-		}
-		notifs = append(notifs, n...)
 	}
-	database.CreateNotifications(notifs)
 	if failed {
 		return errors.New("บันทึกวันหยุดแล้ว แต่ยกเลิกวันทำงานที่ตรงกับวันหยุดบางวันไม่สำเร็จ กรุณาตรวจสอบแผนงาน")
 	}

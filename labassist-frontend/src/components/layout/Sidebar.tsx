@@ -2,9 +2,6 @@ import type { ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useLogout } from '../../hooks/useLogout'
-import { useQuery } from '@tanstack/react-query'
-import { instructorApi } from '../../services/api'
-import { MAKEUP_DAYS_KEY, pendingCount } from '../makeup/makeupRules'
 import { useCalendarJob } from '../../hooks/useCalendarJob'
 import { Avatar } from '../ui/Avatar'
 import type { UserRole } from '../../types'
@@ -44,8 +41,7 @@ interface NavItem {
   to: string; label: string; icon: string
   /** Extra path prefixes that also count as this item (nested pages). */
   match?: string[]
-  /** Shows a count next to the label: 'makeup' = holiday clashes waiting for a makeup day. */
-  badge?: 'makeup' | 'calendar'
+  badge?: 'calendar'
 }
 
 const navMap: Record<UserRole, NavItem[]> = {
@@ -62,7 +58,6 @@ const navMap: Record<UserRole, NavItem[]> = {
     { to: '/instructor/home',     label: 'หน้าหลัก',           icon: 'home' },
     { to: '/instructor/courses',  label: 'วิชาของฉัน',       icon: 'book' },
     { to: '/instructor/announce', label: 'จัดการประกาศ',     icon: 'megaphone' },
-    { to: '/instructor/makeup-days', label: 'วันชดเชย',     icon: 'calendar-check', badge: 'makeup' },
     { to: '/instructor/reports',  label: 'รายงานนักศึกษา', icon: 'clipboard', match: ['/instructor/reports/', '/reports/'] },
     { to: '/instructor/profile',  label: 'ข้อมูลส่วนตัว',    icon: 'user' },
   ],
@@ -94,13 +89,6 @@ export function Sidebar({ collapsed = false, onClose }: Props) {
   const { user } = useAuth()
   const { pathname } = useLocation()
   const items = user ? (navMap[user.role] ?? []) : []
-  const showsMakeup = items.some((i) => i.badge === 'makeup')
-  const { data: makeupDays = [] } = useQuery({
-    queryKey: MAKEUP_DAYS_KEY,
-    queryFn: instructorApi.makeupDays,
-    enabled: showsMakeup,
-  })
-  const badgeCount = { makeup: pendingCount(makeupDays), calendar: 0 }
   // An admin's calendar PDF is read in the background: show how it is going.
   const { data: calendarJob } = useCalendarJob(items.some((i) => i.badge === 'calendar'))
 
@@ -192,12 +180,6 @@ export function Sidebar({ collapsed = false, onClose }: Props) {
                 background: calendarJob.status === 'processing' ? '#38BDF8' : calendarJob.status === 'done' ? '#22C55E' : '#EF4444',
                 color: '#0B1220',
               }}>{calendarJob.status === 'processing' ? 'กำลังอ่าน…' : calendarJob.status === 'done' ? 'พร้อมตรวจ' : 'ไม่สำเร็จ'}</span>
-            )}
-            {!collapsed && item.badge === 'makeup' && badgeCount.makeup > 0 && (
-              <span aria-label={`รอดำเนินการ ${badgeCount.makeup} รายการ`} style={{
-                marginLeft: 'auto', minWidth: 20, padding: '1px 6px', borderRadius: 10,
-                background: '#F59E0B', color: '#fff', fontSize: 11, fontWeight: 700, textAlign: 'center',
-              }}>{badgeCount.makeup}</span>
             )}
           </NavLink>
         ))}
