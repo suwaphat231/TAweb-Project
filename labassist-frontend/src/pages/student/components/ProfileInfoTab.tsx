@@ -36,7 +36,7 @@ export function ProfileInfoTab() {
     },
   })
 
-  const [draft, setDraft] = useState<Partial<Record<'name_prefix' | 'full_name' | 'full_name_en' | 'student_id' | 'faculty' | 'phone', string>>>({})
+  const [draft, setDraft] = useState<Partial<Record<'name_prefix' | 'full_name' | 'full_name_en' | 'student_id' | 'faculty' | 'phone' | 'year', string>>>({})
   const [isEditing, setIsEditing] = useState(false)
   const info = useStudentInfoDoc()
 
@@ -52,13 +52,14 @@ export function ProfileInfoTab() {
     full_name: p?.full_name ?? '',
     full_name_en: p?.full_name_en ?? '',
     student_id: p?.student_id ?? '',
+    year: p?.year && p.year > 0 ? String(p.year) : '',
     faculty: p?.faculty ?? '',
     phone: p?.phone ?? '',
     ...draft,
   }
 
   const updateMut = useMutation({
-    mutationFn: (data: { name_prefix: string; full_name: string; full_name_en: string; student_id: string; faculty: string; phone: string }) =>
+    mutationFn: (data: { name_prefix: string; full_name: string; full_name_en: string; student_id: string; year: number; faculty: string; phone: string }) =>
       studentApi.updateProfile(data),
     onSuccess: (updated) => {
       setUser(updated)
@@ -85,6 +86,7 @@ export function ProfileInfoTab() {
       full_name: form.full_name,
       full_name_en: form.full_name_en.trim(),
       student_id: form.student_id.trim(),
+      year: form.year ? Number(form.year) : 0,
       faculty: form.faculty,
       phone: form.phone.trim(),
     })
@@ -210,6 +212,7 @@ export function ProfileInfoTab() {
             <InfoRow label="ชื่อ-นามสกุล (ภาษาไทย)" value={p?.full_name} />
             <InfoRow label="ชื่อ-นามสกุล (ภาษาอังกฤษ)" value={p?.full_name_en} />
             <InfoRow label="รหัสนักศึกษา" value={p?.student_id} />
+            <InfoRow label="ชั้นปี" value={p?.year && p.year > 0 ? `ปีที่ ${p.year}` : undefined} />
             <InfoRow label="ภาควิชา" value={p?.faculty} />
             <InfoRow label="เบอร์ติดต่อ" value={formatPhone(p?.phone)} />
             <InfoRow label="อีเมล (ใช้สำหรับเข้าสู่ระบบ)" value={p?.email} />
@@ -264,6 +267,19 @@ export function ProfileInfoTab() {
                 placeholder="เช่น 660710260"
                 inputMode="numeric"
                 maxLength={10}
+              />
+              <Select
+                disabled={updateMut.isPending}
+                label="ชั้นปี"
+                value={form.year}
+                onChange={(e) => setDraft((f) => ({ ...f, year: e.target.value }))}
+                options={[
+                  { value: '', label: '— เลือกชั้นปี —' },
+                  { value: '1', label: 'ปีที่ 1' },
+                  { value: '2', label: 'ปีที่ 2' },
+                  { value: '3', label: 'ปีที่ 3' },
+                  { value: '4', label: 'ปีที่ 4' },
+                ]}
               />
               <Select
                 disabled={updateMut.isPending}

@@ -66,6 +66,8 @@ export function CourseFormModal({
   useEffect(() => {
     if (!isOpen || editId || slotsTouched) return
     if (suggestedMax > 0) {
+      // These effects initialize editable form state from the selected catalog sections.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSlotsStr(String(suggestedMax))
       setForm((f) => ({ ...f, labboy_slots: suggestedMax, auto_labboy_slots: true }))
     } else {
@@ -76,6 +78,8 @@ export function CourseFormModal({
 
   useEffect(() => {
     if (isOpen) {
+      // This effect resets the editable form state when the modal opens.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setInitialDeadline(editId ? form.deadline ?? '' : '')
       setSlotsTouched(false)
       if (editId) {

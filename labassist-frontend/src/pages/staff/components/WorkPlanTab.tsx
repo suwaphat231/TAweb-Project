@@ -14,7 +14,7 @@ import { MAX_LAB_SESSIONS_PER_TERM, sessionSlotsUsed } from '../../../utils/labS
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DAY_OPTIONS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
-export const DAY_LABELS: Record<string, string> = {
+const DAY_LABELS: Record<string, string> = {
   MON: 'จันทร์', TUE: 'อังคาร', WED: 'พุธ', THU: 'พฤหัสบดี',
   FRI: 'ศุกร์', SAT: 'เสาร์', SUN: 'อาทิตย์',
 }

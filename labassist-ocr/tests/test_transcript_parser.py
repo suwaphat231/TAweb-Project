@@ -49,6 +49,20 @@ class NormalizeTest(unittest.TestCase):
 
 
 class ParseTranscriptTest(unittest.TestCase):
+    def test_recovers_unique_one_character_code_error(self):
+        page = HEADER + [
+            tok('51712', 100, 200), tok('ทักษะการเขียนโปรแกรม', 400, 200), tok('3', 1820, 200), tok('a', 2230, 200),
+        ]
+        grades, _confidence = parse_transcript(page, {'517121'})
+        self.assertEqual(grades, {'517121': 'A'})
+
+    def test_rejects_ambiguous_one_character_code_error(self):
+        page = HEADER + [
+            tok('51712', 100, 200), tok('ทักษะการเขียนโปรแกรม', 400, 200), tok('3', 1820, 200), tok('a', 2230, 200),
+        ]
+        grades, _confidence = parse_transcript(page, {'517121', '517122'})
+        self.assertEqual(grades, {})
+
     def test_detector_only(self):
         page = HEADER + [
             tok('su101', 100, 200), tok('ศิลปะศิลปากร', 400, 200), tok('3', 1820, 200), tok('a', 2230, 200),

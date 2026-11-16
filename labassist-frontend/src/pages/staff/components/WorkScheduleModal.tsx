@@ -5,7 +5,8 @@ import type {
   StaffCaseResponse, GroupMonthPlan, CalendarDate, UpdateCasePayload,
   GroupWeekDaySlot, CourseScheduleSlot,
 } from '../../../types'
-import { MonthlyWorkPlanCard, MONTH_NAMES } from './MonthlyWorkPlanCard'
+import { MonthlyWorkPlanCard } from './MonthlyWorkPlanCard'
+import { MONTH_NAMES } from './staffWorkPlanConstants'
 import { OverallScheduleSummary } from './OverallScheduleSummary'
 import { formatThaiDate, toDateOnly } from '../../../utils/thaiDate'
 import { payableHours } from '../../../utils/payableHours'
@@ -138,9 +139,14 @@ function AddMonthWizard({
       })).filter(s => s.weekday >= 0)
 
   const weekdays = effectiveSlots.map(s => s.weekday)
+  const weekdaysKey = weekdays.join(',')
   const candidates = useMemo(
-    () => candidateDates(ceYear, month, weekdays),
-    [ceYear, month, JSON.stringify(weekdays)],
+    () => candidateDates(
+      ceYear,
+      month,
+      weekdaysKey ? weekdaysKey.split(',').map(Number) : [],
+    ),
+    [ceYear, month, weekdaysKey],
   )
 
   // Build holiday set from calDates
@@ -163,12 +169,13 @@ function AddMonthWizard({
   // Initialise selectedDates when candidates change
   useEffect(() => {
     if (candidates.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedDates(new Set(candidates.filter(d => !holidayDateSet.has(d))))
     } else {
       setSelectedDates(new Set())
     }
     setInitialized(true)
-  }, [candidates.join(','), holidayDateSet.size])
+  }, [candidates, holidayDateSet])
 
   // Live summary
   const totalProposed = candidates.length
@@ -516,6 +523,8 @@ export function WorkScheduleModal({
   // Pre-fill rate from loaded case (once)
   useEffect(() => {
     if (staffCase && !rateInit) {
+      // This effect initializes local form state from the loaded case.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setRateBaht(staffCase.rate_per_hour_satang > 0 ? staffCase.rate_per_hour_satang / 100 : 50)
       setRateInit(true)
     }

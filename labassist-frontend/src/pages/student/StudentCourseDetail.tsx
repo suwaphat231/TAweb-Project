@@ -167,6 +167,11 @@ export default function StudentCourseDetail() {
     : null
 
   const appliedSections = group ? getAppliedSections(group, myApps) : []
+  const scheduleMissing = group?.sections.some((section) => section.schedule_missing) ?? false
+  const conflictingSections = group?.sections.filter((section) => section.conflict_day) ?? []
+  const allSectionsConflict = Boolean(
+    group && group.sections.length > 0 && conflictingSections.length === group.sections.length,
+  )
 
   // Structured meeting slots (สีตามวัน: จันทร์=เหลือง, อังคาร=ชมพู, พุธ=เขียว, พฤหัส=ส้ม, ศุกร์=ฟ้า, เสาร์=ม่วง, อาทิตย์=แดง)
   const allMeetings = useMemo<MeetingSlot[]>(() => {
@@ -325,9 +330,19 @@ export default function StudentCourseDetail() {
                       ว่าง <strong style={{ color: 'var(--primary)' }}>{Math.max(0, group.totalSlots - group.totalAccepted)}</strong> ตำแหน่ง
                     </span>
                   )}
-                  <Button size="md" onClick={() => openApply(group)}>
-                    สมัคร Lab Boy
-                  </Button>
+                  {scheduleMissing ? (
+                    <Link to="/student/profile" style={{ color: 'var(--primary)', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>
+                      ไปกรอกตารางเรียนก่อน →
+                    </Link>
+                  ) : allSectionsConflict ? (
+                    <span style={{ color: 'var(--amber)', fontSize: 13, fontWeight: 600, maxWidth: 250, textAlign: 'right' }}>
+                      เวลาเรียนของคุณชนกับเวลาปฏิบัติงาน ไม่สามารถสมัครได้
+                    </span>
+                  ) : (
+                    <Button size="md" onClick={() => openApply(group)}>
+                      สมัคร Lab Boy
+                    </Button>
+                  )}
                 </div>
               )}
             </div>

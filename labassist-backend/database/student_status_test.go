@@ -72,9 +72,49 @@ func TestNormalizeStudentID(t *testing.T) {
 			t.Errorf("NormalizeStudentID(%q) = %q, %v; want %q", raw, got, ok, want)
 		}
 	}
+
 	for _, bad := range []string{"ุ660710260", "66071026", "66071026012", "6607x0260"} {
 		if _, ok := NormalizeStudentID(bad); ok {
 			t.Errorf("NormalizeStudentID(%q) accepted", bad)
 		}
+	}
+}
+
+func TestAdmissionAcademicYear(t *testing.T) {
+	for studentID, want := range map[string]int{
+		"660710260":   2566,
+		" ๖๗๐๗-๑๐๒๖๐": 2567,
+	} {
+		if got, ok := AdmissionAcademicYear(studentID); !ok || got != want {
+			t.Errorf("AdmissionAcademicYear(%q) = %d, %v; want %d, true", studentID, got, ok, want)
+		}
+	}
+	for _, studentID := range []string{"", "66071026", "6607x0260"} {
+		if _, ok := AdmissionAcademicYear(studentID); ok {
+			t.Errorf("AdmissionAcademicYear(%q) accepted", studentID)
+		}
+	}
+}
+
+func TestIsFirstSemesterFreshman(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		studentID    string
+		semester     string
+		academicYear int
+		want         bool
+		ok           bool
+	}{
+		{"first semester of admission year", "690710260", "1", 2569, true, true},
+		{"second semester of admission year", "690710260", "2", 2569, false, true},
+		{"later academic year", "690710260", "1", 2570, false, true},
+		{"invalid student ID", "unknown", "1", 2569, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := IsFirstSemesterFreshman(tc.studentID, tc.semester, tc.academicYear)
+			if got != tc.want || ok != tc.ok {
+				t.Errorf("IsFirstSemesterFreshman() = %v, %v; want %v, %v", got, ok, tc.want, tc.ok)
+			}
+		})
 	}
 }

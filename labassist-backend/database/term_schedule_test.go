@@ -117,7 +117,9 @@ func TestResetTermScheduleSaves(t *testing.T) {
 	if found, _ := ResetTermScheduleSaves(userID, "3", 2569); found {
 		t.Fatal("reset of a term with no schedule must report not found")
 	}
-	if rows := TermSchedulesByUser(userID); len(rows) != 2 || rows[0].SaveLimit != models.MaxTermScheduleSaves {
+	if rows := TermSchedulesByUser(userID); len(rows) != 2 ||
+		rows[0].SaveLimit != models.MaxTermScheduleSaves ||
+		rows[0].AddDropEnd == "" {
 		t.Fatalf("list: %+v", rows)
 	}
 }

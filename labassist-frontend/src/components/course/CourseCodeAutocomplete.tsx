@@ -35,6 +35,8 @@ export function CourseCodeAutocomplete({ value, onChange, onSelect, disabled }: 
 
   // Sync when parent resets the value (e.g. modal re-opens for edit)
   useEffect(() => {
+    // This effect mirrors the controlled prop into the editable local input.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setInputValue(value)
   }, [value])
 

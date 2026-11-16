@@ -36,9 +36,9 @@ type UpdateProfileRequest struct {
 	NamePrefix *string `json:"name_prefix,omitempty" example:"นาย"`
 	// FullNameEn is the English spelling; "" clears it.
 	FullNameEn *string `json:"full_name_en,omitempty" example:"Somchai Jaidee"`
-	StudentID *string `json:"student_id,omitempty" example:"640710112"`
-	Year      *int    `json:"year,omitempty" binding:"omitempty,min=0,max=4" example:"3"`
-	Faculty   *string `json:"faculty,omitempty" example:"วิทยาการคอมพิวเตอร์"`
+	StudentID  *string `json:"student_id,omitempty" example:"640710112"`
+	Year       *int    `json:"year,omitempty" binding:"omitempty,min=0,max=4" example:"3"`
+	Faculty    *string `json:"faculty,omitempty" example:"วิทยาการคอมพิวเตอร์"`
 	// Username is the login name used by /auth/login. Passwords are changed
 	// through /auth/password/* instead.
 	Username *string `json:"username,omitempty" example:"somchai"`
@@ -66,6 +66,9 @@ func (h *Handler) StudentDashboard(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
+	}
+	if student, ok := database.UserByID(sid); ok {
+		openCourses = filterFirstSemesterFreshmanCourses(student, openCourses)
 	}
 	recentCourses := enrichConflicts(sid, openCourses)
 	openCount, err := database.CountOpenCourses()
@@ -132,6 +135,27 @@ func (h *Handler) Apply(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "course not found"})
 		return
 	}
+	student, ok := database.UserByID(studentID.(uint))
+	if !ok || student.StudentID == nil || strings.TrimSpace(*student.StudentID) == "" {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":               "กรุณากรอกรหัสนักศึกษาในหน้าโปรไฟล์ก่อนสมัคร Lab Boy",
+			"student_id_required": true,
+		})
+		return
+	}
+	if freshman, valid := database.IsFirstSemesterFreshman(*student.StudentID, course.Semester, course.AcademicYear); !valid {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":               "รหัสนักศึกษาไม่ถูกต้อง กรุณาตรวจสอบข้อมูลในหน้าโปรไฟล์ก่อนสมัคร Lab Boy",
+			"student_id_required": true,
+		})
+		return
+	} else if freshman {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":               "นักศึกษาแรกเข้าไม่สามารถสมัคร Lab Boy ได้ในภาคเรียนที่ 1 ของปีการศึกษาแรกเข้า",
+			"freshman_restricted": true,
+		})
+		return
+	}
 	if course.Status != models.StatusOpen && course.Status != models.StatusClosingSoon {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "course is not accepting applications"})
 		return
@@ -147,12 +171,12 @@ func (h *Handler) Apply(c *gin.Context) {
 		return
 	}
 	// Hiring documents print the student's title, so it must be set.
-	if me, _ := database.UserByID(studentID.(uint)); !models.IsValidNamePrefix(me.NamePrefix) {
+	if !models.IsValidNamePrefix(student.NamePrefix) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "กรุณาเลือกคำนำหน้าชื่อ (นาย/นางสาว) ในหน้าโปรไฟล์ก่อนสมัคร Lab Boy", "name_prefix_required": true})
 		return
 	}
 	// A Google sign-up starts with only the English name.
-	if me, _ := database.UserByID(studentID.(uint)); !database.HasThaiLetter(me.FullName) {
+	if !database.HasThaiLetter(student.FullName) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "กรุณากรอกชื่อ-นามสกุลภาษาไทยในหน้าโปรไฟล์ก่อนสมัคร Lab Boy", "thai_name_required": true})
 		return
 	}

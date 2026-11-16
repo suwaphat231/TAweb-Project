@@ -136,6 +136,7 @@ func TermSchedulesByUser(userID uint) []models.TermSchedule {
 	DB.Where("user_id = ?", userID).Order("academic_year DESC, semester ASC").Find(&rows)
 	for i := range rows {
 		rows[i].SaveLimit = models.MaxTermScheduleSaves
+		applyAddDrop(&rows[i])
 	}
 	return rows
 }

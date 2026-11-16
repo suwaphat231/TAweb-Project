@@ -8,6 +8,7 @@ import type {
 import { formatThaiDate, thaiDayShort as thaiDayShortFn, toDateOnly } from '../../../utils/thaiDate'
 import { DateInput } from '../../../components/ui/DateInput'
 import { payableMinutes } from '../../../utils/payableHours'
+import { MONTH_NAMES } from './staffWorkPlanConstants'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -16,11 +17,6 @@ const DAY_LABELS: Record<string, string> = {
   MON: 'จันทร์', TUE: 'อังคาร', WED: 'พุธ', THU: 'พฤหัสบดี',
   FRI: 'ศุกร์', SAT: 'เสาร์', SUN: 'อาทิตย์',
 }
-export const MONTH_NAMES = [
-  'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
-  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
-]
-
 const OCC_LABEL: Record<OccurrenceStatus, string> = {
   scheduled: 'กำหนด', cancelled_holiday: 'หยุด', rescheduled: 'เลื่อน',
   completed: 'เสร็จ', absent: 'ขาด', cancelled_other: 'ยกเลิก',
@@ -33,7 +29,7 @@ const OCC_BADGE: Record<OccurrenceStatus, string> = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-export function parseGroupSlots(group: ScheduleGroup): GroupWeekDaySlot[] {
+function parseGroupSlots(group: ScheduleGroup): GroupWeekDaySlot[] {
   if (group.week_days_json) {
     try {
       const parsed = JSON.parse(group.week_days_json) as GroupWeekDaySlot[]
@@ -52,7 +48,7 @@ function computeSlotHours(s: string, e: string): number | null {
 }
 
 // Re-export so WorkScheduleModal can import from one place.
-export const thaiFmt = formatThaiDate
+const thaiFmt = formatThaiDate
 
 function thaiDayShort(dateStr: string): string {
   return thaiDayShortFn(dateStr)

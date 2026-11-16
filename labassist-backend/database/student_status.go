@@ -1,10 +1,35 @@
 package database
 
 import (
+	"strconv"
 	"strings"
 
 	"labassist/models"
 )
+
+// AdmissionAcademicYear derives the Buddhist academic year encoded by the
+// first two digits of a student ID (for example, 66xxxxxxx -> 2566).
+func AdmissionAcademicYear(studentID string) (int, bool) {
+	normalized, ok := NormalizeStudentID(studentID)
+	if !ok || len(normalized) < 2 {
+		return 0, false
+	}
+	year, err := strconv.Atoi(normalized[:2])
+	if err != nil {
+		return 0, false
+	}
+	return 2500 + year, true
+}
+
+// IsFirstSemesterFreshman reports whether a student is in the first semester
+// of the academic year encoded by their student ID.
+func IsFirstSemesterFreshman(studentID, semester string, academicYear int) (bool, bool) {
+	admissionYear, ok := AdmissionAcademicYear(studentID)
+	if !ok {
+		return false, false
+	}
+	return semester == "1" && academicYear == admissionYear, true
+}
 
 // IsNormalStudentStatus reports whether a registrar student status (สถานภาพ
 // นักศึกษา, read from the student's document) means the student is enrolled

@@ -1593,18 +1593,17 @@ func migrateApplicationData(db *gorm.DB) error {
 			return fmt.Errorf("prepare form review course FK index: %w", err)
 		}
 	}
+
 	if err := migrateWorkOccurrenceDedup(db); err != nil {
 		return fmt.Errorf("dedup work_occurrences before unique index: %w", err)
 	}
+
 	return db.AutoMigrate(
 		&models.Application{},
 		&models.Notification{},
 		&models.ActivityLog{},
 		&models.FormReview{},
 		&models.StaffDocument{},
-		&models.ApplicationHistory{},
-		&models.ClassSchedule{},
-		&models.TermSchedule{},
 		&models.ApplicationHistory{},
 		&models.ClassSchedule{},
 		&models.TermSchedule{},

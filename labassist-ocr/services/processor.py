@@ -36,6 +36,7 @@ def clean_code_text(text: str) -> str:
 DIGIT_LOOKALIKES = str.maketrans({'O': '0', 'Q': '0', 'D': '0', 'I': '1', 'L': '1', 'Z': '2', 'S': '5', 'B': '8'})
 # รหัสวิชา = ตัวอักษรนำหน้า 0-4 ตัว ตามด้วยส่วนตัวเลข (ที่อาจอ่านเพี้ยนเป็นตัวอักษร) 3-8 ตัว
 CODE_SHAPE_PATTERN = re.compile(r'^([A-Z]{2,4}?)([0-9OQDILZSB]{3,4})$|^()([0-9OQDILZSB]{6,8})$')
+OCR_CODE_SHAPE_PATTERN = re.compile(r'^[A-Z0-9]{5,9}$')
 
 
 def fix_digit_confusions(code: str) -> str:
@@ -44,6 +45,34 @@ def fix_digit_confusions(code: str) -> str:
         return code
     prefix, digits = (match.group(1), match.group(2)) if match.group(2) else (match.group(3), match.group(4))
     return prefix + digits.translate(DIGIT_LOOKALIKES)
+
+
+def closest_known_code(candidate: str, known_codes: set[str]) -> str | None:
+    """Resolve a near-match only when exactly one catalog code is within one edit.
+
+    OCR commonly drops or substitutes one character in a course code. Requiring
+    a unique match prevents a short or badly-read number from being assigned to
+    the wrong course.
+    """
+    matches = [
+        code for code in known_codes
+        if abs(len(code) - len(candidate)) <= 1 and edit_distance(candidate, code) <= 1
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def edit_distance(left: str, right: str) -> int:
+    previous = list(range(len(right) + 1))
+    for i, left_char in enumerate(left, 1):
+        current = [i]
+        for j, right_char in enumerate(right, 1):
+            current.append(min(
+                current[-1] + 1,
+                previous[j] + 1,
+                previous[j - 1] + (left_char != right_char),
+            ))
+        previous = current
+    return previous[-1]
 
 
 GRADE_HEADERS = {'เกรด', 'grade'}
@@ -105,11 +134,16 @@ def parse_transcript(ocr_results, known_codes=None, read_region=None):
 
     def accept(candidate: str):
         """คืนรหัสวิชาถ้าใช้เป็น anchor ได้ ไม่งั้นคืน None"""
-        if not is_subject_code(candidate):
+        if known_codes is None:
+            return candidate if is_subject_code(candidate) else None
+        if candidate in known_codes:
+            return candidate
+        # A one-character OCR error can make an otherwise valid course code
+        # fail is_subject_code (for example, a dropped digit). Only attempt
+        # recovery for code-shaped text and only accept a unique catalog match.
+        if not OCR_CODE_SHAPE_PATTERN.fullmatch(candidate) or sum(ch.isdigit() for ch in candidate) < 3:
             return None
-        if known_codes is not None and candidate not in known_codes:
-            return None
-        return candidate
+        return closest_known_code(candidate, known_codes)
 
     def find_code(line):
         """คืน (รหัสวิชา, index ของ box รหัสวิชา) ของบรรทัด หรือ (None, None)"""

@@ -12,6 +12,7 @@ import { WeeklyCalendarPreview } from './WeeklyCalendarPreview'
 import { SlotRow } from './SlotRow'
 import type { DraftSlot } from './SlotRow'
 import type { TermOption, ScheduleSlot, TermScheduleStatus, WorkSession } from '../../../types'
+import { formatThaiDate } from '../../../utils/thaiDate'
 
 let _uid = 0
 function nextId() { return String(++_uid) }
@@ -136,6 +137,8 @@ export function ScheduleTab() {
 
   useEffect(() => {
     if (builtOptions.length && !selectedTermKey) {
+      // This effect selects the first available term after the query loads.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedTermKey(builtOptions[0].value)
     }
   }, [builtOptions, selectedTermKey])
@@ -241,7 +244,11 @@ export function ScheduleTab() {
   }, [savedSchedule])
 
   // Sync drafts from saved schedule on term change
-  useEffect(() => { resetToSaved() }, [resetToSaved])
+  useEffect(() => {
+    // This effect resets the draft when the saved schedule for the selected term changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    resetToSaved()
+  }, [resetToSaved])
 
   // Save mutation
   const saveMut = useMutation({
@@ -368,6 +375,11 @@ export function ScheduleTab() {
             background: 'var(--line-soft)', color: 'var(--ink-500)',
           }}>
             ยังไม่ระบุตารางเรียน
+          </span>
+        )}
+        {savedSchedule?.add_drop_end && (
+          <span style={{ fontSize: 12, color: addDropClosed ? 'var(--red)' : 'var(--ink-500)' }}>
+            เพิ่ม-ถอนได้ถึง {formatThaiDate(savedSchedule.add_drop_end)}
           </span>
         )}
       </div>
