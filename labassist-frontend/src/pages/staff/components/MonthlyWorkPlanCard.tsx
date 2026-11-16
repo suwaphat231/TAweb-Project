@@ -65,7 +65,7 @@ const SHOW_DAY_ACTIONS = false
 
 const thCss: React.CSSProperties = {
   padding: '6px 10px', textAlign: 'left',
-  fontWeight: 600, color: 'var(--ink-500)', fontSize: 11,
+  fontWeight: 600, color: 'var(--ink-500)', fontSize: 12,
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -157,7 +157,9 @@ export function MonthlyWorkPlanCard({ caseId, group, entry, calDates, isReadOnly
       })
       .map(cd => toDateOnly(cd.date)!),
   )
-  const holidaysThisMonth = calDates.filter(cd => holidayDates.has(toDateOnly(cd.date)!))
+  const holidayNameByDate = new Map(
+    calDates.filter(cd => holidayDates.has(toDateOnly(cd.date)!)).map(cd => [toDateOnly(cd.date)!, cd.name]),
+  )
 
   function startEditOcc(occ: WorkOccurrence) {
     setEditOccId(occ.id)
@@ -354,10 +356,10 @@ export function MonthlyWorkPlanCard({ caseId, group, entry, calDates, isReadOnly
               กด ⚡ สร้างอัตโนมัติ ตามตารางสัปดาห์ หรือ + เพิ่มวัน เพื่อเพิ่มทีละวัน
             </div>
           ) : (
-            <div style={{ border: '1.5px solid var(--line)', borderRadius: 'var(--radius-input)', overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <div style={{ maxWidth: showDayActions ? undefined : 560 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <thead>
-                  <tr style={{ background: 'var(--line-soft)' }}>
+                  <tr style={{ borderBottom: '1px solid var(--line)' }}>
                     <th style={thCss}>วันที่</th>
                     <th style={thCss}>เวลา</th>
                     <th style={thCss}>สถานะ</th>
@@ -374,19 +376,15 @@ export function MonthlyWorkPlanCard({ caseId, group, entry, calDates, isReadOnly
                       <Fragment key={occ.id}>
                         <tr style={{
                           borderTop: i > 0 ? '1px solid var(--line-soft)' : 'none',
-                          background: dimmed ? 'var(--line-soft)' : '#fff',
-                          opacity: dimmed ? 0.7 : 1,
+                          color: dimmed || isHol ? 'var(--ink-400)' : undefined,
                         }}>
-                          <td style={{ padding: '7px 10px' }}>
-                            <span style={{ fontWeight: 500 }}>{thaiFmt(occ.scheduled_date)}</span>
-                            <span style={{ color: 'var(--ink-400)', fontSize: 11, marginLeft: 4 }}>
+                          <td style={{ padding: '10px 10px', whiteSpace: 'nowrap' }}>
+                            <span style={{ fontWeight: 600 }}>{thaiFmt(occ.scheduled_date)}</span>
+                            <span style={{ color: 'var(--ink-400)', fontSize: 12, marginLeft: 6 }}>
                               {thaiDayShort(occ.scheduled_date)}
                             </span>
-                            {isHol && (
-                              <span className="badge badge-amber" style={{ marginLeft: 5, fontSize: 10 }}>หยุด</span>
-                            )}
                           </td>
-                          <td style={{ padding: '7px 10px', color: 'var(--ink-600)' }}>
+                          <td style={{ padding: '10px 10px', whiteSpace: 'nowrap' }}>
                             {isEditing ? (
                               <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                                 <input type="time" value={editStart} onChange={e => setEditStart(e.target.value)}
@@ -399,8 +397,18 @@ export function MonthlyWorkPlanCard({ caseId, group, entry, calDates, isReadOnly
                               <>{occ.start_time.slice(0, 5)}–{occ.end_time.slice(0, 5)}</>
                             )}
                           </td>
-                          <td style={{ padding: '7px 10px' }}>
-                            <span className={`badge ${OCC_BADGE[occ.status]}`}>{OCC_LABEL[occ.status]}</span>
+                          <td style={{ padding: '10px 10px' }}>
+                            {/* "กำหนด" is the normal case: only call out the exceptions. */}
+                            {(occ.status !== 'scheduled' || isHol) && (
+                              <span className={`badge ${isHol && occ.status === 'scheduled' ? 'badge-amber' : OCC_BADGE[occ.status]}`}>
+                                {isHol && occ.status === 'scheduled' ? 'วันหยุด' : OCC_LABEL[occ.status]}
+                              </span>
+                            )}
+                            {isHol && (
+                              <span style={{ fontSize: 12, color: 'var(--ink-500)', marginLeft: 6 }}>
+                                {holidayNameByDate.get(toDateOnly(occ.scheduled_date) ?? '')}
+                              </span>
+                            )}
                             {occ.status === 'rescheduled' && occ.rescheduled_to_date && (
                               <span style={{ fontSize: 11, color: 'var(--ink-500)', marginLeft: 6 }}>
                                 → {thaiFmt(occ.rescheduled_to_date)}
@@ -497,45 +505,6 @@ export function MonthlyWorkPlanCard({ caseId, group, entry, calDates, isReadOnly
             </div>
           )}
         </div>
-
-        {/* ─ Holidays notice ─ */}
-        {holidaysThisMonth.length > 0 && (
-          <div style={{
-            padding: '8px 12px', background: 'var(--amber-bg)',
-            border: '1px solid #FCD34D', borderRadius: 'var(--radius-input)',
-            fontSize: 12,
-          }}>
-            <span style={{ fontWeight: 700, color: 'var(--amber)' }}>วันหยุดในเดือนนี้: </span>
-            {holidaysThisMonth.map((h, i) => (
-              <span key={h.id} style={{ color: 'var(--ink-700)' }}>
-                {i > 0 && ' · '}{thaiFmt(h.date)} ({h.name})
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* ─ Monthly summary tiles ─ */}
-        {sorted.length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 6 }}>
-            {[
-              { label: 'ทั้งหมด', value: `${summary.total}`, unit: 'วัน', color: 'var(--ink-600)', bold: false },
-              { label: 'หยุด', value: `${summary.cancelled_holiday}`, unit: 'วัน', color: 'var(--amber)', bold: false },
-              { label: 'วันนับ', value: `${summary.valid}`, unit: 'วัน', color: 'var(--green)', bold: true },
-              { label: 'ชั่วโมง', value: summary.valid_hours.toFixed(1), unit: 'ชม.', color: 'var(--primary)', bold: true },
-              { label: 'บาท/คน', value: summary.pay_per_person_baht.toFixed(0), unit: '฿', color: 'var(--primary)', bold: true },
-            ].map((t, i) => (
-              <div key={i} style={{
-                padding: '6px 8px', background: 'var(--line-soft)',
-                borderRadius: 'var(--radius-input)', textAlign: 'center',
-              }}>
-                <div style={{ fontSize: 10, color: 'var(--ink-500)', fontWeight: 600, marginBottom: 2 }}>{t.label}</div>
-                <div style={{ fontSize: 14, fontWeight: t.bold ? 700 : 500, color: t.color }}>
-                  {t.value} <span style={{ fontSize: 10 }}>{t.unit}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
 
       </div>
     </div>

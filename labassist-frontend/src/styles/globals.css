@@ -83,6 +83,22 @@ button, input, textarea, select { font-family: inherit; }
   .dashboard-banner { padding: 20px; }
 }
 
+/* Polished student home cards */
+.stat-tile { transition: box-shadow .18s ease, transform .18s ease; }
+.stat-tile:hover { box-shadow: 0 6px 18px rgba(42,34,98,0.08); transform: translateY(-1px); }
+.course-card {
+  position: relative; overflow: hidden; border-radius: 14px !important;
+  transition: box-shadow .18s ease, transform .18s ease, border-color .18s ease;
+}
+.course-card::before {
+  content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--brand-gradient);
+}
+.course-card:hover { box-shadow: 0 8px 24px rgba(42,34,98,0.10); transform: translateY(-2px); border-color: var(--primary-100); }
+@media (prefers-reduced-motion: reduce) {
+  .stat-tile, .course-card { transition: none; }
+  .stat-tile:hover, .course-card:hover { transform: none; }
+}
+
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: none; opacity: 1; } }

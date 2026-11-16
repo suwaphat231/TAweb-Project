@@ -14,13 +14,16 @@ import (
 // MaxTermScheduleSaves saves for a term.
 var ErrTermScheduleSaveLimit = errors.New("term schedule save limit reached")
 
+// ErrAddDropClosed is returned when the term's add/drop period has ended.
+var ErrAddDropClosed = errors.New("add/drop period has ended")
+
 // TermScheduleByUserTerm returns the stored TermSchedule for a student/semester/year.
 // When none exists, returns a synthetic "unset" record with ID=0 (never persisted).
 func TermScheduleByUserTerm(userID uint, semester string, academicYear int) models.TermSchedule {
 	var ts models.TermSchedule
 	if DB.Where("user_id = ? AND semester = ? AND academic_year = ?", userID, semester, academicYear).
 		First(&ts).Error != nil {
-		return models.TermSchedule{
+		ts = models.TermSchedule{
 			UserID:       userID,
 			Semester:     semester,
 			AcademicYear: academicYear,
@@ -28,9 +31,19 @@ func TermScheduleByUserTerm(userID uint, semester string, academicYear int) mode
 			Status:       models.TermScheduleUnset,
 			SaveLimit:    models.MaxTermScheduleSaves,
 		}
+		applyAddDrop(&ts)
+		return ts
 	}
 	ts.SaveLimit = models.MaxTermScheduleSaves
+	applyAddDrop(&ts)
 	return ts
+}
+
+func applyAddDrop(ts *models.TermSchedule) {
+	if closed, end, ok, err := AddDropClosed(ts.AcademicYear, ts.Semester); err == nil && ok {
+		ts.AddDropClosed = closed
+		ts.AddDropEnd = end.Format("2006-01-02")
+	}
 }
 
 // HasConfirmedTermSchedule reports whether the student has explicitly saved
@@ -50,8 +63,18 @@ func HasConfirmedTermSchedule(userID uint) (bool, error) {
 // they are used up it returns ErrTermScheduleSaveLimit. Re-saving identical
 // data is a no-op and does not count.
 func UpsertTermSchedule(userID uint, semester string, academicYear int, slots []models.ScheduleSlot, status models.TermScheduleStatus) (models.TermSchedule, error) {
+	// After add/drop closes only *changes* to an already-saved schedule are
+	// refused; a student who never saved one (status unset) may still save once,
+	// otherwise they could never satisfy the "schedule required" apply check.
+	closed, end, ok, err := AddDropClosed(academicYear, semester)
+	if err != nil {
+		// Can't tell whether the period is over: fail the save rather than
+		// silently letting it through after the deadline.
+		return models.TermSchedule{}, err
+	}
+	closed = ok && closed
 	var ts models.TermSchedule
-	err := DB.Transaction(func(tx *gorm.DB) error {
+	err = DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ? AND semester = ? AND academic_year = ?", userID, semester, academicYear).
 			FirstOrCreate(&ts, models.TermSchedule{
 				UserID:       userID,
@@ -67,6 +90,9 @@ func UpsertTermSchedule(userID uint, semester string, academicYear int, slots []
 		if ts.Status == status && slices.Equal(ts.Slots, slots) {
 			return nil
 		}
+		if closed && ts.Status != models.TermScheduleUnset {
+			return ErrAddDropClosed
+		}
 		if ts.SaveCount >= models.MaxTermScheduleSaves {
 			return ErrTermScheduleSaveLimit
 		}
@@ -79,6 +105,11 @@ func UpsertTermSchedule(userID uint, semester string, academicYear int, slots []
 		return models.TermSchedule{}, err
 	}
 	ts.SaveLimit = models.MaxTermScheduleSaves
+	// Reuse the window computed above instead of querying the calendar again.
+	if ok {
+		ts.AddDropClosed = closed
+		ts.AddDropEnd = end.Format("2006-01-02")
+	}
 	return ts, nil
 }
 

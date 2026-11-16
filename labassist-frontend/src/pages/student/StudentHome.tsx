@@ -56,9 +56,9 @@ export default function StudentHome() {
           {[1,2,3].map(i => <Skeleton key={i} height={88} borderRadius={12} />)}
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 16, marginBottom: 28 }}>
-          <StatCard label="วิชาที่เปิดรับ" value={isError ? '—' : (data?.stats.open_courses ?? 0)} iconColor="var(--primary)" icon="📚" />
-          <StatCard label="สมัครแล้ว" value={isError ? '—' : (data?.stats.applied ?? 0)} iconColor="var(--green)" icon="✅" />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))', gap: 16, marginBottom: 32 }}>
+          <StatCard label="วิชาที่เปิดรับ" value={isError ? '—' : (data?.stats.open_courses ?? 0)} iconColor="var(--primary)" icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>} />
+          <StatCard label="สมัครแล้ว" value={isError ? '—' : (data?.stats.applied ?? 0)} iconColor="var(--green)" icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>} />
         </div>
       )}
 
@@ -66,7 +66,7 @@ export default function StudentHome() {
         {/* Recent courses */}
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink-900)' }}>วิชาที่เปิดรับสมัคร</h2>
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink-900)' }}>วิชาที่เปิดรับสมัคร</h2>
             <Link to="/student/apply" style={{ fontSize: 13, color: 'var(--primary)', textDecoration: 'none', fontWeight: 600 }}>ดูทั้งหมด →</Link>
           </div>
           {isLoading ? (
@@ -96,7 +96,7 @@ export default function StudentHome() {
         {/* Recent applications */}
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink-900)' }}>การสมัครล่าสุด</h2>
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink-900)' }}>การสมัครล่าสุด</h2>
             <Link to="/student/status" style={{ fontSize: 13, color: 'var(--primary)', textDecoration: 'none', fontWeight: 600 }}>ดูทั้งหมด →</Link>
           </div>
           <Card style={{ overflow: 'hidden' }}>

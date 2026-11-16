@@ -139,7 +139,7 @@ export default function StaffSettings() {
     <div style={{ padding: '28px 32px', maxWidth: 1100, margin: '0 auto' }}>
 
       {/* Header */}
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 16 }}>
         <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink-900)', margin: 0 }}>กำหนดวันหยุดปฏิบัติงาน</h1>
         <p style={{ fontSize: 13, color: 'var(--ink-400)', marginTop: 5 }}>
           กำหนดวันหยุดและวันงดสอนประจำภาคการศึกษา
@@ -150,9 +150,7 @@ export default function StaffSettings() {
 
       {/* Semester picker */}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
-        background: '#fff', border: '1.5px solid var(--line)', borderRadius: 10,
-        padding: '14px 20px', marginBottom: 24,
+        display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 20,
       }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)', whiteSpace: 'nowrap' }}>ปีการศึกษา</span>
@@ -168,11 +166,17 @@ export default function StaffSettings() {
             <option value="S">ภาคฤดูร้อน</option>
           </select>
         </label>
-        <span style={{ fontSize: 12, color: 'var(--ink-400)', marginLeft: 4 }}>
-          {isLoading
-            ? 'กำลังโหลด...'
-            : `${calDates.length} รายการทั้งหมด (${monthKeys.length} เดือน)`}
-        </span>
+        {isLoading && <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>กำลังโหลด...</span>}
+        {!isError && (
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginLeft: 'auto' }}>
+            {(['public_holiday', 'university_holiday', 'no_class'] as CalendarDateType[]).map(t => (
+              <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--ink-600)' }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: DATE_TYPE_DOT[t], display: 'inline-block' }} />
+                {DATE_TYPE_LABELS[t]}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Load error */}
@@ -187,18 +191,6 @@ export default function StaffSettings() {
         </div>
       )}
 
-      {/* Legend */}
-      {!isError && (
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
-          {(['public_holiday', 'university_holiday', 'no_class'] as CalendarDateType[]).map(t => (
-            <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--ink-600)' }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: DATE_TYPE_DOT[t], display: 'inline-block' }} />
-              {DATE_TYPE_LABELS[t]}
-            </div>
-          ))}
-        </div>
-      )}
-
       {/* Month grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))', gap: 16 }}>
         {monthKeys.map(key => {
@@ -209,15 +201,14 @@ export default function StaffSettings() {
 
           return (
             <div key={key} style={{
-              background: '#fff', border: '1.5px solid var(--line)',
+              background: '#fff', border: '1px solid var(--line)',
               borderRadius: 12, overflow: 'hidden',
             }}>
               {/* Month header */}
               <div style={{
-                padding: '11px 16px', display: 'flex', alignItems: 'center',
+                padding: '12px 16px', display: 'flex', alignItems: 'center',
                 justifyContent: 'space-between',
-                background: 'var(--surface-2, #F5F5FB)',
-                borderBottom: '1px solid var(--line)',
+                borderBottom: '1px solid var(--line-soft)',
               }}>
                 <div>
                   <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-800)' }}>
@@ -329,32 +320,10 @@ export default function StaffSettings() {
                         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-800)', lineHeight: 1.35 }}>
                           {d.name}
                         </div>
-                        <div style={{ fontSize: 11.5, color: 'var(--ink-500)', marginTop: 2 }}>
+                        <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2 }}>
                           {formatDateTH(d.date)}
-                        </div>
-                        <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span>{DATE_TYPE_LABELS[d.date_type]}</span>
-                          {d.edit_reason === CALENDAR_IMPORT_REASON && (
-                            <span style={{
-                              padding: '0 5px', borderRadius: 4,
-                              background: 'var(--primary-50)', color: 'var(--primary)',
-                              fontSize: 10, fontWeight: 600,
-                            }}>จากปฏิทินการศึกษา</span>
-                          )}
-                          {d.source === 'external' && (
-                            <span style={{
-                              padding: '0 5px', borderRadius: 4,
-                              background: '#ECFDF5', color: '#047857',
-                              fontSize: 10, fontWeight: 600,
-                            }}>นำเข้าอัตโนมัติ</span>
-                          )}
-                          {!d.affects_work && (
-                            <span style={{
-                              padding: '0 5px', borderRadius: 4,
-                              background: 'var(--ink-100)', color: 'var(--ink-500)',
-                              fontSize: 10, fontWeight: 600,
-                            }}>ไม่กระทบงาน</span>
-                          )}
+                          {(d.edit_reason === CALENDAR_IMPORT_REASON || d.source === 'external') && ' · นำเข้า'}
+                          {!d.affects_work && ' · ไม่กระทบงาน'}
                         </div>
                       </div>
                       <button
@@ -362,7 +331,7 @@ export default function StaffSettings() {
                         disabled={delMut.isPending}
                         title="ลบวันหยุดนี้"
                         style={{
-                          width: 26, height: 26, borderRadius: 6, border: '1px solid var(--line)',
+                          width: 26, height: 26, borderRadius: 6, border: 'none',
                           background: 'transparent', cursor: 'pointer', color: 'var(--ink-500)',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           fontSize: 13, flexShrink: 0, transition: 'color .1s, background .1s',

@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import type { Course } from '../../types'
 import { groupSectionsByTime, scheduleDayLabel, timeOptionSecLabel, type CourseGroup } from '../../utils/courseGrouping'
 import { cleanCourseTitle } from '../../utils/courseTitle'
@@ -47,7 +48,7 @@ export function CourseCard({ group, onApply, appliedSections = [] }: Props) {
   }
 
   return (
-    <Card style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 20 }}>
+    <Card className="course-card" style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '20px 20px 18px 24px' }}>
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
@@ -82,8 +83,15 @@ export function CourseCard({ group, onApply, appliedSections = [] }: Props) {
 
       {/* Title */}
       <div>
-        <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)', lineHeight: 1.4, marginBottom: group.english_title ? 2 : 8 }}>
-          {cleanCourseTitle(group.title)}
+        <h3 style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink-900)', lineHeight: 1.35, marginBottom: group.english_title ? 2 : 10 }}>
+          <Link
+            to={`/student/courses/${group.sections[0]?.id}`}
+            style={{ color: 'inherit', textDecoration: 'none' }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--primary)')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'inherit')}
+          >
+            {cleanCourseTitle(group.title)}
+          </Link>
         </h3>
         {group.english_title && (
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-500)', textTransform: 'uppercase', marginBottom: 8 }}>
@@ -130,36 +138,52 @@ export function CourseCard({ group, onApply, appliedSections = [] }: Props) {
       </div>
 
       {/* Footer actions */}
-      <div style={{ paddingTop: 4, borderTop: '1px solid var(--line-soft)' }}>
-        {group.status === 'closed' || group.status === 'draft' ? (
-          <Badge variant="gray">ปิดรับ</Badge>
-        ) : appliedSections.length > 0 ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-            <Badge variant="green" wrap>สมัครแล้ว{appliedLabel ? ` (${appliedLabel})` : ''}</Badge>
-            {canApplyMore && (
-              <Button size="sm" variant="outline" disabled={scheduleRequired} onClick={handleApply}>
-                {scheduleRequired ? scheduleLabel : 'สมัครเวลาอื่นเพิ่ม'}
-              </Button>
-            )}
-          </div>
-        ) : conflictDay ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--amber)', flexShrink: 0 }}>
-              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-            </svg>
-            <span style={{ fontSize: 12, color: 'var(--amber)', fontWeight: 600 }}>
-              ชนกับช่วงเวลาที่ติดเรียน ไม่สามารถสมัครได้
-            </span>
-          </div>
-        ) : allFull ? (
-          <Button size="sm" variant="outline" disabled style={{ cursor: 'not-allowed' }}>เต็มแล้ว</Button>
-        ) : scheduleRequired ? (
-          <Button size="sm" variant="outline" disabled style={{ cursor: 'not-allowed' }}>
-            {scheduleLabel}
+      <div style={{
+        paddingTop: 12,
+        marginTop: 'auto',
+        borderTop: '1px solid var(--line-soft)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 8,
+        flexWrap: 'wrap',
+      }}>
+        <Link to={`/student/courses/${group.sections[0]?.id}`} style={{ textDecoration: 'none' }}>
+          <Button size="sm" variant="outline" type="button">
+            ดูรายละเอียด
           </Button>
-        ) : (
-          <Button size="sm" onClick={handleApply}>สมัคร Lab Boy</Button>
-        )}
+        </Link>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {group.status === 'closed' || group.status === 'draft' ? (
+            <Badge variant="gray">ปิดรับ</Badge>
+          ) : appliedSections.length > 0 ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <Badge variant="green" wrap>สมัครแล้ว{appliedLabel ? ` (${appliedLabel})` : ''}</Badge>
+              {canApplyMore && (
+                <Button size="sm" variant="outline" disabled={scheduleRequired} onClick={handleApply}>
+                  {scheduleRequired ? scheduleLabel : 'สมัครเวลาอื่นเพิ่ม'}
+                </Button>
+              )}
+            </div>
+          ) : conflictDay ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--amber)', flexShrink: 0 }}>
+                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+              <span style={{ fontSize: 12, color: 'var(--amber)', fontWeight: 600 }}>
+                ชนกับช่วงเวลาที่ติดเรียน ไม่สามารถสมัครได้
+              </span>
+            </div>
+          ) : allFull ? (
+            <Button size="sm" variant="outline" disabled style={{ cursor: 'not-allowed' }}>เต็มแล้ว</Button>
+          ) : scheduleRequired ? (
+            <Button size="sm" variant="outline" disabled style={{ cursor: 'not-allowed' }}>
+              {scheduleLabel}
+            </Button>
+          ) : (
+            <Button size="sm" onClick={handleApply}>สมัคร Lab Boy</Button>
+          )}
+        </div>
       </div>
     </Card>
   )

@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { instructorApi, notificationApi } from '../../services/api'
+import { instructorApi } from '../../services/api'
 import { StatusBadge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Select } from '../../components/ui/Select'
@@ -71,17 +71,6 @@ export default function InstructorSelect() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileTarget?.id, profileTarget?.has_grade_proof])
-
-  const notifyMut = useMutation({
-    mutationFn: () => notificationApi.notifyCourse(courseId),
-    onSuccess: (data) => {
-      showToast(
-        data.sent > 0 ? `ส่งแจ้งเตือนแล้ว ${data.sent} คน` : 'ไม่มีนักศึกษาที่ผ่านการคัดเลือก',
-        data.sent > 0 ? 'success' : 'info',
-      )
-    },
-    onError: () => showToast('ไม่สามารถส่งแจ้งเตือนได้ กรุณาลองใหม่', 'error'),
-  })
 
   const acceptAllMut = useMutation({
     mutationFn: () => instructorApi.bulkReview({
@@ -300,11 +289,6 @@ export default function InstructorSelect() {
             }}>
               ✅ เจ้าหน้าที่ยืนยันตารางแล้ว
             </div>
-          )}
-          {!!courseId && (
-            <Button variant="outline" loading={notifyMut.isPending} onClick={() => notifyMut.mutate()} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <BellIcon /> แจ้งเตือนผู้ผ่าน
-            </Button>
           )}
           <Select
             options={[
@@ -1097,16 +1081,6 @@ function XIcon({ size = 14 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M18 6 6 18M6 6l12 12"/>
-    </svg>
-  )
-}
-
-
-function BellIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-      <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
     </svg>
   )
 }

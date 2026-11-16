@@ -33,7 +33,12 @@ type TermSchedule struct {
 	// SaveCount counts saves that changed the schedule this term.
 	SaveCount int `gorm:"not null;default:0" json:"save_count"`
 	// SaveLimit is MaxTermScheduleSaves, echoed so the UI need not hard-code it.
-	SaveLimit int       `gorm:"-" json:"save_limit"`
+	SaveLimit int `gorm:"-" json:"save_limit"`
+	// AddDropClosed is true once the term's add/drop period (from the academic
+	// calendar) has ended: the schedule can no longer be changed. AddDropEnd is
+	// that last day (YYYY-MM-DD); both are empty when the calendar has none.
+	AddDropClosed bool   `gorm:"-" json:"add_drop_closed"`
+	AddDropEnd    string `gorm:"-" json:"add_drop_end,omitempty"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
 

@@ -622,6 +622,10 @@ export interface TermSchedule {
   save_count: number
   /** Max saves allowed per term. */
   save_limit: number
+  /** True once the term's add/drop period has ended: the schedule is read-only. */
+  add_drop_closed?: boolean
+  /** Last day of the add/drop period (YYYY-MM-DD), when the calendar has one. */
+  add_drop_end?: string
   updated_at?: string
 }
 

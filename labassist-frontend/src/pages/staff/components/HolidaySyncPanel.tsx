@@ -79,81 +79,61 @@ export default function HolidaySyncPanel() {
   const years = status?.runs.map((r) => r.year) ?? []
   const yearOptions = Array.from(new Set([new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1, ...years])).sort()
 
+  const problems = status?.runs.filter((r) => r.status === 'failed') ?? []
+
   return (
-    <section style={{
-      background: '#fff', border: '1.5px solid var(--line)', borderRadius: 10,
-      padding: '16px 20px', marginBottom: 24,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-        <div>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)', margin: 0 }}>
-            วันหยุดราชการไทย (นำเข้าอัตโนมัติ)
-          </h2>
-          <p style={{ fontSize: 12.5, color: 'var(--ink-500)', margin: '4px 0 0' }}>
-            {isLoading && 'กำลังโหลดสถานะ...'}
-            {isError && 'โหลดสถานะการซิงก์ไม่สำเร็จ'}
-            {status && (
-              <>
-                ซิงก์สำเร็จล่าสุด: <strong>{formatDateTime(status.last_success_at)}</strong>
-                {' · '}
-                {status.enabled ? `ซิงก์อัตโนมัติทุก ${status.interval_hours} ชั่วโมง` : 'ปิดการซิงก์อัตโนมัติ'}
-              </>
-            )}
-          </p>
-          <p style={{ fontSize: 12, color: 'var(--ink-400)', margin: '2px 0 0' }}>
-            รายการที่นำเข้าใช้ได้ทันที ไม่ต้องอนุมัติ และไม่ทับหรือลบวันหยุดที่เจ้าหน้าที่เพิ่มเอง
-          </p>
-        </div>
+    <section style={{ marginBottom: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', fontSize: 13, color: 'var(--ink-500)' }}>
+        <span>
+          {isLoading && 'กำลังโหลดสถานะการซิงก์วันหยุดราชการ...'}
+          {isError && 'โหลดสถานะการซิงก์ไม่สำเร็จ'}
+          {status && (
+            <>
+              วันหยุดราชการไทยซิงก์อัตโนมัติ{status.enabled ? '' : ' (ปิดอยู่)'} · ล่าสุด{' '}
+              <strong style={{ color: 'var(--ink-700)', fontWeight: 600 }}>{formatDateTime(status.last_success_at)}</strong>
+            </>
+          )}
+        </span>
         <button
           onClick={() => syncMut.mutate()}
           disabled={syncMut.isPending}
-          style={{
-            height: 34, padding: '0 16px', borderRadius: 7, border: 'none', cursor: syncMut.isPending ? 'default' : 'pointer',
-            background: syncMut.isPending ? 'var(--ink-200)' : 'var(--primary)',
-            color: syncMut.isPending ? 'var(--ink-500)' : '#fff', fontSize: 13, fontWeight: 600,
-          }}
+          className="btn btn-outline btn-xs"
         >
           {syncMut.isPending ? 'กำลังซิงก์...' : 'ซิงก์ตอนนี้'}
         </button>
+        <button
+          onClick={() => setOpen((v) => !v)}
+          style={{ padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--primary)' }}
+        >
+          {open ? 'ซ่อนรายละเอียด' : 'รายละเอียด'}
+        </button>
       </div>
 
-      {status && status.runs.length > 0 && (
-        <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {status.runs.map((r) => (
-            <div key={r.year} style={{
-              display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap',
-              fontSize: 12.5, color: 'var(--ink-700)', padding: '6px 0', borderTop: '1px solid var(--line-soft)',
-            }}>
-              <strong style={{ minWidth: 70 }}>ปี {r.year + 543}</strong>
-              <span style={{
-                padding: '1px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700,
-                color: STATUS_COLOR[r.status].fg, background: STATUS_COLOR[r.status].bg,
-              }}>{STATUS_LABEL[r.status]}</span>
-              <span style={{ color: 'var(--ink-500)' }}>{runSummary(r)}</span>
-              <span style={{ marginLeft: 'auto', color: 'var(--ink-400)', fontSize: 11.5 }}>
-                {formatDateTime(r.finished_at)} · {r.trigger === 'manual' ? 'สั่งเอง' : 'อัตโนมัติ'}
-              </span>
-            </div>
-          ))}
+      {problems.length > 0 && (
+        <div style={{ marginTop: 8, fontSize: 12.5, color: STATUS_COLOR.failed.fg }}>
+          ซิงก์ไม่สำเร็จ: ปี {problems.map((r) => r.year + 543).join(', ')} (ข้อมูลเดิมไม่เปลี่ยนแปลง)
         </div>
       )}
 
-      <button
-        onClick={() => setOpen((v) => !v)}
-        style={{
-          marginTop: 12, padding: 0, border: 'none', background: 'none', cursor: 'pointer',
-          fontSize: 12.5, fontWeight: 600, color: 'var(--primary)',
-        }}
-      >
-        {open ? '▾ ซ่อนรายการที่นำเข้า' : '▸ ดูรายการวันหยุดที่นำเข้า'}
-      </button>
-
       {open && (
-        <div style={{ marginTop: 10 }}>
-          <label style={{ fontSize: 12.5, color: 'var(--ink-600)', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            ปี
+        <div style={{ marginTop: 12, padding: '12px 14px', background: 'var(--line-soft)', borderRadius: 8 }}>
+          <p style={{ fontSize: 12, color: 'var(--ink-500)', margin: '0 0 8px' }}>
+            รายการที่นำเข้าใช้ได้ทันที ไม่ต้องอนุมัติ และไม่ทับหรือลบวันหยุดที่เจ้าหน้าที่เพิ่มเอง
+          </p>
+          {status?.runs.map((r) => (
+            <div key={r.year} style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', fontSize: 12.5, padding: '3px 0' }}>
+              <strong style={{ minWidth: 64 }}>ปี {r.year + 543}</strong>
+              <span style={{
+                padding: '0 8px', borderRadius: 999, fontSize: 11, fontWeight: 700,
+                color: STATUS_COLOR[r.status].fg, background: STATUS_COLOR[r.status].bg,
+              }}>{STATUS_LABEL[r.status]}</span>
+              <span style={{ color: 'var(--ink-500)' }}>{runSummary(r)}</span>
+            </div>
+          ))}
+          <label style={{ fontSize: 12.5, color: 'var(--ink-600)', display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+            รายการวันหยุดที่นำเข้า ปี
             <select value={year} onChange={(e) => setYear(Number(e.target.value))} style={{
-              height: 30, padding: '0 8px', borderRadius: 7, border: '1.5px solid var(--line)', background: '#fff', fontSize: 13,
+              height: 28, padding: '0 8px', borderRadius: 7, border: '1.5px solid var(--line)', background: '#fff', fontSize: 13,
             }}>
               {yearOptions.map((y) => <option key={y} value={y}>{y + 543}</option>)}
             </select>

@@ -332,9 +332,11 @@ export function ScheduleTab() {
   const statusInfo = savedSchedule?.status
   const isSaved = statusInfo === 'set' || statusInfo === 'no_class'
   const saveLimit = savedSchedule?.save_limit ?? 3
-  const savesLeft = Math.max(0, saveLimit - (savedSchedule?.save_count ?? 0))
+  // After add/drop closes, a saved schedule is frozen; an unset one can still be saved once.
+  const addDropClosed = (savedSchedule?.add_drop_closed ?? false) && isSaved
+  const savesLeft = addDropClosed ? 0 : Math.max(0, saveLimit - (savedSchedule?.save_count ?? 0))
   // Saved schedules are read-only until the student opts into editing.
-  const locked = isSaved && !editing
+  const locked = (isSaved && !editing) || addDropClosed
   const formDisabled = locked || saveMut.isPending
   const canSave = (noClass || drafts.length > 0) && confirmed && savesLeft > 0 && !saveMut.isPending
 
@@ -558,7 +560,9 @@ export function ScheduleTab() {
                         แก้ไขตารางเรียน
                       </Button>
                       <span style={{ fontSize: 12, color: savesLeft === 0 ? 'var(--red)' : 'var(--ink-500)' }}>
-                        {savesLeft === 0
+                        {addDropClosed
+                          ? 'หมดช่วงเพิ่ม-ถอนแล้ว — แก้ไขไม่ได้'
+                          : savesLeft === 0
                           ? `ใช้สิทธิ์ครบ ${saveLimit} ครั้งแล้ว — ติดต่อเจ้าหน้าที่`
                           : `แก้ไขได้อีก ${savesLeft} ครั้ง`}
                       </span>
@@ -745,7 +749,9 @@ export function ScheduleTab() {
                 background: savesLeft <= 1 ? 'var(--amber-bg)' : 'var(--line-soft)',
                 color: savesLeft <= 1 ? 'var(--amber)' : 'var(--ink-700)',
               }}>
-                {savesLeft === 0
+                {addDropClosed
+                  ? 'หมดช่วงเพิ่ม-ถอนของภาคเรียนนี้แล้ว — ไม่สามารถแก้ไขตารางเรียนได้'
+                  : savesLeft === 0
                   ? `ใช้สิทธิ์บันทึกครบ ${saveLimit} ครั้งแล้วสำหรับภาคเรียนนี้ — กรุณาติดต่อเจ้าหน้าที่`
                   : <>กรอกและแก้ไขตารางเรียนได้ภาคเรียนละไม่เกิน {saveLimit} ครั้ง ·
                     การบันทึกครั้งนี้จะใช้สิทธิ์ 1 ครั้ง (เหลือ <strong>{savesLeft}</strong> ครั้ง)</>}

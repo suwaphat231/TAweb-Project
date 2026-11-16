@@ -13,6 +13,7 @@ const StudentStatus = lazy(() => import('../pages/student/StudentStatus'))
 const StudentProfile = lazy(() => import('../pages/student/StudentProfile'))
 const StudentGradeCheck = lazy(() => import('../pages/student/StudentGradeCheck'))
 const StudentSchedule = lazy(() => import('../pages/student/StudentSchedule'))
+const StudentCourseDetail = lazy(() => import('../pages/student/StudentCourseDetail'))
 
 const InstructorHome = lazy(() => import('../pages/instructor/InstructorHome'))
 const InstructorMyCourses = lazy(() => import('../pages/instructor/InstructorMyCourses'))
@@ -77,6 +78,7 @@ export function AppRouter() {
       <Route path="/student/grade-check" element={<ProtectedRoute roles={['student']}><StudentGradeCheck /></ProtectedRoute>} />
       <Route path="/student/schedule"    element={<ProtectedRoute roles={['student']}><StudentSchedule /></ProtectedRoute>} />
       <Route path="/student/reports"     element={<ProtectedRoute roles={['student']}><StudentReports /></ProtectedRoute>} />
+      <Route path="/student/courses/:id" element={<ProtectedRoute roles={['student']}><StudentCourseDetail /></ProtectedRoute>} />
 
       {/* Instructor */}
       <Route path="/instructor/home"     element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorHome /></ProtectedRoute>} />
