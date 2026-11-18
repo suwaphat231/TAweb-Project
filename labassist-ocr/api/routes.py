@@ -1,5 +1,7 @@
 from functools import partial
+from datetime import date
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 import json
@@ -193,7 +195,7 @@ async def extract_student_information(file: UploadFile = File(...)):
 @router.post("/academic-calendar/extract", response_model=AcademicCalendarResponse)
 async def extract_academic_calendar(
     file: UploadFile = File(...),
-    academic_year: int = Form(...),  # ปีการศึกษา (พ.ศ.) ใช้เติมปีให้วันที่ที่ไม่ได้พิมพ์ปีไว้
+    academic_year: Optional[int] = Form(None),  # ปีการศึกษา (พ.ศ.) ถ้าไม่ส่งจะใช้ปีที่พิมพ์ในไฟล์
 ):
     """
     อ่านปฏิทินการศึกษา (PDF) ทั้งปีการศึกษา คืนรายการกิจกรรม/วันหยุดพร้อมวันที่และภาคการศึกษา
@@ -202,7 +204,7 @@ async def extract_academic_calendar(
     extension = Path(file.filename or "").suffix.lower()
     if extension != ".pdf":
         raise HTTPException(status_code=400, detail="กรุณาอัปโหลดไฟล์ปฏิทินการศึกษาเป็น PDF")
-    if not 2500 <= academic_year <= 2700:
+    if academic_year is not None and not 2500 <= academic_year <= 2700:
         raise HTTPException(status_code=400, detail="ปีการศึกษาต้องเป็น พ.ศ. เช่น 2569")
 
     file_bytes = await read_limited(file)
@@ -216,7 +218,16 @@ async def extract_academic_calendar(
             # Scanned PDF: no usable text layer, fall back to OCR on each page.
             used_ocr = True
             tokens = tokens_from_ocr([extract_text(img) for img in preprocess_pages(file_bytes)])
-        entries = parse_calendar(tokens, academic_year)
+        detected_year = detect_academic_year(tokens)
+        year = academic_year or detected_year
+        if year is None:
+            # Not printed in the file: assume the current academic year (starts ~June).
+            today = date.today()
+            year = today.year + 543 - (1 if today.month < 6 else 0)
+        detected_year = detected_year or year
+        entries = parse_calendar(tokens, year)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"อ่านไฟล์ปฏิทินไม่สำเร็จ: {str(e)}")
 
@@ -244,6 +255,6 @@ async def extract_academic_calendar(
             )
             for t in extract_terms(entries)
         ],
-        detected_academic_year=detect_academic_year(tokens),
+        detected_academic_year=detected_year,
         used_ocr=used_ocr,
     )

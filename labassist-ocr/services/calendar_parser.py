@@ -527,11 +527,9 @@ def parse_calendar(tokens: list[Token], academic_year: int) -> list[CalendarEntr
             e.name, e.date_type, e.include = line.label, date_type, include
             entries.append(e)
     _place_unsectioned(entries, academic_year)
-    # Calendars often mention the neighbouring years (deadlines carried over,
-    # next year's first exams); keep only this academic year's window.
-    ce = academic_year - 543
-    first, last = date(ce, 4, 1), date(ce + 1, 8, 31)
-    return _dedupe([e for e in entries if e.end_date >= first and e.start_date <= last])
+    # Read every dated row in the file; do not drop entries that fall outside
+    # the given academic year (academic_year only fills in missing years).
+    return _dedupe(entries)
 
 
 def _place_unsectioned(entries: list[CalendarEntry], academic_year: int) -> None:

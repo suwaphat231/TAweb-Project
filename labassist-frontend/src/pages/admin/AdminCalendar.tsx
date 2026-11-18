@@ -14,7 +14,7 @@ import { CALENDAR_JOB_KEY, useCalendarJob } from '../../hooks/useCalendarJob'
 import { formatThaiDate } from '../../utils/thaiDate'
 import type { CalendarImportType, CalendarJob, CalendarPreviewResponse } from '../../types'
 import {
-  CALENDAR_IMPORT_TYPE_LABELS, CALENDAR_SEMESTER_LABELS, currentAcademicYear, entryDays,
+  CALENDAR_IMPORT_TYPE_LABELS, CALENDAR_SEMESTER_LABELS, entryDays,
   filledTerms, formatEntryRange, importSummary, termIssue, toDraftRows, toImportPayload, toTermDrafts, toTermPayload, toEventDrafts, toEventPayload, EVENT_CATEGORY_LABEL, type EventDraft,
 } from '../../utils/academicCalendar'
 import type { CalendarDraftRow, TermDraft } from '../../utils/academicCalendar'
@@ -61,7 +61,6 @@ function errorText(err: unknown, fallback: string): string {
 function ImportTab() {
   const qc = useQueryClient()
   const showToast = useToast()
-  const [academicYear, setAcademicYear] = useState(String(currentAcademicYear()))
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<CalendarPreviewResponse | null>(null)
   const [rows, setRows] = useState<CalendarDraftRow[]>([])
@@ -75,7 +74,7 @@ function ImportTab() {
   const processing = job?.status === 'processing'
 
   const previewMut = useMutation({
-    mutationFn: () => adminApi.previewCalendarImport(file!, Number(academicYear)),
+    mutationFn: () => adminApi.previewCalendarImport(file!),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: CALENDAR_JOB_KEY })
       setFile(null)
@@ -163,7 +162,7 @@ function ImportTab() {
       <form
         onSubmit={(e) => { e.preventDefault(); if (file) previewMut.mutate() }}
         style={{
-          display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(140px, 1fr) auto', gap: 14, alignItems: 'end',
+          display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 14, alignItems: 'end',
           background: '#fff', border: '1.5px solid var(--line)', borderRadius: 12, padding: '16px 20px', marginBottom: 20,
         }}
       >
@@ -172,19 +171,14 @@ function ImportTab() {
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           required
         />
-        <Input
-          label="ปีการศึกษา (พ.ศ.) *" type="number" min={2500} max={2700}
-          value={academicYear} onChange={(e) => setAcademicYear(e.target.value)}
-          required
-        />
-        <Button type="submit" loading={previewMut.isPending} disabled={!file || !academicYear || processing || !!preview}>
+        <Button type="submit" loading={previewMut.isPending} disabled={!file || processing || !!preview}>
           {previewMut.isPending ? 'กำลังส่งไฟล์...' : 'อ่านไฟล์'}
         </Button>
       </form>
 
       {processing && (
         <Notice tone="blue">
-          กำลังอ่านไฟล์{job?.meta ? ` “${job.meta.file_name}” (ปีการศึกษา ${job.meta.academic_year})` : ''} อยู่เบื้องหลัง —
+          กำลังอ่านไฟล์{job?.meta ? ` “${job.meta.file_name}”` : ''} อยู่เบื้องหลัง —
           ถ้าเป็น PDF ที่สแกนเป็นภาพ ระบบต้องใช้ OCR อ่านทีละหน้า อาจใช้เวลา 2–6 นาที ไปทำหน้าอื่นได้ ระบบจะแจ้งเตือนเมื่ออ่านเสร็จ
         </Notice>
       )}

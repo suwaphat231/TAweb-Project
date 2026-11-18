@@ -744,6 +744,28 @@ export interface MonthOccurrenceSummary {
 export type CalendarDateType = 'public_holiday' | 'university_holiday' | 'no_class' | 'case_exception' | 'makeup'
 export type CalendarDateScope = 'global' | 'semester' | 'case'
 
+export interface TeachingDate {
+  date: string
+  start_time: string
+  end_time: string
+  holiday: boolean
+  holiday_name?: string
+}
+
+export interface CourseTeachingDates {
+  course_id: number
+  section: number
+  schedule: string
+  /** false when the semester open/close dates have not been set yet. */
+  term_known: boolean
+  semester: string
+  academic_year: number
+  /** Dates the admin's academic calendar holds for this semester (YYYY-MM-DD). */
+  open_date?: string
+  close_date?: string
+  dates: TeachingDate[]
+}
+
 export interface CalendarDate {
   id: number
   date: string

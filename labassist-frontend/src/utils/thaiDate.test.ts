@@ -121,13 +121,14 @@ describe('Buddhist year conversion', () => {
 
 describe('toDMY / fromDMY', () => {
   it('shows a date as dd/mm/yyyy', () => {
-    expect(toDMY('2026-10-01')).toBe('01/10/2026')
+    expect(toDMY('2026-10-01')).toBe('01/10/2569')
     expect(toDMY('')).toBe('')
   })
 
   it('reads dd/mm/yyyy back, with or without leading zeros', () => {
     expect(fromDMY('01/10/2026')).toBe('2026-10-01')
     expect(fromDMY('1/10/2026')).toBe('2026-10-01')
+    expect(fromDMY('01/10/2569')).toBe('2026-10-01')
   })
 
   it('rejects incomplete or impossible dates', () => {

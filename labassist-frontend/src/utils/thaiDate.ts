@@ -70,22 +70,24 @@ export function toDateOnly(value: string | null | undefined): string | null {
 }
 
 /**
- * Format a YYYY-MM-DD date as the dd/mm/yyyy text a date field shows.
- * Example: "2026-10-01" → "01/10/2026". Empty for an empty or invalid date.
+ * Format a YYYY-MM-DD date as the dd/mm/yyyy text a date field shows, with the
+ * Buddhist Era year. Example: "2026-10-01" → "01/10/2569". Empty for an invalid date.
  */
 export function toDMY(value: string | null | undefined): string {
   const ymd = parseYMD(value)
   if (!ymd) return ''
-  return `${String(ymd.day).padStart(2, '0')}/${String(ymd.month).padStart(2, '0')}/${ymd.year}`
+  return `${String(ymd.day).padStart(2, '0')}/${String(ymd.month).padStart(2, '0')}/${ymd.year + 543}`
 }
 
 /**
- * Parse dd/mm/yyyy typed into a date field back to YYYY-MM-DD; "1/10/2026"
+ * Parse dd/mm/yyyy typed into a date field back to YYYY-MM-DD. The year may be
+ * Buddhist (2569) or Gregorian (2026); "1/10/2026"
  * works too. Returns null until the text is a whole, real date.
  */
 export function fromDMY(text: string): string | null {
   const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(text.trim())
   if (!m) return null
-  const iso = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`
+  const year = Number(m[3]) >= 2400 ? Number(m[3]) - 543 : Number(m[3])
+  const iso = `${String(year).padStart(4, '0')}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`
   return parseYMD(iso) ? iso : null
 }

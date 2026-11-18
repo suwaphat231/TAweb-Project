@@ -7,6 +7,7 @@ import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { CourseCodeAutocomplete } from '../../components/course/CourseCodeAutocomplete'
 import { SectionCatalogPicker } from '../../components/course/SectionCatalogPicker'
+import { TeachingDatesConfirmModal } from '../../components/course/TeachingDatesConfirmModal'
 import { GRADE_OPTIONS } from './_courseFormShared'
 import type { CreateCoursePayload } from '../../types'
 import { formatSchedule } from '../../utils/schedule'
@@ -47,6 +48,7 @@ export function CourseFormModal({
   const [initialDeadline, setInitialDeadline] = useState('')
   const [slotsStr, setSlotsStr] = useState('')
   const [slotsTouched, setSlotsTouched] = useState(false)
+  const [showDatesConfirm, setShowDatesConfirm] = useState(false)
 
   // จำนวน Lab Boy ตามสูตร (ลงทะเบียน ÷ 10 ปี 1 / ÷ 20 ปี 2+ ปัดขึ้น) ของ section ที่เลือก
   const { data: catalog = [] } = useQuery({
@@ -113,10 +115,34 @@ export function CourseFormModal({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (form.labboy_slots < 0) {
+    if (form.labboy_slots < 0 || missing.length > 0) {
+      return
+    }
+    // Creating a posting: show every teaching date for a final check first.
+    if (!editId) {
+      setShowDatesConfirm(true)
       return
     }
     onSubmit(e)
+  }
+
+  function confirmOpen() {
+    setShowDatesConfirm(false)
+    onSubmit({ preventDefault() {} } as React.FormEvent)
+  }
+
+  // Creating a posting needs every field filled in; only the grade-proof
+  // checkbox is optional. (Editing an existing posting keeps its old rules.)
+  const missing: string[] = []
+  if (!editId) {
+    if (!form.code?.trim()) missing.push('รหัสวิชา')
+    if (!form.title?.trim()) missing.push('ชื่อวิชา')
+    if (!form.semester) missing.push('ภาคเรียน')
+    if (!form.academic_year) missing.push('ปีการศึกษา')
+    if (sectionIds.length === 0) missing.push('ตอนเรียน')
+    if (!(Number(slotsStr) > 0)) missing.push('Lab Boy Slots')
+    if (!form.deadline) missing.push('วันปิดรับสมัคร')
+    if (!minGrade) missing.push('เกรดเฉลี่ยขั้นต่ำ')
   }
 
   const today = todayBangkok()
@@ -218,13 +244,13 @@ export function CourseFormModal({
               ? `กรอกได้ไม่เกินตามสูตร: ${suggestions.map((s) => `${s.sec ? `Sec ${s.sec} ` : ''}${s.n} คน`).join(' · ')} (ลงทะเบียน ÷ 10 วิชาปี 1, ÷ 20 ปี 2 ขึ้นไป)`
               : undefined}
           />
-          <Input label="วันปิดรับสมัคร" type="date" min={minDeadline} value={form.deadline ?? ''} onChange={set('deadline')} />
+          <Input label={editId ? 'วันปิดรับสมัคร' : 'วันปิดรับสมัคร *'} type="date" min={minDeadline} value={form.deadline ?? ''} onChange={set('deadline')} required={!editId} />
         </div>
         {editId && (
           <Select label="สถานะ" value={form.status ?? 'draft'} onChange={set('status')}
             options={[{ value: 'draft', label: 'ร่าง' }, { value: 'open', label: 'เปิดรับสมัคร' }, { value: 'closing_soon', label: 'ใกล้ปิด' }, { value: 'closed', label: 'ปิดรับ' }]} />
         )}
-        <Select label="เกรดเฉลี่ยขั้นต่ำ" value={minGrade} onChange={(e) => setMinGrade(e.target.value)} options={GRADE_OPTIONS} />
+        <Select label={editId ? 'เกรดเฉลี่ยขั้นต่ำ' : 'เกรดเฉลี่ยขั้นต่ำ *'} value={minGrade} onChange={(e) => setMinGrade(e.target.value)} options={GRADE_OPTIONS} required={!editId} />
 
         <label style={{
           display: 'flex', alignItems: 'flex-start', gap: 10,
@@ -246,13 +272,28 @@ export function CourseFormModal({
           </div>
         </label>
 
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap' }}>
+          {missing.length > 0 && (
+            <span style={{ fontSize: 12, color: 'var(--ink-500)', marginRight: 'auto' }}>
+              กรอกให้ครบก่อนเปิดรับสมัคร — ยังขาด: {missing.join(', ')}
+            </span>
+          )}
           <Button type="button" variant="ghost" onClick={onClose}>ยกเลิก</Button>
-          <Button type="submit" loading={loading} disabled={!editId && sectionIds.length === 0}>
+          <Button type="submit" loading={loading} disabled={missing.length > 0}>
             {editId ? 'บันทึก' : 'เปิดรับสมัคร'}
           </Button>
         </div>
       </form>
+      <TeachingDatesConfirmModal
+        isOpen={showDatesConfirm}
+        courseIds={sectionIds}
+        courseCode={form.code}
+        courseTitle={form.title}
+        semester={form.semester}
+        loading={loading}
+        onClose={() => setShowDatesConfirm(false)}
+        onConfirm={confirmOpen}
+      />
     </Modal>
   )
 }

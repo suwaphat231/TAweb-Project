@@ -125,6 +125,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			instructor.GET("/instructor/course-candidates", teacherH.CourseCandidatesList)
 			instructor.GET("/instructor/course-catalog", teacherH.CourseCatalog)
 			instructor.GET("/instructor/course-catalog/sections", teacherH.CourseCatalogSections)
+			instructor.GET("/instructor/teaching-dates", teacherH.TeachingDates)
 			instructor.POST("/instructor/courses", teacherH.Create)
 			instructor.PUT("/instructor/courses/:id", teacherH.Update)
 			instructor.PUT("/instructor/courses/:id/status", teacherH.UpdateStatus)

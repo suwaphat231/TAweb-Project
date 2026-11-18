@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '../../services/api'
 import { Button } from '../ui/Button'
+import { TermEditor } from './TermEditor'
 import { EmptyState } from '../ui/EmptyState'
 import { useToast } from '../../hooks/useToast'
 import { eventDays, academicYearOfMonth } from '../../utils/academicCalendar'
@@ -186,6 +187,7 @@ export function HolidayOverview() {
         <section className="cmd-card" aria-label="ภาคการศึกษา">
           <header className="cmd-card-head"><h2>ภาคการศึกษา {currentYearBE}</h2></header>
           <TermList terms={shownTerms} onPick={pick} />
+          <TermEditor key={`${currentYearBE}-${shownTerms.map((t) => `${t.semester}${t.open_date}${t.close_date}`).join()}`} academicYear={currentYearBE} terms={shownTerms} />
         </section>
 
         <section className="cmd-card" aria-label="วันหยุดที่กำลังจะมาถึง">
@@ -429,7 +431,7 @@ function DetailCard({ date, rows, termDays, events, onClose }: { date: string; r
 
 function TermList({ terms, onPick }: { terms: AcademicTerm[]; onPick: (key: string) => void }) {
   if (terms.length === 0) {
-    return <p className="cmd-muted">ยังไม่มีวันเปิด-ปิดภาคเรียน — นำเข้าจากไฟล์ปฏิทินการศึกษา (แท็บ “นำเข้าจากไฟล์ PDF”)</p>
+    return <p className="cmd-muted">ยังไม่มีวันเปิด-ปิดภาคเรียน — นำเข้าจากไฟล์ปฏิทินการศึกษา (แท็บ “นำเข้าจากไฟล์ PDF”) หรือกรอกเองด้านล่าง</p>
   }
   const fmt = (iso: string | null) => {
     if (!iso) return null

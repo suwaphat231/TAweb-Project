@@ -31,7 +31,7 @@ function maskDMY(text: string): string {
 }
 
 /**
- * A date field that always reads dd/mm/yyyy. The browser's own date input
+ * A date field that always reads dd/mm/yyyy (Buddhist Era). The browser's own date input
  * follows the browser language (mm/dd/yyyy on an English browser), so the
  * date is typed as text here and the native picker only backs the calendar
  * button. The value stays YYYY-MM-DD, like <input type="date">.
@@ -82,7 +82,7 @@ export function DateInput({
         id={id}
         type="text"
         inputMode="numeric"
-        placeholder="dd/mm/yyyy"
+        placeholder="dd/mm/พ.ศ."
         value={text}
         disabled={disabled}
         required={required}

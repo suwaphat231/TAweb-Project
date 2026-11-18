@@ -134,16 +134,19 @@ type CalendarImportResponse struct {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        file           formData  file    true  "ไฟล์ PDF ปฏิทินการศึกษา"
-// @Param        academic_year  formData  int     true  "ปีการศึกษา (พ.ศ.)"
+// @Param        academic_year  formData  int     false "ปีการศึกษา (พ.ศ.) ถ้าไม่ส่งจะใช้ปีที่พิมพ์ในไฟล์"
 // @Success      202  {object}  map[string]string
 // @Failure      400  {object}  handlers.ErrorResponse
 // @Failure      409  {object}  handlers.ErrorResponse
 // @Router       /admin/calendar/import/preview [post]
 func (h *Handler) PreviewCalendarImport(c *gin.Context) {
-	year, err := strconv.Atoi(c.PostForm("academic_year"))
-	if err != nil || year < 2500 || year > 2700 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาระบุปีการศึกษาเป็น พ.ศ. เช่น 2569"})
-		return
+	year := 0 // 0 = ใช้ปีการศึกษาที่พิมพ์ในไฟล์
+	if raw := strings.TrimSpace(c.PostForm("academic_year")); raw != "" {
+		var err error
+		if year, err = strconv.Atoi(raw); err != nil || year < 2500 || year > 2700 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "กรุณาระบุปีการศึกษาเป็น พ.ศ. เช่น 2569"})
+			return
+		}
 	}
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
@@ -188,7 +191,7 @@ func (h *Handler) PreviewCalendarImport(c *gin.Context) {
 // CalendarJobMeta describes the file a calendar job is reading.
 type CalendarJobMeta struct {
 	FileName     string `json:"file_name"`
-	AcademicYear int    `json:"academic_year"`
+	AcademicYear int    `json:"academic_year,omitempty"`
 }
 
 // buildCalendarPreview reads the PDF through the OCR service and marks what
@@ -197,6 +200,12 @@ func (h *Handler) buildCalendarPreview(src io.Reader, filename string, year int)
 	result, _, msg := h.extractCalendar(src, filename, year)
 	if msg != "" {
 		return nil, errors.New(msg)
+	}
+	if year == 0 {
+		if result.DetectedAcademicYear == nil {
+			return nil, errors.New("ไม่พบ “ปีการศึกษา” ในไฟล์ปฏิทิน")
+		}
+		year = *result.DetectedAcademicYear
 	}
 
 	semesters := []string{"1", "2", "S"}
@@ -299,8 +308,10 @@ func (h *Handler) extractCalendar(src io.Reader, filename string, year int) (ocr
 	if _, err := io.Copy(part, src); err != nil {
 		return out, http.StatusInternalServerError, "internal error"
 	}
-	if err := writer.WriteField("academic_year", strconv.Itoa(year)); err != nil {
-		return out, http.StatusInternalServerError, "internal error"
+	if year != 0 {
+		if err := writer.WriteField("academic_year", strconv.Itoa(year)); err != nil {
+			return out, http.StatusInternalServerError, "internal error"
+		}
 	}
 	writer.Close()
 

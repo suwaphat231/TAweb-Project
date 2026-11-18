@@ -17,6 +17,7 @@ import type {
   CalendarImportEntry, CalendarImportResponse, SkippedCourse,
   CourseEditRequest, CourseEditRequestPayload, CourseEditRequestStatus,
   TranscriptImage, ClassSchedule, ClassScheduleUpload,
+  CourseTeachingDates,
 } from '../types'
 
 // Keep API calls on the same origin by default. This works both behind the
@@ -254,10 +255,9 @@ export const adminAPI = {
     api.post<CourseEditRequest>(`/admin/course-edit-requests/${id}/reject`, { reason }).then((r) => r.data),
   // Academic calendar PDF for a whole year: read it for review, then save
   // the entries the admin kept as semester holidays / no-class days.
-  previewCalendarImport: (file: File, academicYear: number) => {
+  previewCalendarImport: (file: File) => {
     const formData = new FormData()
     formData.append('file', file)
-    formData.append('academic_year', String(academicYear))
     // The server reads the file in the background and answers 202 at once.
     return api.post<{ status: string }>('/admin/calendar/import/preview', formData).then((r) => r.data)
   },
@@ -368,6 +368,10 @@ export const instructorApi = {
   // it directly instead of picking from SectionCatalogPicker.
   createCourse: (data: CreateCoursePayload) =>
     api.post<Course[]>('/instructor/courses', data).then((r) => r.data),
+  // Every class day of the given course rows (semester open→close, weekday
+  // from the schedule), holidays flagged — shown before opening a posting.
+  teachingDates: (courseIds: number[]) =>
+    api.get<CourseTeachingDates[]>('/instructor/teaching-dates', { params: { course_ids: courseIds.join(',') } }).then((r) => r.data),
   updateCourse: coursesAPI.update,
   updateCourseStatus: coursesAPI.updateStatus,
   deleteCourse: coursesAPI.remove,
