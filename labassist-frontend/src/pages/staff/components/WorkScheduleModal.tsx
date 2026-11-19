@@ -519,6 +519,11 @@ export function WorkScheduleModal({
     queryFn: () => staffApi.listCalendarDates(innerCaseId!),
     enabled: !!innerCaseId,
   })
+  // Class days the instructor kept or changed when opening the posting.
+  const { data: teachingPlan = [] } = useQuery({
+    queryKey: ['teaching-plan', courseId],
+    queryFn: () => staffApi.teachingPlan(courseId),
+  })
 
   // Pre-fill rate from loaded case (once)
   useEffect(() => {
@@ -610,15 +615,42 @@ export function WorkScheduleModal({
     monthlyPlan.flatMap(gp => gp.months.map(m => `${m.month.year}-${m.month.month}`)),
   )
 
+  // The instructor's own class days (holidays left out) grouped by "YYYY-MM";
+  // null when they kept the calendar's days.
+  const holidayDateSet = new Set(calDates.filter(cd => cd.affects_work).map(cd => cd.date.slice(0, 10)))
+  const planDatesByMonth = (() => {
+    const m = new Map<string, string[]>()
+    for (const p of teachingPlan) {
+      if (holidayDateSet.has(p.date)) continue
+      const key = p.date.slice(0, 7)
+      m.set(key, [...(m.get(key) ?? []), p.date])
+    }
+    return m.size > 0 ? m : null
+  })()
+  // Weekly slots come from the course; with none, take them from the plan's
+  // own days so the plan can still be expanded.
+  const batchSlots: CourseScheduleSlot[] = (staffCase?.course_schedule_slots ?? []).length > 0
+    ? staffCase!.course_schedule_slots!
+    : (() => {
+        const seen = new Map<string, CourseScheduleSlot>()
+        for (const p of teachingPlan) {
+          const wd = new Date(p.date + 'T00:00:00').getDay()
+          seen.set(`${wd}-${p.start_time}-${p.end_time}`, { weekday: wd, start_time: p.start_time, end_time: p.end_time })
+        }
+        return [...seen.values()]
+      })()
+
   const batchAddMut = useMutation({
     mutationFn: async () => {
-      const slots = staffCase?.course_schedule_slots ?? []
+      const slots = batchSlots
       if (slots.length === 0) throw new Error('ไม่พบข้อมูลตารางเรียน')
       // Only months not in the plan yet; with none left, creating a group
       // would leave an empty duplicate that printed the weekday twice.
-      const months = (SEMESTER_MONTHS[semester] ?? [])
-        .filter(m => !usedMonthKeys.has(`${monthCEYear(m, semester, academicYear)}-${m}`))
-      if (months.length === 0) throw new Error('เพิ่มครบทุกเดือนของภาคเรียนแล้ว')
+      const monthList = planDatesByMonth
+        ? [...planDatesByMonth.keys()].sort().map(k => ({ year: Number(k.slice(0, 4)), month: Number(k.slice(5, 7)) }))
+        : (SEMESTER_MONTHS[semester] ?? []).map(m => ({ year: monthCEYear(m, semester, academicYear), month: m }))
+      const todo = monthList.filter(p => !usedMonthKeys.has(`${p.year}-${p.month}`))
+      if (todo.length === 0) throw new Error('เพิ่มครบทุกเดือนของภาคเรียนแล้ว')
       const weekdays = slots.map(s => s.weekday)
       const hoursPerSession = hoursFromSlot(slots[0])
       const weekDaySlots: GroupWeekDaySlot[] = slots.map(s => ({
@@ -635,13 +667,15 @@ export function WorkScheduleModal({
       })
       // A term holds at most 15 lab sessions. Weeks past the 15th are left
       // out, and months with none left are not added.
-      const years = months.map(m => monthCEYear(m, semester, academicYear))
-      const datesByMonth = capSessionDates(months.map((m, i) => candidateDates(years[i], m, weekdays)))
+      const datesByMonth = capSessionDates(todo.map(p =>
+        planDatesByMonth
+          ? [...(planDatesByMonth.get(`${p.year}-${String(p.month).padStart(2, '0')}`) ?? [])].sort()
+          : candidateDates(p.year, p.month, weekdays)))
       try {
-        for (const [i, m] of months.entries()) {
+        for (const [i, p] of todo.entries()) {
           if (datesByMonth[i].length === 0) continue
-          await staffApi.addGroupMonth(innerCaseId!, newGroup.id, { year: years[i], month: m })
-          await staffApi.setGroupMonthDates(innerCaseId!, newGroup.id, years[i], m, datesByMonth[i])
+          await staffApi.addGroupMonth(innerCaseId!, newGroup.id, { year: p.year, month: p.month })
+          await staffApi.setGroupMonthDates(innerCaseId!, newGroup.id, p.year, p.month, datesByMonth[i])
         }
       } catch (err) {
         await staffApi.deleteScheduleGroup(innerCaseId!, newGroup.id).catch(() => {})
@@ -830,7 +864,7 @@ export function WorkScheduleModal({
                       />
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {(staffCase?.course_schedule_slots ?? []).length > 0 && (
+                        {batchSlots.length > 0 && (
                           <button type="button"
                             onClick={() => batchAddMut.mutate()}
                             disabled={batchAddMut.isPending}
@@ -843,7 +877,9 @@ export function WorkScheduleModal({
                             }}>
                             {batchAddMut.isPending
                               ? 'กำลังเพิ่มเดือน...'
-                              : `+ เพิ่มทุกเดือน${SEMESTER_LABEL[semester] ?? 'ในเทอม'} (${(SEMESTER_MONTHS[semester] ?? []).length} เดือน) อัตโนมัติ`}
+                              : planDatesByMonth
+                                ? `+ เพิ่มทุกเดือนตามวันสอนที่อาจารย์กำหนด (${planDatesByMonth.size} เดือน)`
+                                : `+ เพิ่มทุกเดือน${SEMESTER_LABEL[semester] ?? 'ในเทอม'} (${(SEMESTER_MONTHS[semester] ?? []).length} เดือน) อัตโนมัติ`}
                           </button>
                         )}
                         <button type="button" onClick={() => setShowAddMonth(true)}

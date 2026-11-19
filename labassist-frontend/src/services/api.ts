@@ -370,8 +370,15 @@ export const instructorApi = {
     api.post<Course[]>('/instructor/courses', data).then((r) => r.data),
   // Every class day of the given course rows (semester open→close, weekday
   // from the schedule), holidays flagged — shown before opening a posting.
-  teachingDates: (courseIds: number[]) =>
-    api.get<CourseTeachingDates[]>('/instructor/teaching-dates', { params: { course_ids: courseIds.join(',') } }).then((r) => r.data),
+  // `auto` ignores the instructor's saved plan and recalculates from the calendar.
+  teachingDates: (courseIds: number[], opts?: { auto?: boolean }) =>
+    api.get<CourseTeachingDates[]>('/instructor/teaching-dates', {
+      params: { course_ids: courseIds.join(','), ...(opts?.auto ? { auto: 1 } : {}) },
+    }).then((r) => r.data),
+  // Saves the class days the instructor edited; an empty list goes back to
+  // the days worked out from the schedule and academic calendar.
+  saveTeachingPlan: (courseId: number, dates: { date: string; start_time: string; end_time: string }[]) =>
+    api.put(`/instructor/courses/${courseId}/teaching-plan`, { dates }).then((r) => r.data),
   updateCourse: coursesAPI.update,
   updateCourseStatus: coursesAPI.updateStatus,
   deleteCourse: coursesAPI.remove,
@@ -475,6 +482,9 @@ export const staffApi = {
     api.get<MonthOccurrenceSummary>(`/staff/cases/${caseId}/schedule-groups/${groupId}/months/${year}/${month}/summary`).then((r) => r.data),
 
   // Calendar dates
+  // Class days the instructor saved when opening the posting (empty = none).
+  teachingPlan: (courseId: number) =>
+    api.get<{ date: string; start_time: string; end_time: string }[]>(`/staff/courses/${courseId}/teaching-plan`).then((r) => r.data),
   listCalendarDatesBySemester: (semester: string, academicYear: number) =>
     api.get<CalendarDate[]>('/staff/calendar-dates', { params: { semester, academic_year: academicYear } }).then((r) => r.data),
   listCalendarDates: (caseId: number) =>

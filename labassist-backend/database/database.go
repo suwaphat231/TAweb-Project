@@ -1616,6 +1616,7 @@ func migrateApplicationData(db *gorm.DB) error {
 		&models.CalendarDate{},
 		&models.CalendarDateExclusion{},
 		&models.AcademicTerm{},
+		&models.TeachingPlanDate{},
 		&models.AcademicEvent{},
 		&models.HolidaySyncRun{},
 		&models.WorkOccurrence{},

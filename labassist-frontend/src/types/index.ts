@@ -758,6 +758,10 @@ export interface CourseTeachingDates {
   schedule: string
   /** false when the semester open/close dates have not been set yet. */
   term_known: boolean
+  /** true when the dates are the instructor's own saved plan. */
+  edited: boolean
+  /** Calendar holidays that stop work, to flag a day added by hand. */
+  holidays: { date: string; name: string }[]
   semester: string
   academic_year: number
   /** Dates the admin's academic calendar holds for this semester (YYYY-MM-DD). */

@@ -2,6 +2,7 @@ package teacher
 
 import (
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,12 +24,22 @@ type TeachingDate struct {
 	HolidayName string `json:"holiday_name,omitempty"`
 }
 
+// HolidayDay is one calendar holiday that stops work.
+type HolidayDay struct {
+	Date string `json:"date"`
+	Name string `json:"name"`
+}
+
 // CourseTeachingDates lists every class day of one course row (section + time).
 type CourseTeachingDates struct {
 	CourseID  uint           `json:"course_id"`
 	Section   int            `json:"section"`
 	Schedule  string         `json:"schedule"`
 	TermKnown bool           `json:"term_known"` // false when the semester open/close dates are not set
+	Edited    bool           `json:"edited"` // true when the dates are the instructor's saved plan
+	// Every calendar holiday that affects work, so the page can flag a day the
+	// instructor adds by hand.
+	Holidays []HolidayDay `json:"holidays"`
 	// What the admin's academic calendar holds for this course's semester, so
 	// the page can say exactly what is missing.
 	Semester     string `json:"semester"`
@@ -36,6 +47,74 @@ type CourseTeachingDates struct {
 	OpenDate     string `json:"open_date,omitempty"`
 	CloseDate    string `json:"close_date,omitempty"`
 	Dates     []TeachingDate `json:"dates"`
+}
+
+type teachingPlanBody struct {
+	Dates []struct {
+		Date      string `json:"date"`
+		StartTime string `json:"start_time"`
+		EndTime   string `json:"end_time"`
+	} `json:"dates"`
+}
+
+var timeOfDayRe = regexp.MustCompile(`^([01]\d|2[0-3]):[0-5]\d$`)
+
+// SaveTeachingPlan godoc
+// @Summary บันทึกวันและเวลาสอนที่อาจารย์แก้ไข
+// @Description แทนที่วันสอนของตอนเรียนนี้ด้วยรายการที่ส่งมา ส่ง dates ว่างเพื่อกลับไปใช้วันที่คำนวณจากตารางเรียนและปฏิทินการศึกษา
+// @Tags instructor
+// @Accept json
+// @Security BearerAuth
+// @Param id path int true "Course ID"
+// @Router /instructor/courses/{id}/teaching-plan [put]
+func (h *Handler) SaveTeachingPlan(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	var course models.Course
+	if err := database.DB.First(&course, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "course not found"})
+		return
+	}
+	if !ownsCourse(c, course) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+	var body teachingPlanBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if len(body.Dates) > 200 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "too many dates"})
+		return
+	}
+	rows := make([]models.TeachingPlanDate, 0, len(body.Dates))
+	seen := map[string]bool{}
+	for _, d := range body.Dates {
+		t, err := time.Parse(dateOnlyLayout, d.Date)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "วันที่ไม่ถูกต้อง: " + d.Date})
+			return
+		}
+		if !timeOfDayRe.MatchString(d.StartTime) || !timeOfDayRe.MatchString(d.EndTime) || d.EndTime <= d.StartTime {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "เวลาไม่ถูกต้อง (เวลาสิ้นสุดต้องหลังเวลาเริ่ม): " + d.Date})
+			return
+		}
+		key := d.Date + " " + d.StartTime
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		rows = append(rows, models.TeachingPlanDate{Date: t, StartTime: d.StartTime, EndTime: d.EndTime})
+	}
+	if err := database.ReplaceTeachingPlan(course.ID, rows); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"saved": len(rows)})
 }
 
 // TeachingDates godoc
@@ -114,13 +193,33 @@ func (h *Handler) TeachingDates(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 			return
 		}
-		res := CourseTeachingDates{CourseID: course.ID, Section: course.Section, Schedule: course.Schedule, Dates: []TeachingDate{}}
+		res := CourseTeachingDates{CourseID: course.ID, Section: course.Section, Schedule: course.Schedule, Dates: []TeachingDate{}, Holidays: []HolidayDay{}}
 		term, err := loadTerm(course.Semester, course.AcademicYear)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			return
 		}
 		res.Semester, res.AcademicYear = course.Semester, course.AcademicYear
+		for day, name := range term.holidays {
+			res.Holidays = append(res.Holidays, HolidayDay{Date: day, Name: name})
+		}
+		sort.Slice(res.Holidays, func(i, j int) bool { return res.Holidays[i].Date < res.Holidays[j].Date })
+		// Days the instructor saved earlier replace the calculated ones.
+		saved, err := database.TeachingPlanForCourse(course.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
+		if len(saved) > 0 && c.Query("auto") != "1" {
+			res.Edited, res.TermKnown = true, true
+			for _, s := range saved {
+				key := s.Date.Format(dateOnlyLayout)
+				name, hol := term.holidays[key]
+				res.Dates = append(res.Dates, TeachingDate{Date: key, StartTime: s.StartTime, EndTime: s.EndTime, Holiday: hol, HolidayName: name})
+			}
+			out = append(out, res)
+			continue
+		}
 		if term.open != nil {
 			res.OpenDate = term.open.Format(dateOnlyLayout)
 		}

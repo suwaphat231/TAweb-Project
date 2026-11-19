@@ -126,6 +126,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			instructor.GET("/instructor/course-catalog", teacherH.CourseCatalog)
 			instructor.GET("/instructor/course-catalog/sections", teacherH.CourseCatalogSections)
 			instructor.GET("/instructor/teaching-dates", teacherH.TeachingDates)
+			instructor.PUT("/instructor/courses/:id/teaching-plan", teacherH.SaveTeachingPlan)
 			instructor.POST("/instructor/courses", teacherH.Create)
 			instructor.PUT("/instructor/courses/:id", teacherH.Update)
 			instructor.PUT("/instructor/courses/:id/status", teacherH.UpdateStatus)
@@ -217,6 +218,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			staffGroup.GET("/staff/cases/:id/hiring-notice-snapshot", staffH.GetHiringNoticeSnapshot)
 
 			// Calendar dates (holidays / no-class days)
+			staffGroup.GET("/staff/courses/:courseId/teaching-plan", staffH.TeachingPlan)
 			staffGroup.GET("/staff/calendar-dates", staffH.ListCalendarDatesBySemester)
 			staffGroup.GET("/staff/cases/:id/calendar-dates", staffH.ListCalendarDates)
 			staffGroup.POST("/staff/calendar-dates", staffH.CreateCalendarDate)
