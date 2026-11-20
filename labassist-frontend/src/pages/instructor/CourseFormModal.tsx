@@ -256,7 +256,7 @@ export function CourseFormModal({
           display: 'flex', alignItems: 'flex-start', gap: 10,
           padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
           border: form.require_grade_proof ? '2px solid var(--primary)' : '1.5px solid var(--line)',
-          background: form.require_grade_proof ? 'var(--primary-50)' : '#fff',
+          background: form.require_grade_proof ? 'var(--primary-50)' : 'var(--bg-card)',
         }}>
           <input
             type="checkbox"

@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
+import { Icon } from '../../components/reports/ReportIcons'
+import { ReportPageHeader } from '../../components/reports/ReportPageHeader'
 import { isAxiosError } from 'axios'
 import { instructorApi } from '../../services/api'
 import { StatCard } from '../../components/ui/StatCard'
@@ -18,6 +20,8 @@ import { displayCourseTitle } from '../../utils/courseDisplay'
 import { groupCourseSections, groupSectionsByTime } from '../../utils/courseGrouping'
 import type { CreateCoursePayload, Course } from '../../types'
 import { formatSchedule } from '../../utils/schedule'
+import { deadlineInfo } from '../../utils/postingDeadline'
+import { useInstructorTasks } from '../../hooks/useInstructorTasks'
 
 // One row per course: every time slot the instructor opened for it is its own
 // Course row underneath, but they're managed together here — the per-time
@@ -31,6 +35,8 @@ interface Posting {
   slots: number
   accepted: number
   applied: number
+  /** Applicants not yet accepted/rejected. */
+  pending: number
 }
 
 const ids = (p: Posting) => p.sections.map((s) => s.id)
@@ -90,6 +96,26 @@ function isPastDeadline(deadline?: string): boolean {
   return end < new Date()
 }
 
+/** Search by course code, Thai/English title, or section ("1", "sec 1"). */
+function matchesPosting(p: Posting, query: string): boolean {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  const c = p.course
+  if (c.code.toLowerCase().includes(q) || c.title.toLowerCase().includes(q) || (c.english_title ?? '').toLowerCase().includes(q)) return true
+  const sec = /^(?:sec(?:tion)?\.?\s*|กลุ่ม\s*)?(\d+)$/.exec(q)
+  return !!sec && p.sections.some((s) => s.section === Number(sec[1]))
+}
+
+function DeadlineChip({ deadline, status }: { deadline?: string; status: Course['status'] }) {
+  const info = deadlineInfo(deadline, status)
+  if (!info || info.tone === 'closed' || info.tone === 'ok') return null
+  return (
+    <span className={`deadline-chip is-${info.tone}`}>
+      <Icon name="alert" size={12} /> {info.label}
+    </span>
+  )
+}
+
 function errorDetail(err: unknown, fallback: string): string {
   const detail = isAxiosError(err) ? (err.response?.data as { error?: string } | undefined)?.error : undefined
   return detail ?? fallback
@@ -107,6 +133,10 @@ export default function InstructorHome() {
   const [archiveTarget, setArchiveTarget] = useState<Posting | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Posting | null>(null)
   const [closeTarget, setCloseTarget] = useState<Posting | null>(null)
+  // The posting detail is its own page: the URL carries which one, so the
+  // back button returns to the list.
+  const [params, setParams] = useSearchParams()
+  const postingKey = params.get('posting')
   const qc = useQueryClient()
   const showToast = useToast()
 
@@ -159,6 +189,7 @@ export default function InstructorHome() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['instructor-courses'] })
       setArchiveTarget(null)
+      setParams({})
       showToast('เก็บประกาศเข้าคลังแล้ว', 'success')
     },
     onError: () => showToast('ไม่สามารถเก็บเข้าคลังได้ กรุณาลองใหม่', 'error'),
@@ -182,6 +213,7 @@ export default function InstructorHome() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['instructor-courses'] })
       setDeleteTarget(null)
+      setParams({})
       showToast('ลบประกาศเรียบร้อยแล้ว — วิชานี้ยังเลือกเปิดรับสมัครใหม่ได้อีกภายหลัง', 'success')
     },
     onError: () => showToast('ไม่สามารถลบประกาศได้ กรุณาลองใหม่', 'error'),
@@ -276,6 +308,14 @@ export default function InstructorHome() {
     return m
   }, [courses, applicantQueries])
 
+  const pendingById = useMemo(() => {
+    const m = new Map<number, number>()
+    courses.forEach((c, i) => {
+      m.set(c.id, (applicantQueries[i]?.data ?? []).filter((a) => a.status === 'pending').length)
+    })
+    return m
+  }, [courses, applicantQueries])
+
   const toPostings = useMemo(() => (rows: Course[]): Posting[] =>
     groupCourseSections(rows).map((g) => {
       const sections = groupSectionsByTime(g.sections).flatMap((o) => o.sections)
@@ -286,8 +326,9 @@ export default function InstructorHome() {
         slots: g.totalSlots,
         accepted: g.totalAccepted,
         applied: sections.reduce((n, s) => n + (appliedById.get(s.id) ?? 0), 0),
+        pending: sections.reduce((n, s) => n + (pendingById.get(s.id) ?? 0), 0),
       }
-    }), [appliedById])
+    }), [appliedById, pendingById])
 
   // Draft rows are just unopened sections from the Excel import — the
   // instructor picks among them via SectionCatalogPicker when creating a
@@ -297,27 +338,241 @@ export default function InstructorHome() {
 
   const filtered = useMemo(() => {
     const base = showArchived ? archivedPostings : activePostings
-    if (!search) return base
-    const q = search.toLowerCase()
-    return base.filter((p) => p.course.code.toLowerCase().includes(q) || p.course.title.toLowerCase().includes(q))
+    return base.filter((p) => matchesPosting(p, search))
   }, [activePostings, archivedPostings, showArchived, search])
 
+  const { tasks } = useInstructorTasks()
   const deleteApplicants = deleteTarget?.sections.reduce((n, x) => n + (x.applicant_count ?? 0), 0) ?? 0
 
   const openCount = activePostings.filter((p) => p.course.status === 'open' || p.course.status === 'closing_soon').length
   const totalApplied = activePostings.reduce((s, p) => s + p.applied, 0)
   const totalAccepted = activePostings.reduce((s, p) => s + p.accepted, 0)
 
+  // The posting open in the detail view, looked up by key so it stays current
+  // after a status change instead of showing a stale copy.
+  const detail = postingKey ? [...activePostings, ...archivedPostings].find((p) => p.key === postingKey) ?? null : null
+  const detailMeta = detail && (() => {
+    const deadline = detail.sections.map((x) => x.deadline).filter((d): d is string => !!d).sort()[0]
+    return {
+      deadline,
+      closed: detail.course.status === 'closed',
+      archived: detail.course.status === 'archived',
+      openIds: detail.sections.filter((x) => x.status === 'open' || x.status === 'closing_soon').map((x) => x.id),
+      closedIds: detail.sections.filter((x) => x.status === 'closed').map((x) => x.id),
+      ...splitRequirements(detail.course.requirements ?? ''),
+    }
+  })()
+  const openDetail = (key: string) => setParams({ posting: key })
+  const closeDetail = () => setParams({})
+  // Every applicant of every time slot in the posting, newest first.
+  const detailSectionIndexes = detail ? detail.sections.map((x) => courses.findIndex((c) => c.id === x.id)) : []
+  const detailApplicants = detailSectionIndexes
+    .flatMap((i) => (i >= 0 ? applicantQueries[i]?.data ?? [] : []))
+    .sort((a, b) => b.applied_at.localeCompare(a.applied_at))
+  const detailApplicantsLoading = detailSectionIndexes.some((i) => i >= 0 && applicantQueries[i]?.isLoading)
+
   return (
     <div>
-      <div style={{ fontSize: 13, color: 'var(--ink-400)', marginBottom: 6 }}>อาจารย์ / จัดการประกาศ</div>
+      {postingKey ? (
+        !detail || !detailMeta ? (
+          isLoading ? (
+            <div style={{ display: 'grid', gap: 16 }}>
+              <Skeleton height={120} borderRadius={14} />
+              <Skeleton height={80} borderRadius={12} />
+              <Skeleton height={200} borderRadius={12} />
+            </div>
+          ) : (
+            <EmptyState
+              title="ไม่พบประกาศนี้"
+              description="ประกาศอาจถูกลบหรือย้ายไปแล้ว"
+              icon={<Icon name="file" size={40} />}
+              action={{ label: 'กลับหน้าหลัก', onClick: closeDetail }}
+            />
+          )
+        ) : (
+          <div>
+            <ReportPageHeader
+              crumbs={[{ label: 'หน้าหลัก', to: '/instructor/home' }, { label: detail.course.code }]}
+              title={displayCourseTitle(detail.course.title, detail.course.english_title)}
+              subtitle={`ภาคเรียนที่ ${detail.course.semester} ปีการศึกษา ${detail.course.academic_year}`}
+              actions={
+                <>
+                  <Link to={`/instructor/select?course=${detail.sections[0].id}`}>
+                    <Button>{detailMeta.closed || detailMeta.archived ? 'ดูผลคัดเลือก' : 'คัดเลือกผู้สมัคร'}</Button>
+                  </Link>
+                  {detailMeta.archived ? (
+                    <Button variant="outline" loading={unarchiveMut.isPending} onClick={() => unarchiveMut.mutate(ids(detail))}>
+                      กู้คืนประกาศ
+                    </Button>
+                  ) : (
+                    <>
+                      <Button variant="outline" onClick={() => openEdit(detail)}>
+                        <EditIcon /> <span style={{ marginLeft: 6 }}>แก้ไข</span>
+                      </Button>
+                      {detailMeta.closed ? (
+                        <>
+                          <Button
+                            variant="outline"
+                            loading={reopenMut.isPending}
+                            disabled={isPastDeadline(detailMeta.deadline)}
+                            title={isPastDeadline(detailMeta.deadline) ? 'เลยวันปิดรับสมัครแล้ว แก้ไขวันที่ก่อนจึงเปิดรับใหม่ได้' : undefined}
+                            onClick={() => reopenMut.mutate(detailMeta.closedIds)}
+                          >
+                            เปิดรับสมัครอีกครั้ง
+                          </Button>
+                          <Button variant="outline" onClick={() => setArchiveTarget(detail)}>
+                            <ArchiveIcon /> <span style={{ marginLeft: 6 }}>เก็บเข้าคลัง</span>
+                          </Button>
+                        </>
+                      ) : (
+                        <Button variant="outline" disabled={detailMeta.openIds.length === 0} onClick={() => setCloseTarget(detail)}>
+                          <CloseIcon /> <span style={{ marginLeft: 6 }}>ปิดรับสมัคร</span>
+                        </Button>
+                      )}
+                    </>
+                  )}
+                  <Button variant="ghost" style={{ color: 'var(--red)' }} onClick={() => setDeleteTarget(detail)}>
+                    <DeleteIcon /> <span style={{ marginLeft: 6 }}>ลบประกาศ</span>
+                  </Button>
+                </>
+              }
+            />
 
-      <div className="dashboard-banner" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink-900)' }}>จัดการประกาศรับสมัคร</h1>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <Button onClick={openCreate}>+ สร้างประกาศใหม่</Button>
-        </div>
-      </div>
+            <div style={{ background: 'linear-gradient(135deg, var(--primary-50), color-mix(in srgb, var(--primary-100) 70%, #fff))', border: '1px solid var(--primary-100)', borderRadius: 14, padding: '18px 20px', marginBottom: 16 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--primary)', background: 'var(--bg-card)', border: '1px solid var(--primary-100)', padding: '2px 10px', borderRadius: 'var(--radius-pill)' }}>
+                  {detail.course.code}
+                </span>
+                {secList(detail.sections) && (
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', background: 'var(--bg-card)', border: '1px solid var(--primary-100)', padding: '2px 10px', borderRadius: 'var(--radius-pill)' }}>
+                    {secList(detail.sections)}
+                  </span>
+                )}
+                <StatusBadge value={detail.course.status} />
+                {detailMeta.deadline && (
+                  <span style={{ fontSize: 13, color: 'var(--ink-600)' }}>
+                    · {detailMeta.closed ? 'ปิดรับเมื่อ' : 'เปิดรับถึง'}{' '}
+                    {new Date(detailMeta.deadline).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  </span>
+                )}
+              </div>
+              {groupSectionsByTime(detail.sections).filter((o) => o.schedule).map((o) => (
+                <div key={o.key} style={{ fontSize: 13, color: 'var(--ink-600)', marginTop: 6, whiteSpace: 'pre-line' }}>
+                  <Icon name="clock" size={13} style={{ verticalAlign: '-2px' }} /> {formatSchedule(o.schedule)}
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
+              {[
+                { label: 'จำนวนที่รับ', value: detail.slots, tone: 'var(--primary)' },
+                { label: 'ผู้สมัคร', value: detail.applied, tone: 'var(--accent)' },
+                { label: 'คัดเลือกแล้ว', value: detail.accepted, tone: 'var(--green)' },
+              ].map((t) => (
+                <div
+                  key={t.label}
+                  style={{
+                    background: `color-mix(in srgb, ${t.tone} 8%, var(--bg-card))`,
+                    border: `1px solid color-mix(in srgb, ${t.tone} 22%, var(--bg-card))`,
+                    borderRadius: 12, padding: '14px 16px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--ink-600)' }}>
+                    <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', background: t.tone, flexShrink: 0 }} />
+                    {t.label}
+                  </div>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink-900)', lineHeight: 1.2, marginTop: 4 }}>{t.value}</div>
+                </div>
+              ))}
+            </div>
+
+            {(detailMeta.minGrade || detailMeta.rest.trim() || detail.course.description?.trim()) && (
+              <Card style={{ padding: '6px 20px', marginBottom: 16 }}>
+                {[
+                  detailMeta.minGrade ? { label: 'เกรดขั้นต่ำ', value: detailMeta.minGrade } : null,
+                  detailMeta.rest.trim() ? { label: 'เงื่อนไข', value: detailMeta.rest.trim() } : null,
+                  detail.course.description?.trim() ? { label: 'รายละเอียด', value: detail.course.description.trim() } : null,
+                ].filter((r): r is { label: string; value: string } => !!r).map((r, i, all) => (
+                  <div
+                    key={r.label}
+                    style={{
+                      display: 'grid', gridTemplateColumns: '110px 1fr', gap: 16, padding: '12px 0', fontSize: 14,
+                      borderBottom: i < all.length - 1 ? '1px solid var(--line-soft)' : 'none',
+                    }}
+                  >
+                    <div style={{ color: 'var(--ink-500)', fontWeight: 600 }}>{r.label}</div>
+                    <div style={{ color: 'var(--ink-900)', whiteSpace: 'pre-line', lineHeight: 1.6 }}>{r.value}</div>
+                  </div>
+                ))}
+              </Card>
+            )}
+
+            <Card padding={0}>
+              <CardHeader style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)' }}>รายชื่อผู้สมัคร</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2 }}>{detailApplicants.length} คน · เรียงตามวันที่สมัครล่าสุด</div>
+                </div>
+              </CardHeader>
+              <CardBody tight>
+                {detailApplicantsLoading ? (
+                  <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {[1, 2, 3].map((i) => <Skeleton key={i} height={48} borderRadius={8} />)}
+                  </div>
+                ) : detailApplicants.length === 0 ? (
+                  <EmptyState title="ยังไม่มีผู้สมัคร" description="เมื่อมีนักศึกษาสมัคร รายชื่อจะแสดงที่นี่" icon={<Icon name="users" size={40} />} />
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr>
+                          {['ผู้สมัคร', 'กลุ่มเรียน', 'เกรดเฉลี่ย', 'วันที่สมัคร', 'สถานะ', ''].map((h) => (
+                            <th key={h} style={{ padding: '11px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detailApplicants.map((a) => (
+                          <tr key={a.id}>
+                            <td style={{ padding: '12px 20px' }}>
+                              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)' }}>{a.student_name}</div>
+                              <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>
+                                {a.student_code}
+                                {!!a.confirmed_record_count && (
+                                  <span style={{ marginLeft: 8, color: 'var(--red-ink)', fontWeight: 600 }}>
+                                    <Icon name="alert" size={12} style={{ verticalAlign: '-2px' }} /> ถูกรายงาน
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td style={{ padding: '12px 20px', fontSize: 13, color: 'var(--ink-600)' }}>{a.course_section ? `Sec ${a.course_section}` : '-'}</td>
+                            <td style={{ padding: '12px 20px', fontSize: 14, fontWeight: 600, color: 'var(--ink-900)' }}>{a.student_gpa ? a.student_gpa.toFixed(2) : '-'}</td>
+                            <td style={{ padding: '12px 20px', fontSize: 13, color: 'var(--ink-600)', whiteSpace: 'nowrap' }}>
+                              {new Date(a.applied_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
+                            </td>
+                            <td style={{ padding: '12px 20px' }}><StatusBadge value={a.status} /></td>
+                            <td style={{ padding: '12px 20px', textAlign: 'right' }}>
+                              <Link to={`/instructor/select?course=${a.course_id}`}>
+                                <Button size="sm" variant="outline">ดูโปรไฟล์ <Icon name="chevron-right" size={14} style={{ marginLeft: 2 }} /></Button>
+                              </Link>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardBody>
+            </Card>
+          </div>
+        )
+      ) : (
+      <>
+      <ReportPageHeader
+        title="หน้าหลัก"
+        subtitle="ภาพรวมประกาศรับสมัคร Lab Boy ของคุณ"
+        actions={<Button onClick={openCreate} aria-label="สร้างประกาศรับสมัคร Lab Boy ใหม่">+ สร้างประกาศ</Button>}
+      />
 
       {isLoading ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 16, marginBottom: 24 }}>
@@ -325,11 +580,35 @@ export default function InstructorHome() {
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 16, marginBottom: 24 }}>
-          <StatCard label="ประกาศของฉัน" value={activePostings.length} icon="📄" iconColor="var(--primary)" />
-          <StatCard label="เปิดรับอยู่" value={openCount} icon="🕐" iconColor="var(--green)" />
-          <StatCard label="รวมผู้สมัคร" value={totalApplied} icon="🧑" iconColor="var(--accent)" />
-          <StatCard label="คัดเลือกแล้ว" value={totalAccepted} icon="✅" iconColor="var(--primary-700)" />
+          <StatCard label="ประกาศของฉัน" value={activePostings.length} icon={<Icon name="file" size={22} />} iconColor="var(--primary)" />
+          <StatCard label="เปิดรับอยู่" value={openCount} icon={<Icon name="clock" size={22} />} iconColor="var(--green)" />
+          <StatCard label="รวมผู้สมัคร" value={totalApplied} icon={<Icon name="users" size={22} />} iconColor="var(--accent)" />
+          <StatCard label="คัดเลือกแล้ว" value={totalAccepted} icon={<Icon name="check" size={22} />} iconColor="var(--amber)" />
         </div>
+      )}
+
+      {!isLoading && !showArchived && tasks.length > 0 && (
+          <Card className="task-card" style={{ padding: '14px 20px', marginBottom: 20 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--amber-ink)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="task-card-icon"><Icon name="alert" size={15} /></span> งานที่ต้องทำ ({tasks.length})
+            </div>
+            <div style={{ marginTop: 4 }}>
+              {tasks.map((t) => (
+                <div key={t.key} className="task-row">
+                  <div style={{ minWidth: 0, fontSize: 13, color: 'var(--ink-800)' }}>
+                    <strong>{t.code}</strong> {t.title}
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                      {t.deadline && <span className={`deadline-chip is-${t.deadline.tone}`}>{t.deadline.label}</span>}
+                      {t.pending > 0 && <span className="deadline-chip is-soon">มีผู้สมัครรอคัดเลือก {t.pending} คน</span>}
+                    </div>
+                  </div>
+                  <Button size="sm" variant="outline" aria-label={`ดูประกาศ ${t.code}`} onClick={() => openDetail(t.key)}>
+                    ดูประกาศ
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </Card>
       )}
 
       <Card padding={0}>
@@ -340,8 +619,13 @@ export default function InstructorHome() {
             </div>
             <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2 }}>เรียงตามวันที่ล่าสุด</div>
           </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ค้นหา..." style={{ width: 220 }} />
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Input
+              value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="ค้นหาชื่อวิชา / รหัสวิชา / Section"
+              aria-label="ค้นหาประกาศจากชื่อวิชา รหัสวิชา หรือ Section"
+              style={{ width: 'min(280px, 100%)' }}
+            />
             <Button
               size="sm" variant={showArchived ? 'primary' : 'outline'}
               onClick={() => setShowArchived((v) => !v)}
@@ -358,25 +642,27 @@ export default function InstructorHome() {
             </div>
           ) : filtered.length === 0 ? (
             <EmptyState
-              title={search ? 'ไม่พบประกาศที่ค้นหา' : showArchived ? 'ยังไม่มีประกาศที่เก็บถาวร' : 'ยังไม่มีประกาศ'}
-              description={!search && !showArchived && activePostings.length === 0 ? 'สร้างประกาศรับสมัครวิชาแรกของคุณ' : undefined}
-              icon="📄"
-              action={!search && !showArchived && activePostings.length === 0 ? { label: 'สร้างเลย', onClick: openCreate } : undefined}
+              title={search ? `ไม่พบประกาศที่ตรงกับ “${search.trim()}”` : showArchived ? 'ยังไม่มีประกาศที่เก็บถาวร' : 'ยังไม่มีประกาศ'}
+              description={
+                search ? 'ลองค้นหาด้วยชื่อวิชา รหัสวิชา หรือเลข Section เช่น “2” / “Sec 2” หรือล้างคำค้นหา'
+                : showArchived ? 'ประกาศที่เก็บเข้าคลังจะแสดงที่นี่ และกู้คืนได้ภายหลัง'
+                : 'สร้างประกาศรับสมัครวิชาแรกของคุณ เพื่อเริ่มรับสมัคร Lab Boy'
+              }
+              icon={<Icon name="file" size={40} />}
+              action={search ? { label: 'ล้างคำค้นหา', onClick: () => setSearch('') } : !showArchived ? { label: 'สร้างประกาศ', onClick: openCreate } : undefined}
             />
           ) : (
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <table className="data-table posting-table">
                 <thead>
-                  <tr style={{ background: 'var(--bg)', borderBottom: '1.5px solid var(--line)' }}>
-                    {['รายวิชา', 'รับ', 'สมัคร', 'สถานะ', ''].map((h) => (
-                      <th key={h} style={{ padding: '11px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--ink-500)', whiteSpace: 'nowrap' }}>
-                        {h}
-                      </th>
+                  <tr>
+                    {['รายวิชา', 'ปิดรับสมัคร', 'ความคืบหน้า', 'สถานะ', 'การดำเนินการ'].map((h) => (
+                      <th key={h} style={{ textAlign: h === 'การดำเนินการ' ? 'right' : 'left' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((p, i) => {
+                  {filtered.map((p) => {
                     const c = p.course
                     const closed = c.status === 'closed'
                     const archived = c.status === 'archived'
@@ -384,10 +670,11 @@ export default function InstructorHome() {
                     const deadline = p.sections.map((s) => s.deadline).filter((d): d is string => !!d).sort()[0]
                     const openIds = p.sections.filter((s) => s.status === 'open' || s.status === 'closing_soon').map((s) => s.id)
                     const closedIds = p.sections.filter((s) => s.status === 'closed').map((s) => s.id)
+                    const pct = p.slots > 0 ? Math.min(100, Math.round((p.accepted / p.slots) * 100)) : 0
                     return (
-                      <tr key={p.key} style={{ borderBottom: i < filtered.length - 1 ? '1px solid var(--line-soft)' : 'none' }}>
-                        <td style={{ padding: '14px 20px' }}>
-                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 3 }}>
+                      <tr key={p.key}>
+                        <td>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 3, flexWrap: 'wrap' }}>
                             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--primary)', background: 'var(--primary-50)', padding: '1px 7px', borderRadius: 'var(--radius-pill)' }}>
                               {c.code}
                             </span>
@@ -397,31 +684,57 @@ export default function InstructorHome() {
                               </span>
                             )}
                           </div>
-                          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)' }}>{displayCourseTitle(c.title, c.english_title)}</div>
+                          <button
+                            type="button"
+                            className="title-link"
+                            onClick={() => openDetail(p.key)}
+                            title="ดูรายละเอียดประกาศ"
+                            aria-label={`ดูรายละเอียดประกาศ ${c.code}`}
+                          >
+                            {displayCourseTitle(c.title, c.english_title)}
+                          </button>
                           {groupSectionsByTime(p.sections).filter((o) => o.schedule).map((o) => (
                             <div key={o.key} style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2, whiteSpace: 'pre-line' }}>{formatSchedule(o.schedule)}</div>
                           ))}
-                          <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 2 }}>
-                            ภาคเรียนที่ {c.semester}
-                            {deadline && (
-                              <span style={{ marginLeft: 6, color: closed ? 'var(--ink-400)' : 'var(--amber)' }}>
-                                · {closed ? 'ปิดรับเมื่อ' : 'เปิดรับถึง'}{' '}
-                                {new Date(deadline).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}
-                              </span>
-                            )}
-                          </div>
+                          <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 2 }}>ภาคเรียนที่ {c.semester}</div>
                         </td>
-                        <td style={{ padding: '14px 20px', fontSize: 14, fontWeight: 700, color: 'var(--ink-900)' }}>{p.slots}</td>
-                        <td style={{ padding: '14px 20px', fontSize: 14, fontWeight: 700, color: 'var(--ink-900)' }}>{p.applied} คน</td>
-                        <td style={{ padding: '14px 20px' }}><StatusBadge value={c.status} /></td>
-                        <td style={{ padding: '14px 20px' }}>
-                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <td data-label="ปิดรับสมัคร">
+                          {deadline ? (
+                            <>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-800)', whiteSpace: 'nowrap' }}>
+                                {new Date(deadline).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
+                              </div>
+                              <div style={{ marginTop: 4 }}><DeadlineChip deadline={deadline} status={c.status} /></div>
+                            </>
+                          ) : (
+                            <span style={{ fontSize: 13, color: 'var(--ink-400)' }}>ไม่กำหนด</span>
+                          )}
+                        </td>
+                        <td data-label="ความคืบหน้า" style={{ minWidth: 170 }}>
+                          <div style={{ fontSize: 13, color: 'var(--ink-800)' }}>
+                            รับ <strong>{p.slots}</strong> · สมัคร <strong>{p.applied}</strong> · คัดเลือก <strong>{p.accepted}</strong>
+                          </div>
+                          <div
+                            className="progress-track" role="progressbar"
+                            aria-label={`คัดเลือกแล้ว ${p.accepted} จาก ${p.slots} คน`}
+                            aria-valuemin={0} aria-valuemax={p.slots} aria-valuenow={Math.min(p.accepted, p.slots)}
+                          >
+                            <div className={`progress-fill${pct >= 100 ? ' is-full' : ''}`} style={{ width: `${pct}%` }} />
+                          </div>
+                          {p.pending > 0 && !archived && (
+                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--amber-ink)', marginTop: 4 }}>รอคัดเลือก {p.pending} คน</div>
+                          )}
+                        </td>
+                        <td data-label="สถานะ"><StatusBadge value={c.status} /></td>
+                        <td>
+                          <div className="posting-actions">
                             <Link to={`/instructor/select?course=${p.sections[0].id}`}>
-                              <Button size="sm">{closed || archived ? 'ดูผลคัดเลือก' : 'ดูผู้สมัคร'}</Button>
+                              <Button size="sm" aria-label={`${closed || archived ? 'ดูผลคัดเลือก' : 'ดูผู้สมัคร'} ${c.code}`}>{closed || archived ? 'ดูผลคัดเลือก' : 'ดูผู้สมัคร'}</Button>
                             </Link>
                             {archived ? (
                               <Button
                                 size="sm" variant="outline"
+                                aria-label={`กู้คืนประกาศ ${c.code}`}
                                 loading={unarchiveMut.isPending && unarchiveMut.variables?.[0] === p.sections[0].id}
                                 onClick={() => unarchiveMut.mutate(ids(p))}
                               >
@@ -429,47 +742,48 @@ export default function InstructorHome() {
                               </Button>
                             ) : (
                               <>
-                                <Button size="sm" variant="outline" title="แก้ไข" onClick={() => openEdit(p)}>
-                                  <EditIcon />
+                                <Button size="sm" variant="outline" title="แก้ไขรายละเอียดประกาศ" aria-label={`แก้ไขประกาศ ${c.code}`} onClick={() => openEdit(p)}>
+                                  <EditIcon /> <span style={{ marginLeft: 5 }}>แก้ไข</span>
                                 </Button>
                                 {closed ? (
                                   <>
                                     <Button
                                       size="sm" variant="outline"
                                       style={{ color: 'var(--green)', borderColor: 'var(--green)' }}
+                                      aria-label={`เปิดรับสมัครอีกครั้ง ${c.code}`}
                                       loading={reopenMut.isPending && reopenMut.variables?.[0] === closedIds[0]}
                                       disabled={isPastDeadline(deadline)}
-                                      title={isPastDeadline(deadline) ? 'เลยวันปิดรับสมัครแล้ว แก้ไขวันที่ก่อนจึงเปิดรับใหม่ได้' : undefined}
+                                      title={isPastDeadline(deadline) ? 'เลยวันปิดรับสมัครแล้ว แก้ไขวันที่ก่อนจึงเปิดรับใหม่ได้' : 'เปิดรับสมัครอีกครั้ง'}
                                       onClick={() => reopenMut.mutate(closedIds)}
                                     >
                                       เปิดรับสมัคร
                                     </Button>
                                     <Button
                                       size="sm" variant="outline"
-                                      title="เก็บเข้าคลัง"
+                                      title="เก็บประกาศเข้าคลัง (กู้คืนได้)" aria-label={`เก็บประกาศ ${c.code} เข้าคลัง`}
                                       onClick={() => setArchiveTarget(p)}
                                     >
-                                      <ArchiveIcon />
+                                      <ArchiveIcon /> <span style={{ marginLeft: 5 }}>เก็บเข้าคลัง</span>
                                     </Button>
                                   </>
                                 ) : (
                                   <Button
-                                    size="sm" variant="outline" title="ปิดรับสมัคร"
+                                    size="sm" variant="outline" title="ปิดรับสมัคร — นักศึกษาจะสมัครไม่ได้อีก" aria-label={`ปิดรับสมัคร ${c.code}`}
                                     style={{ color: 'var(--amber)', borderColor: 'var(--amber)' }}
                                     disabled={openIds.length === 0}
                                     onClick={() => setCloseTarget(p)}
                                   >
-                                    <CloseIcon />
+                                    <CloseIcon /> <span style={{ marginLeft: 5 }}>ปิดรับ</span>
                                   </Button>
                                 )}
                               </>
                             )}
                             <Button
-                              size="sm" variant="outline" title="ลบประกาศ"
+                              size="sm" variant="outline" title="ลบประกาศ (ต้องยืนยันก่อน)" aria-label={`ลบประกาศ ${c.code}`}
                               style={{ color: 'var(--red)', borderColor: 'var(--red)' }}
                               onClick={() => setDeleteTarget(p)}
                             >
-                              <DeleteIcon />
+                              <DeleteIcon /> <span style={{ marginLeft: 5 }}>ลบ</span>
                             </Button>
                           </div>
                         </td>
@@ -482,6 +796,8 @@ export default function InstructorHome() {
           )}
         </CardBody>
       </Card>
+      </>
+      )}
 
       <CourseFormModal
         isOpen={showCourseModal}

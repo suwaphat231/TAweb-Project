@@ -8,6 +8,7 @@ import { Button } from '../../components/ui/Button'
 import { Avatar } from '../../components/ui/Avatar'
 import { StatusBadge } from '../../components/ui/Badge'
 import { Skeleton } from '../../components/ui/Skeleton'
+import { ReportPageHeader } from '../../components/reports/ReportPageHeader'
 import { useToast } from '../../hooks/useToast'
 import { ChangePasswordModal } from '../../components/account/ChangePasswordModal'
 
@@ -54,6 +55,8 @@ export default function InstructorProfile() {
       showToast(err.response?.data?.error ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'),
   })
 
+  const dirty = Object.keys(draft).length > 0
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     updateMut.mutate(form)
@@ -61,12 +64,11 @@ export default function InstructorProfile() {
 
   return (
     <div>
-      <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 24 }}>ข้อมูลส่วนตัว</h1>
-      <div style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 20 }}>จัดการข้อมูลส่วนตัวของคุณ</div>
+      <ReportPageHeader title="ข้อมูลส่วนตัว" subtitle="จัดการข้อมูลส่วนตัวของคุณ" />
 
       <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         {/* Left: avatar summary card */}
-        <Card style={{ padding: 24, width: 260, flexShrink: 0 }}>
+        <Card className="profile-hero" style={{ padding: 24, flex: '0 1 260px', minWidth: 0, width: '100%', maxWidth: 360 }}>
           {isLoading ? (
             <Skeleton height={64} borderRadius={999} width={64} />
           ) : (
@@ -86,7 +88,7 @@ export default function InstructorProfile() {
         </Card>
 
         {/* Right: inline edit form */}
-        <Card style={{ padding: 24, flex: 1, minWidth: 320 }}>
+        <Card style={{ padding: 24, flex: '1 1 320px', minWidth: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 18 }}>แก้ไขข้อมูลส่วนตัว</div>
           {isLoading ? (
             <Skeleton lines={3} height={16} />
@@ -105,6 +107,12 @@ export default function InstructorProfile() {
                 type="email"
                 value={form.email}
                 onChange={(e) => setDraft(f => ({ ...f, email: e.target.value }))}
+              />
+              <Input
+                readOnly={updateMut.isPending}
+                label="คณะ / ภาควิชา"
+                value={form.faculty}
+                onChange={(e) => setDraft(f => ({ ...f, faculty: e.target.value }))}
               />
               <Input
                 readOnly={updateMut.isPending}
@@ -127,8 +135,14 @@ export default function InstructorProfile() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <Button type="submit" loading={updateMut.isPending}>บันทึกการเปลี่ยนแปลง</Button>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                {dirty && (
+                  <>
+                    <span style={{ fontSize: 12, color: 'var(--amber-ink)' }}>มีการแก้ไขที่ยังไม่ได้บันทึก</span>
+                    <Button type="button" variant="ghost" disabled={updateMut.isPending} onClick={() => setDraft({})}>ยกเลิกการแก้ไข</Button>
+                  </>
+                )}
+                <Button type="submit" loading={updateMut.isPending} disabled={!dirty}>บันทึกการเปลี่ยนแปลง</Button>
               </div>
             </form>
           )}

@@ -14,6 +14,13 @@
   --amber-bg: #FEF3E2;
   --red: #DC2626;
   --red-bg: #FDECEC;
+  /* Status borders and dark text tones, so pages never hardcode them. */
+  --green-line: #BBF7D0;
+  --green-ink: #166534;
+  --amber-line: #FDE68A;
+  --amber-ink: #92400E;
+  --red-line: #FECACA;
+  --red-ink: #991B1B;
   --blue: #2E357F;
   --blue-bg: #EAF3F9;
   --ink-900: #2A2262;
@@ -547,4 +554,224 @@ select.slot-control { width: 100%; cursor: pointer; }
   .cmd-board { gap: 4px; } .cmd-board-dow { font-size: 11px; padding: 8px 0; border-radius: 8px; }
   .cmd-cell { min-height: 56px; padding: 4px; border-radius: 8px; }
   .cmd-ev { font-size: 0; padding: 0; height: 6px; border-radius: 99px; }
+}
+
+/* Staff review list: stack columns on narrow screens */
+@media (max-width: 760px) {
+  .staff-review-row { grid-template-columns: 1fr !important; }
+  .staff-review-row > :last-child { justify-content: flex-start !important; }
+}
+
+/* Staff document timeline — minimal row + quiet actions */
+.tl-row { padding: 8px 12px; margin: 0 -12px; border-radius: 10px; transition: background .15s ease; }
+.tl-row:hover { background: #F7F8FC; }
+.doc-action {
+  display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 8px; background: #fff; cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 600; color: var(--ink-600); white-space: nowrap;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+.doc-action:hover:not(:disabled) { background: var(--primary-50); color: var(--primary); border-color: var(--primary-100); }
+.doc-action:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.doc-action:disabled { opacity: .5; cursor: not-allowed; }
+.doc-action--icon { width: 34px; padding: 0; justify-content: center; border-color: transparent; background: transparent; }
+.link-back {
+  display: inline-flex; align-items: center; gap: 4px; margin-bottom: 18px; padding: 4px 0;
+  border: none; background: none; cursor: pointer; font: inherit; font-size: 13px; font-weight: 500;
+  color: var(--ink-500); transition: color .15s ease;
+}
+.link-back:hover { color: var(--primary); }
+@media (prefers-reduced-motion: reduce) { .tl-row, .doc-action, .link-back { transition: none; } }
+
+/* Shared report table — calm rows, clear hover/focus */
+.report-table td { padding: 14px 16px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
+.report-table tbody tr:last-child td { border-bottom: none; }
+.report-table tbody tr[tabindex] { cursor: pointer; transition: background .12s ease; }
+.report-table tbody tr[tabindex]:hover { background: #F7F8FC; }
+.report-table tbody tr[tabindex]:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+@media (prefers-reduced-motion: reduce) { .report-table tbody tr { transition: none; } }
+
+/* Shared list tables: tinted header, soft row dividers, row hover. */
+.data-table thead tr { background: var(--primary-50); border-bottom: 1px solid var(--primary-100); }
+.data-table thead th { color: var(--primary-700) !important; letter-spacing: .01em; }
+.data-table tbody tr { border-bottom: 1px solid var(--line-soft); transition: background .15s ease; }
+.data-table tbody tr:last-child { border-bottom: none; }
+.data-table tbody tr:hover { background: color-mix(in srgb, var(--primary-50) 55%, #fff); }
+@media (prefers-reduced-motion: reduce) { .data-table tbody tr { transition: none; } }
+
+/* Course title in a list row: reads as text, shows it is clickable on hover. */
+.title-link { all: unset; box-sizing: border-box; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--ink-900); line-height: 1.5; }
+.title-link:hover { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+.title-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+
+/* ── Instructor postings: table on desktop, stacked cards on mobile ───── */
+.posting-table { min-width: 0; }
+.posting-table td { vertical-align: top; }
+.posting-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.progress-track { height: 6px; border-radius: 999px; background: var(--line-soft); overflow: hidden; margin-top: 6px; min-width: 110px; }
+.progress-fill { height: 100%; border-radius: 999px; background: var(--green); transition: width .25s ease; }
+.progress-fill.is-full { background: var(--primary); }
+.deadline-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line-soft); color: var(--ink-500); background: var(--bg); white-space: nowrap; }
+.deadline-chip.is-soon { color: var(--amber-ink); background: var(--amber-bg); border-color: var(--amber-line); }
+.deadline-chip.is-overdue { color: var(--red-ink); background: var(--red-bg); border-color: var(--red-line); }
+.task-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid var(--line-soft); }
+.task-row:last-child { border-bottom: none; }
+@media (max-width: 720px) {
+  .posting-table thead { display: none; }
+  .posting-table, .posting-table tbody { display: block; width: 100%; }
+  .posting-table tr { display: block; padding: 14px 16px; border-bottom: 1px solid var(--line-soft); }
+  .posting-table tbody tr:last-child { border-bottom: none; }
+  .posting-table td { display: block; padding: 6px 0 !important; border: none; }
+  .posting-table td[data-label]::before { content: attr(data-label); display: block; font-size: 11px; font-weight: 700; color: var(--ink-400); margin-bottom: 2px; }
+  .posting-actions { justify-content: flex-start; }
+}
+
+/* ── Instructor polish ─────────────────────────────────────────────────── */
+.progress-track { height: 8px; }
+.progress-fill { background: linear-gradient(90deg, var(--green), color-mix(in srgb, var(--green) 70%, #fff)); }
+.progress-fill.is-full { background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 70%, #fff)); }
+.task-card {
+  background: linear-gradient(135deg, var(--amber-bg), color-mix(in srgb, var(--amber-bg) 60%, var(--bg-card))) !important;
+  border: 1px solid var(--amber-line) !important;
+  border-left: 4px solid var(--amber) !important;
+  box-shadow: var(--shadow-sm);
+}
+.task-card-icon { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--amber); color: #fff; }
+.task-row { border-bottom-color: var(--amber-line); }
+.posting-table tbody tr:hover { background: color-mix(in srgb, var(--primary-50) 70%, var(--bg-card)); }
+.course-card.is-imported { border-left: 4px solid var(--primary-100) !important; }
+.course-card.is-self { border-left: 4px solid var(--amber) !important; border-color: var(--amber-line); background: color-mix(in srgb, var(--amber-bg) 25%, var(--bg-card)); }
+.profile-hero { background: linear-gradient(180deg, var(--primary-50) 0, var(--bg-card) 130px) !important; }
+
+/* ── Instructor "วิชาของฉัน": course cards with an inline details accordion ── */
+.mc-section-title { font-size: 15px; font-weight: 700; color: var(--ink-900); margin: 0 0 12px; }
+.mc-section-title span { color: var(--ink-400); font-weight: 600; }
+.mc-section-note { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--amber-ink); margin: -4px 0 12px; }
+.mc-muted { color: var(--ink-400); }
+.mc-readonly { display: inline-flex; align-items: center; gap: 6px; color: var(--amber-ink); }
+.mc-search { width: min(380px, 100%); margin: 0 0 16px auto; }
+
+/* Card header: code (secondary) → title (primary) → term → count chips; details button on the right. */
+.mc-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 20px 16px; }
+.mc-head-main { min-width: 0; display: grid; gap: 2px; }
+.mc-code { font-size: 12.5px; font-weight: 600; color: var(--primary); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.mc-title { margin: 2px 0 0; font-size: 17px; font-weight: 700; color: var(--ink-900); line-height: 1.35; overflow-wrap: anywhere; }
+.mc-sub { font-size: 13px; color: var(--ink-500); }
+.mc-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.mc-twin { font-size: 12px; color: var(--ink-500); margin-top: 6px; overflow-wrap: anywhere; }
+.mc-note { font-size: 12.5px; color: var(--amber-ink); padding: 0 20px 14px; margin-top: -6px; }
+
+.mc-toggle { flex-shrink: 0; min-height: 40px; gap: 6px; transition: transform .12s ease, background-color .18s ease, border-color .18s ease; }
+.mc-toggle:active { transform: scale(.97); }
+.mc-chevron { transition: transform .22s cubic-bezier(.2, .8, .2, 1); }
+[aria-expanded="true"] > .mc-chevron, .mc-toggle[aria-expanded="true"] .mc-chevron { transform: rotate(180deg); }
+
+/* Collapse: rows animate 0fr ↔ 1fr (no height measuring), content fades/slides.
+   Closing (180ms) is quicker than opening (220ms) so the list feels responsive. */
+.mc-collapse { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .18s ease-in; }
+.mc-collapse[data-open="true"] { grid-template-rows: 1fr; transition: grid-template-rows .22s cubic-bezier(.2, .8, .2, 1); }
+.mc-collapse-inner { min-height: 0; overflow: hidden; opacity: 0; transform: translateY(-4px); transition: opacity .18s ease-in, transform .18s ease-in; }
+.mc-collapse[data-open="true"] .mc-collapse-inner { opacity: 1; transform: none; transition: opacity .2s ease-out .02s, transform .22s cubic-bezier(.2, .8, .2, 1); }
+
+/* Expanded area: curriculum tabs (only when the code combines several), course info, Sections. */
+.mc-detail { display: grid; gap: 16px; padding: 16px 20px 20px; border-top: 1px solid var(--line-soft); background: color-mix(in srgb, var(--primary-50) 35%, var(--bg-card)); }
+.mc-detail-body { display: grid; gap: 20px; min-width: 0; }
+.mc-d-title { font-size: 13.5px; font-weight: 700; color: var(--ink-900); margin: 0 0 10px; }
+
+.mc-curr-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.mc-curr-label { font-size: 12px; font-weight: 700; color: var(--ink-500); }
+.mc-curricula { display: inline-flex; gap: 2px; padding: 3px; max-width: 100%; overflow-x: auto; background: var(--primary-50); border: 1px solid var(--primary-100); border-radius: var(--radius-pill); }
+.mc-curriculum-tab {
+  appearance: none; flex-shrink: 0; min-height: 32px; padding: 4px 16px; border: 1px solid transparent; border-radius: var(--radius-pill);
+  background: transparent; color: var(--ink-600); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
+  font-variant-numeric: tabular-nums; transition: background-color .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease, transform .12s ease;
+}
+.mc-curriculum-tab:hover { color: var(--primary-700); background: color-mix(in srgb, var(--bg-card) 60%, transparent); }
+.mc-curriculum-tab:active { transform: scale(.97); }
+.mc-curriculum-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.mc-curriculum-tab[aria-selected="true"] { background: var(--bg-card); color: var(--primary-700); border-color: var(--primary); box-shadow: var(--shadow-sm); }
+.mc-curr-hint { font-size: 12px; color: var(--ink-500); }
+
+/* Swapped text fades in; it never changes size, so switching a tab cannot move the layout. */
+.mc-swap { animation: mc-swap .2s ease-out; }
+@keyframes mc-swap { from { opacity: 0; } to { opacity: 1; } }
+
+.mc-info { background: var(--bg-card); border: 1px solid var(--line-soft); border-radius: 12px; padding: 14px 16px; }
+.mc-info .mc-d-title { margin-bottom: 12px; }
+.mc-d-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px 20px; }
+.mc-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mc-field-label { font-size: 12px; font-weight: 600; color: var(--ink-500); }
+.mc-field-value { font-size: 14px; color: var(--ink-700); white-space: pre-line; overflow-wrap: anywhere; }
+.mc-field-code .mc-field-value { font-weight: 700; color: var(--primary-700); font-variant-numeric: tabular-nums; }
+
+/* Section accordion: header (name · code · days · Lab Boy badge · arrow) → meeting times | Lab Boys. */
+.mc-secs { display: grid; gap: 10px; }
+.mc-sec { background: var(--bg-card); border: 1px solid var(--line-soft); border-radius: 12px; overflow: hidden; transition: border-color .2s ease, box-shadow .2s ease; }
+.mc-sec[data-open="true"] { border-color: var(--primary-100); box-shadow: var(--shadow-sm); }
+.mc-sec-h { margin: 0; font: inherit; }
+.mc-sec-toggle {
+  appearance: none; width: 100%; min-height: 56px; margin: 0; padding: 12px 16px;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px 14px;
+  background: none; border: 0; font: inherit; text-align: left; color: var(--ink-900); cursor: pointer;
+  transition: background-color .18s ease;
+}
+.mc-sec-toggle:hover { background: color-mix(in srgb, var(--primary-50) 60%, transparent); }
+.mc-sec-toggle:active { background: var(--primary-50); }
+.mc-sec-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; border-radius: 12px; }
+.mc-sec-toggle > .mc-chevron { color: var(--ink-500); }
+.mc-sec-name { display: flex; flex-direction: column; min-width: 0; font-size: 15px; font-weight: 700; line-height: 1.35; }
+.mc-sec-code { font-size: 12px; font-weight: 500; color: var(--ink-500); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.mc-sec-meta { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px 12px; font-size: 13px; color: var(--ink-600); }
+.mc-sec-days { display: inline-flex; align-items: center; gap: 5px; }
+.mc-sec-body {
+  display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px 28px;
+  margin: 0 16px; padding: 14px 0 16px; border-top: 1px solid var(--line-soft);
+}
+.mc-sec-col { min-width: 0; }
+.mc-sec-label { font-size: 12px; font-weight: 700; color: var(--ink-500); margin-bottom: 8px; }
+.mc-slots { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.mc-slot { display: grid; gap: 6px; }
+.mc-slot-main {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 6px 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--primary-50) 45%, var(--bg-card)); border: 1px solid var(--line-soft);
+}
+.mc-slot-text { min-width: 0; display: grid; gap: 4px; }
+.mc-slot-line { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; font-size: 14px; color: var(--ink-700); line-height: 1.5; }
+.mc-day { min-width: 3.6em; font-weight: 700; color: var(--ink-900); }
+.mc-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mc-room { font-size: 12px; font-weight: 600; color: var(--primary-700); background: var(--primary-50); border: 1px solid var(--primary-100); padding: 0 8px; border-radius: 6px; overflow-wrap: anywhere; }
+.mc-slot-action { flex-shrink: 0; min-height: 36px; }
+
+.mc-d-people { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.mc-d-people li { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px; background: var(--bg-card); border: 1px solid var(--primary-100); }
+.mc-person { min-width: 0; }
+.mc-d-name { font-size: 14px; font-weight: 700; color: var(--ink-900); overflow-wrap: anywhere; }
+.mc-person-code { font-size: 12px; color: var(--ink-500); font-variant-numeric: tabular-nums; }
+.mc-empty { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 12px 14px; border: 1px dashed var(--line); border-radius: 10px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mc-chevron, .mc-collapse, .mc-collapse[data-open="true"],
+  .mc-collapse-inner, .mc-collapse[data-open="true"] .mc-collapse-inner,
+  .mc-sec, .mc-sec-toggle, .mc-toggle, .mc-curriculum-tab { transition: none; }
+  .mc-swap { animation: none; }
+  .mc-toggle:active, .mc-curriculum-tab:active { transform: none; }
+}
+
+@media (max-width: 900px) {
+  .mc-sec-body { gap: 14px 20px; }
+}
+
+@media (max-width: 640px) {
+  .mc-head { flex-direction: column; align-items: stretch; gap: 12px; padding: 16px 16px 14px; }
+  .mc-toggle { width: 100%; justify-content: center; min-height: 44px; }
+  .mc-note { padding: 0 16px 12px; }
+  .mc-detail { padding: 14px 16px 16px; }
+  .mc-curr-bar { align-items: flex-start; }
+  .mc-curriculum-tab { min-height: 40px; }
+  .mc-curr-hint { flex-basis: 100%; }
+  .mc-info { padding: 12px 14px; }
+  .mc-sec-toggle { grid-template-columns: minmax(0, 1fr) auto; padding: 12px 14px; }
+  .mc-sec-meta { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; }
+  .mc-sec-body { grid-template-columns: minmax(0, 1fr); margin: 0 14px; }
+  .mc-slot-action { min-height: 44px; }
 }

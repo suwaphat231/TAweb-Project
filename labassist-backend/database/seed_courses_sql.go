@@ -701,6 +701,11 @@ func backfillCourseCurriculumCodes(db *gorm.DB) error {
 
 	updated := 0
 	for _, c := range courses {
+		// The demo report course is not a classlist section; giving it the
+		// classlist's curriculum code would file it under the real course.
+		if isDemoReportCourse(c) {
+			continue
+		}
 		baseCode := strings.TrimSpace(strings.Split(c.Code, "-")[0])
 		sem, _ := strconv.Atoi(c.Semester)
 		secStr := strconv.Itoa(c.Section)

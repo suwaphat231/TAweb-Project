@@ -113,7 +113,7 @@ export default function InstructorReportCourse() {
               onChange={(e) => setSearch(e.target.value)}
               placeholder="ค้นหาชื่อ / รหัสนักศึกษา"
               aria-label="ค้นหานักศึกษา"
-              style={{ padding: '8px 12px 8px 34px', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-input)', fontSize: 14, color: 'var(--ink-900)', outline: 'none', width: '100%', background: '#fff' }}
+              style={{ padding: '8px 12px 8px 34px', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-input)', fontSize: 14, color: 'var(--ink-900)', outline: 'none', width: '100%', background: 'var(--bg-card)' }}
             />
           </div>
         </div>

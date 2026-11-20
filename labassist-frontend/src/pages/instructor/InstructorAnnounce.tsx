@@ -7,6 +7,8 @@ import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Skeleton } from '../../components/ui/Skeleton'
+import { Icon } from '../../components/reports/ReportIcons'
+import { ReportPageHeader } from '../../components/reports/ReportPageHeader'
 import { useToast } from '../../hooks/useToast'
 import { Link } from 'react-router-dom'
 import { CourseFormModal } from './CourseFormModal'
@@ -159,13 +161,11 @@ export default function InstructorAnnounce() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
-        <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink-900)' }}>จัดการประกาศรับสมัคร</h1>
-          <p style={{ color: 'var(--ink-500)', fontSize: 14, marginTop: 4 }}>{visibleCourses.length} วิชา</p>
-        </div>
-        <Button onClick={openCreate}>+ สร้างประกาศ</Button>
-      </div>
+      <ReportPageHeader
+        title="จัดการประกาศ"
+        subtitle={`${visibleCourses.length} วิชา`}
+        actions={<Button onClick={openCreate}>+ สร้างประกาศ</Button>}
+      />
 
       {isLoading ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -175,13 +175,13 @@ export default function InstructorAnnounce() {
         <EmptyState
           title="ยังไม่มีวิชา"
           description="สร้างประกาศรับสมัครวิชาแรกของคุณ"
-          icon="📚"
+          icon={<Icon name="book" size={40} />}
           action={{ label: 'สร้างเลย', onClick: openCreate }}
         />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {visibleCourses.map((c) => (
-            <Card key={c.id} style={{ padding: '18px 24px' }}>
+            <Card key={c.id} className="course-card" style={{ padding: '18px 24px 18px 28px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
@@ -203,7 +203,7 @@ export default function InstructorAnnounce() {
                   </div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 4 }}>{displayCourseTitle(c.title, c.english_title)}</div>
                   {c.schedule && (
-                    <div style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 2, whiteSpace: 'pre-line' }}>🕐 {formatSchedule(c.schedule)}</div>
+                    <div style={{ fontSize: 13, color: 'var(--ink-500)', marginBottom: 2, whiteSpace: 'pre-line' }}><Icon name="clock" size={13} style={{ verticalAlign: '-2px' }} /> {formatSchedule(c.schedule)}</div>
                   )}
                   <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>
                     ภาคเรียนที่ {c.semester}
@@ -220,16 +220,16 @@ export default function InstructorAnnounce() {
                   <Button variant="outline" size="sm" onClick={() => openEdit(c)}>แก้ไข</Button>
                   {(c.status === 'open' || c.status === 'closing_soon') && (
                     <Button
-                      variant="outline" size="sm"
-                      style={{ color: 'var(--amber)', borderColor: 'var(--amber)' }}
+                      variant="ghost" size="sm"
+                      style={{ color: 'var(--amber-ink)' }}
                       onClick={() => setCloseTarget(c)}
                     >
                       ปิดรับสมัคร
                     </Button>
                   )}
                   <Button
-                    variant="outline" size="sm"
-                    style={{ color: 'var(--red)', borderColor: 'var(--red)' }}
+                    variant="ghost" size="sm"
+                    style={{ color: 'var(--red)' }}
                     onClick={() => setDeleteTarget(c)}
                   >
                     ลบ
@@ -273,7 +273,7 @@ export default function InstructorAnnounce() {
                 display: 'flex', alignItems: 'center', gap: 12,
                 padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
                 border: pendingStatus === opt.value ? '2px solid var(--primary)' : '1.5px solid var(--line)',
-                background: pendingStatus === opt.value ? 'var(--primary-50)' : '#fff',
+                background: pendingStatus === opt.value ? 'var(--primary-50)' : 'var(--bg-card)',
                 transition: 'border .12s, background .12s',
               }}
             >

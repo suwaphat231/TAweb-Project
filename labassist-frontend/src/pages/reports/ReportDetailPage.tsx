@@ -172,7 +172,7 @@ export default function ReportDetailPage() {
     : user?.role === 'instructor' || (user?.role === 'admin' && r.reporter_id === user.id)
       ? [{ label: 'บันทึกการปฏิบัติงาน', to: '/instructor/reports' }, { label: r.course_code, to: `/instructor/reports/courses/${r.course_id}` }]
       : user?.role === 'staff'
-        ? [{ label: 'นักศึกษาที่ถูก blacklist', to: '/staff/reports' }]
+        ? [{ label: 'นักศึกษาที่ถูกรายงาน', to: '/staff/reports' }]
         : [{ label: 'ตรวจสอบรายงาน', to: '/staff/reports' }]
   const isOpen = !['CONFIRMED', 'NOT_SUBSTANTIATED', 'WITHDRAWN'].includes(r.status)
 

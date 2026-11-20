@@ -73,7 +73,7 @@ export default function InstructorReports() {
               aria-label="ค้นหารายวิชา"
               style={{
                 padding: '9px 12px 9px 34px', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-input)',
-                fontSize: 14, color: 'var(--ink-900)', outline: 'none', width: '100%', background: '#fff',
+                fontSize: 14, color: 'var(--ink-900)', outline: 'none', width: '100%', background: 'var(--bg-card)',
               }}
             />
           </div>

@@ -14,8 +14,10 @@ export interface ActionMenuItem {
  * A button that opens a small list of actions, so a row keeps one obvious
  * action in view and tucks the rest away. Closes on outside click or Escape.
  */
-export function ActionMenu({ trigger, items, label, style, className }: {
+export function ActionMenu({ trigger, items, label, style, className, align = 'left' }: {
   trigger: ReactNode
+  /** Which edge of the trigger the menu lines up with; use 'right' near the right edge of a row. */
+  align?: 'left' | 'right'
   items: ActionMenuItem[]
   label: string
   style?: React.CSSProperties
@@ -49,7 +51,7 @@ export function ActionMenu({ trigger, items, label, style, className }: {
       </button>
       {open && (
         <div role="menu" style={{
-          position: 'absolute', top: 'calc(100% + 6px)', left: 0, minWidth: 220, zIndex: 50,
+          position: 'absolute', top: 'calc(100% + 6px)', ...(align === 'right' ? { right: 0 } : { left: 0 }), minWidth: 220, zIndex: 50,
           background: 'var(--bg-card, #fff)', border: '1px solid var(--line)', borderRadius: 10,
           boxShadow: 'var(--shadow-lg)', padding: 4,
         }}>

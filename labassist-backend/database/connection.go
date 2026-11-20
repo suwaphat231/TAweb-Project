@@ -779,6 +779,9 @@ func Connect(cfg *config.Config) error {
 	if err := promoteOwnerCourseLinks(db); err != nil {
 		return fmt.Errorf("promote owner course links: %w", err)
 	}
+	if err := detachDemoReportCourses(db); err != nil {
+		return fmt.Errorf("detach demo report courses: %w", err)
+	}
 
 	if err := mergeDuplicateCourses(); err != nil {
 		return fmt.Errorf("merge duplicate courses: %w", err)

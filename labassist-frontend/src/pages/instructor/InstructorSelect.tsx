@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { instructorApi } from '../../services/api'
@@ -9,6 +9,7 @@ import { FilterChips } from '../../components/ui/FilterChips'
 import { Modal } from '../../components/ui/Modal'
 import { Avatar } from '../../components/ui/Avatar'
 import { EmptyState } from '../../components/ui/EmptyState'
+import { Icon } from '../../components/reports/ReportIcons'
 import { useToast } from '../../hooks/useToast'
 import { ConfirmedHistory } from '../../components/reports/ConfirmedHistory'
 import { displayCourseTitle } from '../../utils/courseDisplay'
@@ -247,7 +248,7 @@ export default function InstructorSelect() {
 
       {/* ── Header ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink-900)' }}>คัดเลือกผู้สมัคร</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink-900)', lineHeight: 1.3 }}>คัดเลือกผู้สมัคร</h1>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           {!!courseId && selectedCourse && !rosterLocked && selectedCourse.labboy_accepted > 0 && (
             <Button
@@ -261,10 +262,10 @@ export default function InstructorSelect() {
             <div style={{
               display: 'flex', alignItems: 'center', gap: 8,
               padding: '6px 8px 6px 14px', borderRadius: 8,
-              background: '#F0FDF4', border: '1px solid #BBF7D0',
-              fontSize: 13, fontWeight: 600, color: '#15803D',
+              background: 'var(--green-bg)', border: '1px solid var(--green-line)',
+              fontSize: 13, fontWeight: 600, color: 'var(--green-ink)',
             }}>
-              ✅ ยืนยันรายชื่อแล้ว
+              <Icon name="check" size={14} /> ยืนยันรายชื่อแล้ว
               {!selectedCourse?.labboy_schedule_confirmed && (
                 <Button variant="ghost" size="sm" loading={rosterMut.isPending} onClick={() => rosterMut.mutate(false)}>
                   ยกเลิกการยืนยัน
@@ -284,10 +285,10 @@ export default function InstructorSelect() {
             <div style={{
               display: 'flex', alignItems: 'center', gap: 6,
               padding: '8px 14px', borderRadius: 8,
-              background: '#F0FDF4', border: '1px solid #BBF7D0',
-              fontSize: 13, fontWeight: 600, color: '#15803D',
+              background: 'var(--green-bg)', border: '1px solid var(--green-line)',
+              fontSize: 13, fontWeight: 600, color: 'var(--green-ink)',
             }}>
-              ✅ เจ้าหน้าที่ยืนยันตารางแล้ว
+              <Icon name="check" size={14} /> เจ้าหน้าที่ยืนยันตารางแล้ว
             </div>
           )}
           <Select
@@ -311,7 +312,7 @@ export default function InstructorSelect() {
       </div>
 
       {!courseId ? (
-        <EmptyState title="เลือกรายวิชา" description="กรุณาเลือกวิชาจาก dropdown ด้านบนเพื่อดูผู้สมัคร" icon="👆" />
+        <EmptyState title="เลือกรายวิชา" description="กรุณาเลือกวิชาจาก dropdown ด้านบนเพื่อดูผู้สมัคร" icon={<Icon name="search" size={40} />} />
       ) : (
         <>
           {/* ── Time tabs: one per opened time of this course ── */}
@@ -332,7 +333,7 @@ export default function InstructorSelect() {
                     style={{
                       padding: '8px 12px', borderRadius: 10, textAlign: 'left', cursor: 'pointer',
                       border: active ? '2px solid var(--primary)' : '1.5px solid var(--line)',
-                      background: active ? 'var(--primary-50)' : '#fff',
+                      background: active ? 'var(--primary-50)' : 'var(--bg-card)',
                     }}
                   >
                     <div style={{ fontSize: 13, fontWeight: 600, color: active ? 'var(--primary)' : 'var(--ink-900)', whiteSpace: 'pre-line' }}>
@@ -351,7 +352,7 @@ export default function InstructorSelect() {
           {selectedCourse && (
             <div style={{
               display: 'flex', gap: 24, padding: '16px 20px',
-              background: '#fff', borderRadius: 14, marginBottom: 20,
+              background: 'var(--bg-card)', borderRadius: 14, marginBottom: 20,
               border: '1px solid var(--line)', flexWrap: 'wrap', alignItems: 'center',
             }}>
               {/* Applicant count */}
@@ -456,7 +457,7 @@ export default function InstructorSelect() {
           </div>
 
           {/* ── Table ── */}
-          <div style={{ borderRadius: 14, overflow: 'hidden', boxShadow: '0 2px 8px rgba(15,23,42,.07)', background: '#fff', border: '1px solid var(--line)' }}>
+          <div style={{ borderRadius: 14, overflow: 'hidden', boxShadow: '0 2px 8px rgba(15,23,42,.07)', background: 'var(--bg-card)', border: '1px solid var(--line)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--line-soft)', borderBottom: '1.5px solid var(--line)' }}>
@@ -504,7 +505,7 @@ export default function InstructorSelect() {
                   const isBlacklisted = !!row.confirmed_record_count
                   const rowBg = isSelected
                     ? 'var(--primary-50)'
-                    : isBlacklisted ? '#FEF2F2' : isAccepted ? '#F0FDF4' : '#fff'
+                    : isBlacklisted ? 'var(--red-bg)' : isAccepted ? 'var(--green-bg)' : 'var(--bg-card)'
 
                   return (
                     <tr
@@ -512,7 +513,7 @@ export default function InstructorSelect() {
                       style={{
                         borderBottom: i < filtered.length - 1 ? '1px solid var(--line-soft)' : 'none',
                         background: rowBg,
-                        boxShadow: isBlacklisted ? 'inset 4px 0 0 #DC2626' : undefined,
+                        boxShadow: isBlacklisted ? 'inset 4px 0 0 var(--red)' : undefined,
                         transition: 'background .12s',
                       }}
                       onMouseEnter={(e) => {
@@ -555,10 +556,10 @@ export default function InstructorSelect() {
                                 style={{
                                   display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4,
                                   padding: '3px 10px', borderRadius: 999, border: 'none', cursor: 'pointer',
-                                  background: '#DC2626', color: '#fff', fontSize: 11, fontWeight: 700,
+                                  background: 'var(--red)', color: '#fff', fontSize: 11, fontWeight: 700,
                                 }}
                               >
-                                ⚠ BLACKLIST · {row.confirmed_record_count} รายการ · ดูรายละเอียด
+                                <Icon name="alert" size={12} /> ถูกรายงาน · {row.confirmed_record_count} รายการ · ดูรายละเอียด
                               </button>
                             )}
                           </div>
@@ -642,7 +643,7 @@ export default function InstructorSelect() {
                             style={{
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
                               width: 32, height: 32, borderRadius: 8,
-                              border: '1.5px solid var(--line)', background: '#fff',
+                              border: '1.5px solid var(--line)', background: 'var(--bg-card)',
                               cursor: 'pointer', color: 'var(--ink-400)',
                               transition: 'border-color .15s, color .15s',
                             }}
@@ -667,7 +668,7 @@ export default function InstructorSelect() {
         <div style={{
           position: 'fixed', bottom: 24, left: '50%',
           transform: 'translateX(-50%)',
-          background: '#1E2235',
+          background: 'var(--navy)',
           borderRadius: 16, padding: '12px 16px',
           display: 'flex', alignItems: 'center', gap: 10,
           boxShadow: '0 8px 32px rgba(0,0,0,.28)',
@@ -711,7 +712,7 @@ export default function InstructorSelect() {
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
               padding: '8px 18px', borderRadius: 10, border: 'none',
-              background: '#EF4444', color: '#fff',
+              background: 'var(--red)', color: '#fff',
               fontSize: 13, fontWeight: 700, cursor: 'pointer',
               opacity: bulkReviewMut.isPending ? 0.6 : 1,
               transition: 'opacity .15s',
@@ -835,11 +836,11 @@ export default function InstructorSelect() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             {/* Status banner */}
             {!!profileTarget.confirmed_record_count && (
-              <StatusBanner color="#FEF2F2" border="#FCA5A5" icon="⚠️" text={`นักศึกษาคนนี้ถูก blacklist (${profileTarget.confirmed_record_count} รายการ) — ใช้ประกอบการตัดสินใจเท่านั้น อาจารย์ยังรับได้ตามปกติ ดูรายละเอียดด้านล่าง`} textColor="#B91C1C" />
+              <StatusBanner color="var(--red-bg)" border="var(--red-line)" icon={<Icon name="alert" size={16} />} text={`นักศึกษาคนนี้ถูกรายงาน (${profileTarget.confirmed_record_count} รายการ) — ใช้ประกอบการตัดสินใจเท่านั้น อาจารย์ยังรับได้ตามปกติ ดูรายละเอียดด้านล่าง`} textColor="var(--red-ink)" />
             )}
-            {profileTarget.status === 'accepted' && <StatusBanner color="#F0FDF4" border="#BBF7D0" icon="✅" text="ผ่านการคัดเลือก" textColor="#15803D" />}
-            {profileTarget.status === 'rejected' && <StatusBanner color="#FEF2F2" border="#FECACA" icon="❌" text="ไม่ผ่านการคัดเลือก" textColor="#DC2626" />}
-            {profileTarget.status === 'pending'  && <StatusBanner color="#FFFBEB" border="#FDE68A" icon="⏳" text="รอการพิจารณา" textColor="#B45309" />}
+            {profileTarget.status === 'accepted' && <StatusBanner color="var(--green-bg)" border="var(--green-line)" icon={<Icon name="check" size={16} />} text="ผ่านการคัดเลือก" textColor="var(--green-ink)" />}
+            {profileTarget.status === 'rejected' && <StatusBanner color="var(--red-bg)" border="var(--red-line)" icon={<Icon name="x" size={16} />} text="ไม่ผ่านการคัดเลือก" textColor="var(--red)" />}
+            {profileTarget.status === 'pending'  && <StatusBanner color="var(--amber-bg)" border="var(--amber-line)" icon={<Icon name="clock" size={16} />} text="รอการพิจารณา" textColor="var(--amber-ink)" />}
             {profileTarget.status === 'withdrawn'&& <StatusBanner color="var(--bg)" border="var(--line)" icon="↩️" text="ถอนใบสมัครแล้ว" textColor="var(--ink-500)" />}
             {profileTarget.withdraw_requested && (
               <div style={{ background: 'var(--amber-bg)', borderRadius: 10, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -937,7 +938,7 @@ export default function InstructorSelect() {
 
             {/* Review result */}
             {(profileTarget.reviewed_at || profileTarget.note) && (
-              <div style={{ background: '#F8F9FB', borderRadius: 10, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ background: 'var(--line-soft)', borderRadius: 10, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-400)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>ผลการพิจารณา</div>
                 {profileTarget.reviewed_by_name && (
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -1027,7 +1028,7 @@ function ActionBtn({
   label: string
 }) {
   const bg     = color === 'green' ? 'var(--green-bg)' : 'var(--red-bg)'
-  const bgHov  = color === 'green' ? '#d1fae5' : '#fee2e2'
+  const bgHov  = color === 'green' ? 'var(--green-bg)' : 'var(--red-bg)'
   const text   = color === 'green' ? 'var(--green)' : 'var(--red)'
 
   return (
@@ -1049,10 +1050,10 @@ function ActionBtn({
   )
 }
 
-function StatusBanner({ color, border, icon, text, textColor }: { color: string; border: string; icon: string; text: string; textColor: string }) {
+function StatusBanner({ color, border, icon, text, textColor }: { color: string; border: string; icon: ReactNode; text: string; textColor: string }) {
   return (
     <div style={{ background: color, border: `1px solid ${border}`, borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ fontSize: 16 }}>{icon}</span>
+      <span style={{ display: 'inline-flex', color: textColor }}>{icon}</span>
       <span style={{ fontSize: 13, fontWeight: 600, color: textColor }}>{text}</span>
     </div>
   )

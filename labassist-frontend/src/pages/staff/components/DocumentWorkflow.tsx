@@ -12,7 +12,7 @@ import { Textarea } from '../../../components/ui/Textarea'
 import { Button } from '../../../components/ui/Button'
 import { DocumentPreviewModal } from './DocumentPreviewModal'
 import { WorkScheduleModal } from './WorkScheduleModal'
-import { ActionMenu } from './ActionMenu'
+import { ActionMenu, type ActionMenuItem } from './ActionMenu'
 
 const STEP_STATUS_CONFIG: Record<DocStepStatus, { label: string; color: string; bg: string }> = {
   not_reached:         { label: 'ยังไม่ถึงขั้นตอน', color: 'var(--ink-400)',  bg: 'var(--line-soft)' },
@@ -34,6 +34,14 @@ const MONTHLY_LABEL: Partial<Record<DocType, string>> = {
   work_report: 'รายงานผลการปฏิบัติงานนอกเวลาราชการ',
   payment_evidence: 'หลักฐานการจ่ายเงิน',
   payment_request: 'บันทึกขออนุมัติเบิกจ่ายเงิน',
+}
+
+// คำอธิบายสั้น ๆ ของขั้นตอนที่ยังไม่ได้สร้าง ให้รู้ว่ากดแล้วจะเกิดอะไร
+const STEP_HINT: Partial<Record<DocType, string>> = {
+  hiring_notice:   'จัดตารางปฏิบัติงานของ Lab Boy ให้เรียบร้อย แล้วระบบจะสร้างแบบฟอร์มแจ้งความประสงค์จ้างจากตารางนั้น',
+  approval_memo:   'ระบบสร้างบันทึกขออนุมัติจ้างจากเอกสารขั้นก่อนหน้าให้ทันที',
+  payment_request: 'ระบบสร้างบันทึกขออนุมัติเบิกจ่ายเงิน พร้อมใบขวาง (หลักฐานการจ่ายเงิน) เดือนละ 1 หน้า',
+  work_report:     'ระบบสร้างรายงานผลการปฏิบัติงานจากแผนปฏิบัติงานที่ยืนยันแล้ว',
 }
 
 function stepStatus(view: WorkflowStepView): DocStepStatus {
@@ -85,6 +93,8 @@ export function DocumentWorkflow({
   const [createTarget, setCreateTarget] = useState<CreateTarget | null>(null)
   const [form, setForm] = useState<CreateWorkflowStepPayload>({})
   const [openHistory, setOpenHistory] = useState<number | null>(null)
+  const [cancelTarget, setCancelTarget] = useState<StaffDocument | null>(null)
+  const [cancelReason, setCancelReason] = useState('')
 
   const planLocked = staffCase?.status === 'plan_locked' || staffCase?.status === 'done'
 
@@ -148,7 +158,7 @@ export function DocumentWorkflow({
 
   const cancelMut = useMutation({
     mutationFn: ({ id, reason }: { id: number; reason: string }) => staffApi.deleteDocument(id, reason),
-    onSuccess: () => { showToast('ยกเลิกเอกสารแล้ว (ยังเก็บไว้ในประวัติ)', 'success'); refresh() },
+    onSuccess: () => { showToast('ยกเลิกเอกสารแล้ว (ยังเก็บไว้ในประวัติ)', 'success'); setCancelTarget(null); refresh() },
     onError: async (err) => showToast(await getApiErrorMessage(err, 'ยกเลิกเอกสารไม่สำเร็จ'), 'error'),
   })
 
@@ -213,234 +223,229 @@ export function DocumentWorkflow({
   // first one without a document yet; later steps stay locked until it exists.
   const currentIdx = views.findIndex((v) => !v.document)
 
+  const confirmed = workflow.course.schedule_confirmed
+  const confirmBlockers = workflow.course.confirm_blocked_reasons ?? []
+  const confirmReady = !confirmed && confirmBlockers.length === 0
+  const confirmIsCurrent = currentIdx < 0 && !confirmed
+
+  function moreItems(view: WorkflowStepView, item: DocumentWorkflowItem): ActionMenuItem[] {
+    const doc = view.document
+    const isHiringNotice = view.type === 'hiring_notice'
+    return [
+      ...(doc ? [{ label: 'ดูรายละเอียดเอกสาร', onClick: () => setPreviewStep(item) }] : []),
+      ...(isHiringNotice && planLocked ? [{ label: 'ดูตารางปฏิบัติงาน', onClick: () => setShowScheduleModal(true) }] : []),
+      ...(isHiringNotice && workDates.length > 0 ? [{
+        label: showWorkDates ? 'ซ่อนวันที่ปฏิบัติงาน' : `วันที่ปฏิบัติงาน (${workDates.filter((d) => d.status === 'scheduled' || d.status === 'completed').length} วัน)`,
+        onClick: () => setShowWorkDates((v) => !v),
+      }] : []),
+      ...(view.history.length > 0 ? [{
+        label: openHistory === view.step ? 'ซ่อนฉบับก่อนหน้า' : `ฉบับก่อนหน้า (${view.history.length})`,
+        onClick: () => setOpenHistory(openHistory === view.step ? null : view.step),
+      }] : []),
+      ...(doc ? [
+        { label: 'สร้างฉบับใหม่', hint: 'ฉบับนี้จะเก็บไว้ในประวัติ', onClick: () => openCreate(view, true), separated: true },
+        { label: 'ยกเลิกเอกสาร', danger: true, disabled: cancelMut.isPending, onClick: () => { setCancelReason(''); setCancelTarget(doc) } },
+      ] : []),
+    ]
+  }
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      {views.map((view, idx) => {
-        const locked = currentIdx >= 0 && idx > currentIdx
-        const isCurrent = idx === currentIdx
-        const status = locked ? 'not_reached' : stepStatus(view)
-        const cfg = STEP_STATUS_CONFIG[status]
-        const isLast = idx === views.length - 1
-        const doc = view.document
-        const isHiringNotice = view.type === 'hiring_notice'
-        const done = !!doc
-        const item: DocumentWorkflowItem = {
-          step: view.step, label: view.label, docType: view.type, status,
-          documentId: doc?.id, documentName: doc?.name, createdAt: doc?.created_at,
-        }
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+        {views.map((view, idx) => {
+          const locked = currentIdx >= 0 && idx > currentIdx
+          const isCurrent = idx === currentIdx
+          const status = locked ? 'not_reached' : stepStatus(view)
+          const cfg = STEP_STATUS_CONFIG[status]
+          const doc = view.document
+          const isHiringNotice = view.type === 'hiring_notice'
+          const done = !!doc
+          const item: DocumentWorkflowItem = {
+            step: view.step, label: view.label, docType: view.type, status,
+            documentId: doc?.id, documentName: doc?.name, createdAt: doc?.created_at,
+          }
+          const menu = locked ? [] : moreItems(view, item)
 
-        return (
-          <div key={view.step} style={{ display: 'flex', gap: 0, position: 'relative' }}>
-            {!isLast && (
-              <div style={{ position: 'absolute', left: 23, top: 46, width: 2, height: 'calc(100% - 24px)', background: done ? 'var(--green)' : 'var(--line)' }} />
-            )}
-            <div style={{ width: 46, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 16 }}>
-              <div style={{
-                width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 12, fontWeight: 700, flexShrink: 0,
-                background: status === 'not_reached' ? 'var(--line-soft)' : done ? 'var(--green)'
-                  : status === 'waiting' || status === 'awaiting_signature' ? 'var(--amber)' : 'var(--primary)',
-                color: status === 'not_reached' ? 'var(--ink-400)' : '#fff',
-                border: `2px solid ${status === 'not_reached' ? 'var(--line)' : 'transparent'}`,
-              }}>
-                {done ? <CheckIcon /> : view.step}
-              </div>
-            </div>
-
-            <div style={{
-              flex: 1, padding: '14px 16px 20px 12px', marginBottom: isCurrent ? 8 : 0,
-              borderBottom: isLast || isCurrent ? 'none' : '1px solid var(--line-soft)',
-              ...(isCurrent ? { background: 'var(--primary-50)', border: '1.5px solid var(--primary-100)', borderRadius: 'var(--radius-card)' } : {}),
-              ...(locked ? { opacity: 0.55 } : {}),
-            }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
-                <div style={{ flex: 1, minWidth: 200 }}>
-                  {isCurrent && <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>ขั้นตอนปัจจุบัน</div>}
-                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)', lineHeight: 1.4 }}>{view.label}</div>
-                  {doc && (
-                    <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 3 }}>
-                      {doc.name}{doc.version && doc.version > 1 ? ` · ฉบับที่ ${doc.version}` : ''}
-                      <span style={{ color: 'var(--ink-400)' }}> — สร้างเมื่อ {fmtDate(doc.created_at)}</span>
-                      {doc.ref_number && <span style={{ color: 'var(--ink-400)' }}> · ที่ {doc.ref_number}</span>}
-                    </div>
-                  )}
-                </div>
-                <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 'var(--radius-pill)', background: cfg.bg, color: cfg.color, whiteSpace: 'nowrap' }}>
-                  {cfg.label}
-                </span>
-              </div>
-
+          return (
+            <TimelineNode key={view.step} state={done ? 'done' : isCurrent ? 'current' : 'locked'} marker={view.step}>
               {locked ? (
-                <div style={{ marginTop: 6, fontSize: 12, color: 'var(--ink-500)' }}>
-                  เปิดให้สร้างเมื่อสร้างเอกสารขั้นตอนที่ {views[idx - 1].step} แล้ว
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minHeight: 32 }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-400)' }}>{view.label}</span>
+                  <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>· รอขั้นตอนที่ {views[idx - 1].step}</span>
                 </div>
-              ) : <>
-              {!doc && view.blocked_reasons.length > 0 && (
-                <div role="note" style={{ marginTop: 8, padding: '8px 12px', background: 'var(--amber-bg)', border: '1px solid #FDE68A', borderRadius: 8, fontSize: 13, color: '#92400E', lineHeight: 1.6 }}>
-                  <b>ต้องทำก่อนจึงจะสร้างได้</b>
-                  <ul style={{ margin: '2px 0 0', paddingLeft: 18 }}>{view.blocked_reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
-                </div>
-              )}
-              {doc && view.stale_reasons.length > 0 && (
-                <div role="note" style={{ marginTop: 8, padding: '8px 12px', background: 'var(--amber-bg)', border: '1px solid #FDE68A', borderRadius: 8, fontSize: 12, color: '#92400E', lineHeight: 1.6 }}>
-                  <b>ข้อมูลต้นทางเปลี่ยนไปหลังสร้างเอกสารนี้</b> — เอกสารเดิมไม่ถูกแก้ไข หากต้องการให้ตรงกับข้อมูลปัจจุบันให้สร้างฉบับใหม่
-                  <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>{view.stale_reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
-                </div>
-              )}
-              {doc && !view.has_template && (
-                <div style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-500)' }}>ยังไม่มี template .docx ของเอกสารนี้ — บันทึกข้อมูลและติดตามสถานะได้ แต่ยังดาวน์โหลดไฟล์ไม่ได้</div>
-              )}
-
-              {/* One action that moves the step forward, a download, and
-                  everything else under "⋯". */}
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 12 }}>
-                {!doc && (
-                  <button
-                    onClick={() => (isHiringNotice ? setShowScheduleModal(true)
-                      : oneClick(view.type) ? createMut.mutate({ type: view.type, body: {} }) : openCreate(view, false))}
-                    disabled={(!view.can_create && !isHiringNotice) || createMut.isPending}
-                    title={!view.can_create && !isHiringNotice ? view.blocked_reasons[0] : undefined}
-                    className="btn btn-primary"
-                    style={{ fontSize: 14, padding: '9px 22px' }}
-                  >
-                    {createMut.isPending && createMut.variables?.type === view.type ? 'กำลังสร้าง...'
-                      : isHiringNotice ? 'จัดตารางปฏิบัติงาน แล้วสร้างเอกสาร' : 'สร้างเอกสาร'}
-                  </button>
-                )}
-
-                {doc && view.has_template && (view.type === 'payment_request' ? (
-                  <ActionMenu
-                    label="ดาวน์โหลด"
-                    trigger={downloadingId === doc.id || downloadingEvidenceId === doc.id ? 'กำลังโหลด...' : 'ดาวน์โหลด ▾'}
-                    className="btn btn-outline"
-                    style={{ fontSize: 14, padding: '9px 18px' }}
-                    items={[
-                      { label: 'บันทึกขออนุมัติเบิกจ่ายเงิน', hint: 'เดือนละ 1 หน้า (.docx)', onClick: () => download(doc) },
-                      { label: 'ใบขวาง (หลักฐานการจ่ายเงิน)', hint: 'เดือนละ 1 หน้า (.docx)', onClick: () => downloadEvidence(doc) },
-                    ]}
-                  />
-                ) : (
-                  <button onClick={() => download(doc)} disabled={downloadingId === doc.id} className="btn btn-outline" style={{ fontSize: 14, padding: '9px 18px' }}>
-                    {downloadingId === doc.id ? 'กำลังโหลด...' : 'ดาวน์โหลด'}
-                  </button>
-                ))}
-
-                {doc && (
-                  <button onClick={() => setPreviewStep(item)} className="btn btn-ghost" style={{ fontSize: 14, padding: '9px 18px' }}>
-                    ดูรายละเอียด
-                  </button>
-                )}
-
-                <ActionMenu
-                  label="ตัวเลือกเพิ่มเติม"
-                  trigger="เพิ่มเติม ▾"
-                  className="btn btn-ghost"
-                  style={{ fontSize: 14, padding: '9px 18px' }}
-                  items={[
-                    ...(isHiringNotice && planLocked ? [{ label: 'ดูตารางปฏิบัติงาน', onClick: () => setShowScheduleModal(true) }] : []),
-                    ...(isHiringNotice && workDates.length > 0 ? [{
-                      label: showWorkDates ? 'ซ่อนวันที่ปฏิบัติงาน' : `วันที่ปฏิบัติงาน (${workDates.filter((d) => d.status === 'scheduled' || d.status === 'completed').length} วัน)`,
-                      onClick: () => setShowWorkDates((v) => !v),
-                    }] : []),
-                    ...(view.history.length > 0 ? [{
-                      label: openHistory === view.step ? 'ซ่อนฉบับก่อนหน้า' : `ฉบับก่อนหน้า (${view.history.length})`,
-                      onClick: () => setOpenHistory(openHistory === view.step ? null : view.step),
-                    }] : []),
-                    ...(doc ? [
-                      { label: 'สร้างฉบับใหม่', hint: 'ฉบับนี้จะเก็บไว้ในประวัติ', onClick: () => openCreate(view, true), separated: true },
-                      {
-                        label: 'ยกเลิกเอกสาร', danger: true, disabled: cancelMut.isPending,
-                        onClick: () => {
-                          let reason = window.prompt('เหตุผลที่ยกเลิกเอกสารนี้ (เอกสารจะยังเก็บไว้ในประวัติ)')
-                          while (reason !== null && !reason.trim()) {
-                            reason = window.prompt('กรุณาระบุเหตุผลที่ยกเลิกเอกสาร (ต้องไม่เว้นว่าง)')
-                          }
-                          if (reason === null) return
-                          cancelMut.mutate({ id: doc.id, reason: reason.trim() })
-                        },
-                      },
-                    ] : []),
-                  ]}
-                />
-              </div>
-
-              {openHistory === view.step && (
-                <ul style={{ listStyle: 'none', margin: '10px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {view.history.slice().reverse().map((h) => (
-                    <li key={h.id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, color: 'var(--ink-600)', background: 'var(--line-soft)', borderRadius: 8, padding: '6px 10px' }}>
-                      <span style={{ fontWeight: 600 }}>ฉบับที่ {h.version ?? 1}</span>
-                      <span>{DOC_STATUS_LABEL[h.status] ?? h.status}</span>
-                      <span style={{ color: 'var(--ink-400)' }}>สร้างเมื่อ {fmtDate(h.created_at)}</span>
-                      {view.has_template && h.status !== 'cancelled' && (
-                        <button onClick={() => download(h)} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>ดาวน์โหลด</button>
+              ) : (
+                <div style={isCurrent ? {
+                  background: 'var(--primary-50)', border: '1.5px solid var(--primary-100)',
+                  borderRadius: 12, padding: '14px 16px',
+                } : undefined} className={isCurrent ? undefined : 'tl-row'}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+                      {isCurrent && (
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--primary)', letterSpacing: 0.3, marginBottom: 2 }}>
+                          ขั้นตอนถัดไป
+                        </div>
                       )}
-                    </li>
-                  ))}
-                </ul>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: isCurrent ? 16 : 14, fontWeight: isCurrent ? 700 : 600, color: 'var(--ink-900)', lineHeight: 1.45 }}>{view.label}</span>
+                        {!done && (
+                          <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 'var(--radius-pill)', background: cfg.bg, color: cfg.color, whiteSpace: 'nowrap' }}>
+                            {cfg.label}
+                          </span>
+                        )}
+                      </div>
+                      {doc ? (
+                        <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2 }}>
+                          {doc.version && doc.version > 1 ? `ฉบับที่ ${doc.version} · ` : ''}สร้างเมื่อ {fmtDate(doc.created_at)}
+                          {doc.ref_number && <> · ที่ {doc.ref_number}</>}
+                        </div>
+                      ) : STEP_HINT[view.type] && (
+                        <div style={{ fontSize: 13, color: 'var(--ink-600)', marginTop: 4, lineHeight: 1.5 }}>{STEP_HINT[view.type]}</div>
+                      )}
+                    </div>
+
+                    {/* การดำเนินการ: ปุ่มหลัก 1 ปุ่ม + เมนู ⋯ */}
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                      {!doc && (
+                        <Button
+                          onClick={() => (isHiringNotice ? setShowScheduleModal(true)
+                            : oneClick(view.type) ? createMut.mutate({ type: view.type, body: {} }) : openCreate(view, false))}
+                          disabled={(!view.can_create && !isHiringNotice) || createMut.isPending}
+                          loading={createMut.isPending && createMut.variables?.type === view.type}
+                          title={!view.can_create && !isHiringNotice ? view.blocked_reasons[0] : undefined}
+                          style={{ minHeight: 40 }}
+                        >
+                          {isHiringNotice ? 'จัดตารางปฏิบัติงาน แล้วสร้างเอกสาร' : 'สร้างเอกสาร'}
+                        </Button>
+                      )}
+
+                      {doc && view.has_template && (view.type === 'payment_request' ? (
+                        <ActionMenu
+                          label="ดาวน์โหลด"
+                          align="right"
+                          trigger={downloadingId === doc.id || downloadingEvidenceId === doc.id ? 'กำลังโหลด...' : <><DownloadIcon /> ดาวน์โหลด<ChevronIcon /></>}
+                          className="doc-action"
+                          items={[
+                            { label: 'บันทึกขออนุมัติเบิกจ่ายเงิน', hint: 'เดือนละ 1 หน้า (.docx)', onClick: () => download(doc) },
+                            { label: 'ใบขวาง (หลักฐานการจ่ายเงิน)', hint: 'เดือนละ 1 หน้า (.docx)', onClick: () => downloadEvidence(doc) },
+                          ]}
+                        />
+                      ) : (
+                        <button onClick={() => download(doc)} disabled={downloadingId === doc.id} className="doc-action">
+                          {downloadingId === doc.id ? 'กำลังโหลด...' : <><DownloadIcon /> ดาวน์โหลด</>}
+                        </button>
+                      ))}
+
+                      <ActionMenu
+                        label="ตัวเลือกเพิ่มเติม"
+                        align="right"
+                        trigger={<DotsIcon />}
+                        className="doc-action doc-action--icon"
+                        items={menu}
+                      />
+                    </div>
+                  </div>
+
+                  {!doc && view.blocked_reasons.length > 0 && (
+                    <Note title="ต้องทำก่อนจึงจะสร้างได้" items={view.blocked_reasons} />
+                  )}
+                  {doc && view.stale_reasons.length > 0 && (
+                    <Note
+                      title="ข้อมูลต้นทางเปลี่ยนหลังสร้างเอกสารนี้ — ถ้าต้องการให้ตรงกับข้อมูลปัจจุบัน ให้เลือก “สร้างฉบับใหม่” จากเมนู ⋯"
+                      items={view.stale_reasons}
+                    />
+                  )}
+                  {doc && !view.has_template && (
+                    <div style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-500)' }}>ยังไม่มี template .docx ของเอกสารนี้ — ติดตามสถานะได้ แต่ยังดาวน์โหลดไฟล์ไม่ได้</div>
+                  )}
+
+                  {openHistory === view.step && (
+                    <ul style={{ listStyle: 'none', margin: '10px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {view.history.slice().reverse().map((h) => (
+                        <li key={h.id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, color: 'var(--ink-600)', background: 'var(--line-soft)', borderRadius: 8, padding: '6px 10px' }}>
+                          <span style={{ fontWeight: 600 }}>ฉบับที่ {h.version ?? 1}</span>
+                          <span>{DOC_STATUS_LABEL[h.status] ?? h.status}</span>
+                          <span style={{ color: 'var(--ink-400)' }}>สร้างเมื่อ {fmtDate(h.created_at)}</span>
+                          {view.has_template && h.status !== 'cancelled' && (
+                            <button onClick={() => download(h)} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>ดาวน์โหลด</button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  {isHiringNotice && showWorkDates && workDates.length > 0 && <WorkDatesPanel dates={workDates} />}
+                </div>
               )}
+            </TimelineNode>
+          )
+        })}
 
-              {isHiringNotice && showWorkDates && workDates.length > 0 && <WorkDatesPanel dates={workDates} />}
-              </>}
-            </div>
-          </div>
-        )
-      })}
-
-      {/* Last step: staff confirm the work schedule once every document is signed. */}
-      {(() => {
-        const confirmed = workflow.course.schedule_confirmed
-        const blockers = workflow.course.confirm_blocked_reasons ?? []
-        const ready = !confirmed && blockers.length === 0
-        return (
-          <div style={{
-            marginTop: 16, padding: '16px 18px', borderRadius: 10,
-            border: `1px solid ${confirmed ? '#BBF7D0' : ready ? 'var(--primary-100)' : 'var(--line)'}`,
-            background: confirmed ? 'var(--green-bg)' : ready ? 'var(--primary-50)' : 'var(--line-soft)',
-          }}>
+        {/* ขั้นสุดท้าย: ยืนยันตารางปฏิบัติงาน เมื่อเอกสารครบทุกขั้น */}
+        <TimelineNode last state={confirmed ? 'done' : confirmIsCurrent ? 'current' : 'locked'} marker={views.length + 1}>
+          <div style={confirmIsCurrent ? {
+            background: confirmReady ? 'var(--primary-50)' : 'var(--line-soft)',
+            border: `1.5px solid ${confirmReady ? 'var(--primary-100)' : 'var(--line)'}`,
+            borderRadius: 12, padding: '14px 16px',
+          } : undefined} className={confirmIsCurrent ? undefined : 'tl-row'}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-900)' }}>ยืนยันตารางปฏิบัติงาน</div>
-                <div style={{ fontSize: 13, color: confirmed ? 'var(--green)' : 'var(--ink-600)', marginTop: 2 }}>
+              <div style={{ flex: '1 1 240px' }}>
+                {confirmIsCurrent && (
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--primary)', letterSpacing: 0.3, marginBottom: 2 }}>ขั้นตอนสุดท้าย</div>
+                )}
+                <div style={{ fontSize: confirmIsCurrent ? 16 : 14, fontWeight: 700, color: confirmed || confirmIsCurrent ? 'var(--ink-900)' : 'var(--ink-400)' }}>
+                  ยืนยันตารางปฏิบัติงาน
+                </div>
+                <div style={{ fontSize: 13, color: confirmed ? 'var(--green)' : 'var(--ink-500)', marginTop: 2, lineHeight: 1.5 }}>
                   {confirmed
                     ? 'ยืนยันแล้ว — นักศึกษาเห็นตารางปฏิบัติงานและได้รับแจ้งเตือนแล้ว'
-                    : ready
-                      ? `สร้างเอกสารครบแล้ว — ยืนยันเพื่อแจ้งตารางปฏิบัติงานให้ Lab Boy ${workflow.course.labboy_count} คน`
+                    : confirmReady
+                      ? `เอกสารครบแล้ว — ยืนยันเพื่อแจ้งตารางปฏิบัติงานให้ Lab Boy ${workflow.course.labboy_count} คน`
                       : 'ยืนยันได้เมื่อสร้างเอกสารทุกขั้นของรายวิชาครบแล้ว'}
                 </div>
               </div>
-              {!confirmed && (
-                <Button onClick={() => confirmScheduleMut.mutate()} loading={confirmScheduleMut.isPending} disabled={!ready}>
+              {confirmIsCurrent && (
+                <Button onClick={() => confirmScheduleMut.mutate()} loading={confirmScheduleMut.isPending} disabled={!confirmReady} style={{ minHeight: 40 }}>
                   ยืนยันตารางปฏิบัติงาน
                 </Button>
               )}
             </div>
-            {!confirmed && blockers.length > 0 && (
+            {!confirmed && confirmBlockers.length > 0 && (
               <ul style={{ margin: '10px 0 0', paddingLeft: 18, fontSize: 12, color: 'var(--ink-500)', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {blockers.map((r) => <li key={r}>{r}</li>)}
+                {confirmBlockers.map((r) => <li key={r}>{r}</li>)}
               </ul>
             )}
           </div>
-        )
-      })()}
+        </TimelineNode>
+      </ol>
 
-      <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-400)', letterSpacing: 0.5, marginBottom: 10 }}>เอกสารรายเดือน (สร้างตามรอบเดือนที่ปฏิบัติงาน)</div>
-        {workflow.monthly_documents.length === 0 ? (
-          <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>ยังไม่มีเอกสารรายเดือน</div>
-        ) : (
-          <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {workflow.monthly_documents.map((d) => (
-              <li key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 13, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8 }}>
-                <span style={{ fontWeight: 600, color: 'var(--ink-900)' }}>{MONTHLY_LABEL[d.type] ?? d.type}</span>
-                {d.period && <span style={{ color: 'var(--ink-500)' }}>{d.period.month}/{d.period.year}</span>}
-                <span style={{ color: 'var(--ink-500)' }}>{DOC_STATUS_LABEL[d.status] ?? d.status}</span>
-                <span style={{ color: 'var(--ink-400)', fontSize: 12 }}>{fmtDate(d.created_at)}</span>
-                <button onClick={() => download(d)} disabled={downloadingId === d.id} className="btn btn-outline" style={{ marginLeft: 'auto' }}>ดาวน์โหลด</button>
+      {/* เอกสารรายเดือน — แสดงเฉพาะเมื่อมีเอกสารจริง */}
+      {workflow.monthly_documents.length > 0 && (
+      <div style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid var(--line-soft)' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-900)' }}>เอกสารรายเดือน</div>
+          <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>สร้างตามรอบเดือนที่ปฏิบัติงาน</div>
+        </div>
+        <ul style={{ listStyle: 'none', margin: 0, padding: 0, border: '1px solid var(--line)', borderRadius: 10, overflow: 'hidden' }}>
+            {workflow.monthly_documents.map((d, i) => (
+              <li key={d.id} style={{
+                display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+                padding: '10px 14px', borderTop: i ? '1px solid var(--line-soft)' : 'none', fontSize: 13,
+              }}>
+                <FileIcon />
+                <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, color: 'var(--ink-900)' }}>{MONTHLY_LABEL[d.type] ?? d.type}</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>
+                    {d.period ? `${MONTH_TH[d.period.month]} ${d.period.year} · ` : ''}{DOC_STATUS_LABEL[d.status] ?? d.status} · {fmtDate(d.created_at)}
+                  </div>
+                </div>
+                <button onClick={() => download(d)} disabled={downloadingId === d.id} className="doc-action">
+                  {downloadingId === d.id ? 'กำลังโหลด...' : <><DownloadIcon /> ดาวน์โหลด</>}
+                </button>
               </li>
             ))}
           </ul>
-        )}
       </div>
+      )}
 
       <DocumentPreviewModal step={previewStep} onClose={() => setPreviewStep(null)} />
 
@@ -475,6 +480,34 @@ export function DocumentWorkflow({
         )}
       </Modal>
 
+      <Modal
+        isOpen={!!cancelTarget}
+        onClose={() => !cancelMut.isPending && setCancelTarget(null)}
+        title="ยกเลิกเอกสาร"
+        size="md"
+        footer={<>
+          <Button variant="outline" onClick={() => setCancelTarget(null)} disabled={cancelMut.isPending}>ไม่ยกเลิก</Button>
+          <Button
+            variant="danger"
+            loading={cancelMut.isPending}
+            disabled={!cancelReason.trim()}
+            onClick={() => cancelTarget && cancelMut.mutate({ id: cancelTarget.id, reason: cancelReason.trim() })}
+          >
+            ยกเลิกเอกสาร
+          </Button>
+        </>}
+      >
+        {cancelTarget && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)' }}>{cancelTarget.name}</div>
+            <div style={{ fontSize: 13, color: '#92400E', background: 'var(--amber-bg)', borderRadius: 8, padding: '8px 12px' }}>
+              เอกสารจะถูกทำเครื่องหมาย "ยกเลิกแล้ว" และยังเก็บไว้ในประวัติ — ไม่ถูกลบ
+            </div>
+            <Textarea label="เหตุผลที่ยกเลิก *" rows={3} maxLength={300} value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} />
+          </div>
+        )}
+      </Modal>
+
       {showScheduleModal && (
         <WorkScheduleModal
           caseId={staffCase?.id}
@@ -503,9 +536,81 @@ export function DocumentWorkflow({
 
 function CheckIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="20 6 9 17 4 12"/>
     </svg>
+  )
+}
+
+type NodeState = 'done' | 'current' | 'locked'
+
+// One row of the vertical timeline: a marker on a rail plus its content. The
+// rail segment grows with the content, so the connector always lines up.
+function TimelineNode({ state, marker, last, children }: { state: NodeState; marker: number; last?: boolean; children: React.ReactNode }) {
+  const circle: React.CSSProperties = state === 'done'
+    ? { background: 'var(--green-bg)', color: 'var(--green)', border: '1px solid #BBF7D0' }
+    : state === 'current'
+      ? { background: 'var(--primary)', color: '#fff', border: '1px solid var(--primary)', boxShadow: '0 0 0 4px var(--primary-100)' }
+      : { background: '#fff', color: 'var(--ink-400)', border: '1px solid var(--line)' }
+  return (
+    <li style={{ display: 'flex', gap: 14 }} aria-current={state === 'current' ? 'step' : undefined}>
+      <div style={{ width: 28, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 10 }}>
+        <div style={{
+          width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 13, fontWeight: 700, ...circle,
+        }}>
+          {state === 'done' ? <CheckIcon /> : marker}
+        </div>
+        {!last && (
+          <div style={{ flex: 1, width: 1, minHeight: 12, margin: '6px 0 -4px', background: 'var(--line)' }} />
+        )}
+      </div>
+      <div style={{ flex: 1, minWidth: 0, paddingBottom: last ? 0 : 6 }}>{children}</div>
+    </li>
+  )
+}
+
+function Note({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div role="note" style={{ marginTop: 10, padding: '8px 12px', background: 'var(--amber-bg)', border: '1px solid #FDE68A', borderRadius: 8, fontSize: 12, color: '#92400E', lineHeight: 1.6 }}>
+      <b>{title}</b>
+      <ul style={{ margin: '2px 0 0', paddingLeft: 18 }}>{items.map((r, i) => <li key={i}>{r}</li>)}</ul>
+    </div>
+  )
+}
+
+function ChevronIcon() {
+  return (
+    <svg aria-hidden width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 2 }}>
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  )
+}
+
+function DotsIcon() {
+  return (
+    <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+      <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
+    </svg>
+  )
+}
+
+function DownloadIcon() {
+  return (
+    <svg aria-hidden width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" >
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  )
+}
+
+function FileIcon() {
+  return (
+    <span aria-hidden style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--primary-50)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+      </svg>
+    </span>
   )
 }
 

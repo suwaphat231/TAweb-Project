@@ -14,7 +14,7 @@ import { DateInput } from '../ui/DateInput'
 const PAGE_SIZE = 20
 
 const controlStyle: React.CSSProperties = {
-  padding: '7px 10px', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-input)',
+  height: 38, padding: '0 10px', border: '1px solid var(--line)', borderRadius: 'var(--radius-input)',
   fontSize: 13, color: 'var(--ink-900)', outline: 'none', background: '#fff',
 }
 
@@ -65,30 +65,47 @@ export function ReportList({
     return (v: T) => { set(v); setPage(1) }
   }
 
-  const headers = ['วันที่เกิดเหตุ', ...(showStudent ? ['นักศึกษา'] : []), 'รายวิชา', 'เหตุการณ์ที่รายงาน', ...(showReporter ? ['ผู้รายงาน'] : []), 'สถานะ', 'อัปเดตล่าสุด']
+  const hasFilters = !!(search || category || courseId || dateFrom || dateTo)
+  function clearFilters() {
+    setSearch(''); setCategory(''); setCourseId(0); setDateFrom(''); setDateTo(''); setPage(1)
+  }
+  const showToolbar = statusOptions.length > 1 || !!toolbarExtra
+
+  // คอลัมน์: คนที่ถูกรายงานมาก่อน → วิชา → เรื่อง → (ผู้รายงาน) → วันที่ → สถานะ
+  const headers = [
+    ...(showStudent ? ['นักศึกษา'] : []), 'รายวิชา', 'เรื่องที่รายงาน',
+    ...(showReporter ? ['ผู้รายงาน'] : []), 'วันที่เกิดเหตุ', 'สถานะ', '',
+  ]
 
   return (
     <div>
-      <div style={{
-        display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap',
-        background: '#fff', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-card)', padding: '10px 14px',
-      }}>
-        {statusOptions.length > 1 && <FilterChips options={statusOptions} value={status} onChange={withReset(setStatus)} />}
-        <div style={{ flex: 1 }} />
-        {toolbarExtra}
-      </div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+      {showToolbar && (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+          {statusOptions.length > 1 && <FilterChips options={statusOptions} value={status} onChange={withReset(setStatus)} />}
+          <div style={{ flex: 1 }} />
+          {toolbarExtra}
+        </div>
+      )}
+
+      {/* ตัวกรอง */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         {showSearch && (
-          <input
-            value={search}
-            onChange={(e) => withReset(setSearch)(e.target.value)}
-            placeholder="ค้นหาชื่อ / รหัสนักศึกษา..."
-            aria-label="ค้นหานักศึกษา"
-            style={{ ...controlStyle, width: 220 }}
-          />
+          <label style={{ position: 'relative', flex: '1 1 220px', maxWidth: 300 }}>
+            <svg aria-hidden width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-400)' }}>
+              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              value={search}
+              onChange={(e) => withReset(setSearch)(e.target.value)}
+              placeholder="ค้นหาชื่อหรือรหัสนักศึกษา"
+              aria-label="ค้นหานักศึกษา"
+              style={{ ...controlStyle, width: '100%', paddingLeft: 32, boxSizing: 'border-box' }}
+            />
+          </label>
         )}
         <select aria-label="ประเภทเหตุการณ์" value={category} onChange={(e) => withReset(setCategory)(e.target.value as ReportCategory | '')} style={controlStyle}>
-          <option value="">ทุกประเภทเหตุการณ์</option>
+          <option value="">ทุกเรื่อง</option>
           {categoryOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
         {courseOptions && courseOptions.length > 0 && (
@@ -97,23 +114,34 @@ export function ReportList({
             {courseOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         )}
-        <label style={{ fontSize: 12, color: 'var(--ink-500)', display: 'flex', alignItems: 'center', gap: 6 }}>
-          ตั้งแต่ <DateInput value={dateFrom} onChange={(e) => withReset(setDateFrom)(e.target.value)} style={controlStyle} />
-        </label>
-        <label style={{ fontSize: 12, color: 'var(--ink-500)', display: 'flex', alignItems: 'center', gap: 6 }}>
-          ถึง <DateInput value={dateTo} onChange={(e) => withReset(setDateTo)(e.target.value)} style={controlStyle} />
-        </label>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--ink-500)' }}>
+          <DateInput aria-label="ตั้งแต่วันที่" value={dateFrom} onChange={(e) => withReset(setDateFrom)(e.target.value)} style={controlStyle} />
+          <span aria-hidden>–</span>
+          <DateInput aria-label="ถึงวันที่" value={dateTo} onChange={(e) => withReset(setDateTo)(e.target.value)} style={controlStyle} />
+        </div>
+        {hasFilters && (
+          <button type="button" onClick={clearFilters} style={{
+            border: 'none', background: 'none', cursor: 'pointer', padding: '6px 4px',
+            fontSize: 13, fontWeight: 600, color: 'var(--primary)',
+          }}>
+            ล้างตัวกรอง
+          </button>
+        )}
       </div>
 
       {isError ? (
         <ErrorState onRetry={() => refetch()} />
       ) : (
-        <div style={{ background: '#fff', borderRadius: 'var(--radius-card)', overflow: 'auto', border: '1.5px solid var(--line)' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+        <div style={{ background: '#fff', borderRadius: 12, overflow: 'auto', border: '1px solid var(--line)' }}>
+          <table className="report-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
             <thead>
-              <tr style={{ background: 'var(--line-soft)', borderBottom: '1.5px solid var(--line)' }}>
-                {headers.map((h) => (
-                  <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--ink-500)', whiteSpace: 'nowrap' }}>{h}</th>
+              <tr>
+                {headers.map((h, i) => (
+                  <th key={i} scope="col" style={{
+                    padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600,
+                    color: 'var(--ink-400)', whiteSpace: 'nowrap', borderBottom: '1px solid var(--line)',
+                    width: h === '' ? 40 : undefined,
+                  }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -121,36 +149,46 @@ export function ReportList({
               {isLoading ? (
                 <tr><td colSpan={headers.length} style={{ padding: 24 }}><Skeleton lines={4} height={14} /></td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={headers.length} style={{ padding: '52px 24px', textAlign: 'center', fontSize: 13, color: 'var(--ink-400)' }}>{emptyText}</td></tr>
-              ) : rows.map((r: LabBoyReport, i) => (
+                <tr><td colSpan={headers.length} style={{ padding: '56px 24px', textAlign: 'center', fontSize: 14, color: 'var(--ink-400)' }}>
+                  {hasFilters ? 'ไม่พบรายการที่ตรงกับตัวกรอง' : emptyText}
+                </td></tr>
+              ) : rows.map((r: LabBoyReport) => (
                 <tr key={r.id}
                   tabIndex={0}
+                  aria-label={`เปิดรายงานของ ${r.student_name}`}
                   onClick={() => navigate(`/reports/${r.id}`)}
                   onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/reports/${r.id}`) }}
-                  style={{ borderBottom: i < rows.length - 1 ? '1px solid var(--line-soft)' : 'none', cursor: 'pointer', transition: 'background .1s' }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--primary-50)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}
                 >
-                  <td style={{ padding: '13px 16px', fontSize: 13, whiteSpace: 'nowrap' }}>{formatDate(r.incident_date)}</td>
                   {showStudent && (
-                    <td style={{ padding: '13px 16px' }}>
+                    <td>
                       <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--ink-900)' }}>{r.student_name}</div>
-                      <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{r.student_code || '—'}</div>
+                      <div style={{ fontSize: 12, color: 'var(--ink-400)', fontVariantNumeric: 'tabular-nums' }}>{r.student_code || '—'}</div>
                     </td>
                   )}
-                  <td style={{ padding: '13px 16px', fontSize: 13 }}>
-                    <div style={{ fontWeight: 600, color: 'var(--ink-900)' }}>{r.course_code}{r.course_section ? <span style={{ color: 'var(--ink-400)', fontWeight: 400 }}> · Sec {r.course_section}</span> : null}</div>
+                  <td>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-900)' }}>
+                      {r.course_code}
+                      {r.course_section ? <span style={{ color: 'var(--ink-400)', fontWeight: 400 }}> · Sec {r.course_section}</span> : null}
+                    </div>
                     <div style={{ color: 'var(--ink-500)', fontSize: 12, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.course_title}</div>
                   </td>
-                  <td style={{ padding: '13px 16px', fontSize: 13, color: 'var(--ink-700)' }}>{categoryLabel[r.category]}</td>
-                  {showReporter && <td style={{ padding: '13px 16px', fontSize: 13, color: 'var(--ink-700)' }}>{r.reporter_name}</td>}
-                  <td style={{ padding: '13px 16px' }}>
+                  <td style={{ fontSize: 13, color: 'var(--ink-700)', maxWidth: 240 }}>{categoryLabel[r.category]}</td>
+                  {showReporter && <td style={{ fontSize: 13, color: 'var(--ink-600)' }}>{r.reporter_name}</td>}
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <div style={{ fontSize: 13, color: 'var(--ink-900)' }}>{formatDate(r.incident_date)}</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>อัปเดต {formatDate(r.updated_at)}</div>
+                  </td>
+                  <td>
                     <ReportStatusBadge status={r.status} />
                     {r.reconsideration_requested_at && r.status === 'CONFIRMED' && (
-                      <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4, fontWeight: 600 }}>มีคำขอทบทวน</div>
+                      <div style={{ fontSize: 12, color: 'var(--amber)', marginTop: 4, fontWeight: 600 }}>มีคำขอทบทวน</div>
                     )}
                   </td>
-                  <td style={{ padding: '13px 16px', fontSize: 12, color: 'var(--ink-400)', whiteSpace: 'nowrap' }}>{formatDate(r.updated_at)}</td>
+                  <td aria-hidden style={{ color: 'var(--ink-400)', textAlign: 'right' }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -159,13 +197,15 @@ export function ReportList({
       )}
 
       {total > 0 && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, fontSize: 13, color: 'var(--ink-500)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 12, fontSize: 13, color: 'var(--ink-500)' }}>
           <span>ทั้งหมด {total} รายการ</span>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)}>ก่อนหน้า</Button>
-            <span>หน้า {page} / {pages}</span>
-            <Button size="sm" variant="outline" disabled={page >= pages} onClick={() => setPage(page + 1)}>ถัดไป</Button>
-          </div>
+          {pages > 1 && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)}>ก่อนหน้า</Button>
+              <span>หน้า {page} / {pages}</span>
+              <Button size="sm" variant="outline" disabled={page >= pages} onClick={() => setPage(page + 1)}>ถัดไป</Button>
+            </div>
+          )}
         </div>
       )}
     </div>

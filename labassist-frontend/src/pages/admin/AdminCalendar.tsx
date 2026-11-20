@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import { AdminPageHeader } from '../../components/admin/AdminPageHeader'
 import { HolidayOverview } from '../../components/admin/HolidayOverview'
-import { Link } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
 import { adminApi } from '../../services/api'
@@ -211,7 +210,7 @@ function ImportTab() {
           )}
           {preview.entries.length === 0 && termCount === 0 && events.length === 0 && (
             <Notice tone="amber">
-              ไม่พบวันหยุดในไฟล์นี้ — ตรวจสอบว่าเป็นไฟล์ปฏิทินการศึกษา หรือเพิ่มวันหยุดเองที่หน้า “กำหนดวันหยุดปฏิบัติงาน”
+              ไม่พบวันหยุดในไฟล์นี้ — ตรวจสอบว่าเป็นไฟล์ปฏิทินการศึกษา
             </Notice>
           )}
 
@@ -348,11 +347,7 @@ export default function AdminCalendar() {
     <div>
       <AdminPageHeader
         title="ปฏิทินการศึกษา"
-        description={<>
-          ดูวันหยุดทั้งหมดของปี และจัดการการนำเข้า — วันหยุดแสดงในหน้า{' '}
-          <Link to="/staff/settings" style={{ color: 'var(--primary)', fontWeight: 600 }}>กำหนดวันหยุดปฏิบัติงาน</Link>
-          {' '}ของเจ้าหน้าที่ และยกเลิกวันทำงานของ Lab Boy ที่ตรงกับวันหยุดอัตโนมัติ
-        </>}
+        description="ดูวันหยุดทั้งหมดของปี และจัดการการนำเข้า — วันหยุดจะแสดงในหน้ากำหนดวันหยุดปฏิบัติงานของเจ้าหน้าที่ และยกเลิกวันทำงานของ Lab Boy ที่ตรงกับวันหยุดอัตโนมัติ"
       />
       <div className="cal-tabs" role="tablist" aria-label="ปฏิทินการศึกษา">
         <button type="button" role="tab" aria-selected={tab === 'overview'} onClick={() => setTab('overview')}>ภาพรวมวันหยุด</button>

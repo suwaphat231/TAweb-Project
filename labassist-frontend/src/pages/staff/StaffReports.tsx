@@ -30,7 +30,7 @@ export default function StaffReports() {
         />
       ) : (
         <ReportPageHeader
-          title="นักศึกษาที่ถูก blacklist"
+          title="นักศึกษาที่ถูกรายงาน"
           subtitle="รายชื่อนักศึกษาที่ผู้ดูแลระบบยืนยันรายงานการปฏิบัติงานแล้ว — ใช้ประกอบการจัดทำเอกสาร การพิจารณาเป็นหน้าที่ของผู้ดูแลระบบ"
         />
       )}
@@ -39,7 +39,7 @@ export default function StaffReports() {
         fetchPage={reportsApi.reviewQueue}
         statusOptions={isAdmin ? STATUS_OPTIONS : STAFF_STATUS_OPTIONS}
         showReporter
-        emptyText={isAdmin ? 'ไม่มีรายงานในสถานะนี้' : 'ยังไม่มีนักศึกษาที่ถูก blacklist'}
+        emptyText={isAdmin ? 'ไม่มีรายงานในสถานะนี้' : 'ยังไม่มีนักศึกษาที่ถูกรายงาน'}
       />
     </div>
   )

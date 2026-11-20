@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { findStaffReview } from '../../utils/staffOffering'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { staffApi, applicationsAPI, coursesAPI } from '../../services/api'
-import { buildCourseOffering } from './staffCourseUtils'
+import { buildCourseOffering, docProgress } from './staffCourseUtils'
 import { DocumentWorkflow } from './components/DocumentWorkflow'
 import { SelectedStudentsPanel } from './components/SelectedStudentsPanel'
 import type { CalendarDate, CalendarDateType } from '../../types'
@@ -142,10 +142,8 @@ export default function StaffCourseDetail() {
     )
   }
 
-  const docProgress = offering.totalDocs > 0 ? (offering.completedDocs / offering.totalDocs) * 100 : 0
-  const STATUS_BADGE: Record<string, string> = {
-    waiting: 'badge badge-amber', in_progress: 'badge badge-primary', completed: 'badge badge-green',
-  }
+  const progress = docProgress(review, allDocs)
+  const progressPct = progress.total > 0 ? (progress.signed / progress.total) * 100 : 0
   const STATUS_LABEL: Record<string, string> = {
     waiting: 'รอจัดทำเอกสาร', in_progress: 'กำลังดำเนินการ', completed: 'เสร็จสิ้นแล้ว',
   }
@@ -166,63 +164,61 @@ export default function StaffCourseDetail() {
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto' }}>
       {/* Back button */}
-      <button onClick={() => navigate('/staff/home')} className="btn btn-ghost btn-sm" style={{ marginBottom: 16 }} aria-label="กลับหน้าหลัก">
+      <button onClick={() => navigate('/staff/home')} className="link-back" aria-label="กลับหน้าหลัก">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="15 18 9 12 15 6"/>
         </svg>
         กลับรายการวิชา
       </button>
 
-      {/* Course header */}
-      <div style={{
-        background: '#fff', border: '1.5px solid var(--line)',
-        borderRadius: 'var(--radius-card)', padding: '20px 24px', marginBottom: 20,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 280 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
-              <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink-900)' }}>
-                {offering.courseCode}
-              </span>
-              <span className="badge badge-primary">กลุ่ม {offering.sectionNo}</span>
-              <span className={STATUS_BADGE[offering.docStatus]}>{STATUS_LABEL[offering.docStatus]}</span>
-            </div>
-            <div style={{ fontSize: 15, color: 'var(--ink-700)', marginBottom: 10 }}>
-              {offering.courseTitle}
-              {courseDetail?.english_title && (
-                <span style={{ fontSize: 13, color: 'var(--ink-400)', marginLeft: 8 }}>
-                  ({courseDetail.english_title})
-                </span>
-              )}
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 20px', fontSize: 12, color: 'var(--ink-500)' }}>
-              <span>ภาคเรียนที่ {offering.semester}</span>
-              {courseDetail?.credits && <span>หน่วยกิต {courseDetail.credits}</span>}
-              {(courseDetail?.schedule ?? offering.schedule) && (
-                <span>{formatSchedule(courseDetail?.schedule ?? offering.schedule, { separator: ' / ' })}</span>
-              )}
-            </div>
-          </div>
-
-          {/* Progress */}
-          <div style={{ minWidth: 200 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 12 }}>
-              <span style={{ color: 'var(--ink-500)', fontWeight: 500 }}>ความคืบหน้าเอกสาร</span>
-              <span style={{ fontWeight: 700, color: 'var(--ink-700)' }}>
-                {offering.completedDocs} / {offering.totalDocs}
-              </span>
-            </div>
-            <div style={{ height: 8, background: 'var(--line-soft)', borderRadius: 999, overflow: 'hidden' }}>
-              <div style={{
-                height: '100%', borderRadius: 999, transition: 'width .4s',
-                background: offering.docStatus === 'completed' ? 'var(--green)'
-                  : offering.docStatus === 'in_progress' ? 'var(--primary)' : 'var(--amber)',
-                width: `${docProgress}%`,
+      {/* Course header — minimal: ไม่มีกล่อง ใช้ลำดับตัวอักษรแบ่งความสำคัญ */}
+      <header style={{ display: 'flex', alignItems: 'flex-end', gap: 24, flexWrap: 'wrap', marginBottom: 24 }}>
+        <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6, fontSize: 13, color: 'var(--ink-500)' }}>
+            <span style={{ fontWeight: 700, color: 'var(--primary)', letterSpacing: 0.3 }}>{offering.courseCode}</span>
+            <span aria-hidden>·</span>
+            <span>กลุ่ม {offering.sectionNo}</span>
+            <span aria-hidden>·</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span aria-hidden style={{
+                width: 7, height: 7, borderRadius: '50%',
+                background: offering.docStatus === 'completed' ? 'var(--green)' : offering.docStatus === 'in_progress' ? 'var(--primary)' : 'var(--amber)',
               }} />
-            </div>
+              {STATUS_LABEL[offering.docStatus]}
+            </span>
+          </div>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink-900)', lineHeight: 1.35, margin: 0 }}>
+            {offering.courseTitle}
+          </h1>
+          {courseDetail?.english_title && (
+            <div style={{ fontSize: 13, color: 'var(--ink-400)', marginTop: 2 }}>{courseDetail.english_title}</div>
+          )}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', fontSize: 13, color: 'var(--ink-500)', marginTop: 10 }}>
+            <span>ภาคเรียนที่ {offering.semester}/{offering.academicYear}</span>
+            {courseDetail?.credits && <span>{courseDetail.credits} หน่วยกิต</span>}
+            {(courseDetail?.schedule ?? offering.schedule) && (
+              <span>{formatSchedule(courseDetail?.schedule ?? offering.schedule, { separator: ' / ' })}</span>
+            )}
           </div>
         </div>
-      </div>
+
+        {/* Progress — นับเฉพาะเอกสารต้นภาค ให้ตรงกับไทม์ไลน์ด้านล่าง */}
+        <div style={{ flex: '0 0 200px' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>เอกสารต้นภาคเรียน</span>
+            <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>
+              <b style={{ fontSize: 18, color: 'var(--ink-900)' }}>{progress.signed}</b> / {progress.total}
+            </span>
+          </div>
+          <div style={{ height: 4, background: 'var(--line)', borderRadius: 999, overflow: 'hidden' }}>
+            <div style={{
+              height: '100%', borderRadius: 999, transition: 'width .4s',
+              background: 'var(--primary)',
+              width: `${progressPct}%`,
+            }} />
+          </div>
+        </div>
+      </header>
 
       {/* Tab navigation */}
       <div className="tab-bar">
@@ -235,7 +231,7 @@ export default function StaffCourseDetail() {
           >
             {tab.label}
             {tab.id === 'students' && accepted.length > 0 && (
-              <span className="badge badge-green" style={{ marginLeft: 6, fontSize: 10, padding: '1px 6px' }}>
+              <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 600, padding: '1px 7px', borderRadius: 999, background: 'var(--line-soft)', color: 'var(--ink-500)' }}>
                 {accepted.length}
               </span>
             )}
@@ -250,16 +246,21 @@ export default function StaffCourseDetail() {
             {/* Workflow main area */}
             <div style={{ flex: '1 1 480px', padding: '20px 24px' }}>
               {/* Inline verify banner — shown when review is still pending */}
-              {review.status === 'pending' && (
+              {review.status !== 'verified' && (
                 <div style={{
-                  marginBottom: 16, padding: '12px 16px',
-                  background: 'var(--amber-bg)', border: '1px solid #FCD34D',
-                  borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                  marginBottom: 20, padding: '12px 16px',
+                  background: review.status === 'returned' ? 'var(--red-bg)' : 'var(--amber-bg)',
+                  border: `1px solid ${review.status === 'returned' ? '#FECACA' : '#FCD34D'}`,
+                  borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
                 }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--amber)' }}>แบบฟอร์มยังไม่ได้รับการยืนยัน</div>
-                    <div style={{ fontSize: 12, color: 'var(--ink-600)', marginTop: 2 }}>
-                      ยืนยันแบบฟอร์มก่อนเพื่อเริ่มสร้างเอกสาร
+                  <div style={{ flex: '1 1 240px' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: review.status === 'returned' ? 'var(--red)' : 'var(--amber)' }}>
+                      {review.status === 'returned' ? 'แบบฟอร์มถูกส่งกลับให้อาจารย์แก้ไข' : 'แบบฟอร์มยังไม่ได้รับการยืนยัน'}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-600)', marginTop: 2, lineHeight: 1.5 }}>
+                      {review.status === 'returned' && review.note
+                        ? <>หมายเหตุ: {review.note}</>
+                        : 'ยืนยันแบบฟอร์มก่อนเพื่อเริ่มสร้างเอกสาร'}
                     </div>
                   </div>
                   <button
@@ -272,9 +273,6 @@ export default function StaffCourseDetail() {
                   </button>
                 </div>
               )}
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-400)', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 16 }}>
-                ขั้นตอนการดำเนินงาน
-              </div>
               <DocumentWorkflow
                 courseId={offering.courseId}
                 courseRef={courseRef}
@@ -290,63 +288,52 @@ export default function StaffCourseDetail() {
             </div>
 
             {/* Sidebar panel */}
-            <div style={{
-              flex: '0 0 280px', borderLeft: '1px solid var(--line-soft)',
-              padding: '20px 20px', display: 'flex', flexDirection: 'column', gap: 20,
-              background: 'var(--bg)',
+            <aside style={{
+              flex: '0 0 260px', borderLeft: '1px solid var(--line-soft)',
+              padding: '24px 22px', display: 'flex', flexDirection: 'column', gap: 26,
             }}>
               {/* Instructors */}
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-400)', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 10 }}>
-                  อาจารย์ผู้รับผิดชอบ
-                </div>
-                {offering.instructors.map((ins, i) => (
-                  <div key={i} style={{ fontSize: 13, color: 'var(--ink-700)', padding: '6px 0', borderBottom: i < offering.instructors.length - 1 ? '1px solid var(--line-soft)' : 'none' }}>
-                    <span style={{ fontWeight: ins.isMain ? 600 : 400 }}>{ins.name}</span>
-                    {ins.isMain && <span style={{ fontSize: 10, color: 'var(--primary)', marginLeft: 6 }}>หลัก</span>}
-                    {ins.email && <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>{ins.email}</div>}
-                  </div>
-                ))}
-              </div>
-
-              {/* Schedule */}
-              {(courseDetail?.schedule ?? offering.schedule) && (
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-400)', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 }}>
-                    ตารางเรียน
-                  </div>
-                  <div style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.6, whiteSpace: 'pre-line' }}>
-                    {formatSchedule(courseDetail?.schedule ?? offering.schedule)}
-                  </div>
-                </div>
-              )}
+              <section>
+                <div style={SIDE_LABEL}>อาจารย์ผู้รับผิดชอบ</div>
+                <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {offering.instructors.map((ins, i) => (
+                    <li key={i}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-900)' }}>
+                          {ins.name}
+                          {ins.isMain && <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--ink-400)', marginLeft: 6 }}>หลัก</span>}
+                        </div>
+                        {ins.email && <div style={{ fontSize: 12, color: 'var(--ink-400)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ins.email}</div>}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
 
               {/* Lab Boys */}
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-400)', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 }}>
-                  Lab Boy ที่ได้รับเลือก ({accepted.length} คน)
+              <section>
+                <div style={{ ...SIDE_LABEL, display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Lab Boy</span>
+                  <span style={{ color: 'var(--ink-500)' }}>{accepted.length} คน</span>
                 </div>
                 {applicantsLoading ? (
                   <div style={{ height: 60, background: 'var(--line-soft)', borderRadius: 8 }} />
                 ) : accepted.length === 0 ? (
-                  <div style={{ fontSize: 12, color: 'var(--ink-400)', fontStyle: 'italic' }}>
-                    ยังไม่มีนักศึกษาที่ได้รับเลือก
-                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>ยังไม่มีนักศึกษาที่ได้รับเลือก</div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {accepted.map((a) => (
-                      <div key={a.id} style={{
-                        padding: '6px 10px', background: '#fff',
-                        border: '1px solid var(--line)', borderRadius: 8, fontSize: 12,
-                      }}>
-                        <div style={{ fontWeight: 500, color: 'var(--ink-900)' }}>{a.student_name}</div>
-                        <div style={{ color: 'var(--ink-400)', fontFamily: 'monospace' }}>{a.student_code}</div>
-                      </div>
+                      <li key={a.id}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-900)' }}>{a.student_name}</div>
+                          <div style={{ fontSize: 12, color: 'var(--ink-400)', fontVariantNumeric: 'tabular-nums' }}>{a.student_code}</div>
+                        </div>
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 )}
-              </div>
-            </div>
+              </section>
+            </aside>
           </div>
         )}
 
@@ -504,6 +491,10 @@ function CalendarDateRow({ cd }: { cd: CalendarDate }) {
       </span>
     </div>
   )
+}
+
+const SIDE_LABEL: React.CSSProperties = {
+  fontSize: 12, fontWeight: 600, color: 'var(--ink-400)', marginBottom: 12,
 }
 
 function InfoRow({ label, value }: { label: string; value: string | number | undefined }) {

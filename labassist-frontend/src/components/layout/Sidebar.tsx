@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useLogout } from '../../hooks/useLogout'
 import { useCalendarJob } from '../../hooks/useCalendarJob'
+import { useInstructorTasks } from '../../hooks/useInstructorTasks'
 import { Avatar } from '../ui/Avatar'
 import type { UserRole } from '../../types'
 
@@ -41,7 +42,7 @@ interface NavItem {
   to: string; label: string; icon: string
   /** Extra path prefixes that also count as this item (nested pages). */
   match?: string[]
-  badge?: 'calendar'
+  badge?: 'calendar' | 'tasks'
 }
 
 const navMap: Record<UserRole, NavItem[]> = {
@@ -55,7 +56,7 @@ const navMap: Record<UserRole, NavItem[]> = {
     { to: '/student/profile',  label: 'โปรไฟล์ของฉัน',    icon: 'user' },
   ],
   instructor: [
-    { to: '/instructor/home',     label: 'หน้าหลัก',           icon: 'home' },
+    { to: '/instructor/home',     label: 'หน้าหลัก',           icon: 'home', badge: 'tasks' },
     { to: '/instructor/courses',  label: 'วิชาของฉัน',       icon: 'book' },
     { to: '/instructor/announce', label: 'จัดการประกาศ',     icon: 'megaphone' },
     { to: '/instructor/reports',  label: 'รายงานนักศึกษา', icon: 'clipboard', match: ['/instructor/reports/', '/reports/'] },
@@ -64,7 +65,7 @@ const navMap: Record<UserRole, NavItem[]> = {
   staff: [
     { to: '/staff/home',     label: 'หน้าหลัก',          icon: 'home' },
     { to: '/staff/review',   label: 'ตรวจสอบแบบฟอร์ม',  icon: 'check-square' },
-    { to: '/staff/reports',  label: 'นักศึกษาที่ถูก blacklist', icon: 'clipboard', match: ['/reports/'] },
+    { to: '/staff/reports',  label: 'นักศึกษาที่ถูกรายงาน', icon: 'clipboard', match: ['/reports/'] },
     { to: '/staff/settings', label: 'กำหนดวันหยุด',        icon: 'calendar' },
     { to: '/staff/profile',  label: 'ข้อมูลส่วนตัว',     icon: 'user' },
   ],
@@ -91,6 +92,9 @@ export function Sidebar({ collapsed = false, onClose }: Props) {
   const items = user ? (navMap[user.role] ?? []) : []
   // An admin's calendar PDF is read in the background: show how it is going.
   const { data: calendarJob } = useCalendarJob(items.some((i) => i.badge === 'calendar'))
+
+  // An instructor's open to-dos (closing postings, undecided applicants).
+  const { count: taskCount } = useInstructorTasks(user?.role === 'instructor')
 
   const { requestLogout: handleLogout, logoutDialog } = useLogout()
 
@@ -174,6 +178,14 @@ export function Sidebar({ collapsed = false, onClose }: Props) {
           >
             <span style={{ flexShrink: 0, display: 'flex' }}><Ico name={item.icon} /></span>
             {!collapsed && item.label}
+            {!collapsed && item.badge === 'tasks' && taskCount > 0 && (
+              <span
+                role="status"
+                aria-label={`มีงานที่ต้องทำ ${taskCount} รายการ`}
+                title="งานที่ต้องทำ: ประกาศใกล้ปิดรับ หรือมีผู้สมัครรอคัดเลือก"
+                style={{ marginLeft: 'auto', minWidth: 20, padding: '1px 7px', borderRadius: 10, fontSize: 11, fontWeight: 700, textAlign: 'center', background: '#F59E0B', color: '#0B1220' }}
+              >{taskCount}</span>
+            )}
             {!collapsed && item.badge === 'calendar' && calendarJob && (
               <span role="status" style={{
                 marginLeft: 'auto', padding: '1px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700, textAlign: 'center',

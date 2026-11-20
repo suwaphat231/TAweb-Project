@@ -3,10 +3,11 @@ package database
 import (
 	"fmt"
 	"labassist/models"
+	"log"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // mockDemoInstructor uses the classlist instructor account "puriwat"
@@ -250,6 +251,84 @@ func setPassword(userID uint) error {
 	return nil
 }
 
+// demoReportCourse is the fallback past course seedMockReports creates for the
+// demo report history. It is not timetable data: its Monday 09:00-12:00 slot
+// was made up for the demo, and the real 2/2568 sections come from the
+// classlist with their own times and instructor text.
+var demoReportCourse = models.Course{
+	Code:         "517122",
+	Title:        "ทักษะการเขียนโปรแกรมคอมพิวเตอร์ 2",
+	EnglishTitle: "COMPUTER PROGRAMMING SKILL II",
+	Semester:     "2",
+	AcademicYear: 2568,
+	Section:      1,
+	Slot:         0,
+	Schedule:     "จ 09:00-12:00",
+}
+
+// isDemoReportCourse reports whether c is a row seedMockReports created from
+// demoReportCourse. It matches the seed's own term, section and invented
+// schedule plus an empty classlist instructor cell — never the code alone,
+// so a real 517122 row (which always carries classlist instructor text and
+// English day names) is not mistaken for it. The code may have since gained
+// curriculum suffixes from backfillCourseCurriculumCodes, and the slot may
+// have moved, so only the base code is compared.
+func isDemoReportCourse(c models.Course) bool {
+	return strings.TrimSpace(strings.Split(c.Code, "-")[0]) == demoReportCourse.Code &&
+		c.Semester == demoReportCourse.Semester &&
+		c.AcademicYear == demoReportCourse.AcademicYear &&
+		c.Section == demoReportCourse.Section &&
+		strings.TrimSpace(c.Schedule) == demoReportCourse.Schedule &&
+		strings.TrimSpace(c.InstructorsRaw) == ""
+}
+
+// detachDemoReportCourses takes demo report courses out of the demo
+// instructor's "วิชาของฉัน" on databases seeded before the fallback course
+// stopped getting an owner. The instructor link is archived (kept for audit,
+// and its unique key stops backfillCourseInstructors from re-adding it) and
+// courses.instructor_id is cleared so backfill and promoteOwnerCourseLinks
+// have nothing to link from. The course row, its applications, reports and
+// blacklist history are left as they are — reports are reached through
+// their reporter, not the course link.
+func detachDemoReportCourses(db *gorm.DB) error {
+	var instructor models.User
+	if err := db.Where("username = ?", mockDemoInstructor.Username).First(&instructor).Error; err != nil {
+		return nil // no demo instructor, so no demo course to detach
+	}
+	var candidates []models.Course
+	if err := db.Where("semester = ? AND academic_year = ? AND section = ? AND schedule = ? AND (code = ? OR code LIKE ?)",
+		demoReportCourse.Semester, demoReportCourse.AcademicYear, demoReportCourse.Section, demoReportCourse.Schedule,
+		demoReportCourse.Code, demoReportCourse.Code+"-%").
+		Find(&candidates).Error; err != nil {
+		return err
+	}
+	var ids []uint
+	for _, c := range candidates {
+		if isDemoReportCourse(c) && (c.InstructorID == nil || *c.InstructorID == instructor.ID) {
+			ids = append(ids, c.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&models.CourseInstructor{}).
+			Where("course_id IN ? AND instructor_id = ? AND archived_at IS NULL", ids, instructor.ID).
+			Update("archived_at", time.Now())
+		if res.Error != nil {
+			return res.Error
+		}
+		if err := tx.Model(&models.Course{}).Where("id IN ? AND instructor_id IS NOT NULL", ids).
+			Update("instructor_id", nil).Error; err != nil {
+			return err
+		}
+		if res.RowsAffected > 0 {
+			log.Printf("Detached %d demo report course links from %s (courses %v)", res.RowsAffected, mockDemoInstructor.Username, ids)
+		}
+		return nil
+	})
+}
+
 // seedMockReports sets up realistic dummy data for testing the blacklist
 // and performance report system across all roles (instructor, staff, student).
 func seedMockReports() error {
@@ -262,35 +341,27 @@ func seedMockReports() error {
 		return nil
 	}
 
-	// Course in a past semester (2/2568) where Lab Boy served. puriwat really
-	// taught 517122 that term (per classlist2568_2IT), not 517121.
-	pastCourse, found := FindCourseSlot("517122", "2", 2568, 1, 0)
+	// Course in a past semester (2/2568) where Lab Boy served, so the reports
+	// below have an application to hang on. The classlist stores that term's
+	// 517122 under curriculum codes ("517122-165, -2560"), so this lookup
+	// normally misses and the demo-only fallback row is created.
+	pastCourse, found := FindCourseSlot(demoReportCourse.Code, demoReportCourse.Semester,
+		demoReportCourse.AcademicYear, demoReportCourse.Section, demoReportCourse.Slot)
 	if !found {
 		pastDeadline := time.Now().AddDate(-1, 0, 0)
-		pastCourse = CreateCourse(models.Course{
-			Code:         "517122",
-			Title:        "ทักษะการเขียนโปรแกรมคอมพิวเตอร์ 2",
-			EnglishTitle: "COMPUTER PROGRAMMING SKILL II",
-			Semester:     "2",
-			AcademicYear: 2568,
-			Section:      1,
-			Slot:         0,
-			Schedule:     "จ 09:00-12:00",
-			InstructorID: &instructor.ID,
-			LabBoySlots:  4,
-			Status:       models.StatusClosed,
-			Deadline:     &pastDeadline,
-		})
+		c := demoReportCourse
+		// No InstructorID: an owner on the course is what makes createCourseTx
+		// and backfillCourseInstructors link it as "imported", which would put
+		// this demo row in the instructor's "วิชาของฉัน" next to the real
+		// classlist sections. Reports find it through their applications.
+		c.LabBoySlots = 4
+		c.Status = models.StatusClosed
+		c.Deadline = &pastDeadline
+		pastCourse = CreateCourse(c)
 		if pastCourse.ID == 0 {
 			return fmt.Errorf("create past demo course for reports")
 		}
 	}
-
-	DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.CourseInstructor{
-		CourseID:     pastCourse.ID,
-		InstructorID: instructor.ID,
-		Source:       models.CourseInstructorImported,
-	})
 
 	if err := relocateLegacyMockReports(instructor.ID, pastCourse.ID); err != nil {
 		return err

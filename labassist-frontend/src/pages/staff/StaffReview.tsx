@@ -1,8 +1,7 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { staffApi } from '../../services/api'
-import { FilterChips } from '../../components/ui/FilterChips'
 import { Modal } from '../../components/ui/Modal'
 import { Textarea } from '../../components/ui/Textarea'
 import { Button } from '../../components/ui/Button'
@@ -10,24 +9,23 @@ import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../hooks/useToast'
 import type { DocStatus, DocType, FormReview, ReviewStatus } from '../../types'
 import { docProgress, type DocProgress } from './staffCourseUtils'
+import { ActionMenu } from './components/ActionMenu'
 
-const STATUS_OPTIONS = [
-  { value: '', label: 'ทั้งหมด' },
+type Filter = ReviewStatus | 'all'
+
+const FILTERS: { value: Filter; label: string }[] = [
   { value: 'pending',  label: 'รอตรวจสอบ' },
-  { value: 'verified', label: 'ผ่านแล้ว' },
   { value: 'returned', label: 'ส่งกลับแก้ไข' },
+  { value: 'verified', label: 'ผ่านแล้ว' },
+  { value: 'all',      label: 'ทั้งหมด' },
 ]
 
-const statusStyle: Record<ReviewStatus, React.CSSProperties> = {
-  pending:  { background: '#FEF9C3', color: '#92400E', border: '1px solid #FDE68A' },
-  verified: { background: '#DCFCE7', color: '#166534', border: '1px solid #86EFAC' },
-  returned: { background: '#FEE2E2', color: '#991B1B', border: '1px solid #FCA5A5' },
+const STATUS_META: Record<ReviewStatus, { label: string; color: string; bg: string; border: string }> = {
+  pending:  { label: 'รอตรวจสอบ',   color: '#92400E', bg: 'var(--amber-bg)', border: '#FDE68A' },
+  verified: { label: 'ผ่านแล้ว',     color: '#166534', bg: 'var(--green-bg)', border: '#BBF7D0' },
+  returned: { label: 'ส่งกลับแก้ไข', color: '#991B1B', bg: 'var(--red-bg)',   border: '#FECACA' },
 }
-const statusLabel: Record<ReviewStatus, string> = {
-  pending:  'รอตรวจสอบ',
-  verified: 'ผ่านแล้ว',
-  returned: 'ส่งกลับแก้ไข',
-}
+const STATUS_RANK: Record<ReviewStatus, number> = { pending: 0, returned: 1, verified: 2 }
 
 const STEP_SHORT: Partial<Record<DocType, string>> = {
   hiring_notice:   'แบบฟอร์มแจ้งความประสงค์จ้าง',
@@ -36,23 +34,44 @@ const STEP_SHORT: Partial<Record<DocType, string>> = {
   work_report:     'รายงานผลการปฏิบัติงาน',
 }
 
-const CURRENT_STATUS: Partial<Record<DocStatus | 'not_created', { label: string; color: string }>> = {
-  not_created:        { label: 'รอสร้างเอกสาร', color: '#92400E' },
-  draft:              { label: 'ร่างเอกสาร',    color: 'var(--blue)' },
-  generated:          { label: 'ร่างเอกสาร',    color: 'var(--blue)' },
-  approved:           { label: 'ร่างเอกสาร',    color: 'var(--blue)' },
-  pending:            { label: 'รอตรวจสอบ',     color: 'var(--primary)' },
-  awaiting_signature: { label: 'รอลงนาม',       color: '#92400E' },
+const CURRENT_STATUS: Partial<Record<DocStatus | 'not_created', string>> = {
+  not_created:        'รอสร้างเอกสาร',
+  draft:              'ร่างเอกสาร',
+  generated:          'ร่างเอกสาร',
+  approved:           'ร่างเอกสาร',
+  pending:            'รอตรวจสอบ',
+  awaiting_signature: 'รอลงนาม',
 }
 
-function DocProgressCell({ p }: { p: DocProgress }) {
-  if (p.phase === 'form_pending') {
-    return <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>รอแบบฟอร์มผ่านการตรวจสอบ</span>
-  }
-  const st = CURRENT_STATUS[p.currentStatus] ?? CURRENT_STATUS.draft!
+function fmtDate(raw?: string): string {
+  if (!raw) return '—'
+  const d = new Date(raw)
+  return Number.isNaN(d.getTime())
+    ? raw
+    : d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
+}
+
+function StatusPill({ status }: { status: ReviewStatus }) {
+  const m = STATUS_META[status]
   return (
-    <div style={{ minWidth: 190 }}>
-      <div style={{ display: 'flex', gap: 3, marginBottom: 6 }} aria-label={`ลงนามแล้ว ${p.signed} จาก ${p.total} ฉบับ`}>
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
+      fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 999,
+      background: m.bg, color: m.color, border: `1px solid ${m.border}`,
+    }}>
+      <span aria-hidden style={{ width: 6, height: 6, borderRadius: '50%', background: m.color }} />
+      {m.label}
+    </span>
+  )
+}
+
+/** สถานะของรายการ: แบบฟอร์มยังไม่ผ่าน → แสดงสถานะแบบฟอร์ม, ผ่านแล้ว → แสดงความคืบหน้าเอกสาร */
+function ProgressCell({ form, p }: { form: FormReview; p: DocProgress }) {
+  if (form.status !== 'verified') return <StatusPill status={form.status} />
+  const done = p.phase === 'done' || !p.current
+  return (
+    <div style={{ width: '100%' }}>
+      <div style={{ display: 'flex', gap: 3, marginBottom: 6 }} aria-label={`สร้างเอกสารแล้ว ${p.signed} จาก ${p.total} ฉบับ`}>
         {Array.from({ length: p.total }, (_, i) => (
           <span key={i} style={{
             flex: 1, height: 5, borderRadius: 3,
@@ -60,17 +79,36 @@ function DocProgressCell({ p }: { p: DocProgress }) {
           }} />
         ))}
       </div>
-      {p.phase === 'done' || !p.current ? (
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--green)' }}>เอกสารครบ {p.total} ฉบับ ลงนามแล้ว</div>
+      {done ? (
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--green)' }}>เอกสารครบ {p.total} ฉบับ</div>
       ) : (
-        <>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-900)' }}>
-            {p.current.step}/{p.total} {STEP_SHORT[p.current.docType] ?? p.current.label}
-          </div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: st.color, marginTop: 1 }}>{st.label}</div>
-        </>
+        <div style={{ fontSize: 12, color: 'var(--ink-600)', lineHeight: 1.4 }}>
+          <span style={{ fontWeight: 600, color: 'var(--ink-900)' }}>
+            {p.current!.step}/{p.total} {STEP_SHORT[p.current!.docType] ?? p.current!.label}
+          </span>
+          <span style={{ color: 'var(--amber)', fontWeight: 600 }}> · {CURRENT_STATUS[p.currentStatus] ?? 'ร่างเอกสาร'}</span>
+        </div>
       )}
     </div>
+  )
+}
+
+function DocIcon({ status }: { status: ReviewStatus }) {
+  return (
+    <span aria-hidden style={{
+      width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+      background: status === 'verified' ? 'var(--primary-50)' : 'var(--line-soft)',
+      color: status === 'verified' ? 'var(--primary)' : 'var(--ink-500)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <polyline points="14 2 14 8 20 8" />
+        {status === 'verified'
+          ? <polyline points="9 15 11 17 15 13" />
+          : <><line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="13" y2="17" /></>}
+      </svg>
+    </span>
   )
 }
 
@@ -78,15 +116,16 @@ export default function StaffReview() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const showToast = useToast()
-  const [statusFilter, setStatusFilter] = useState('')
+  const [filter, setFilter] = useState<Filter>('pending')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<FormReview | null>(null)
   const [showReturn, setShowReturn] = useState(false)
   const [returnNote, setReturnNote] = useState('')
 
+  // ดึงทั้งหมดครั้งเดียว แล้วกรองสถานะ/ค้นหาฝั่ง client เพื่อให้ตัวเลขบนแท็บถูกต้องเสมอ
   const { data: reviews = [], isLoading } = useQuery({
-    queryKey: ['staff-reviews', statusFilter, search],
-    queryFn: () => staffApi.listReviews({ status: statusFilter || undefined, q: search || undefined }),
+    queryKey: ['staff-reviews'],
+    queryFn: () => staffApi.listReviews(),
   })
 
   const { data: allDocs = [] } = useQuery({
@@ -94,15 +133,31 @@ export default function StaffReview() {
     queryFn: () => staffApi.listDocuments(),
   })
 
+  const counts = useMemo(() => {
+    const c: Record<Filter, number> = { pending: 0, returned: 0, verified: 0, all: reviews.length }
+    for (const r of reviews) c[r.status]++
+    return c
+  }, [reviews])
+
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return reviews
+      .filter((r) => filter === 'all' || r.status === filter)
+      .filter((r) => !q || [r.course_code, r.course_title, r.instructor_name].some((v) => v?.toLowerCase().includes(q)))
+      .sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status])
+  }, [reviews, filter, search])
+
   function openCourse(form: FormReview) {
     navigate(`/staff/course/${form.academic_year}/${form.semester}/${encodeURIComponent(form.course_code)}/${form.section}?course=${form.course_id}`)
   }
 
   const verifyMut = useMutation({
-    mutationFn: (courseId: number) => staffApi.verifyForm(courseId),
-    onSuccess: (_, courseId) => {
+    mutationFn: (form: FormReview) => staffApi.verifyForm(form.course_id),
+    onSuccess: (_, form) => {
       qc.invalidateQueries({ queryKey: ['staff-reviews'] })
-      showToast(`ยืนยันแบบฟอร์ม course #${courseId} เรียบร้อยแล้ว`, 'success')
+      qc.invalidateQueries({ queryKey: ['staff-documents'] })
+      qc.invalidateQueries({ queryKey: ['document-workflow'] })
+      showToast(`ยืนยันแบบฟอร์ม ${form.course_code} ตอน ${form.section} แล้ว`, 'success')
     },
     onError: () => showToast('เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'),
   })
@@ -120,8 +175,6 @@ export default function StaffReview() {
     onError: () => showToast('เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'),
   })
 
-  const pendingCount = reviews.filter((r) => r.status === 'pending').length
-
   function handleOpenReturn(form: FormReview) {
     setSelected(form)
     setReturnNote(form.note ?? '')
@@ -135,133 +188,184 @@ export default function StaffReview() {
   }
 
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-
-      {/* Page header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-        <div style={{ flex: 1 }}>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink-900)', marginBottom: 3 }}>
-            ตรวจสอบแบบฟอร์ม
-          </h1>
-          <p style={{ fontSize: 13, color: 'var(--ink-400)' }}>
-            ตรวจสอบแบบฟอร์มแจ้งความประสงค์ที่อาจารย์ส่งมา และติดตามเอกสารของแต่ละรายวิชาว่าดำเนินการถึงขั้นไหนแล้ว
-          </p>
-        </div>
-        {!isLoading && pendingCount > 0 && (
-          <div style={{
-            fontSize: 12, fontWeight: 700, padding: '5px 14px',
-            background: 'var(--amber-bg)', color: '#92400E',
-            borderRadius: 999, border: '1px solid #FDE68A',
-          }}>
-            {pendingCount} รายการรอตรวจสอบ
-          </div>
-        )}
+    <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{ marginBottom: 18 }}>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink-900)', margin: '0 0 4px' }}>
+          ตรวจสอบแบบฟอร์ม
+        </h1>
+        <p style={{ fontSize: 13, color: 'var(--ink-400)', margin: 0 }}>
+          ตรวจแบบฟอร์มแจ้งความประสงค์ที่อาจารย์ส่งมา แล้วเข้าไปจัดการเอกสารของแต่ละรายวิชา
+        </p>
       </div>
 
-      {/* Filter toolbar */}
+      {/* Toolbar: แท็บสถานะ + ค้นหา */}
       <div style={{
-        display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap',
-        background: '#fff', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-card)',
-        padding: '10px 14px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: 12, flexWrap: 'wrap', marginBottom: 14,
       }}>
-        <FilterChips options={STATUS_OPTIONS} value={statusFilter} onChange={setStatusFilter} />
-        <div style={{ flex: 1 }} />
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="ค้นหารหัสวิชา / อาจารย์..."
-          style={{
-            padding: '7px 12px', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-input)',
-            fontSize: 13, color: 'var(--ink-900)', outline: 'none', width: 220,
-          }}
-          onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--primary)')}
-          onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
-        />
+        <div role="tablist" aria-label="กรองตามสถานะ" style={{
+          display: 'inline-flex', gap: 4, padding: 4, flexWrap: 'wrap',
+          background: 'var(--line-soft)', borderRadius: 10,
+        }}>
+          {FILTERS.map((f) => {
+            const active = filter === f.value
+            const n = counts[f.value]
+            return (
+              <button
+                key={f.value}
+                role="tab"
+                aria-selected={active}
+                onClick={() => setFilter(f.value)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '7px 14px', minHeight: 36, borderRadius: 8, border: 'none', cursor: 'pointer',
+                  fontSize: 13, fontWeight: 600,
+                  background: active ? '#fff' : 'transparent',
+                  color: active ? 'var(--ink-900)' : 'var(--ink-500)',
+                  boxShadow: active ? '0 1px 3px rgba(15,23,42,0.08)' : 'none',
+                  transition: 'background .15s, color .15s',
+                }}
+              >
+                {f.label}
+                <span style={{
+                  minWidth: 20, padding: '0 6px', borderRadius: 999, fontSize: 11, lineHeight: '18px',
+                  background: f.value === 'pending' && n > 0 ? 'var(--amber)' : active ? 'var(--primary-50)' : 'rgba(0,0,0,0.05)',
+                  color: f.value === 'pending' && n > 0 ? '#fff' : active ? 'var(--primary)' : 'var(--ink-500)',
+                }}>
+                  {n}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
+        <label style={{ position: 'relative', flex: '0 1 280px', minWidth: 200 }}>
+          <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-400)' }}>
+            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="ค้นหารหัสวิชา ชื่อวิชา หรืออาจารย์"
+            aria-label="ค้นหารายวิชา"
+            style={{
+              width: '100%', padding: '9px 12px 9px 34px', boxSizing: 'border-box',
+              border: '1px solid var(--line)', borderRadius: 'var(--radius-input)',
+              fontSize: 13, color: 'var(--ink-900)', outline: 'none', background: '#fff',
+            }}
+            onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--primary)')}
+            onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
+          />
+        </label>
       </div>
 
-      {/* Table */}
-      <div style={{ background: '#fff', borderRadius: 'var(--radius-card)', overflow: 'auto', border: '1.5px solid var(--line)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960 }}>
-          <thead>
-            <tr style={{ background: 'var(--bg)', borderBottom: '1.5px solid var(--line)' }}>
-              {['รายวิชา / ตอน', 'อาจารย์ผู้สอน', 'ที่รับ / ที่เปิดรับ', 'วันที่ส่ง', 'แบบฟอร์ม', 'ความคืบหน้าเอกสาร', ''].map((h) => (
-                <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--ink-500)', whiteSpace: 'nowrap' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              <tr><td colSpan={7} style={{ padding: 24 }}><Skeleton lines={4} height={14} /></td></tr>
-            ) : reviews.length === 0 ? (
-              <tr>
-                <td colSpan={7} style={{ padding: '52px 24px', textAlign: 'center' }}>
-                  <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>ไม่พบรายการ</div>
-                </td>
-              </tr>
-            ) : reviews.map((form, i) => {
+      {/* List */}
+      <div style={{ background: '#fff', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
+        {isLoading ? (
+          <div style={{ padding: 24 }}><Skeleton lines={4} height={14} /></div>
+        ) : visible.length === 0 ? (
+          <div style={{ padding: '56px 24px', textAlign: 'center' }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 4 }}>
+              {search ? 'ไม่พบรายการที่ค้นหา' : filter === 'pending' ? 'ไม่มีแบบฟอร์มรอตรวจสอบ' : 'ไม่มีรายการ'}
+            </div>
+            {filter === 'pending' && !search && (
+              <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>ตรวจครบทุกรายการแล้ว</div>
+            )}
+          </div>
+        ) : (
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+            {visible.map((form, i) => {
               const progress = docProgress(form, allDocs)
+              const verifying = verifyMut.isPending && verifyMut.variables?.course_id === form.course_id
               return (
-              <tr key={form.course_id}
-                style={{ borderBottom: i < reviews.length - 1 ? '1px solid var(--line-soft)' : 'none', transition: 'background .1s' }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg)')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}
-              >
-                <td style={{ padding: '13px 16px' }}>
-                  <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--ink-900)' }}>
-                    {form.course_code}{' '}
-                    <span style={{ color: 'var(--ink-400)', fontWeight: 400, fontSize: 12 }}>ตอน {form.section}</span>
-                  </div>
-                  <div style={{ fontSize: 13, color: 'var(--ink-600)', marginTop: 2 }}>{form.course_title}</div>
-                  {form.status === 'returned' && form.note && (
-                    <div style={{ fontSize: 11, color: '#B91C1C', marginTop: 4, background: '#FEE2E2', padding: '4px 8px', borderRadius: 6, maxWidth: 300 }}>
-                      หมายเหตุ: {form.note}
-                    </div>
-                  )}
-                </td>
-                <td style={{ padding: '13px 16px', fontSize: 13, color: 'var(--ink-700)' }}>{form.instructor_name || '—'}</td>
-                <td style={{ padding: '13px 16px', textAlign: 'center' }}>
-                  <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--primary)' }}>{form.labboy_accepted}</span>
-                  <span style={{ color: 'var(--ink-400)', fontSize: 13 }}> / {form.labboy_slots}</span>
-                </td>
-                <td style={{ padding: '13px 16px', fontSize: 12, color: 'var(--ink-400)', whiteSpace: 'nowrap' }}>{form.submitted_at}</td>
-                <td style={{ padding: '13px 16px' }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 999, whiteSpace: 'nowrap', ...statusStyle[form.status] }}>
-                    {statusLabel[form.status]}
-                  </span>
-                </td>
-                <td style={{ padding: '13px 16px' }}>
-                  <DocProgressCell p={progress} />
-                </td>
-                <td style={{ padding: '13px 16px' }}>
-                  {form.status !== 'verified' ? (
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <Button size="sm" loading={verifyMut.isPending} onClick={() => verifyMut.mutate(form.course_id)}>ผ่านแล้ว</Button>
-                      <Button size="sm" variant="outline" onClick={() => handleOpenReturn(form)}>ส่งกลับ</Button>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      {progress.phase === 'done' ? (
-                        <Button size="sm" variant="outline" onClick={() => openCourse(form)}>ดูเอกสาร</Button>
-                      ) : (
-                        <Button size="sm" onClick={() => openCourse(form)}>ดำเนินการต่อ</Button>
+                <li
+                  key={form.course_id}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(260px, 1fr) minmax(180px, 240px) auto',
+                    alignItems: 'center', gap: '12px 20px',
+                    padding: '16px 20px',
+                    borderTop: i ? '1px solid var(--line-soft)' : 'none',
+                  }}
+                  className="staff-review-row"
+                >
+                  {/* รายวิชา */}
+                  <div style={{ display: 'flex', gap: 12, minWidth: 0 }}>
+                    <DocIcon status={form.status} />
+                    <div style={{ minWidth: 0 }}>
+                      <button
+                        onClick={() => openCourse(form)}
+                        style={{
+                          background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left',
+                          fontSize: 14, fontWeight: 700, color: 'var(--ink-900)',
+                        }}
+                      >
+                        {form.course_code}
+                        <span style={{ fontWeight: 500, color: 'var(--ink-400)', fontSize: 12, marginLeft: 6 }}>ตอน {form.section}</span>
+                      </button>
+                      <div style={{ fontSize: 13, color: 'var(--ink-600)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {form.course_title}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: '2px 12px' }}>
+                        <span>{form.instructor_name || '—'}</span>
+                        <span>Lab Boy {form.labboy_accepted}/{form.labboy_slots}</span>
+                        <span>ส่งเมื่อ {fmtDate(form.submitted_at)}</span>
+                      </div>
+                      {form.status === 'returned' && form.note && (
+                        <div style={{
+                          fontSize: 12, color: '#991B1B', marginTop: 8, background: 'var(--red-bg)',
+                          padding: '6px 10px', borderRadius: 6, lineHeight: 1.5,
+                        }}>
+                          <b>หมายเหตุที่ส่งกลับ:</b> {form.note}
+                        </div>
                       )}
-                      <Button size="sm" variant="ghost" onClick={() => handleOpenReturn(form)}>ส่งกลับแก้ไข</Button>
                     </div>
-                  )}
-                </td>
-              </tr>
+                  </div>
+
+                  {/* สถานะ / ความคืบหน้า */}
+                  <ProgressCell form={form} p={progress} />
+
+                  {/* การดำเนินการ */}
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                    {form.status !== 'verified' ? (
+                      <>
+                        <Button size="sm" variant="outline" onClick={() => handleOpenReturn(form)}>
+                          {form.status === 'returned' ? 'แก้หมายเหตุ' : 'ส่งกลับ'}
+                        </Button>
+                        <Button size="sm" loading={verifying} disabled={verifyMut.isPending && !verifying} onClick={() => verifyMut.mutate(form)}>
+                          ยืนยันผ่าน
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button size="sm" variant={progress.phase === 'done' ? 'outline' : 'primary'} onClick={() => openCourse(form)}>
+                          {progress.phase === 'done' ? 'ดูเอกสาร' : 'จัดการเอกสาร →'}
+                        </Button>
+                        <ActionMenu
+                          label="ตัวเลือกเพิ่มเติม"
+                          align="right"
+                          trigger={<span aria-hidden style={{ fontSize: 18, lineHeight: 1 }}>⋯</span>}
+                          className="btn btn-ghost btn-sm"
+                          style={{ padding: '4px 10px', border: 'none' }}
+                          items={[{ label: 'ส่งกลับให้อาจารย์แก้ไข', danger: true, onClick: () => handleOpenReturn(form) }]}
+                        />
+                      </>
+                    )}
+                  </div>
+                </li>
               )
             })}
-          </tbody>
-        </table>
+          </ul>
+        )}
       </div>
 
       {/* Return Modal */}
       <Modal isOpen={showReturn} onClose={() => setShowReturn(false)} title="ส่งแบบฟอร์มกลับให้อาจารย์แก้ไข" size="md">
         {selected && (
           <form onSubmit={handleSubmitReturn} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ background: 'var(--bg)', borderRadius: 8, padding: '10px 14px', fontSize: 13 }}>
-              <span style={{ color: 'var(--ink-500)' }}>วิชา: </span>
+            <div style={{ background: 'var(--line-soft)', borderRadius: 8, padding: '10px 14px', fontSize: 13 }}>
               <span style={{ fontWeight: 600, color: 'var(--ink-900)' }}>{selected.course_code} {selected.course_title}</span>
               <span style={{ color: 'var(--ink-400)', marginLeft: 6 }}>ตอน {selected.section}</span>
             </div>
@@ -275,7 +379,7 @@ export default function StaffReview() {
             />
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <Button type="button" variant="ghost" onClick={() => setShowReturn(false)}>ยกเลิก</Button>
-              <Button type="submit" variant="outline" loading={returnMut.isPending}>ส่งกลับแก้ไข</Button>
+              <Button type="submit" variant="danger" loading={returnMut.isPending} disabled={!returnNote.trim()}>ส่งกลับแก้ไข</Button>
             </div>
           </form>
         )}
