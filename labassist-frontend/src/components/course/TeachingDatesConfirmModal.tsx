@@ -12,7 +12,7 @@ const MONTH_NAMES = ['มกราคม', 'กุมภาพันธ์', '�
   'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม']
 
 const thCss: React.CSSProperties = {
-  padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--ink-500)', fontSize: 12,
+  padding: '8px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--ink-600)', fontSize: 13,
 }
 
 type Row = { date: string; start_time: string; end_time: string }
@@ -159,10 +159,6 @@ export function TeachingDatesConfirmModal({
 
         {/* Body */}
         <div style={{ padding: '20px 22px', overflowY: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
-          <div style={{ fontSize: 12, color: 'var(--ink-600)', padding: '8px 12px', background: 'var(--primary-50)', borderRadius: 'var(--radius-input)' }}>
-            แก้ไขวันและเวลาสอน ลบวัน หรือเพิ่มวันได้ — Lab มีได้ไม่เกิน {MAX_LAB_SESSIONS_PER_TERM} ครั้งต่อภาคเรียน
-            วันที่ตรงกับวันหยุดตามปฏิทินจะแสดงเป็น "วันหยุด" และไม่นับเป็นครั้ง
-          </div>
           {isLoading ? (
             <div style={{ height: 120, background: 'var(--line-soft)', borderRadius: 8 }} />
           ) : isError ? (
@@ -304,105 +300,97 @@ function SectionPlan({ item, rows, holidays, holidayNames, showTitle, changed, o
         </div>
       )}
 
-      {months.map(([key, entries]) => {
-        const [y, m] = key.split('-').map(Number)
-        const counted = entries.filter((e) => !holidays.has(e.row.date))
-        const hours = counted.reduce((h, e) => h + hoursOf(e.row), 0)
-        return (
-          <div className="card" key={key}>
-            <div style={{
-              padding: '11px 16px', background: 'var(--primary-50)', borderRadius: 'var(--radius-card) var(--radius-card) 0 0',
-              borderBottom: '1.5px solid var(--line)',
-            }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--primary)' }}>{MONTH_NAMES[m - 1]} {y + 543}</span>
-              <span style={{ fontSize: 12, color: 'var(--ink-500)', marginLeft: 10 }}>
-                {counted.length} วันสอน · {hours.toFixed(1)} ชม.
-              </span>
-            </div>
-            <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {slots.length > 0 && (
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-500)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
-                    ตารางสัปดาห์
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {slots.map((s, i) => (
-                      <span key={i} className="badge badge-primary" style={{ fontSize: 12 }}>
-                        {THAI_DAY_NAMES[s.dayIndex]} {s.start}–{s.end} ({(payableMinutes(s.start, s.end) / 60).toFixed(1)} ชม.)
+      {slots.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-600)' }}>ตารางเรียนประจำสัปดาห์:</span>
+          {slots.map((s, i) => (
+            <span key={i} className="badge badge-primary" style={{ fontSize: 13 }}>
+              {THAI_DAY_NAMES[s.dayIndex]} {s.start}–{s.end} ({(payableMinutes(s.start, s.end) / 60).toFixed(1)} ชม.)
+            </span>
+          ))}
+        </div>
+      )}
+
+      {rows.length > 0 && (
+        <div className="card" style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+            <thead>
+              <tr style={{ borderBottom: '1.5px solid var(--line)', background: 'var(--line-soft)' }}>
+                <th style={thCss}>ครั้งที่</th>
+                <th style={thCss}>วันที่</th>
+                <th style={thCss}>เวลา</th>
+                <th style={thCss}>สถานะ</th>
+                <th style={thCss} aria-label="ลบ" />
+              </tr>
+            </thead>
+            {months.map(([key, entries]) => {
+              const [y, m] = key.split('-').map(Number)
+              const counted = entries.filter((e) => !holidays.has(e.row.date))
+              const hours = counted.reduce((h, e) => h + hoursOf(e.row), 0)
+              return (
+                <tbody key={key}>
+                  <tr style={{ background: 'var(--primary-50)', borderTop: '1.5px solid var(--line)', borderBottom: '1.5px solid var(--line)' }}>
+                    <td colSpan={5} style={{ padding: '9px 10px' }}>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--primary)' }}>{MONTH_NAMES[m - 1]} {y + 543}</span>
+                      <span style={{ fontSize: 13, color: 'var(--ink-600)', fontWeight: 600, marginLeft: 12 }}>
+                        {counted.length} วันสอน · {hours.toFixed(1)} ชม.
                       </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-500)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
-                  วันสอน ({entries.length})
-                </div>
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--line)' }}>
-                        <th style={thCss}>ครั้งที่</th>
-                        <th style={thCss}>วันที่</th>
-                        <th style={thCss}>เวลา</th>
-                        <th style={thCss}>สถานะ</th>
-                        <th style={thCss} aria-label="ลบ" />
+                    </td>
+                  </tr>
+                  {entries.map(({ row, index }, i) => {
+                    const hol = holidays.has(row.date)
+                    return (
+                      <tr key={`${row.date}-${row.start_time}-${index}`} style={{
+                        borderTop: i > 0 ? '1px solid var(--line-soft)' : 'none',
+                        background: hol ? 'var(--amber-bg)' : undefined,
+                        color: hol ? 'var(--ink-500)' : undefined,
+                      }}>
+                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', fontWeight: 700, color: hol ? 'var(--ink-400)' : 'var(--primary)' }}>
+                          {hol ? '—' : `${numbering[index]}/${MAX_LAB_SESSIONS_PER_TERM}`}
+                        </td>
+                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: hol ? 'var(--ink-500)' : 'var(--ink-900)', minWidth: 130 }}>
+                              {thaiDayShort(row.date)} {formatThaiDate(row.date)}
+                            </span>
+                            <input type="date" value={row.date} className="form-input" style={{ width: 140, fontSize: 12, padding: '2px 6px' }}
+                              onChange={(e) => e.target.value && update(index, { date: e.target.value })} />
+                          </div>
+                        </td>
+                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                            <input type="time" value={row.start_time} className="form-input" style={timeInput}
+                              onChange={(e) => update(index, { start_time: e.target.value })} />
+                            <span>–</span>
+                            <input type="time" value={row.end_time} className="form-input" style={timeInput}
+                              onChange={(e) => update(index, { end_time: e.target.value })} />
+                          </div>
+                        </td>
+                        <td style={{ padding: '8px 10px' }}>
+                          {hol && (
+                            <>
+                              <span className="badge badge-amber">วันหยุด</span>
+                              <span style={{ fontSize: 12, color: 'var(--ink-500)', marginLeft: 6 }}>{holidayNames.get(row.date)}</span>
+                            </>
+                          )}
+                        </td>
+                        <td style={{ padding: '8px 10px', textAlign: 'right' }}>
+                          <button type="button" title="ลบวันนี้" aria-label="ลบวันนี้"
+                            onClick={() => onChange(rows.filter((_, i2) => i2 !== index))}
+                            className="btn btn-xs"
+                            style={{ background: 'var(--red-bg)', color: 'var(--red)', border: '1px solid #FCA5A5' }}>
+                            ✕
+                          </button>
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {entries.map(({ row, index }, i) => {
-                        const hol = holidays.has(row.date)
-                        return (
-                          <tr key={`${row.date}-${row.start_time}-${index}`} style={{
-                            borderTop: i > 0 ? '1px solid var(--line-soft)' : 'none',
-                            color: hol ? 'var(--ink-400)' : undefined,
-                          }}>
-                            <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', fontWeight: 600 }}>
-                              {hol ? '—' : `${numbering[index]}/${MAX_LAB_SESSIONS_PER_TERM}`}
-                            </td>
-                            <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
-                              <input type="date" value={row.date} className="form-input" style={{ width: 150, fontSize: 12, padding: '3px 8px' }}
-                                onChange={(e) => e.target.value && update(index, { date: e.target.value })} />
-                              <span style={{ color: 'var(--ink-400)', fontSize: 12, marginLeft: 6 }}>
-                                {formatThaiDate(row.date)} {thaiDayShort(row.date)}
-                              </span>
-                            </td>
-                            <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
-                              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                                <input type="time" value={row.start_time} className="form-input" style={timeInput}
-                                  onChange={(e) => update(index, { start_time: e.target.value })} />
-                                <span>–</span>
-                                <input type="time" value={row.end_time} className="form-input" style={timeInput}
-                                  onChange={(e) => update(index, { end_time: e.target.value })} />
-                              </div>
-                            </td>
-                            <td style={{ padding: '8px 10px' }}>
-                              {hol && (
-                                <>
-                                  <span className="badge badge-amber">วันหยุด</span>
-                                  <span style={{ fontSize: 12, color: 'var(--ink-500)', marginLeft: 6 }}>{holidayNames.get(row.date)}</span>
-                                </>
-                              )}
-                            </td>
-                            <td style={{ padding: '8px 10px', textAlign: 'right' }}>
-                              <button type="button" title="ลบวันนี้" aria-label="ลบวันนี้"
-                                onClick={() => onChange(rows.filter((_, i2) => i2 !== index))}
-                                className="btn btn-xs"
-                                style={{ background: 'var(--red-bg)', color: 'var(--red)', border: '1px solid #FCA5A5' }}>
-                                ✕
-                              </button>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
-        )
-      })}
+                    )
+                  })}
+                </tbody>
+              )
+            })}
+          </table>
+        </div>
+      )}
 
       {/* Add a day */}
       <div style={{ padding: '10px 12px', background: 'var(--line-soft)', borderRadius: 'var(--radius-input)', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
