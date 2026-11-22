@@ -14,21 +14,21 @@ export function ConfirmedHistory({ applicationId, count, defaultOpen = false }: 
     queryFn: () => reportsApi.confirmedHistory(applicationId),
     enabled: open,
   })
-  const blacklisted = count > 0
+  const reported = count > 0
 
   return (
     <div style={{
-      border: blacklisted ? '1.5px solid #FCA5A5' : '1px solid var(--line)',
-      background: blacklisted ? '#FEF2F2' : undefined,
+      border: reported ? '1.5px solid #FCA5A5' : '1px solid var(--line)',
+      background: reported ? '#FEF2F2' : undefined,
       borderRadius: 10, padding: '12px 16px',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: blacklisted ? '#B91C1C' : 'var(--ink-900)' }}>
-            {blacklisted ? '⚠ นักศึกษาคนนี้ถูก blacklist' : 'ประวัติการปฏิบัติงานที่ยืนยันแล้ว'}
+          <div style={{ fontSize: 13, fontWeight: 700, color: reported ? '#B91C1C' : 'var(--ink-900)' }}>
+            {reported ? '⚠ นักศึกษาคนนี้มีรายงานที่ยืนยันแล้ว' : 'ประวัติการปฏิบัติงานที่ยืนยันแล้ว'}
           </div>
-          <div style={{ fontSize: 12, color: blacklisted ? '#DC2626' : 'var(--ink-500)', marginTop: 2 }}>
-            {blacklisted ? `มีรายงานที่ผู้ดูแลระบบยืนยันแล้ว ${count} รายการ` : 'ไม่มีรายการที่ผ่านการตรวจสอบ'}
+          <div style={{ fontSize: 12, color: reported ? '#DC2626' : 'var(--ink-500)', marginTop: 2 }}>
+            {reported ? `มีรายงานที่ผู้ตรวจสอบยืนยันแล้ว ${count} รายการ` : 'ไม่มีรายการที่ผ่านการตรวจสอบ'}
           </div>
         </div>
         {count > 0 && !open && <Button size="sm" variant="outline" onClick={() => setOpen(true)}>ดูรายละเอียด</Button>}

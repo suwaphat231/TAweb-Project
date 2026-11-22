@@ -16,7 +16,7 @@ import { ReportPageHeader } from '../../components/reports/ReportPageHeader'
 import { useToast } from '../../hooks/useToast'
 import { displayCourseTitle } from '../../utils/courseDisplay'
 import type { Application, Course, CourseEditRequest, CourseRelation } from '../../types'
-import { curriculumSuffixes, groupMyCourses, matchesMyCourse, sameTitleOtherCodes, sectionSlots, sectionsOf, type MyCourseGroup, type MySection, type MySlot } from '../../utils/myCourseGroups'
+import { groupMyCourses, matchesMyCourse, sameTitleOtherCodes, sectionKey, sectionSlots, sectionsOf, sectionTabLabel, selectedSectionOf, tabTargetIndex, type MyCourseGroup, type MySection, type MySlot } from '../../utils/myCourseGroups'
 import { formatSchedule, THAI_DAY_NAMES } from '../../utils/schedule'
 import { CourseEditRequestModal } from './CourseEditRequestModal'
 
@@ -131,18 +131,16 @@ export default function InstructorMyCourses() {
     return next
   })
 
-  // A combined classlist code can represent 165 and 2560 sharing the same
-  // schedule. Keep one card, and let the user switch the curriculum view.
-  const [curriculumByGroup, setCurriculumByGroup] = useState<Record<string, string>>({})
-  const selectCurriculum = (key: string, suffix: string) =>
-    setCurriculumByGroup((prev) => ({ ...prev, [key]: suffix }))
+  // The Section shown inside each open card (group key → sectionKey). Unset
+  // means the default: Sec 1, or the first Section when there is no Sec 1.
+  const [sectionByGroup, setSectionByGroup] = useState<Record<string, string>>({})
+  const selectSection = (key: string, sec: string) =>
+    setSectionByGroup((prev) => ({ ...prev, [key]: sec }))
 
-  // Section panels inside an open course. A course with one or two Sections
-  // opens them all — that is still short — while a longer one starts
-  // collapsed so the page doesn't grow past a screen. Keys the user toggled
-  // flip that default.
+  // The selected Section's panel inside an open course starts open; keys the
+  // user toggled are collapsed.
   const [secToggled, setSecToggled] = useState<Set<string>>(() => new Set())
-  const isSecOpen = (key: string, sectionCount: number) => (sectionCount <= 2) !== secToggled.has(key)
+  const isSecOpen = (key: string) => !secToggled.has(key)
   const toggleSec = (key: string) => setSecToggled((prev) => {
     const next = new Set(prev)
     if (next.has(key)) next.delete(key)
@@ -226,12 +224,6 @@ export default function InstructorMyCourses() {
     const open = openKeys.has(g.key)
     const panelId = `mc-panel-${g.rels[0].id}`
     const sectionCount = sectionsOf(g.rels).length
-    const curricula = curriculumSuffixes(c.code)
-    const combinedCurricula = curricula.length > 1
-    const selectedCurriculum = curriculumByGroup[g.key] ?? curricula[0] ?? ''
-    const firstSuffixIndex = c.code.search(/-\s*[0-9A-Za-z]+/)
-    const baseCode = firstSuffixIndex >= 0 ? c.code.slice(0, firstSuffixIndex).trim() : c.code
-    const displayCode = combinedCurricula ? `${baseCode}-${selectedCurriculum}` : c.code
     const twins = sameTitleOtherCodes(groups, g)
     const labBoyTotal = imported ? sectionsOf(g.rels).reduce((n, sec) => n + acceptedOf(sec.rels).length, 0) : 0
     const pendingCount = imported
@@ -244,7 +236,7 @@ export default function InstructorMyCourses() {
       <Card key={g.key} padding={0} className={`course-card ${imported ? 'is-imported' : 'is-self'}${open ? ' is-open' : ''}`}>
         <div className="mc-head">
           <div className="mc-head-main">
-            {/* The code is the data's code, unchanged — the curriculum tabs only appear inside the details. */}
+            {/* The code is the data's code, unchanged — e.g. "517122-165, -2560" stays whole. */}
             <div className="mc-code">{c.code}</div>
             <h3 className="mc-title">{displayCourseTitle(c.title, c.english_title)}</h3>
             <div className="mc-sub">ภาคเรียนที่ {c.semester} · ปีการศึกษา {c.academic_year}</div>
@@ -285,58 +277,61 @@ export default function InstructorMyCourses() {
 
         <div id={panelId} className="mc-collapse" data-open={open} inert={!open} aria-hidden={!open}>
           <div className="mc-collapse-inner">
-            {renderDetail(g, displayCode)}
+            {renderDetail(g)}
           </div>
         </div>
       </Card>
     )
   }
 
-  function renderDetail(g: MyCourseGroup, displayCode: string) {
+  function renderDetail(g: MyCourseGroup) {
     const c = g.head
     const uid = g.rels[0].id
     const sections = sectionsOf(g.rels)
-    const curricula = curriculumSuffixes(c.code)
-    const combinedCurricula = curricula.length > 1
-    const selectedCurriculum = curriculumByGroup[g.key] ?? curricula[0] ?? ''
+    const selected = selectedSectionOf(sections, sectionByGroup[g.key])
+    const selectedKey = selected ? sectionKey(selected) : ''
+    const tabId = (key: string) => `mc-tab-${uid}-${key}`
     return (
       <div className="mc-detail">
-        {combinedCurricula && (
-          <div className="mc-curr-bar">
-            <span className="mc-curr-label" id={`mc-curr-label-${uid}`}>หลักสูตร</span>
-            <div className="mc-curricula" role="tablist" aria-labelledby={`mc-curr-label-${uid}`}>
-              {curricula.map((x, i) => (
-                <button
-                  type="button"
-                  key={x}
-                  id={`mc-tab-${uid}-${x}`}
-                  role="tab"
-                  aria-selected={selectedCurriculum === x}
-                  aria-controls={`mc-tabpanel-${uid}`}
-                  tabIndex={selectedCurriculum === x ? 0 : -1}
-                  className="mc-curriculum-tab"
-                  onClick={() => selectCurriculum(g.key, x)}
-                  onKeyDown={(e) => {
-                    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
-                    const target = e.key === 'Home' ? 0 : e.key === 'End' ? curricula.length - 1
-                      : step ? (i + step + curricula.length) % curricula.length : -1
-                    if (target < 0) return
-                    e.preventDefault()
-                    selectCurriculum(g.key, curricula[target])
-                    document.getElementById(`mc-tab-${uid}-${curricula[target]}`)?.focus()
-                  }}
-                >
-                  -{x}
-                </button>
-              ))}
+        {sections.length > 0 && (
+          <div className="mc-sectab-bar">
+            <span className="mc-sectab-label" id={`mc-sectab-label-${uid}`}>Section</span>
+            <div className="mc-sectabs" role="tablist" aria-labelledby={`mc-sectab-label-${uid}`}>
+              {sections.map((sec, i) => {
+                const key = sectionKey(sec)
+                const isSelected = key === selectedKey
+                return (
+                  <button
+                    type="button"
+                    key={key}
+                    id={tabId(key)}
+                    role="tab"
+                    aria-selected={isSelected}
+                    aria-controls={`mc-tabpanel-${uid}`}
+                    tabIndex={isSelected ? 0 : -1}
+                    className="mc-sectab"
+                    onClick={() => selectSection(g.key, key)}
+                    onKeyDown={(e) => {
+                      const target = tabTargetIndex(e.key, i, sections.length)
+                      if (target < 0) return
+                      e.preventDefault()
+                      const next = sectionKey(sections[target])
+                      selectSection(g.key, next)
+                      document.getElementById(tabId(next))?.focus()
+                    }}
+                  >
+                    {sectionTabLabel(sec)}
+                  </button>
+                )
+              })}
             </div>
-            <span className="mc-curr-hint">ตารางเรียนและรายชื่อ Lab Boy ใช้ร่วมกันทั้งสองหลักสูตร</span>
+            <span className="mc-sectab-hint">ข้อมูลตารางเรียนและ Lab Boy ตาม Section ที่เลือก</span>
           </div>
         )}
         <div
           className="mc-detail-body"
-          {...(combinedCurricula
-            ? { role: 'tabpanel', id: `mc-tabpanel-${uid}`, 'aria-labelledby': `mc-tab-${uid}-${selectedCurriculum}` }
+          {...(selected
+            ? { role: 'tabpanel', id: `mc-tabpanel-${uid}`, 'aria-labelledby': tabId(selectedKey) }
             : {})}
         >
           <section className="mc-info" aria-labelledby={`mc-d-info-${uid}`}>
@@ -344,7 +339,7 @@ export default function InstructorMyCourses() {
             <div className="mc-d-grid">
               <div className="mc-field mc-field-code">
                 <span className="mc-field-label">รหัสวิชา</span>
-                <span key={displayCode} className="mc-field-value mc-swap">{displayCode}</span>
+                <span className="mc-field-value">{c.code}</span>
               </div>
               <DetailRow label="ชื่อวิชา (อังกฤษ)" value={c.english_title} />
               <DetailRow label="หน่วยกิต" value={c.credits} />
@@ -356,7 +351,8 @@ export default function InstructorMyCourses() {
               Section <span className="mc-muted">({sections.length})</span>
             </h4>
             <div className="mc-secs">
-              {sections.map((sec) => renderSection(g, sec, sections.length, displayCode))}
+              {/* Only the chosen Section: its schedule and Lab Boys, nothing from the others. */}
+              {selected && renderSection(g, selected)}
             </div>
           </section>
         </div>
@@ -365,10 +361,10 @@ export default function InstructorMyCourses() {
   }
 
   /** One Section: header (name · days · Lab Boy count) that opens its meeting times and Lab Boys. */
-  function renderSection(g: MyCourseGroup, sec: MySection, sectionCount: number, displayCode: string) {
+  function renderSection(g: MyCourseGroup, sec: MySection) {
     const imported = g.source === 'imported'
     const key = `${g.key}|${sec.section ?? 'none'}`
-    const open = isSecOpen(key, sectionCount)
+    const open = isSecOpen(key)
     const domId = `mc-sec-${g.rels[0].id}-${sec.section ?? 'none'}`
     const name = sec.section ? `Section ${sec.section}` : 'ไม่ระบุ Section'
     const slots = sectionSlots(sec)
@@ -378,7 +374,7 @@ export default function InstructorMyCourses() {
     const days = Array.from(new Set(sec.meetings.map((m) => THAI_DAY_NAMES[m.dayIndex])))
     const daySummary = days.length > 0 ? days.join(' · ') : sec.raw.length > 0 ? 'ดูเวลาในรายละเอียด' : 'ยังไม่ระบุเวลา'
     return (
-      <div key={key} className="mc-sec" data-open={open}>
+      <div key={key} className="mc-sec mc-swap" data-open={open}>
         <h5 className="mc-sec-h">
           <button
             type="button"
@@ -390,7 +386,7 @@ export default function InstructorMyCourses() {
           >
             <span className="mc-sec-name">
               {name}
-              <span key={displayCode} className="mc-sec-code mc-swap">{displayCode}</span>
+              <span className="mc-sec-code">{g.head.code}</span>
             </span>
             <span className="mc-sec-meta">
               <span className="mc-sec-days"><Icon name="calendar" size={13} /> {daySummary}</span>
@@ -415,7 +411,7 @@ export default function InstructorMyCourses() {
               <div className="mc-sec-col">
                 <div className="mc-sec-label">คาบเรียน</div>
                 <ul className="mc-slots">
-                  {slots.map((slot) => renderSlot(g, sec, slot, displayCode))}
+                  {slots.map((slot) => renderSlot(g, sec, slot))}
                 </ul>
               </div>
               <div className="mc-sec-col">
@@ -449,7 +445,7 @@ export default function InstructorMyCourses() {
   }
 
   /** One meeting time of a Section, with the edit / unlink action for its row. */
-  function renderSlot(g: MyCourseGroup, sec: MySection, slot: MySlot, displayCode: string) {
+  function renderSlot(g: MyCourseGroup, sec: MySection, slot: MySlot) {
     const imported = g.source === 'imported'
     const rel = slot.rels[0]
     const req = imported ? slot.rels.map((r) => latestRequest.get(r.course.id)).find(Boolean) : undefined
@@ -457,7 +453,7 @@ export default function InstructorMyCourses() {
     const when = slot.meetings.length > 0
       ? slot.meetings.map((m) => `${THAI_DAY_NAMES[m.dayIndex]} ${m.start}–${m.end}`).join(', ')
       : slot.raw ?? 'ยังไม่ระบุวันและเวลาเรียน'
-    const label = [displayCode, sec.section ? `Section ${sec.section}` : '', when].filter(Boolean).join(' ')
+    const label = [g.head.code, sec.section ? `Section ${sec.section}` : '', when].filter(Boolean).join(' ')
     return (
       <li key={rel.id} className="mc-slot">
         <div className="mc-slot-main">

@@ -12,6 +12,20 @@ import { GRADE_OPTIONS } from './_courseFormShared'
 import type { CreateCoursePayload } from '../../types'
 import { formatSchedule } from '../../utils/schedule'
 
+function FormSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <h3 style={{
+        margin: 0, paddingBottom: 6, borderBottom: '1px solid var(--line-soft)',
+        fontSize: 13, fontWeight: 700, color: 'var(--ink-700)',
+      }}>
+        {title}
+      </h3>
+      {children}
+    </section>
+  )
+}
+
 /** Today's date (YYYY-MM-DD) in Bangkok time — matches the backend's deadlinePassed check. */
 function todayBangkok(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date())
@@ -49,7 +63,6 @@ export function CourseFormModal({
   const [slotsStr, setSlotsStr] = useState('')
   const [slotsTouched, setSlotsTouched] = useState(false)
   const [showDatesConfirm, setShowDatesConfirm] = useState(false)
-
   // จำนวน Lab Boy ตามสูตร (ลงทะเบียน ÷ 10 ปี 1 / ÷ 20 ปี 2+ ปัดขึ้น) ของ section ที่เลือก
   const { data: catalog = [] } = useQuery({
     queryKey: ['course-catalog-sections', form.code, form.semester, form.academic_year],
@@ -155,127 +168,141 @@ export function CourseFormModal({
       title={editId ? `แก้ไขวิชา — ${form.code}` : 'สร้างประกาศรับสมัคร'}
       size="lg"
     >
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: editId ? '1fr 1fr' : '1fr', gap: 14 }}>
-          <CourseCodeAutocomplete
-            value={form.code}
-            onChange={(v) => { setForm(f => ({ ...f, code: v })); setSectionIds([]) }}
-            onSelect={(c) => {
-              setForm(f => ({
-                ...f,
-                code: c.code,
-                title: c.title,
-                semester: c.semester,
-                academic_year: c.academic_year,
-              }))
-              setSectionIds([])
-            }}
-            disabled={!!editId}
-          />
-          {editId && (
-            <Input label="ปีการศึกษา *" type="number" min="0" value={form.academic_year} onChange={set('academic_year')} onKeyDown={handleNonNegativeKeyDown} required />
-          )}
-        </div>
-        <Input label="ชื่อวิชา *" value={form.title} onChange={set('title')} placeholder="การโปรแกรมคอมพิวเตอร์" required />
-        {editId ? (
-          <Select label="ภาคเรียน" value={form.semester} onChange={set('semester')}
-            options={[{ value: '1', label: '1' }, { value: '2', label: '2' }, { value: '3', label: '3' }]} />
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <Select
-              label="ภาคเรียน *"
-              value={form.semester}
-              onChange={(e) => { set('semester')(e); setSectionIds([]) }}
-              options={[{ value: '1', label: '1' }, { value: '2', label: '2' }, { value: '3', label: '3' }]}
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+        <FormSection title="ข้อมูลวิชา">
+          <div className={editId ? 'course-form-row' : undefined}>
+            <CourseCodeAutocomplete
+              value={form.code}
+              onChange={(v) => { setForm(f => ({ ...f, code: v })); setSectionIds([]) }}
+              onSelect={(c) => {
+                setForm(f => ({
+                  ...f,
+                  code: c.code,
+                  title: c.title,
+                  semester: c.semester,
+                  academic_year: c.academic_year,
+                }))
+                setSectionIds([])
+              }}
+              disabled={!!editId}
             />
+            {editId && (
+              <Input label="ปีการศึกษา *" type="number" min="0" value={form.academic_year} onChange={set('academic_year')} onKeyDown={handleNonNegativeKeyDown} required />
+            )}
+          </div>
+          <Input label="ชื่อวิชา *" value={form.title} onChange={set('title')} placeholder="การโปรแกรมคอมพิวเตอร์" required />
+          {editId ? (
+            <Select label="ภาคเรียน" value={form.semester} onChange={set('semester')}
+              options={[{ value: '1', label: '1' }, { value: '2', label: '2' }, { value: '3', label: '3' }]} />
+          ) : (
+            <div className="course-form-row">
+              <Select
+                label="ภาคเรียน *"
+                value={form.semester}
+                onChange={(e) => { set('semester')(e); setSectionIds([]) }}
+                options={[{ value: '1', label: '1' }, { value: '2', label: '2' }, { value: '3', label: '3' }]}
+              />
+              <Input
+                label="ปีการศึกษา *"
+                type="number"
+                min="0"
+                value={form.academic_year}
+                onChange={(e) => { set('academic_year')(e); setSectionIds([]) }}
+                onKeyDown={handleNonNegativeKeyDown}
+                required
+              />
+            </div>
+          )}
+        </FormSection>
+
+        <FormSection title="ตอนเรียนและตารางสอน">
+          {editId ? (
+            // Editing one existing, already-open section — Sec/เวลาเรียนมาจากไฟล์นำเข้า
+            // เสมอ แสดงเป็นข้อมูลอย่างเดียว แก้ไขไม่ได้ เพื่อลดโอกาสพิมพ์ผิด
+            <div className="course-form-row course-form-row--wide">
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 5 }}>Sec</div>
+                <div style={{ fontSize: 14, color: 'var(--ink-900)', padding: '9px 12px', background: 'var(--bg)', borderRadius: 'var(--radius-input)' }}>
+                  {editSectionLabel?.replace(/^Sec /, '') || form.section || '—'}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 5 }}>วันและเวลาสอน</div>
+                <div style={{ fontSize: 14, color: 'var(--ink-900)', padding: '9px 12px', background: 'var(--bg)', borderRadius: 'var(--radius-input)', whiteSpace: 'pre-line' }}>
+                  {formatSchedule(form.schedule) || '—'}
+                </div>
+              </div>
+            </div>
+          ) : form.code && form.semester && form.academic_year ? (
+            <SectionCatalogPicker
+              code={form.code}
+              semester={form.semester}
+              academicYear={form.academic_year}
+              selectedIds={sectionIds}
+              onChange={setSectionIds}
+            />
+          ) : (
+            <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>
+              เลือกรหัสวิชาก่อน แล้วจึงเลือกตอนเรียนและวัน–เวลาสอนจากตารางที่นำเข้า
+            </div>
+          )}
+        </FormSection>
+
+        <FormSection title="เงื่อนไขการสมัคร">
+          <div className="course-form-row">
+            {/* A text box, not type="number": React does not always write the
+                sanitized value back into a number input, so "-1" stayed on screen. */}
             <Input
-              label="ปีการศึกษา *"
-              type="number"
-              min="0"
-              value={form.academic_year}
-              onChange={(e) => { set('academic_year')(e); setSectionIds([]) }}
+              label="Lab Boy Slots (คน) *"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              autoComplete="off"
+              placeholder="เช่น 2"
+              value={slotsStr}
+              onChange={handleSlotsChange}
               onKeyDown={handleNonNegativeKeyDown}
               required
+              hint={!editId && suggestions.length > 0
+                ? `สูงสุดตามสูตร: ${suggestions.map((s) => `${s.sec ? `Sec ${s.sec} ` : ''}${s.n} คน`).join(' · ')}`
+                : undefined}
             />
+            <Input label={editId ? 'วันปิดรับสมัคร' : 'วันปิดรับสมัคร *'} type="date" min={minDeadline} value={form.deadline ?? ''} onChange={set('deadline')} required={!editId} />
           </div>
-        )}
+          {editId && (
+            <Select label="สถานะ" value={form.status ?? 'draft'} onChange={set('status')}
+              options={[{ value: 'draft', label: 'ร่าง' }, { value: 'open', label: 'เปิดรับสมัคร' }, { value: 'closing_soon', label: 'ใกล้ปิด' }, { value: 'closed', label: 'ปิดรับ' }]} />
+          )}
+          <Select label={editId ? 'เกรดเฉลี่ยขั้นต่ำ' : 'เกรดเฉลี่ยขั้นต่ำ *'} value={minGrade} onChange={(e) => setMinGrade(e.target.value)} options={GRADE_OPTIONS} required={!editId}
+            hint="ผู้สมัครต้องมีเกรดเฉลี่ยไม่ต่ำกว่าเกณฑ์ที่กำหนด" />
 
-        {editId ? (
-          // Editing one existing, already-open section — Sec/เวลาเรียนมาจากไฟล์นำเข้า
-          // เสมอ แสดงเป็นข้อมูลอย่างเดียว แก้ไขไม่ได้ เพื่อลดโอกาสพิมพ์ผิด
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 14 }}>
+          <label
+            title="นักศึกษาต้องแนบรูปเกรด (เช่น ภาพจาก MyReg) ตอนสมัคร แทนการกรอกเกรดเอง"
+            style={{
+              display: 'flex', alignItems: 'flex-start', gap: 10,
+              padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
+              border: form.require_grade_proof ? '2px solid var(--primary)' : '1.5px solid var(--line)',
+              background: form.require_grade_proof ? 'var(--primary-50)' : 'var(--bg-card)',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={!!form.require_grade_proof}
+              onChange={(e) => setForm(f => ({ ...f, require_grade_proof: e.target.checked }))}
+              style={{ marginTop: 2 }}
+            />
             <div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 5 }}>Sec</div>
-              <div style={{ fontSize: 14, color: 'var(--ink-900)', padding: '9px 12px', background: 'var(--bg)', borderRadius: 'var(--radius-input)' }}>
-                {editSectionLabel?.replace(/^Sec /, '') || form.section || '—'}
-              </div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-900)' }}>ต้องแนบรูปภาพเกรดยืนยัน</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2 }}>เช่น ภาพเกรดจาก MyReg</div>
             </div>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 5 }}>เวลาเรียน</div>
-              <div style={{ fontSize: 14, color: 'var(--ink-900)', padding: '9px 12px', background: 'var(--bg)', borderRadius: 'var(--radius-input)', whiteSpace: 'pre-line' }}>
-                {formatSchedule(form.schedule) || '—'}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <SectionCatalogPicker
-            code={form.code}
-            semester={form.semester}
-            academicYear={form.academic_year}
-            selectedIds={sectionIds}
-            onChange={setSectionIds}
-          />
-        )}
+          </label>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          {/* A text box, not type="number": React does not always write the
-              sanitized value back into a number input, so "-1" stayed on screen. */}
-          <Input
-            label="Lab Boy Slots *"
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            autoComplete="off"
-            value={slotsStr}
-            onChange={handleSlotsChange}
-            onKeyDown={handleNonNegativeKeyDown}
-            required
-            hint={!editId && suggestions.length > 0
-              ? `กรอกได้ไม่เกินตามสูตร: ${suggestions.map((s) => `${s.sec ? `Sec ${s.sec} ` : ''}${s.n} คน`).join(' · ')} (ลงทะเบียน ÷ 10 วิชาปี 1, ÷ 20 ปี 2 ขึ้นไป)`
-              : undefined}
-          />
-          <Input label={editId ? 'วันปิดรับสมัคร' : 'วันปิดรับสมัคร *'} type="date" min={minDeadline} value={form.deadline ?? ''} onChange={set('deadline')} required={!editId} />
-        </div>
-        {editId && (
-          <Select label="สถานะ" value={form.status ?? 'draft'} onChange={set('status')}
-            options={[{ value: 'draft', label: 'ร่าง' }, { value: 'open', label: 'เปิดรับสมัคร' }, { value: 'closing_soon', label: 'ใกล้ปิด' }, { value: 'closed', label: 'ปิดรับ' }]} />
-        )}
-        <Select label={editId ? 'เกรดเฉลี่ยขั้นต่ำ' : 'เกรดเฉลี่ยขั้นต่ำ *'} value={minGrade} onChange={(e) => setMinGrade(e.target.value)} options={GRADE_OPTIONS} required={!editId} />
-
-        <label style={{
-          display: 'flex', alignItems: 'flex-start', gap: 10,
-          padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
-          border: form.require_grade_proof ? '2px solid var(--primary)' : '1.5px solid var(--line)',
-          background: form.require_grade_proof ? 'var(--primary-50)' : 'var(--bg-card)',
-        }}>
-          <input
-            type="checkbox"
-            checked={!!form.require_grade_proof}
-            onChange={(e) => setForm(f => ({ ...f, require_grade_proof: e.target.checked }))}
-            style={{ marginTop: 2 }}
-          />
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-900)' }}>ต้องแนบรูปภาพเกรดยืนยัน</div>
-            <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2 }}>
-              นักศึกษาต้องแนบรูปเกรด (เช่น ภาพจาก MyReg) ตอนสมัคร แทนการกรอกเกรดเฉยๆ — ป้องกันการกรอกเกรดมั่ว
-            </div>
-          </div>
-        </label>
+        </FormSection>
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap' }}>
           {missing.length > 0 && (
             <span style={{ fontSize: 12, color: 'var(--ink-500)', marginRight: 'auto' }}>
-              กรอกให้ครบก่อนเปิดรับสมัคร — ยังขาด: {missing.join(', ')}
+              ยังขาด: {missing.join(', ')}
             </span>
           )}
           <Button type="button" variant="ghost" onClick={onClose}>ยกเลิก</Button>

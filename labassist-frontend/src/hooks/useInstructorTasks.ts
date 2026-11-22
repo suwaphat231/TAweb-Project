@@ -7,6 +7,8 @@ import { deadlineInfo, type DeadlineInfo } from '../utils/postingDeadline'
 export interface PostingTask {
   /** Posting key (same as the grouping key used on the instructor home page). */
   key: string
+  /** A section of the posting, for the /instructor/select?course= link. */
+  courseId: number
   code: string
   title: string
   /** Applicants still waiting for a decision. */
@@ -46,7 +48,7 @@ export function useInstructorTasks(enabled = true) {
       const info = deadlineInfo(earliest, g.status)
       const deadline = info && (info.tone === 'soon' || info.tone === 'overdue') ? info : null
       if (!pending && !deadline) return []
-      return [{ key: g.key, code: g.code, title: g.title, pending, deadline }]
+      return [{ key: g.key, courseId: g.sections[0].id, code: g.code, title: g.title, pending, deadline }]
     })
     return { tasks, count: tasks.length }
   }, [courses, applicantQueries])

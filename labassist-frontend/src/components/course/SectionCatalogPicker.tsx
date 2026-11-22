@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { instructorApi } from '../../services/api'
 import { groupSectionsByTime, timeOptionSecLabel } from '../../utils/courseGrouping'
 import { formatSchedule } from '../../utils/schedule'
+import { CurriculumChips } from './CurriculumChips'
 
 interface Props {
   code: string
@@ -38,8 +39,9 @@ export function SectionCatalogPicker({ code, semester, academicYear, selectedIds
     <div>
       <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 6 }}>
         เลือกช่วงเวลาที่จะเปิดรับสมัคร {' '}
-        <span style={{ fontWeight: 400, color: 'var(--ink-400)' }}></span>
+        <span style={{ fontWeight: 400, color: 'var(--ink-400)' }}>(วิชา {code})</span>
       </div>
+      <CurriculumChips code={code} label="หลักสูตร" style={{ marginBottom: 6 }} />
 
       {isLoading ? (
         <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>กำลังโหลด...</div>

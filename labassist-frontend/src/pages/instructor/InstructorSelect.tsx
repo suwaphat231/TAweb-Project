@@ -234,7 +234,7 @@ export default function InstructorSelect() {
   }
 
   // showHistory opens the confirmed-record details straight away (from the
-  // red blacklist badge); otherwise the instructor expands them on request.
+  // red report badge); otherwise the instructor expands them on request.
   function openProfile(app: Application, showHistory = false) {
     setNoteText('')
     setGradeProofUrl(null)
@@ -502,10 +502,10 @@ export default function InstructorSelect() {
                   const isPending  = row.status === 'pending'
                   const isAccepted = row.status === 'accepted'
                   const isSelected = selectedIds.has(row.id)
-                  const isBlacklisted = !!row.confirmed_record_count
+                  const isReported = !!row.confirmed_record_count
                   const rowBg = isSelected
                     ? 'var(--primary-50)'
-                    : isBlacklisted ? 'var(--red-bg)' : isAccepted ? 'var(--green-bg)' : 'var(--bg-card)'
+                    : isReported ? 'var(--red-bg)' : isAccepted ? 'var(--green-bg)' : 'var(--bg-card)'
 
                   return (
                     <tr
@@ -513,11 +513,11 @@ export default function InstructorSelect() {
                       style={{
                         borderBottom: i < filtered.length - 1 ? '1px solid var(--line-soft)' : 'none',
                         background: rowBg,
-                        boxShadow: isBlacklisted ? 'inset 4px 0 0 var(--red)' : undefined,
+                        boxShadow: isReported ? 'inset 4px 0 0 var(--red)' : undefined,
                         transition: 'background .12s',
                       }}
                       onMouseEnter={(e) => {
-                        if (!isSelected && !isAccepted && !isBlacklisted) e.currentTarget.style.background = 'var(--line-soft)'
+                        if (!isSelected && !isAccepted && !isReported) e.currentTarget.style.background = 'var(--line-soft)'
                       }}
                       onMouseLeave={(e) => {
                         e.currentTarget.style.background = rowBg
@@ -546,7 +546,7 @@ export default function InstructorSelect() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           <Avatar size={34} />
                           <div>
-                            <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--ink-900)' }}>{row.student_name}</div>
+                            <div style={{ fontWeight: 600, fontSize: 14, color: row.confirmed_record_count ? '#B91C1C' : 'var(--ink-900)' }}>{row.student_name}</div>
                             <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>{row.student_code || '—'}</div>
                             {!!row.confirmed_record_count && (
                               <button

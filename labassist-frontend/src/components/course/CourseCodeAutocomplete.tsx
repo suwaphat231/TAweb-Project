@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { instructorApi } from '../../services/api'
 import { displayCourseTitle } from '../../utils/courseDisplay'
+import { CurriculumChips } from './CurriculumChips'
 
 interface Suggestion {
   code: string
@@ -103,7 +104,7 @@ export function CourseCodeAutocomplete({ value, onChange, onSelect, disabled }: 
         onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--primary)'; openList() }}
         onClick={() => { if (!open) openList() }}
         onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--line)' }}
-        placeholder={isLoading ? 'กำลังโหลด...' : 'พิมพ์รหัสวิชา เช่น 517, 520...'}
+        placeholder={isLoading ? 'กำลังโหลด...' : 'เช่น 517433-165, -160'}
         disabled={disabled}
         required
         autoComplete="off"
@@ -140,6 +141,10 @@ export function CourseCodeAutocomplete({ value, onChange, onSelect, disabled }: 
         </button>
       )}
       </div>
+      <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>
+        รองรับรหัสหลายหลักสูตร เช่น 517433-165, -160
+      </div>
+      <CurriculumChips code={inputValue} label="หลักสูตร" />
 
       {open && !disabled && suggestions.length > 0 && (
         <div style={{
@@ -178,6 +183,7 @@ export function CourseCodeAutocomplete({ value, onChange, onSelect, disabled }: 
               <span style={{ fontSize: 12, color: 'var(--ink-600)', marginLeft: 8 }}>
                 {displayCourseTitle(c.title, c.english_title)}
               </span>
+              <CurriculumChips code={c.code} style={{ marginTop: 4 }} />
             </button>
           ))}
         </div>

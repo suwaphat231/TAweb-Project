@@ -1,35 +1,22 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { AdminPageHeader } from '../../components/admin/AdminPageHeader'
 import { HolidayOverview } from '../../components/admin/HolidayOverview'
+import { CalendarReview } from '../../components/admin/CalendarReview'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
 import { adminApi } from '../../services/api'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
-import { Badge } from '../../components/ui/Badge'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { useToast } from '../../hooks/useToast'
 import { CALENDAR_JOB_KEY, useCalendarJob } from '../../hooks/useCalendarJob'
 import { formatThaiDate } from '../../utils/thaiDate'
-import type { CalendarImportType, CalendarJob, CalendarPreviewResponse } from '../../types'
+import type { CalendarJob, CalendarPreviewResponse } from '../../types'
 import {
-  CALENDAR_IMPORT_TYPE_LABELS, CALENDAR_SEMESTER_LABELS, entryDays,
-  filledTerms, formatEntryRange, importSummary, termIssue, toDraftRows, toImportPayload, toTermDrafts, toTermPayload, toEventDrafts, toEventPayload, EVENT_CATEGORY_LABEL, type EventDraft,
+  CALENDAR_SEMESTER_LABELS, filledTerms, termIssue, toDraftRows, toImportPayload, toTermDrafts, toTermPayload, toEventDrafts, toEventPayload,
+  type EventDraft,
 } from '../../utils/academicCalendar'
 import type { CalendarDraftRow, TermDraft } from '../../utils/academicCalendar'
-
-const SEMESTER_TABS = [
-  { value: '', label: 'ทั้งหมด' },
-  { value: '1', label: CALENDAR_SEMESTER_LABELS['1'] },
-  { value: '2', label: CALENDAR_SEMESTER_LABELS['2'] },
-  { value: 'S', label: CALENDAR_SEMESTER_LABELS.S },
-]
-
-const CELL_INPUT: React.CSSProperties = {
-  width: '100%', height: 32, padding: '0 8px', borderRadius: 6,
-  border: '1.5px solid var(--line)', fontSize: 13, color: 'var(--ink-800)',
-  background: '#fff', boxSizing: 'border-box', outline: 'none',
-}
 
 // Keys invalidated after an import: semester holidays shown to staff, and
 // the plans that holidays change.
@@ -65,7 +52,6 @@ function ImportTab() {
   const [rows, setRows] = useState<CalendarDraftRow[]>([])
   const [terms, setTerms] = useState<TermDraft[]>([])
   const [events, setEvents] = useState<EventDraft[]>([])
-  const [semesterFilter, setSemesterFilter] = useState('')
 
   // The file is read in the background (minutes for a scanned PDF); the job
   // lives on the server, so leaving this page doesn't lose it.
@@ -101,7 +87,6 @@ function ImportTab() {
     setRows(toDraftRows(job.result.entries))
     setTerms(toTermDrafts(job.result.terms))
     setEvents(toEventDrafts(job.result.activities))
-    setSemesterFilter('')
   }
 
   const discard = () => {
@@ -129,32 +114,21 @@ function ImportTab() {
     onError: (err) => showToast(errorText(err, 'บันทึกไม่สำเร็จ กรุณาลองใหม่'), 'error'),
   })
 
-  const update = (index: number, patch: Partial<CalendarDraftRow>) =>
-    setRows((old) => old.map((r, i) => (i === index ? { ...r, ...patch } : r)))
+  // Rows are read-only; only which of them get saved can change.
+  const selectRows = (indexes: number[], selected: boolean) => {
+    const set = new Set(indexes)
+    setRows((old) => old.map((r, i) => (set.has(i) ? { ...r, selected } : r)))
+  }
+  const selectEvents = (indexes: number[], include: boolean) => {
+    const set = new Set(indexes)
+    setEvents((old) => old.map((e, i) => (set.has(i) ? { ...e, include } : e)))
+  }
 
-  const visible = useMemo(() => rows
-    .map((row, index) => ({ row, index }))
-    .filter(({ row }) => !semesterFilter || row.semester === semesterFilter),
-  [rows, semesterFilter])
-
-  const summary = importSummary(rows)
   const termCount = filledTerms(terms).length
-  const eventCount = events.filter((e) => e.include).length
-  const updateEvent = (index: number, patch: Partial<EventDraft['activity']> & { include?: boolean }) =>
-    setEvents((old) => old.map((e, i) => {
-      if (i !== index) return e
-      const { include, ...rest } = patch
-      return { activity: { ...e.activity, ...rest }, include: include ?? e.include }
-    }))
   const termProblem = terms.some((t) => termIssue(t))
   const updateTerm = (semester: string, patch: Partial<TermDraft>) =>
     setTerms((old) => old.map((t) => (t.semester === semester ? { ...t, ...patch } : t)))
   const yearMismatch = preview?.detected_academic_year && preview.detected_academic_year !== preview.academic_year
-
-  const setAllVisible = (selected: boolean) => {
-    const indexes = new Set(visible.filter(({ row }) => !row.exists).map(({ index }) => index))
-    setRows((old) => old.map((r, i) => (indexes.has(i) ? { ...r, selected } : r)))
-  }
 
   return (
     <div>
@@ -205,7 +179,7 @@ function ImportTab() {
           )}
           {preview.used_ocr && (
             <Notice tone="blue">
-              ไฟล์นี้เป็นภาพสแกน ระบบอ่านด้วย OCR ซึ่งอาจอ่านวันที่หรือชื่อผิดได้ กรุณาตรวจทานทุกรายการ
+              ไฟล์นี้เป็นภาพสแกน ระบบอ่านด้วย OCR ซึ่งอาจอ่านวันที่หรือชื่อผิดได้ กรุณาตรวจทานทุกรายการ — รายการที่อ่านผิดให้เอาเครื่องหมายเลือกออก
             </Notice>
           )}
           {preview.entries.length === 0 && termCount === 0 && events.length === 0 && (
@@ -215,126 +189,20 @@ function ImportTab() {
           )}
 
           <TermSection terms={terms} onChange={updateTerm} />
-          <EventSection events={events} saved={preview.saved_events} onChange={updateEvent} />
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-            {SEMESTER_TABS.map((tab) => (
-              <button
-                key={tab.value}
-                type="button"
-                onClick={() => setSemesterFilter(tab.value)}
-                style={{
-                  padding: '6px 14px', borderRadius: 999, fontSize: 13, fontWeight: 600,
-                  border: '1.5px solid var(--line)', cursor: 'pointer',
-                  background: semesterFilter === tab.value ? 'var(--primary)' : '#fff',
-                  color: semesterFilter === tab.value ? '#fff' : 'var(--ink-700)',
-                }}
-              >
-                {tab.label}
-              </button>
-            ))}
-            <Button type="button" size="sm" variant="outline" style={{ marginLeft: 'auto' }} onClick={() => setAllVisible(true)}>เลือกทั้งหมด</Button>
-            <Button type="button" size="sm" variant="ghost" onClick={() => setAllVisible(false)}>ไม่เลือกเลย</Button>
-          </div>
-
-          <div className="data-table-wrap" role="region" aria-label="รายการวันหยุดที่อ่านได้จากปฏิทิน" tabIndex={0}>
-            <table className="data-table" style={{ minWidth: 880 }}>
-              <thead>
-                <tr>
-                  {['', 'วันที่', 'รายการ', 'ภาค', 'ประเภท', 'ยกเลิกวันทำงาน'].map((h, i) => (
-                    <th key={i} scope="col">{h || <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>เลือก</span>}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {visible.length === 0 && (
-                  <tr><td colSpan={6}><EmptyState title="ไม่มีรายการในตัวกรองนี้" /></td></tr>
-                )}
-                {visible.map(({ row, index }) => {
-                  const days = entryDays(row.start_date, row.end_date)
-                  return (
-                    <tr key={index} style={{ opacity: row.exists ? 0.6 : 1 }}>
-                      <td style={{ padding: '8px 12px', width: 36 }}>
-                        <input
-                          type="checkbox"
-                          aria-label={`เลือก ${row.name}`}
-                          checked={row.selected && !row.exists}
-                          disabled={row.exists}
-                          title={row.exists ? 'มีในระบบแล้ว' : undefined}
-                          onChange={(e) => update(index, { selected: e.target.checked })}
-                          style={{ width: 16, height: 16, accentColor: 'var(--primary)', cursor: 'pointer' }}
-                        />
-                      </td>
-                      <td style={{ padding: '8px 12px', fontSize: 13, color: 'var(--ink-700)', whiteSpace: 'nowrap' }}>
-                        {formatEntryRange(row.start_date, row.end_date)}
-                        {days > 1 && <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>{days} วัน</div>}
-                      </td>
-                      <td style={{ padding: '8px 12px', minWidth: 260 }}>
-                        <input
-                          value={row.name}
-                          maxLength={200}
-                          aria-label="ชื่อรายการ"
-                          onChange={(e) => update(index, { name: e.target.value })}
-                          style={{ ...CELL_INPUT, borderColor: row.selected && !row.name.trim() ? 'var(--red)' : 'var(--line)' }}
-                        />
-                        {row.exists && <div style={{ marginTop: 4 }}><Badge variant="gray">มีในระบบแล้ว</Badge></div>}
-                        {!row.exists && !row.include && (
-                          <div style={{ marginTop: 4 }}>
-                            <Badge variant="amber">วันสำคัญ — ไฟล์ไม่ได้ระบุว่าหยุด ตรวจสอบก่อนเลือก</Badge>
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ padding: '8px 12px', width: 130 }}>
-                        <select
-                          value={row.semester}
-                          aria-label="ภาคการศึกษา"
-                          onChange={(e) => update(index, { semester: e.target.value })}
-                          style={CELL_INPUT}
-                        >
-                          {Object.entries(CALENDAR_SEMESTER_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                        </select>
-                      </td>
-                      <td style={{ padding: '8px 12px', width: 190 }}>
-                        <select
-                          value={row.date_type}
-                          aria-label="ประเภท"
-                          onChange={(e) => update(index, { date_type: e.target.value as CalendarImportType })}
-                          style={CELL_INPUT}
-                        >
-                          {Object.entries(CALENDAR_IMPORT_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                        </select>
-                      </td>
-                      <td style={{ padding: '8px 12px', width: 110, textAlign: 'center' }}>
-                        <input
-                          type="checkbox"
-                          aria-label="ยกเลิกวันทำงานที่ตรงกับวันนี้"
-                          checked={row.affects_work}
-                          onChange={(e) => update(index, { affects_work: e.target.checked })}
-                          style={{ width: 16, height: 16, accentColor: 'var(--primary)', cursor: 'pointer' }}
-                        />
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div style={{
-            position: 'sticky', bottom: 0, marginTop: 16, padding: '14px 20px',
-            display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
-            background: '#fff', border: '1.5px solid var(--line)', borderRadius: 12, boxShadow: 'var(--shadow-md)',
-          }}>
-            <span style={{ fontSize: 14, color: 'var(--ink-700)' }}>
-              วันหยุด <b>{summary.entries}</b> รายการ ({summary.days} วัน) · วันเปิด-ปิดภาคเรียน <b>{termCount}</b> ภาค · กิจกรรมวิชาการ <b>{eventCount}</b> รายการ — ปีการศึกษา {preview.academic_year}
-            </span>
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: 10 }}>
-              <Button type="button" variant="ghost" onClick={discard}>ยกเลิก</Button>
-              <Button type="button" loading={importMut.isPending} disabled={(summary.entries === 0 && termCount === 0 && eventCount === 0) || termProblem} onClick={() => importMut.mutate()}>
-                บันทึกลงปฏิทิน
-              </Button>
-            </div>
-          </div>
+          <CalendarReview
+            key={loadedJob ?? ''}
+            academicYear={preview.academic_year}
+            rows={rows}
+            events={events}
+            savedEvents={preview.saved_events}
+            termCount={termCount}
+            termProblem={termProblem}
+            saving={importMut.isPending}
+            onSelectRows={selectRows}
+            onSelectEvents={selectEvents}
+            onDiscard={discard}
+            onSave={() => importMut.mutate()}
+          />
         </>
       )}
     </div>
@@ -355,41 +223,6 @@ export default function AdminCalendar() {
       </div>
       {tab === 'overview' ? <HolidayOverview /> : <ImportTab />}
     </div>
-  )
-}
-
-const EVENT_CATEGORIES = Object.keys(EVENT_CATEGORY_LABEL) as (keyof typeof EVENT_CATEGORY_LABEL)[]
-
-/** Other activities of the calendar (registration, exams, deadlines): pick which go on the admin calendar. */
-function EventSection({ events, saved, onChange }: {
-  events: EventDraft[]; saved: number
-  onChange: (index: number, patch: Partial<EventDraft['activity']> & { include?: boolean }) => void
-}) {
-  if (events.length === 0) return null
-  return (
-    <section aria-label="กิจกรรมวิชาการ" style={{ marginBottom: 16 }}>
-      <h3 style={{ fontSize: 15, margin: '0 0 4px' }}>กิจกรรมวิชาการ ({events.length} รายการ)</h3>
-      <p style={{ fontSize: 13, color: 'var(--ink-500)', margin: '0 0 8px' }}>
-        ลงทะเบียน สอบ กำหนดส่ง ฯลฯ — แสดงบนปฏิทินภาพรวมของแอดมินเท่านั้น ไม่กระทบตารางงานเจ้าหน้าที่
-        {saved > 0 && ` · มีกิจกรรมที่บันทึกไว้แล้ว ${saved} รายการ การบันทึกครั้งนี้จะแทนที่ของปีนี้ทั้งหมด`}
-      </p>
-      <div style={{ maxHeight: 320, overflow: 'auto', border: '1px solid var(--line)', borderRadius: 10 }}>
-        {events.map((e, i) => (
-          <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '6px 10px', borderBottom: '1px solid var(--line-soft)', flexWrap: 'wrap' }}>
-            <input type="checkbox" checked={e.include} aria-label={`เลือก ${e.activity.name}`} onChange={(ev) => onChange(i, { include: ev.target.checked })} />
-            <span style={{ fontSize: 13, color: 'var(--ink-500)', minWidth: 150 }}>
-              {formatEntryRange(e.activity.start_date, e.activity.end_date)} · ภาค {e.activity.semester}
-            </span>
-            <input value={e.activity.name} maxLength={200} aria-label="ชื่อกิจกรรม" onChange={(ev) => onChange(i, { name: ev.target.value })}
-              style={{ flex: 1, minWidth: 200, padding: '4px 8px', border: '1px solid var(--line)', borderRadius: 6 }} />
-            <select value={e.activity.category} aria-label="ประเภท" onChange={(ev) => onChange(i, { category: ev.target.value as EventDraft['activity']['category'] })}
-              style={{ padding: '4px 6px', border: '1px solid var(--line)', borderRadius: 6 }}>
-              {EVENT_CATEGORIES.map((c) => <option key={c} value={c}>{EVENT_CATEGORY_LABEL[c]}</option>)}
-            </select>
-          </div>
-        ))}
-      </div>
-    </section>
   )
 }
 

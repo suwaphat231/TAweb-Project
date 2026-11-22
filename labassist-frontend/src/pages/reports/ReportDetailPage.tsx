@@ -28,7 +28,7 @@ const actionInfo: Record<ReportAction, { label: string; variant: 'primary' | 'ou
   submit:                  { label: 'ส่งรายงาน',                    variant: 'primary', needsReason: false, prompt: 'เมื่อส่งแล้วจะแก้ไขไม่ได้ นักศึกษาจะได้รับแจ้งและสามารถชี้แจงได้' },
   start_review:            { label: 'รับเรื่องตรวจสอบ',             variant: 'primary', needsReason: false, prompt: 'เริ่มพิจารณารายงานนี้' },
   request_info:            { label: 'ขอข้อมูลเพิ่มเติม',             variant: 'outline', needsReason: true,  prompt: 'ระบุข้อมูลที่ต้องการจากนักศึกษาหรือผู้รายงาน' },
-  confirm:                 { label: 'ยืนยันรายงาน',                 variant: 'primary', needsReason: false, prompt: 'ยืนยันตามรายละเอียดที่อาจารย์รายงานมา — ผลนี้จะแสดงแก่อาจารย์รายวิชาอื่นที่นักศึกษาสมัคร' },
+  confirm:                 { label: 'ยืนยันรายงาน',                 variant: 'primary', needsReason: true, prompt: 'ระบุเหตุผลการยืนยัน — ผลและเหตุผลนี้จะแสดงแก่อาจารย์รายวิชาอื่นที่นักศึกษาสมัคร' },
   not_substantiated:       { label: 'ไม่ยืนยัน (ข้อมูลไม่เพียงพอ)', variant: 'outline', needsReason: true,  prompt: 'ระบุเหตุผลที่ข้อมูลไม่เพียงพอ' },
   reopen:                  { label: 'นำกลับมาตรวจสอบใหม่',          variant: 'outline', needsReason: true,  prompt: 'ผลเดิมจะยังถูกเก็บไว้ในประวัติ ระบุเหตุผลที่ต้องตรวจสอบใหม่' },
   decline_reconsideration: { label: 'คงผลเดิม',                     variant: 'outline', needsReason: true,  prompt: 'ระบุเหตุผลที่ไม่รับคำขอทบทวน' },

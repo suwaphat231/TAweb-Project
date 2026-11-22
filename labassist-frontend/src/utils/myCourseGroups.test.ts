@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Course, CourseRelation } from '../types'
-import { curriculumSuffixes, groupMyCourses, matchesMyCourse, sameTitleOtherCodes, sectionSlots, sectionsOf } from './myCourseGroups'
+import { curriculumSuffixes, splitCourseCode, groupMyCourses, matchesMyCourse, sameTitleOtherCodes, sectionKey, sectionSlots, sectionsOf, sectionTabLabel, selectedSectionOf, tabTargetIndex } from './myCourseGroups'
 
 let nextId = 1
 function rel(p: Partial<Course> & { source?: CourseRelation['source'] }): CourseRelation {
@@ -125,6 +125,16 @@ describe('curriculum codes', () => {
     expect(curriculumSuffixes('517122-165')).toEqual(['165'])
   })
 
+  it('splits a combined code for display but keeps the full code intact', () => {
+    const merged = splitCourseCode('517433-165, -160')
+    expect(merged.suffixes).toEqual(['165', '160'])
+    expect(merged.full).toBe('517433-165, -160')
+    expect(merged.full).not.toBe(merged.base)
+    expect(splitCourseCode('517433-165, -2560').suffixes).toEqual(['165', '2560'])
+    expect(splitCourseCode('517433-160').suffixes).toEqual(['160'])
+    expect(splitCourseCode('517433')).toEqual({ full: '517433', base: '517433', suffixes: [] })
+  })
+
   it('finds other codes with the same title in the same term', () => {
     const g = groupMyCourses([
       rel({ code: '517122', title: 'ทักษะ 2' }),
@@ -174,5 +184,45 @@ describe('matchesMyCourse', () => {
     expect(matchesMyCourse(plain, '517122')).toBe(true)
     expect(matchesMyCourse(plain, '-165')).toBe(false)
     expect(matchesMyCourse(plain, '-2560')).toBe(false)
+  })
+})
+
+describe('Section tabs', () => {
+  const CODE = '517122-165, -2560'
+  const secs = () => sectionsOf([
+    rel({ code: CODE, section: 2, schedule: 'Th 13:00-16:00 1227' }),
+    rel({ code: CODE, section: 1, schedule: 'Tu 09:00-12:00 1227' }),
+  ])
+
+  it('labels tabs by the real Sections, never by curriculum suffix', () => {
+    expect(secs().map(sectionTabLabel)).toEqual(['Sec 1', 'Sec 2'])
+    expect(secs().map(sectionKey)).toEqual(['1', '2'])
+  })
+
+  it('defaults to Sec 1 and switches to only Sec 2 rows when chosen', () => {
+    expect(selectedSectionOf(secs())?.section).toBe(1)
+    const two = selectedSectionOf(secs(), '2')
+    expect(two?.section).toBe(2)
+    expect(two?.rels.every((r) => r.course.section === 2)).toBe(true)
+    expect(two?.rels.map((r) => r.course.schedule)).toEqual(['Th 13:00-16:00 1227'])
+    // The combined code stays whole on every row.
+    expect(two?.rels.every((r) => r.course.code === CODE)).toBe(true)
+  })
+
+  it('falls back to the first Section when the choice is gone or there is no Sec 1', () => {
+    expect(selectedSectionOf(secs(), '9')?.section).toBe(1)
+    const only3 = sectionsOf([rel({ section: 3 })])
+    expect(selectedSectionOf(only3)?.section).toBe(3)
+    expect(selectedSectionOf([])).toBeUndefined()
+  })
+
+  it('moves with ArrowLeft/ArrowRight (wrapping), Home and End', () => {
+    expect(tabTargetIndex('ArrowRight', 0, 3)).toBe(1)
+    expect(tabTargetIndex('ArrowRight', 2, 3)).toBe(0)
+    expect(tabTargetIndex('ArrowLeft', 0, 3)).toBe(2)
+    expect(tabTargetIndex('Home', 2, 3)).toBe(0)
+    expect(tabTargetIndex('End', 0, 3)).toBe(2)
+    expect(tabTargetIndex('Enter', 0, 3)).toBe(-1)
+    expect(tabTargetIndex('ArrowRight', 0, 0)).toBe(-1)
   })
 })

@@ -162,13 +162,13 @@ func TestStaffCannotReview(t *testing.T) {
 	}
 }
 
-func TestConfirmWithoutReason(t *testing.T) {
-	to, d := CheckAction(report(models.ReportUnderReview), adminUser, ActionConfirm, "")
-	if d != nil {
-		t.Fatalf("confirm without reason must be allowed: %v", d)
+func TestConfirmRequiresReason(t *testing.T) {
+	if _, d := CheckAction(report(models.ReportUnderReview), adminUser, ActionConfirm, ""); d == nil {
+		t.Fatal("confirm without reason must be rejected")
 	}
-	if to != models.ReportConfirmed {
-		t.Fatalf("got %s, want %s", to, models.ReportConfirmed)
+	to, d := CheckAction(report(models.ReportUnderReview), adminUser, ActionConfirm, "ผลตรวจสอบยืนยันเหตุการณ์")
+	if d != nil || to != models.ReportConfirmed {
+		t.Fatalf("confirm: to=%s d=%v", to, d)
 	}
 }
 

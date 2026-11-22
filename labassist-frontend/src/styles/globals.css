@@ -427,6 +427,44 @@ select.slot-control { width: 100%; cursor: pointer; }
 .cal-tabs button[aria-selected="true"] { color: var(--primary); border-bottom-color: var(--primary); }
 .cal-tabs button:hover { color: var(--primary); }
 
+/* Calendar import review: read-only rows, select-only. */
+.cal-review { background: var(--bg-card, #fff); border: 1.5px solid var(--line); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px; }
+.cal-review .cal-tabs { margin-bottom: 14px; }
+.cal-review-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.cal-review-title { font-size: 16px; font-weight: 700; color: var(--ink-900); margin: 0; }
+.cal-review-desc { font-size: 13px; color: var(--ink-500); margin: 4px 0 0; }
+.cal-review-count { font-size: 14px; color: var(--ink-700); white-space: nowrap; }
+.cal-review-muted { font-size: 12.5px; color: var(--ink-500); }
+.cal-review-filters { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; margin-bottom: 12px; }
+.cal-review-semesters { display: flex; gap: 6px; flex-wrap: wrap; }
+.cal-review-bulk { margin-left: auto; display: flex; gap: 6px; }
+.cal-chip { padding: 6px 14px; min-height: 32px; border-radius: 999px; font-size: 13px; font-weight: 600; border: 1.5px solid var(--line); background: #fff; color: var(--ink-700); cursor: pointer; }
+.cal-chip:hover { border-color: var(--primary); color: var(--primary); }
+.cal-chip:focus-visible, .cal-check:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.cal-chip[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: #fff; }
+.cal-review-note { font-size: 12.5px; color: var(--ink-500); margin: 0 0 10px; }
+.cal-review-table { min-width: 720px; }
+.cal-review-table td { padding: 10px 12px; font-size: 13px; vertical-align: top; }
+.cal-review-table tr.is-existing { opacity: .6; }
+.cal-col-check { width: 64px; text-align: center; }
+.cal-check { width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer; }
+.cal-check:disabled { cursor: not-allowed; }
+.cal-name { color: var(--ink-900); font-weight: 600; cursor: pointer; }
+.cal-date { white-space: nowrap; color: var(--ink-700); }
+.cal-row-badge { margin-top: 4px; }
+.cal-confirm { background: var(--primary-50); border: 1.5px solid var(--primary-100); border-radius: 12px; padding: 16px 20px; }
+.cal-confirm-list { margin: 8px 0; padding-left: 18px; font-size: 14px; color: var(--ink-700); display: grid; gap: 2px; }
+.cal-confirm-details { font-size: 13px; color: var(--ink-700); margin-bottom: 8px; }
+.cal-confirm-details summary { cursor: pointer; color: var(--primary); font-weight: 600; }
+.cal-confirm-details ul { margin: 4px 0 8px; padding-left: 18px; max-height: 220px; overflow: auto; }
+.cal-confirm-group { font-weight: 700; margin-top: 8px; }
+.cal-confirm-warn { font-size: 13px; color: var(--red); margin: 0 0 8px; }
+.cal-confirm-actions { display: flex; justify-content: flex-end; gap: 10px; }
+@media (max-width: 640px) {
+  .cal-review-bulk { margin-left: 0; }
+  .cal-chip { min-height: 40px; }
+}
+
 .cmd {
   --t-public: var(--red); --t-uni: var(--primary); --t-noclass: #B45309; --t-sub: #15803D;
   display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; align-items: start;
@@ -600,9 +638,11 @@ select.slot-control { width: 100%; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .data-table tbody tr { transition: none; } }
 
 /* Course title in a list row: reads as text, shows it is clickable on hover. */
-.title-link { all: unset; box-sizing: border-box; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--ink-900); line-height: 1.5; }
-.title-link:hover { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
-.title-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+.posting-title { font-size: 14px; font-weight: 600; color: var(--ink-900); line-height: 1.5; }
+.task-row-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.legacy-posting-notice { display: flex; align-items: center; gap: 10px 12px; flex-wrap: wrap; padding: 12px 16px; margin-bottom: 20px; border-radius: 12px; border: 1.5px solid var(--amber); background: var(--amber-bg); color: var(--amber-ink); font-size: 13.5px; }
+.legacy-posting-text { flex: 1 1 260px; min-width: 0; }
+.legacy-posting-actions { display: flex; gap: 6px; margin-left: auto; }
 
 /* ── Instructor postings: table on desktop, stacked cards on mobile ───── */
 .posting-table { min-width: 0; }
@@ -678,19 +718,19 @@ select.slot-control { width: 100%; cursor: pointer; }
 .mc-detail-body { display: grid; gap: 20px; min-width: 0; }
 .mc-d-title { font-size: 13.5px; font-weight: 700; color: var(--ink-900); margin: 0 0 10px; }
 
-.mc-curr-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
-.mc-curr-label { font-size: 12px; font-weight: 700; color: var(--ink-500); }
-.mc-curricula { display: inline-flex; gap: 2px; padding: 3px; max-width: 100%; overflow-x: auto; background: var(--primary-50); border: 1px solid var(--primary-100); border-radius: var(--radius-pill); }
-.mc-curriculum-tab {
+.mc-sectab-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.mc-sectab-label { font-size: 12px; font-weight: 700; color: var(--ink-500); }
+.mc-sectabs { display: inline-flex; gap: 2px; padding: 3px; max-width: 100%; overflow-x: auto; background: var(--primary-50); border: 1px solid var(--primary-100); border-radius: var(--radius-pill); }
+.mc-sectab {
   appearance: none; flex-shrink: 0; min-height: 32px; padding: 4px 16px; border: 1px solid transparent; border-radius: var(--radius-pill);
   background: transparent; color: var(--ink-600); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
   font-variant-numeric: tabular-nums; transition: background-color .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease, transform .12s ease;
 }
-.mc-curriculum-tab:hover { color: var(--primary-700); background: color-mix(in srgb, var(--bg-card) 60%, transparent); }
-.mc-curriculum-tab:active { transform: scale(.97); }
-.mc-curriculum-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-.mc-curriculum-tab[aria-selected="true"] { background: var(--bg-card); color: var(--primary-700); border-color: var(--primary); box-shadow: var(--shadow-sm); }
-.mc-curr-hint { font-size: 12px; color: var(--ink-500); }
+.mc-sectab:hover { color: var(--primary-700); background: color-mix(in srgb, var(--bg-card) 60%, transparent); }
+.mc-sectab:active { transform: scale(.97); }
+.mc-sectab:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.mc-sectab[aria-selected="true"] { background: var(--bg-card); color: var(--primary-700); border-color: var(--primary); box-shadow: var(--shadow-sm); }
+.mc-sectab-hint { font-size: 12px; color: var(--ink-500); }
 
 /* Swapped text fades in; it never changes size, so switching a tab cannot move the layout. */
 .mc-swap { animation: mc-swap .2s ease-out; }
@@ -752,9 +792,9 @@ select.slot-control { width: 100%; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   .mc-chevron, .mc-collapse, .mc-collapse[data-open="true"],
   .mc-collapse-inner, .mc-collapse[data-open="true"] .mc-collapse-inner,
-  .mc-sec, .mc-sec-toggle, .mc-toggle, .mc-curriculum-tab { transition: none; }
+  .mc-sec, .mc-sec-toggle, .mc-toggle, .mc-sectab { transition: none; }
   .mc-swap { animation: none; }
-  .mc-toggle:active, .mc-curriculum-tab:active { transform: none; }
+  .mc-toggle:active, .mc-sectab:active { transform: none; }
 }
 
 @media (max-width: 900px) {
@@ -766,12 +806,19 @@ select.slot-control { width: 100%; cursor: pointer; }
   .mc-toggle { width: 100%; justify-content: center; min-height: 44px; }
   .mc-note { padding: 0 16px 12px; }
   .mc-detail { padding: 14px 16px 16px; }
-  .mc-curr-bar { align-items: flex-start; }
-  .mc-curriculum-tab { min-height: 40px; }
-  .mc-curr-hint { flex-basis: 100%; }
+  .mc-sectab-bar { align-items: flex-start; }
+  .mc-sectab { min-height: 40px; }
+  .mc-sectab-hint { flex-basis: 100%; }
   .mc-info { padding: 12px 14px; }
   .mc-sec-toggle { grid-template-columns: minmax(0, 1fr) auto; padding: 12px 14px; }
   .mc-sec-meta { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; }
   .mc-sec-body { grid-template-columns: minmax(0, 1fr); margin: 0 14px; }
   .mc-slot-action { min-height: 44px; }
+}
+
+/* Create-posting modal: paired fields (ภาค/ปี, Slots/วันปิดรับ) side by side, stacked on phones */
+.course-form-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.course-form-row--wide { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
+@media (max-width: 600px) {
+  .course-form-row, .course-form-row--wide { grid-template-columns: minmax(0, 1fr); }
 }

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Icon } from '../../components/reports/ReportIcons'
 import { ReportPageHeader } from '../../components/reports/ReportPageHeader'
 import { isAxiosError } from 'axios'
@@ -121,6 +121,13 @@ function errorDetail(err: unknown, fallback: string): string {
   return detail ?? fallback
 }
 
+/** The posting key carried over from a redirected ?posting= link, if any. */
+function removedPostingKeyOf(state: unknown): string | null {
+  if (typeof state !== 'object' || state === null || !('removedPostingKey' in state)) return null
+  const key = state.removedPostingKey
+  return typeof key === 'string' && key ? key : null
+}
+
 export default function InstructorHome() {
   const [search, setSearch] = useState('')
   const [showCourseModal, setShowCourseModal] = useState(false)
@@ -133,10 +140,12 @@ export default function InstructorHome() {
   const [archiveTarget, setArchiveTarget] = useState<Posting | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Posting | null>(null)
   const [closeTarget, setCloseTarget] = useState<Posting | null>(null)
-  // The posting detail is its own page: the URL carries which one, so the
-  // back button returns to the list.
-  const [params, setParams] = useSearchParams()
-  const postingKey = params.get('posting')
+  // The posting detail page (?posting=<key>) was removed; old bookmarks and
+  // links land back on this list with a notice (see legacyNotice below).
+  const location = useLocation()
+  const navigate = useNavigate()
+  const legacyPostingKey = new URLSearchParams(location.search).get('posting')
+  const removedPostingKey = removedPostingKeyOf(location.state)
   const qc = useQueryClient()
   const showToast = useToast()
 
@@ -189,7 +198,6 @@ export default function InstructorHome() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['instructor-courses'] })
       setArchiveTarget(null)
-      setParams({})
       showToast('เก็บประกาศเข้าคลังแล้ว', 'success')
     },
     onError: () => showToast('ไม่สามารถเก็บเข้าคลังได้ กรุณาลองใหม่', 'error'),
@@ -213,7 +221,6 @@ export default function InstructorHome() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['instructor-courses'] })
       setDeleteTarget(null)
-      setParams({})
       showToast('ลบประกาศเรียบร้อยแล้ว — วิชานี้ยังเลือกเปิดรับสมัครใหม่ได้อีกภายหลัง', 'success')
     },
     onError: () => showToast('ไม่สามารถลบประกาศได้ กรุณาลองใหม่', 'error'),
@@ -348,231 +355,48 @@ export default function InstructorHome() {
   const totalApplied = activePostings.reduce((s, p) => s + p.applied, 0)
   const totalAccepted = activePostings.reduce((s, p) => s + p.accepted, 0)
 
-  // The posting open in the detail view, looked up by key so it stays current
-  // after a status change instead of showing a stale copy.
-  const detail = postingKey ? [...activePostings, ...archivedPostings].find((p) => p.key === postingKey) ?? null : null
-  const detailMeta = detail && (() => {
-    const deadline = detail.sections.map((x) => x.deadline).filter((d): d is string => !!d).sort()[0]
-    return {
-      deadline,
-      closed: detail.course.status === 'closed',
-      archived: detail.course.status === 'archived',
-      openIds: detail.sections.filter((x) => x.status === 'open' || x.status === 'closing_soon').map((x) => x.id),
-      closedIds: detail.sections.filter((x) => x.status === 'closed').map((x) => x.id),
-      ...splitRequirements(detail.course.requirements ?? ''),
-    }
-  })()
-  const openDetail = (key: string) => setParams({ posting: key })
-  const closeDetail = () => setParams({})
-  // Every applicant of every time slot in the posting, newest first.
-  const detailSectionIndexes = detail ? detail.sections.map((x) => courses.findIndex((c) => c.id === x.id)) : []
-  const detailApplicants = detailSectionIndexes
-    .flatMap((i) => (i >= 0 ? applicantQueries[i]?.data ?? [] : []))
-    .sort((a, b) => b.applied_at.localeCompare(a.applied_at))
-  const detailApplicantsLoading = detailSectionIndexes.some((i) => i >= 0 && applicantQueries[i]?.isLoading)
+  // A link to the removed detail page: say so, and point at the row that
+  // still manages that posting when the key is still valid.
+  const removedPosting = removedPostingKey
+    ? [...activePostings, ...archivedPostings].find((p) => p.key === removedPostingKey) ?? null
+    : null
+  const dismissLegacyNotice = () => navigate(location.pathname, { replace: true, state: null })
+  const showRemovedPosting = (p: Posting) => {
+    setShowArchived(p.course.status === 'archived')
+    setSearch(p.course.code)
+    dismissLegacyNotice()
+  }
+  const postingByKey = new Map([...activePostings, ...archivedPostings].map((p) => [p.key, p]))
+
+  if (legacyPostingKey) {
+    return <Navigate to="/instructor/home" replace state={{ removedPostingKey: legacyPostingKey }} />
+  }
 
   return (
     <div>
-      {postingKey ? (
-        !detail || !detailMeta ? (
-          isLoading ? (
-            <div style={{ display: 'grid', gap: 16 }}>
-              <Skeleton height={120} borderRadius={14} />
-              <Skeleton height={80} borderRadius={12} />
-              <Skeleton height={200} borderRadius={12} />
-            </div>
-          ) : (
-            <EmptyState
-              title="ไม่พบประกาศนี้"
-              description="ประกาศอาจถูกลบหรือย้ายไปแล้ว"
-              icon={<Icon name="file" size={40} />}
-              action={{ label: 'กลับหน้าหลัก', onClick: closeDetail }}
-            />
-          )
-        ) : (
-          <div>
-            <ReportPageHeader
-              crumbs={[{ label: 'หน้าหลัก', to: '/instructor/home' }, { label: detail.course.code }]}
-              title={displayCourseTitle(detail.course.title, detail.course.english_title)}
-              subtitle={`ภาคเรียนที่ ${detail.course.semester} ปีการศึกษา ${detail.course.academic_year}`}
-              actions={
-                <>
-                  <Link to={`/instructor/select?course=${detail.sections[0].id}`}>
-                    <Button>{detailMeta.closed || detailMeta.archived ? 'ดูผลคัดเลือก' : 'คัดเลือกผู้สมัคร'}</Button>
-                  </Link>
-                  {detailMeta.archived ? (
-                    <Button variant="outline" loading={unarchiveMut.isPending} onClick={() => unarchiveMut.mutate(ids(detail))}>
-                      กู้คืนประกาศ
-                    </Button>
-                  ) : (
-                    <>
-                      <Button variant="outline" onClick={() => openEdit(detail)}>
-                        <EditIcon /> <span style={{ marginLeft: 6 }}>แก้ไข</span>
-                      </Button>
-                      {detailMeta.closed ? (
-                        <>
-                          <Button
-                            variant="outline"
-                            loading={reopenMut.isPending}
-                            disabled={isPastDeadline(detailMeta.deadline)}
-                            title={isPastDeadline(detailMeta.deadline) ? 'เลยวันปิดรับสมัครแล้ว แก้ไขวันที่ก่อนจึงเปิดรับใหม่ได้' : undefined}
-                            onClick={() => reopenMut.mutate(detailMeta.closedIds)}
-                          >
-                            เปิดรับสมัครอีกครั้ง
-                          </Button>
-                          <Button variant="outline" onClick={() => setArchiveTarget(detail)}>
-                            <ArchiveIcon /> <span style={{ marginLeft: 6 }}>เก็บเข้าคลัง</span>
-                          </Button>
-                        </>
-                      ) : (
-                        <Button variant="outline" disabled={detailMeta.openIds.length === 0} onClick={() => setCloseTarget(detail)}>
-                          <CloseIcon /> <span style={{ marginLeft: 6 }}>ปิดรับสมัคร</span>
-                        </Button>
-                      )}
-                    </>
-                  )}
-                  <Button variant="ghost" style={{ color: 'var(--red)' }} onClick={() => setDeleteTarget(detail)}>
-                    <DeleteIcon /> <span style={{ marginLeft: 6 }}>ลบประกาศ</span>
-                  </Button>
-                </>
-              }
-            />
-
-            <div style={{ background: 'linear-gradient(135deg, var(--primary-50), color-mix(in srgb, var(--primary-100) 70%, #fff))', border: '1px solid var(--primary-100)', borderRadius: 14, padding: '18px 20px', marginBottom: 16 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--primary)', background: 'var(--bg-card)', border: '1px solid var(--primary-100)', padding: '2px 10px', borderRadius: 'var(--radius-pill)' }}>
-                  {detail.course.code}
-                </span>
-                {secList(detail.sections) && (
-                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', background: 'var(--bg-card)', border: '1px solid var(--primary-100)', padding: '2px 10px', borderRadius: 'var(--radius-pill)' }}>
-                    {secList(detail.sections)}
-                  </span>
-                )}
-                <StatusBadge value={detail.course.status} />
-                {detailMeta.deadline && (
-                  <span style={{ fontSize: 13, color: 'var(--ink-600)' }}>
-                    · {detailMeta.closed ? 'ปิดรับเมื่อ' : 'เปิดรับถึง'}{' '}
-                    {new Date(detailMeta.deadline).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}
-                  </span>
-                )}
-              </div>
-              {groupSectionsByTime(detail.sections).filter((o) => o.schedule).map((o) => (
-                <div key={o.key} style={{ fontSize: 13, color: 'var(--ink-600)', marginTop: 6, whiteSpace: 'pre-line' }}>
-                  <Icon name="clock" size={13} style={{ verticalAlign: '-2px' }} /> {formatSchedule(o.schedule)}
-                </div>
-              ))}
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
-              {[
-                { label: 'จำนวนที่รับ', value: detail.slots, tone: 'var(--primary)' },
-                { label: 'ผู้สมัคร', value: detail.applied, tone: 'var(--accent)' },
-                { label: 'คัดเลือกแล้ว', value: detail.accepted, tone: 'var(--green)' },
-              ].map((t) => (
-                <div
-                  key={t.label}
-                  style={{
-                    background: `color-mix(in srgb, ${t.tone} 8%, var(--bg-card))`,
-                    border: `1px solid color-mix(in srgb, ${t.tone} 22%, var(--bg-card))`,
-                    borderRadius: 12, padding: '14px 16px',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--ink-600)' }}>
-                    <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', background: t.tone, flexShrink: 0 }} />
-                    {t.label}
-                  </div>
-                  <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink-900)', lineHeight: 1.2, marginTop: 4 }}>{t.value}</div>
-                </div>
-              ))}
-            </div>
-
-            {(detailMeta.minGrade || detailMeta.rest.trim() || detail.course.description?.trim()) && (
-              <Card style={{ padding: '6px 20px', marginBottom: 16 }}>
-                {[
-                  detailMeta.minGrade ? { label: 'เกรดขั้นต่ำ', value: detailMeta.minGrade } : null,
-                  detailMeta.rest.trim() ? { label: 'เงื่อนไข', value: detailMeta.rest.trim() } : null,
-                  detail.course.description?.trim() ? { label: 'รายละเอียด', value: detail.course.description.trim() } : null,
-                ].filter((r): r is { label: string; value: string } => !!r).map((r, i, all) => (
-                  <div
-                    key={r.label}
-                    style={{
-                      display: 'grid', gridTemplateColumns: '110px 1fr', gap: 16, padding: '12px 0', fontSize: 14,
-                      borderBottom: i < all.length - 1 ? '1px solid var(--line-soft)' : 'none',
-                    }}
-                  >
-                    <div style={{ color: 'var(--ink-500)', fontWeight: 600 }}>{r.label}</div>
-                    <div style={{ color: 'var(--ink-900)', whiteSpace: 'pre-line', lineHeight: 1.6 }}>{r.value}</div>
-                  </div>
-                ))}
-              </Card>
-            )}
-
-            <Card padding={0}>
-              <CardHeader style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                <div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)' }}>รายชื่อผู้สมัคร</div>
-                  <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2 }}>{detailApplicants.length} คน · เรียงตามวันที่สมัครล่าสุด</div>
-                </div>
-              </CardHeader>
-              <CardBody tight>
-                {detailApplicantsLoading ? (
-                  <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {[1, 2, 3].map((i) => <Skeleton key={i} height={48} borderRadius={8} />)}
-                  </div>
-                ) : detailApplicants.length === 0 ? (
-                  <EmptyState title="ยังไม่มีผู้สมัคร" description="เมื่อมีนักศึกษาสมัคร รายชื่อจะแสดงที่นี่" icon={<Icon name="users" size={40} />} />
-                ) : (
-                  <div style={{ overflowX: 'auto' }}>
-                    <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr>
-                          {['ผู้สมัคร', 'กลุ่มเรียน', 'เกรดเฉลี่ย', 'วันที่สมัคร', 'สถานะ', ''].map((h) => (
-                            <th key={h} style={{ padding: '11px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {detailApplicants.map((a) => (
-                          <tr key={a.id}>
-                            <td style={{ padding: '12px 20px' }}>
-                              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)' }}>{a.student_name}</div>
-                              <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>
-                                {a.student_code}
-                                {!!a.confirmed_record_count && (
-                                  <span style={{ marginLeft: 8, color: 'var(--red-ink)', fontWeight: 600 }}>
-                                    <Icon name="alert" size={12} style={{ verticalAlign: '-2px' }} /> ถูกรายงาน
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            <td style={{ padding: '12px 20px', fontSize: 13, color: 'var(--ink-600)' }}>{a.course_section ? `Sec ${a.course_section}` : '-'}</td>
-                            <td style={{ padding: '12px 20px', fontSize: 14, fontWeight: 600, color: 'var(--ink-900)' }}>{a.student_gpa ? a.student_gpa.toFixed(2) : '-'}</td>
-                            <td style={{ padding: '12px 20px', fontSize: 13, color: 'var(--ink-600)', whiteSpace: 'nowrap' }}>
-                              {new Date(a.applied_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
-                            </td>
-                            <td style={{ padding: '12px 20px' }}><StatusBadge value={a.status} /></td>
-                            <td style={{ padding: '12px 20px', textAlign: 'right' }}>
-                              <Link to={`/instructor/select?course=${a.course_id}`}>
-                                <Button size="sm" variant="outline">ดูโปรไฟล์ <Icon name="chevron-right" size={14} style={{ marginLeft: 2 }} /></Button>
-                              </Link>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </CardBody>
-            </Card>
-          </div>
-        )
-      ) : (
-      <>
       <ReportPageHeader
         title="หน้าหลัก"
         subtitle="ภาพรวมประกาศรับสมัคร Lab Boy ของคุณ"
         actions={<Button onClick={openCreate} aria-label="สร้างประกาศรับสมัคร Lab Boy ใหม่">+ สร้างประกาศ</Button>}
       />
+
+      {removedPostingKey && !isLoading && (
+        <div className="legacy-posting-notice" role="status">
+          <Icon name="alert" size={16} />
+          <div className="legacy-posting-text">
+            หน้ารายละเอียดประกาศถูกนำออกจากระบบแล้ว
+            {removedPosting
+              ? <> — ประกาศ <strong>{removedPosting.course.code}</strong> ยังจัดการได้จากแถวในตารางด้านล่าง (ดูผู้สมัคร แก้ไข ปิดรับ ลบ)</>
+              : ' — ไม่พบประกาศจากลิงก์เดิม ประกาศอาจถูกลบไปแล้ว'}
+          </div>
+          <div className="legacy-posting-actions">
+            {removedPosting && (
+              <Button size="sm" variant="outline" onClick={() => showRemovedPosting(removedPosting)}>แสดงประกาศนี้</Button>
+            )}
+            <Button size="sm" variant="ghost" onClick={dismissLegacyNotice}>ปิด</Button>
+          </div>
+        </div>
+      )}
 
       {isLoading ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 16, marginBottom: 24 }}>
@@ -602,9 +426,21 @@ export default function InstructorHome() {
                       {t.pending > 0 && <span className="deadline-chip is-soon">มีผู้สมัครรอคัดเลือก {t.pending} คน</span>}
                     </div>
                   </div>
-                  <Button size="sm" variant="outline" aria-label={`ดูประกาศ ${t.code}`} onClick={() => openDetail(t.key)}>
-                    ดูประกาศ
-                  </Button>
+                  <div className="task-row-actions">
+                    {t.pending > 0 && (
+                      <Link to={`/instructor/select?course=${t.courseId}`}>
+                        <Button size="sm" aria-label={`คัดเลือกผู้สมัคร ${t.code}`}>คัดเลือก</Button>
+                      </Link>
+                    )}
+                    {t.deadline && postingByKey.has(t.key) && (
+                      <Button
+                        size="sm" variant="outline" aria-label={`แก้ไขประกาศ ${t.code}`}
+                        onClick={() => { const p = postingByKey.get(t.key); if (p) openEdit(p) }}
+                      >
+                        <EditIcon /> <span style={{ marginLeft: 5 }}>แก้ไข</span>
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -684,15 +520,7 @@ export default function InstructorHome() {
                               </span>
                             )}
                           </div>
-                          <button
-                            type="button"
-                            className="title-link"
-                            onClick={() => openDetail(p.key)}
-                            title="ดูรายละเอียดประกาศ"
-                            aria-label={`ดูรายละเอียดประกาศ ${c.code}`}
-                          >
-                            {displayCourseTitle(c.title, c.english_title)}
-                          </button>
+                          <div className="posting-title">{displayCourseTitle(c.title, c.english_title)}</div>
                           {groupSectionsByTime(p.sections).filter((o) => o.schedule).map((o) => (
                             <div key={o.key} style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2, whiteSpace: 'pre-line' }}>{formatSchedule(o.schedule)}</div>
                           ))}
@@ -796,8 +624,6 @@ export default function InstructorHome() {
           )}
         </CardBody>
       </Card>
-      </>
-      )}
 
       <CourseFormModal
         isOpen={showCourseModal}

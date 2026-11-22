@@ -14,7 +14,7 @@ const STATUS_OPTIONS = [
   { value: '', label: 'ทั้งหมด' },
 ]
 
-// Staff only see the blacklist (reports admin has confirmed); the server
+// Staff only see confirmed reports; the server
 // returns nothing else to them.
 const STAFF_STATUS_OPTIONS = [{ value: 'CONFIRMED', label: 'ยืนยันแล้ว' }]
 
@@ -26,7 +26,7 @@ export default function StaffReports() {
       {isAdmin ? (
         <ReportPageHeader
           title="ตรวจสอบรายงานการปฏิบัติงาน"
-          subtitle="พิจารณารายงานจากอาจารย์ หลักฐาน และคำชี้แจงของนักศึกษา แล้วบันทึกผล — ไม่สามารถพิจารณารายงานที่ตนเองเป็นผู้รายงานได้"
+          subtitle="พิจารณารายงานจากอาจารย์หรือเพื่อน Lab Boy หลักฐาน และคำชี้แจงของนักศึกษา แล้วบันทึกผล — ไม่สามารถพิจารณารายงานที่ตนเองเป็นผู้รายงานได้"
         />
       ) : (
         <ReportPageHeader
@@ -35,7 +35,7 @@ export default function StaffReports() {
         />
       )}
       <ReportList
-        queryKey={isAdmin ? 'staff-reports' : 'staff-blacklist'}
+        queryKey="staff-reports"
         fetchPage={reportsApi.reviewQueue}
         statusOptions={isAdmin ? STATUS_OPTIONS : STAFF_STATUS_OPTIONS}
         showReporter

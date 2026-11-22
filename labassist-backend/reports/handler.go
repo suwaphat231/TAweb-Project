@@ -386,7 +386,7 @@ func (h *Handler) ReviewQueue(c *gin.Context) {
 	h.list(c, func(f *database.ReportFilter) {
 		f.ExcludeDraft = true
 		if !actor.isAdmin() {
-			// Staff see only the confirmed blacklist, never pending reports.
+			// Staff see only confirmed reports, never pending reports.
 			f.Statuses = []models.ReportStatus{models.ReportConfirmed}
 		}
 	})
@@ -517,6 +517,13 @@ func (h *Handler) Act(c *gin.Context) {
 		return
 	}
 	rule := rules[action]
+	if rule.by == byReviewer && !actor.isAdmin() {
+		course, found := database.CourseByID(r.CourseID)
+		if !found || !database.InstructorOwnsCourse(course, actor.ID, "", false) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "พิจารณารายงานได้เฉพาะอาจารย์ผู้สอนของรายวิชานั้น"})
+			return
+		}
+	}
 	t := database.ReportTransition{
 		ReportID:             r.ID,
 		From:                 r.Status,
@@ -558,7 +565,7 @@ func notificationsFor(r models.LabBoyReport, action Action, reason string) []mod
 	switch action {
 	case ActionSubmit:
 		return []models.Notification{toStudent("มีรายงานการปฏิบัติงานที่เกี่ยวข้องกับคุณ",
-			fmt.Sprintf("อาจารย์ส่งรายงานการปฏิบัติงานในรายวิชา %s รายงานนี้ยังไม่ใช่ข้อสรุป และอยู่ระหว่างรอการตรวจสอบ คุณสามารถส่งคำชี้แจงได้ที่หน้า \"รายงานการปฏิบัติงาน\"", course))}
+			fmt.Sprintf("มีรายงานการปฏิบัติงานในรายวิชา %s รายงานนี้ยังไม่ใช่ข้อสรุป ตัวผู้รายงานไม่เปิดเผย และอยู่ระหว่างรอการตรวจสอบ คุณสามารถส่งคำชี้แจงได้ที่หน้า \"รายงานการปฏิบัติงาน\"", course))}
 	case ActionRequestInfo:
 		return []models.Notification{
 			toStudent("ผู้ตรวจสอบขอข้อมูลเพิ่มเติม", withReason("ผู้ตรวจสอบขอคำชี้แจงหรือข้อมูลเพิ่มเติมเกี่ยวกับรายงานในรายวิชา "+course)),

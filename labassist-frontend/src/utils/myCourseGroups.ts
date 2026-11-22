@@ -73,6 +73,39 @@ export function sectionsOf(rels: CourseRelation[]): MySection[] {
     })
 }
 
+/** Stable key of a Section within its course ("1", "2", … or "none"). */
+export function sectionKey(sec: MySection): string {
+  return sec.section == null ? 'none' : String(sec.section)
+}
+
+/** Short tab label of a Section: "Sec 1", or "ไม่ระบุ Sec" when the rows carry none. */
+export function sectionTabLabel(sec: MySection): string {
+  return sec.section == null ? 'ไม่ระบุ Sec' : `Sec ${sec.section}`
+}
+
+/**
+ * The Section shown for a course: the chosen key when it still exists,
+ * otherwise Sec 1, otherwise the first Section (sectionsOf is ascending).
+ */
+export function selectedSectionOf(sections: MySection[], chosen?: string): MySection | undefined {
+  return sections.find((s) => sectionKey(s) === chosen)
+    ?? sections.find((s) => s.section === 1)
+    ?? sections[0]
+}
+
+/**
+ * Index a tab list moves to for a key press (roving tabindex), or -1 when the
+ * key isn't a navigation key. ArrowLeft/ArrowRight wrap; Home/End jump.
+ */
+export function tabTargetIndex(key: string, current: number, count: number): number {
+  if (count <= 0) return -1
+  if (key === 'Home') return 0
+  if (key === 'End') return count - 1
+  if (key === 'ArrowRight') return (current + 1) % count
+  if (key === 'ArrowLeft') return (current - 1 + count) % count
+  return -1
+}
+
 /**
  * One meeting time of a Section, with every course row (slot) that carries
  * exactly that schedule text — duplicate rows fold into one line.
@@ -119,6 +152,15 @@ export function sectionSlots(sec: MySection): MySlot[] {
  */
 export function curriculumSuffixes(code: string): string[] {
   return Array.from(code.matchAll(/-\s*([0-9A-Za-z]+)/g), (m) => m[1])
+}
+
+/**
+ * Display-only split of a course code: `full` is always the untouched input
+ * (what gets sent to the form/API), `base` is the part before the first "-".
+ * "517433-165, -160" → { full: "517433-165, -160", base: "517433", suffixes: ["165","160"] }.
+ */
+export function splitCourseCode(code: string): { full: string; base: string; suffixes: string[] } {
+  return { full: code, base: code.split('-')[0].trim(), suffixes: curriculumSuffixes(code) }
 }
 
 /** Full codes of other groups in the same source and term that share this group's title. */

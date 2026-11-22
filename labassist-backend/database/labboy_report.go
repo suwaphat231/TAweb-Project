@@ -23,6 +23,11 @@ var ErrStaleReport = errors.New("report was changed by someone else")
 // job, incident date and category.
 var ErrDuplicateReport = errors.New("duplicate report")
 
+var (
+	ErrPeerReporterNotAccepted = errors.New("reporter is not an accepted Lab Boy in the course")
+	ErrPeerTargetNotAccepted   = errors.New("reported student is not an accepted Lab Boy in the course")
+)
+
 const reportAuditEntity = "labboy_report"
 
 func enrichReport(r models.LabBoyReport) models.LabBoyReport {
@@ -142,6 +147,91 @@ func CreateReportDraft(r *models.LabBoyReport) error {
 			return err
 		}
 		return writeReportAudit(tx, r.ID, "create_draft", r.ReporterID, "", reportSnapshot(*r), "")
+	})
+}
+
+// CreateSubmittedPeerReport creates an anonymous student-peer report in the
+// same transaction as its status history, audit, and notifications. Both the
+// reporter and target are server-verified as accepted Lab Boys in the course.
+func CreateSubmittedPeerReport(r *models.LabBoyReport) error {
+	r.ID = 0
+	r.Status = models.ReportSubmitted
+	now := time.Now()
+	r.SubmittedAt = &now
+	r.CreatedAt = now
+	r.UpdatedAt = now
+
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var target models.Application
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&target, r.ApplicationID).Error; err != nil {
+			return err
+		}
+		if target.Status != models.AppAccepted {
+			return ErrPeerTargetNotAccepted
+		}
+		if target.StudentID == r.ReporterID {
+			return ErrPeerTargetNotAccepted
+		}
+
+		var reporter models.Application
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("course_id = ? AND student_id = ? AND status = ?", target.CourseID, r.ReporterID, models.AppAccepted).
+			First(&reporter).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrPeerReporterNotAccepted
+		}
+		if err != nil {
+			return err
+		}
+
+		r.StudentID = target.StudentID
+		r.CourseID = target.CourseID
+		if dup, err := hasOpenDuplicateTx(tx, *r); err != nil {
+			return err
+		} else if dup {
+			return ErrDuplicateReport
+		}
+		if err := tx.Create(r).Error; err != nil {
+			return err
+		}
+		from := models.ReportDraft
+		if err := tx.Create(&models.LabBoyReportStatusHistory{
+			ReportID: r.ID, FromStatus: &from, ToStatus: models.ReportSubmitted,
+			ActorID: r.ReporterID, Reason: "รายงานจากเพื่อนร่วมรายวิชา (ไม่เปิดเผยตัวตน)", CreatedAt: now,
+		}).Error; err != nil {
+			return err
+		}
+		if err := writeReportAudit(tx, r.ID, "submit_peer_report", r.ReporterID, "", reportSnapshot(*r),
+			"รายงานจากเพื่อนร่วมรายวิชา (ไม่เปิดเผยตัวตน)"); err != nil {
+			return err
+		}
+
+		courseName := ""
+		var courseRow models.Course
+		if err := tx.First(&courseRow, r.CourseID).Error; err == nil {
+			courseName = courseRow.Code
+			if courseRow.Title != "" {
+				courseName += " " + courseRow.Title
+			}
+		}
+		notifs := []models.Notification{{
+			UserID: r.StudentID, CourseID: &r.CourseID,
+			Title: "มีรายงานการปฏิบัติงานที่เกี่ยวข้องกับคุณ",
+			Body:  "มีรายงานการปฏิบัติงานในรายวิชา " + courseName + " ตัวผู้รายงานไม่เปิดเผย และอยู่ระหว่างรอการตรวจสอบ คุณสามารถส่งคำชี้แจงได้",
+		}}
+		var links []models.CourseInstructor
+		if err := tx.Where("course_id = ? AND source = ? AND archived_at IS NULL",
+			r.CourseID, models.CourseInstructorImported).Find(&links).Error; err != nil {
+			return err
+		}
+		for _, link := range links {
+			notifs = append(notifs, models.Notification{
+				UserID: link.InstructorID, CourseID: &r.CourseID,
+				Title: "มีรายงาน Lab Boy จากนักศึกษา",
+				Body:  "รายงานในรายวิชา " + courseName + " รอการพิจารณา ตัวผู้รายงานไม่เปิดเผย",
+			})
+		}
+		return createNotificationsTx(tx, notifs)
 	})
 }
 
