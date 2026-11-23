@@ -171,12 +171,14 @@ export default function AdminUsers() {
               แก้ไข
             </Button>
           )}
-          <Button
-            size="sm" variant="danger-ghost"
-            onClick={() => { deleteMut.reset(); setDeletingUser(u) }}
-          >
-            ลบ
-          </Button>
+          {u.id !== currentUser?.id && (
+            <Button
+              size="sm" variant="danger-ghost"
+              onClick={() => { deleteMut.reset(); setDeletingUser(u) }}
+            >
+              ลบ
+            </Button>
+          )}
           {!u.is_active && (
             <Button
               size="sm" variant="outline"

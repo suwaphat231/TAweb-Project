@@ -23,6 +23,10 @@ var ErrStaleReport = errors.New("report was changed by someone else")
 // job, incident date and category.
 var ErrDuplicateReport = errors.New("duplicate report")
 
+// ErrReporterDailyLimit means the student already sent a report today
+// (Asia/Bangkok); a student may send only one per day.
+var ErrReporterDailyLimit = errors.New("student already reported today")
+
 var (
 	ErrPeerReporterNotAccepted = errors.New("reporter is not an accepted Lab Boy in the course")
 	ErrPeerTargetNotAccepted   = errors.New("reported student is not an accepted Lab Boy in the course")
@@ -182,6 +186,21 @@ func CreateSubmittedPeerReport(r *models.LabBoyReport) error {
 		}
 		if err != nil {
 			return err
+		}
+
+		// One report per student per day. The reporter's application row is
+		// locked above, so two concurrent sends cannot both pass this check.
+		bangkok := time.FixedZone("Asia/Bangkok", 7*60*60)
+		nowBKK := now.In(bangkok)
+		dayStart := time.Date(nowBKK.Year(), nowBKK.Month(), nowBKK.Day(), 0, 0, 0, 0, bangkok)
+		var sentToday int64
+		if err := tx.Model(&models.LabBoyReport{}).
+			Where("reporter_id = ? AND created_at >= ? AND created_at < ?", r.ReporterID, dayStart, dayStart.AddDate(0, 0, 1)).
+			Count(&sentToday).Error; err != nil {
+			return err
+		}
+		if sentToday > 0 {
+			return ErrReporterDailyLimit
 		}
 
 		r.StudentID = target.StudentID

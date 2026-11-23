@@ -172,6 +172,8 @@ func (h *Handler) CreateStudentReport(c *gin.Context) {
 		switch {
 		case errors.Is(err, database.ErrDuplicateReport):
 			c.JSON(http.StatusConflict, gin.H{"error": "มีรายงานเหตุการณ์ประเภทนี้ของนักศึกษาคนนี้ในวันเดียวกันอยู่แล้ว"})
+		case errors.Is(err, database.ErrReporterDailyLimit):
+			c.JSON(http.StatusConflict, gin.H{"error": "รายงานพฤติกรรมได้วันละ 1 ครั้งเท่านั้น กรุณาลองใหม่ในวันถัดไป"})
 		case errors.Is(err, database.ErrPeerReporterNotAccepted):
 			c.JSON(http.StatusForbidden, gin.H{"error": "ส่งรายงานได้เฉพาะนักศึกษาที่เป็น Lab Boy ที่ได้รับการยืนยันในรายวิชาเดียวกัน"})
 		case errors.Is(err, database.ErrPeerTargetNotAccepted):

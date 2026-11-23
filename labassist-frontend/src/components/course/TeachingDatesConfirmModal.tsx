@@ -139,7 +139,6 @@ export function TeachingDatesConfirmModal({
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
                 <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink-900)' }}>ตารางวันที่สอนทั้งหมด</span>
-                <span className="badge badge-amber">ตรวจสอบก่อนเปิดรับสมัคร</span>
               </div>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>{courseCode} · {courseTitle}</div>
               <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2 }}>
