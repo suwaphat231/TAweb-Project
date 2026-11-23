@@ -121,7 +121,7 @@ export function ReportFormModal({ target, onClose, existing, existingEvidence = 
       try {
         await reportsApi.act(reportId, 'submit')
         refresh(reportId)
-        showToast('ส่งรายงานเพื่อตรวจสอบแล้ว', 'success')
+        showToast('ส่งรายงานแล้ว', 'success')
         onSaved?.(reportId, true)
       } catch (err) {
         showToast(await getApiErrorMessage(err, 'บันทึกร่างแล้ว แต่ส่งรายงานไม่สำเร็จ'), 'error')
@@ -162,9 +162,10 @@ export function ReportFormModal({ target, onClose, existing, existingEvidence = 
         <div style={{ fontSize: 14, color: 'var(--ink-700)', lineHeight: 1.7 }}>
           <p style={{ fontWeight: 600 }}>ยืนยันส่งรายงาน "{category ? categoryLabel[category] : ''}"?</p>
           <ul style={{ paddingLeft: 18, marginTop: 8 }}>
+            <li>การส่งคือการยืนยันรายงาน — มีผลทันที ไม่มีขั้นตอนตรวจสอบเพิ่ม</li>
+            <li>อาจารย์รายวิชาอื่นที่นักศึกษาสมัครจะเห็นว่านักศึกษาคนนี้ถูกรายงาน (จนสิ้นปีการศึกษา)</li>
+            <li>นักศึกษาและเจ้าหน้าที่จะไม่เห็นรายงาน</li>
             <li>เมื่อส่งแล้วจะแก้ไขไม่ได้ (ถอนรายงานได้โดยระบุเหตุผล)</li>
-            <li>นักศึกษาจะได้รับแจ้งและสามารถส่งคำชี้แจงได้</li>
-            <li>เจ้าหน้าที่จะตรวจสอบก่อน — รายงานจะมีผลเป็นประวัติก็ต่อเมื่อได้รับการยืนยันแล้วเท่านั้น</li>
           </ul>
         </div>
       ) : (
@@ -195,11 +196,11 @@ export function ReportFormModal({ target, onClose, existing, existingEvidence = 
               <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>แนบไว้แล้ว: {existingEvidence.map((e) => e.file_name).join(', ')}</span>
             )}
             <FilePicker files={files} onChange={setFiles} label="แนบหลักฐาน" />
-            <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>เปิดดูได้เฉพาะผู้รายงาน ผู้ตรวจสอบ และนักศึกษาเจ้าของรายงาน</span>
+            <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>เปิดดูได้เฉพาะผู้รายงานและผู้ดูแลระบบ</span>
           </div>
           <p style={{ display: 'flex', gap: 8, fontSize: 13, color: 'var(--ink-600)', background: 'var(--blue-bg)', borderRadius: 8, padding: '10px 12px', lineHeight: 1.6 }}>
             <Icon name="alert" size={16} style={{ marginTop: 2, color: 'var(--primary)' }} />
-            รายงานนี้ไม่ใช่ข้อสรุปว่านักศึกษากระทำผิด จะต้องผ่านการตรวจสอบและนักศึกษามีสิทธิ์ชี้แจงก่อน
+            รายงานใช้ประกอบการพิจารณาของอาจารย์เท่านั้น ไม่ตัดสิทธิ์การสมัครของนักศึกษา
           </p>
         </div>
       )}

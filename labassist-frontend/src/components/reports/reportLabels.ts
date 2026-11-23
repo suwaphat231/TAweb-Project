@@ -1,17 +1,20 @@
 import type { BadgeVariant } from '../ui/Badge'
 import type { ReportCategory, ReportStatus, ReportReview, ReportResponse } from '../../types'
 
-// Wording is deliberately neutral: a category is what was *reported*, and
-// only CONFIRMED means a reviewer checked it. Never label a student by it.
+// Wording is deliberately neutral: a category is what was *reported*.
+// An instructor's own report is CONFIRMED as soon as they submit it. A
+// report a student sends in is SUBMITTED until the course instructor
+// confirms it or rejects it (NOT_SUBSTANTIATED). Older statuses stay
+// labelled for old records.
 
 export const statusInfo: Record<ReportStatus, { label: string; variant: BadgeVariant; hint: string }> = {
   DRAFT:             { label: 'ฉบับร่าง',               variant: 'gray',   hint: 'ยังไม่ได้ส่ง มีเพียงผู้รายงานที่เห็น' },
-  SUBMITTED:         { label: 'ส่งแล้ว รอตรวจสอบ',       variant: 'blue',   hint: 'ยังไม่ใช่ข้อสรุป รอผู้ตรวจสอบรับเรื่อง' },
+  SUBMITTED:         { label: 'รออาจารย์ตรวจสอบ',        variant: 'blue',   hint: 'นักศึกษาส่งรายงานแล้ว ยังไม่มีผลจนกว่าอาจารย์ผู้สอนของรายวิชาจะยืนยัน' },
   UNDER_REVIEW:      { label: 'อยู่ระหว่างตรวจสอบ',      variant: 'amber',  hint: 'ผู้ตรวจสอบกำลังพิจารณา ยังไม่ใช่ข้อสรุป' },
   AWAITING_RESPONSE: { label: 'รอคำชี้แจง/ข้อมูลเพิ่ม',  variant: 'amber',  hint: 'ผู้ตรวจสอบขอข้อมูลเพิ่มเติมก่อนพิจารณาต่อ' },
-  CONFIRMED:         { label: 'ยืนยันผลการตรวจสอบแล้ว', variant: 'purple', hint: 'ผู้ตรวจสอบยืนยันรายงานพร้อมเหตุผลแล้ว' },
-  NOT_SUBSTANTIATED: { label: 'ไม่ยืนยัน (ข้อมูลไม่เพียงพอ)', variant: 'green', hint: 'ข้อมูลไม่เพียงพอที่จะยืนยันข้อกล่าวอ้าง' },
-  WITHDRAWN:         { label: 'ถอนรายงานแล้ว',           variant: 'gray',   hint: 'ผู้รายงานถอนรายงานพร้อมเหตุผล' },
+  CONFIRMED:         { label: 'รายงานแล้ว', variant: 'purple', hint: 'อาจารย์ยืนยันรายงานแล้ว อาจารย์รายวิชาอื่นที่นักศึกษาสมัครจะเห็นว่านักศึกษาคนนี้ถูกรายงาน' },
+  NOT_SUBSTANTIATED: { label: 'อาจารย์ไม่รับรายงาน', variant: 'green', hint: 'อาจารย์ผู้สอนพิจารณาแล้วไม่รับรายงานนี้ ไม่มีผลต่อนักศึกษาที่ถูกรายงาน' },
+  WITHDRAWN:         { label: 'ถอนรายงานแล้ว',           variant: 'gray',   hint: 'ผู้รายงานถอนรายงานพร้อมเหตุผล ไม่แสดงแก่อาจารย์คนอื่นแล้ว' },
 }
 
 export const categoryLabel: Record<ReportCategory, string> = {
@@ -27,8 +30,8 @@ export const categoryOptions = (Object.keys(categoryLabel) as ReportCategory[])
 
 export const decisionLabel: Record<ReportReview['decision'], string> = {
   REQUEST_INFO:            'ขอข้อมูลเพิ่มเติม',
-  CONFIRM:                 'ยืนยันรายงาน',
-  NOT_SUBSTANTIATED:       'ไม่ยืนยัน — ข้อมูลไม่เพียงพอ',
+  CONFIRM:                 'อาจารย์ยืนยันรายงาน',
+  NOT_SUBSTANTIATED:       'อาจารย์ไม่รับรายงาน',
   REOPEN:                  'นำกลับมาตรวจสอบใหม่',
   DECLINE_RECONSIDERATION: 'คงผลเดิม (ไม่รับคำขอทบทวน)',
 }

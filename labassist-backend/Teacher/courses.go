@@ -732,22 +732,27 @@ func (h *Handler) Applicants(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
-	if err := attachConfirmedRecordCounts(apps); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
-		return
+	// Only instructors (and admin) see that an applicant was reported; staff
+	// open this list for document work and never see reports.
+	if role.(string) != "staff" {
+		if err := attachConfirmedRecordCounts(apps, course.AcademicYear); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
 	}
 	c.JSON(http.StatusOK, apps)
 }
 
 // attachConfirmedRecordCounts flags applicants who have CONFIRMED Lab Boy
 // performance reports, so the reviewer knows to open the details (which go
-// through the audited performance-records endpoint).
-func attachConfirmedRecordCounts(apps []models.Application) error {
+// through the audited performance-records endpoint). Only reports still in
+// force for academicYear (the course's) count.
+func attachConfirmedRecordCounts(apps []models.Application, academicYear int) error {
 	ids := make([]uint, 0, len(apps))
 	for _, a := range apps {
 		ids = append(ids, a.StudentID)
 	}
-	counts, err := database.ConfirmedRecordCounts(ids)
+	counts, err := database.ConfirmedRecordCounts(ids, academicYear)
 	if err != nil {
 		return err
 	}

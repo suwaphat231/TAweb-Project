@@ -177,9 +177,10 @@ func TestReportWorkflowEndToEnd(t *testing.T) {
 		expect(t, call("POST", "/instructor/reports", tokA, input(app1X.ID, daysAgo(3), "ABSENCE")), http.StatusConflict) // duplicate
 	})
 
-	t.Run("3 student cannot create or move a report", func(t *testing.T) {
+	t.Run("3 student cannot use instructor or admin report endpoints", func(t *testing.T) {
 		expect(t, call("POST", "/instructor/reports", tokS1, input(app1X.ID, today, "OTHER")), http.StatusForbidden)
-		expect(t, call("GET", "/staff/reports", tokS1, nil), http.StatusForbidden)
+		expect(t, call("GET", "/admin/reports", tokS1, nil), http.StatusForbidden)
+		expect(t, call("GET", "/instructor/reports/review", tokS1, nil), http.StatusForbidden)
 	})
 
 	t.Run("draft is private to the reporter", func(t *testing.T) {
@@ -188,11 +189,11 @@ func TestReportWorkflowEndToEnd(t *testing.T) {
 		expect(t, call("GET", fmt.Sprintf("/reports/%d", reportID), tokA, nil), http.StatusOK)
 	})
 
-	t.Run("8 cannot skip the workflow", func(t *testing.T) {
-		// Staff can't see a draft at all, so they get 404 rather than a hint it exists.
+	t.Run("8 instructor reports have no review step, admin cannot act", func(t *testing.T) {
 		expect(t, act(reportID, tokStaff, "confirm", "ok"), http.StatusNotFound)
 		expect(t, act(reportID, tokA, "confirm", "ok"), http.StatusForbidden)
-		expect(t, act(reportID, tokAdmin, "confirm", "ok"), http.StatusConflict)
+		expect(t, act(reportID, tokA, "request_info", "ok"), http.StatusConflict) // unknown action
+		expect(t, act(reportID, tokAdmin, "submit", ""), http.StatusForbidden)
 		if s := status(t, reportID); s != models.ReportDraft {
 			t.Fatalf("status = %s", s)
 		}
@@ -221,26 +222,33 @@ func TestReportWorkflowEndToEnd(t *testing.T) {
 		}
 	})
 
-	t.Run("submit notifies the student and locks the draft", func(t *testing.T) {
+	t.Run("9 a draft never appears as history", func(t *testing.T) {
+		got := expect(t, call("GET", fmt.Sprintf("/instructor/applications/%d/performance-records", app1Y.ID), tokB, nil), http.StatusOK)
+		if string(bytes.TrimSpace(got.raw)) != "[]" {
+			t.Fatalf("history = %s", got.raw)
+		}
+	})
+
+	t.Run("submit confirms at once, without telling the student", func(t *testing.T) {
+		var before int64
+		database.DB.Model(&models.Notification{}).Where("user_id = ?", stu1.ID).Count(&before)
 		got := expect(t, act(reportID, tokA, "submit", ""), http.StatusOK)
-		if got.body["status"] != "SUBMITTED" || got.body["submitted_at"] == nil {
+		if got.body["status"] != "CONFIRMED" || got.body["submitted_at"] == nil {
 			t.Fatalf("body = %s", got.raw)
 		}
-		var n int64
-		database.DB.Model(&models.Notification{}).Where("user_id = ?", stu1.ID).Count(&n)
-		if n == 0 {
-			t.Fatal("student was not notified")
+		var after int64
+		database.DB.Model(&models.Notification{}).Where("user_id = ?", stu1.ID).Count(&after)
+		if after != before {
+			t.Fatal("student must not be notified")
 		}
 		expect(t, call("PUT", fmt.Sprintf("/instructor/reports/%d", reportID), tokA, input(app1X.ID, daysAgo(3), "ABSENCE")), http.StatusConflict)
 		expect(t, act(reportID, tokA, "submit", ""), http.StatusConflict)
 	})
 
-	t.Run("5+15 only involved users see the report and its evidence", func(t *testing.T) {
+	t.Run("5+15 only the reporter and admin open the report and its evidence", func(t *testing.T) {
 		detail := fmt.Sprintf("/reports/%d", reportID)
 		file := fmt.Sprintf("/reports/%d/evidence/%d", reportID, evidenceID)
-		expect(t, call("GET", detail, tokS1, nil), http.StatusOK)
-		expect(t, call("GET", detail, tokStaff, nil), http.StatusOK)
-		for name, tok := range map[string]string{"other student": tokS2, "other instructor": tokB} {
+		for name, tok := range map[string]string{"student": tokS1, "other student": tokS2, "staff": tokStaff, "other instructor": tokB} {
 			if got := call("GET", detail, tok, nil); got.code != http.StatusNotFound {
 				t.Errorf("%s detail = %d", name, got.code)
 			}
@@ -248,46 +256,27 @@ func TestReportWorkflowEndToEnd(t *testing.T) {
 				t.Errorf("%s evidence = %d", name, got.code)
 			}
 		}
-		got := expect(t, call("GET", file, tokStaff, nil), http.StatusOK)
+		d := expect(t, call("GET", detail, tokAdmin, nil), http.StatusOK)
+		if !strings.Contains(string(d.raw), `"allowed_actions":[]`) {
+			t.Fatalf("admin must be read-only: %s", d.raw)
+		}
+		got := expect(t, call("GET", file, tokAdmin, nil), http.StatusOK)
 		if !bytes.Equal(got.raw, pngBytes) {
 			t.Fatal("evidence bytes differ")
 		}
-		// The evidence ID only works together with its own report.
-		expect(t, call("GET", fmt.Sprintf("/reports/%d/evidence/%d", reportID+100000, evidenceID), tokStaff, nil), http.StatusNotFound)
+		expect(t, call("GET", fmt.Sprintf("/reports/%d/evidence/%d", reportID+100000, evidenceID), tokAdmin, nil), http.StatusNotFound)
 		expect(t, call("GET", detail, "", nil), http.StatusUnauthorized)
+		expect(t, call("POST", fmt.Sprintf("/reports/%d/responses", reportID), tokS1, newMultipart(t, map[string]string{"message": "x"}, nil)), http.StatusNotFound)
 	})
 
-	t.Run("9 unconfirmed reports never appear as history", func(t *testing.T) {
-		got := expect(t, call("GET", fmt.Sprintf("/instructor/applications/%d/performance-records", app1Y.ID), tokB, nil), http.StatusOK)
-		if string(bytes.TrimSpace(got.raw)) != "[]" {
-			t.Fatalf("history = %s", got.raw)
-		}
-	})
-
-	t.Run("6+4 reviewer works the report, student answers", func(t *testing.T) {
-		expect(t, act(reportID, tokS1, "start_review", ""), http.StatusForbidden)
-		expect(t, act(reportID, tokStaff, "start_review", ""), http.StatusOK)
-		expect(t, act(reportID, tokStaff, "request_info", ""), http.StatusConflict) // reason required
-		expect(t, act(reportID, tokStaff, "request_info", "ขอคำชี้แจงจากนักศึกษา"), http.StatusOK)
-
-		expect(t, call("POST", fmt.Sprintf("/reports/%d/responses", reportID), tokS2, newMultipart(t, map[string]string{"message": "x"}, nil)), http.StatusNotFound)
-		expect(t, call("POST", fmt.Sprintf("/reports/%d/responses", reportID), tokS1, newMultipart(t, map[string]string{"message": "  "}, nil)), http.StatusBadRequest)
-		expect(t, call("POST", fmt.Sprintf("/reports/%d/responses", reportID), tokS1,
-			newMultipart(t, map[string]string{"message": "วันนั้นป่วย มีใบรับรองแพทย์"}, map[string][]byte{"medical.png": pngBytes})), http.StatusCreated)
-		if s := status(t, reportID); s != models.ReportUnderReview {
-			t.Fatalf("after student response status = %s, want UNDER_REVIEW", s)
-		}
-		expect(t, act(reportID, tokStaff, "confirm", "ตรวจสอบบันทึกเวลาแล้ว ใบรับรองแพทย์ลงวันที่ไม่ตรง"), http.StatusOK)
-	})
-
-	t.Run("10 confirmed history is visible to the other course's instructor, and logged", func(t *testing.T) {
+	t.Run("10 other instructors see the student was reported, and it is logged", func(t *testing.T) {
 		got := expect(t, call("GET", fmt.Sprintf("/instructor/applications/%d/performance-records", app1Y.ID), tokB, nil), http.StatusOK)
 		var recs []models.ConfirmedRecord
 		_ = json.Unmarshal(got.raw, &recs)
-		if len(recs) != 1 || recs[0].ReviewReason == "" || !recs[0].StudentResponded || recs[0].CourseCode != courseX.Code {
+		if len(recs) != 1 || recs[0].CourseCode != courseX.Code {
 			t.Fatalf("records = %s", got.raw)
 		}
-		if strings.Contains(string(got.raw), "medical.png") || strings.Contains(string(got.raw), "timesheet.png") {
+		if strings.Contains(string(got.raw), "timesheet.png") {
 			t.Fatal("history must not expose evidence")
 		}
 		var n int64
@@ -299,10 +288,17 @@ func TestReportWorkflowEndToEnd(t *testing.T) {
 		// B does not teach X, so B cannot use X's application to look.
 		expect(t, call("GET", fmt.Sprintf("/instructor/applications/%d/performance-records", app1X.ID), tokB, nil), http.StatusForbidden)
 		expect(t, call("GET", fmt.Sprintf("/instructor/applications/%d/performance-records", app1Y.ID), tokS1, nil), http.StatusForbidden)
+		expect(t, call("GET", fmt.Sprintf("/instructor/applications/%d/performance-records", app1Y.ID), tokStaff, nil), http.StatusForbidden)
+		expect(t, call("GET", fmt.Sprintf("/instructor/applications/%d/performance-records", app1Y.ID), tokAdmin, nil), http.StatusOK)
 
 		apps := expect(t, call("GET", fmt.Sprintf("/instructor/courses/%d/applicants", courseY.ID), tokB, nil), http.StatusOK)
 		if !strings.Contains(string(apps.raw), `"confirmed_record_count":1`) {
 			t.Fatalf("applicants = %s", apps.raw)
+		}
+		// Staff use the applicant list for documents and never see the flag.
+		staffApps := expect(t, call("GET", fmt.Sprintf("/instructor/courses/%d/applicants", courseY.ID), tokStaff, nil), http.StatusOK)
+		if strings.Contains(string(staffApps.raw), "confirmed_record_count") {
+			t.Fatal("staff applicant list leaked confirmed_record_count")
 		}
 		// The student's own application list must never carry the flag.
 		mine := expect(t, call("GET", "/student/applications", tokS1, nil), http.StatusOK)
@@ -311,64 +307,44 @@ func TestReportWorkflowEndToEnd(t *testing.T) {
 		}
 	})
 
-	t.Run("reconsideration and reopen keep every earlier decision", func(t *testing.T) {
-		reconsider := func(tok string) resp {
-			return call("POST", fmt.Sprintf("/reports/%d/responses", reportID), tok, newMultipart(t, map[string]string{"message": "ขอให้ทบทวน", "reconsideration": "true"}, nil))
-		}
-		expect(t, reconsider(tokS1), http.StatusCreated)
-		expect(t, reconsider(tokS1), http.StatusConflict)
-		expect(t, act(reportID, tokStaff, "decline_reconsideration", "หลักฐานเดิมเพียงพอ"), http.StatusOK)
-		expect(t, act(reportID, tokStaff, "decline_reconsideration", "ซ้ำ"), http.StatusConflict)
-		expect(t, act(reportID, tokStaff, "reopen", "พบข้อมูลใหม่"), http.StatusOK)
-		got := expect(t, call("GET", fmt.Sprintf("/instructor/applications/%d/performance-records", app1Y.ID), tokB, nil), http.StatusOK)
-		if string(bytes.TrimSpace(got.raw)) != "[]" {
-			t.Fatalf("reopened report still shown as confirmed: %s", got.raw)
-		}
-		expect(t, act(reportID, tokStaff, "not_substantiated", "ข้อมูลไม่เพียงพอ"), http.StatusOK)
-
-		d := expect(t, call("GET", fmt.Sprintf("/reports/%d", reportID), tokStaff, nil), http.StatusOK)
-		var detail struct {
-			History   []models.LabBoyReportStatusHistory `json:"history"`
-			Reviews   []models.LabBoyReportReview        `json:"reviews"`
-			Responses []models.LabBoyReportResponse      `json:"responses"`
-			Evidence  []models.LabBoyReportEvidence      `json:"evidence"`
-		}
-		_ = json.Unmarshal(d.raw, &detail)
-		var path []string
-		for _, h := range detail.History {
-			path = append(path, string(h.ToStatus))
-		}
-		want := "DRAFT SUBMITTED UNDER_REVIEW AWAITING_RESPONSE UNDER_REVIEW CONFIRMED UNDER_REVIEW NOT_SUBSTANTIATED"
-		if strings.Join(path, " ") != want {
-			t.Fatalf("timeline = %v", path)
-		}
-		if len(detail.Reviews) != 5 || len(detail.Responses) != 2 || len(detail.Evidence) != 2 {
-			t.Fatalf("reviews=%d responses=%d evidence=%d", len(detail.Reviews), len(detail.Responses), len(detail.Evidence))
-		}
-	})
-
-	t.Run("11 withdrawing keeps the history and needs a reason", func(t *testing.T) {
+	t.Run("11 withdrawing removes the flag, keeps the history, needs a reason", func(t *testing.T) {
 		got := expect(t, call("POST", "/instructor/reports", tokA, input(app1X.ID, daysAgo(5), "LATE_NOTICE")), http.StatusCreated)
 		id := uint(got.body["id"].(float64))
 		expect(t, act(id, tokA, "submit", ""), http.StatusOK)
 		expect(t, act(id, tokA, "withdraw", ""), http.StatusConflict)
 		expect(t, act(id, tokB, "withdraw", "x"), http.StatusNotFound)
+		expect(t, act(id, tokAdmin, "withdraw", "x"), http.StatusForbidden)
 		expect(t, act(id, tokA, "withdraw", "รายงานผิดคน"), http.StatusOK)
 		hist, _ := database.ReportStatusHistory(id)
-		if len(hist) != 3 || hist[2].ToStatus != models.ReportWithdrawn || hist[2].Reason != "รายงานผิดคน" {
+		if len(hist) != 3 || hist[1].ToStatus != models.ReportConfirmed || hist[2].ToStatus != models.ReportWithdrawn || hist[2].Reason != "รายงานผิดคน" {
 			t.Fatalf("history = %+v", hist)
+		}
+		recs := expect(t, call("GET", fmt.Sprintf("/instructor/applications/%d/performance-records", app1Y.ID), tokB, nil), http.StatusOK)
+		var list []models.ConfirmedRecord
+		_ = json.Unmarshal(recs.raw, &list)
+		if len(list) != 1 {
+			t.Fatalf("withdrawn report still flags the student: %s", recs.raw)
 		}
 		// The same incident can be filed again once the earlier one is withdrawn.
 		expect(t, call("POST", "/instructor/reports", tokA, input(app1X.ID, daysAgo(5), "LATE_NOTICE")), http.StatusCreated)
 	})
 
-	t.Run("7 an admin who filed a report cannot review it", func(t *testing.T) {
-		got := expect(t, call("POST", "/instructor/reports", tokAdmin, input(app1X.ID, daysAgo(6), "DUTY_NEGLECT")), http.StatusCreated)
-		id := uint(got.body["id"].(float64))
-		expect(t, act(id, tokAdmin, "submit", ""), http.StatusOK)
-		expect(t, act(id, tokAdmin, "start_review", ""), http.StatusForbidden)
-		expect(t, act(id, tokStaff, "start_review", ""), http.StatusOK)
-		expect(t, act(id, tokAdmin, "confirm", "x"), http.StatusForbidden)
+	t.Run("admin sees every submitted report, staff cannot list them", func(t *testing.T) {
+		got := expect(t, call("GET", "/admin/reports?limit=100", tokAdmin, nil), http.StatusOK)
+		var p ReportPageT
+		_ = json.Unmarshal(got.raw, &p)
+		found := false
+		for _, rep := range p.Data {
+			if rep.Status == models.ReportDraft {
+				t.Fatalf("admin list leaked a draft %+v", rep)
+			}
+			found = found || rep.ID == reportID
+		}
+		if !found {
+			t.Fatal("admin list misses the confirmed report")
+		}
+		expect(t, call("GET", "/admin/reports", tokStaff, nil), http.StatusForbidden)
+		expect(t, call("GET", "/staff/reports", tokStaff, nil), http.StatusNotFound)
 	})
 
 	t.Run("13 pagination, search and filters", func(t *testing.T) {
@@ -381,6 +357,7 @@ func TestReportWorkflowEndToEnd(t *testing.T) {
 			_ = json.Unmarshal(got.raw, &p)
 			return p
 		}
+		// A: confirmed (1), withdrawn (1), re-filed draft (1), 3 new drafts.
 		all := list("limit=100")
 		if all.Total != 6 || len(all.Data) != 6 {
 			t.Fatalf("A has %d reports (%d rows), want 6", all.Total, len(all.Data))
@@ -395,7 +372,7 @@ func TestReportWorkflowEndToEnd(t *testing.T) {
 		if p := list("status=DRAFT"); p.Total != 4 {
 			t.Fatalf("status filter total = %d", p.Total)
 		}
-		if p := list("status=DRAFT,NOT_SUBSTANTIATED"); p.Total != 5 {
+		if p := list("status=DRAFT,CONFIRMED"); p.Total != 5 {
 			t.Fatalf("multi status total = %d", p.Total)
 		}
 		if p := list("date_from=" + daysAgo(21) + "&date_to=" + daysAgo(20)); p.Total != 2 {
@@ -410,23 +387,121 @@ func TestReportWorkflowEndToEnd(t *testing.T) {
 		if p := list(fmt.Sprintf("course_id=%d", courseY.ID)); p.Total != 0 {
 			t.Fatalf("course filter total = %d", p.Total)
 		}
-		// Other instructors see none of A's reports; the student sees only non-drafts.
+		// Other instructors see none of A's reports in their own list.
 		gotB := expect(t, call("GET", "/instructor/reports", tokB, nil), http.StatusOK)
 		if !strings.Contains(string(gotB.raw), `"total":0`) {
 			t.Fatalf("B list = %s", gotB.raw)
 		}
-		gotS := expect(t, call("GET", "/student/reports", tokS1, nil), http.StatusOK)
-		var ps ReportPageT
-		_ = json.Unmarshal(gotS.raw, &ps)
-		for _, rep := range ps.Data {
-			if rep.Status == models.ReportDraft || rep.StudentID != stu1.ID {
-				t.Fatalf("student list leaked %+v", rep)
-			}
-		}
-		if ps.Total != 3 {
-			t.Fatalf("student sees %d reports, want 3", ps.Total)
-		}
 		expect(t, call("GET", "/instructor/reports?category=BAD", tokA, nil), http.StatusBadRequest)
+	})
+
+	t.Run("student report waits for the course instructor to confirm or reject", func(t *testing.T) {
+		stu3, tokS3 := mkUser("Student3", models.RoleStudent)
+		app3X := mkApp(stu3, courseX, true)
+		flags := func() int {
+			recs, err := database.ConfirmedRecordsForStudent(stu1.ID, courseX.AcademicYear)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return len(recs)
+		}
+		notes := func(u uint, title string) int64 {
+			var n int64
+			database.DB.Model(&models.Notification{}).Where("user_id = ? AND title = ?", u, title).Count(&n)
+			return n
+		}
+		before := flags()
+
+		// Only an accepted Lab Boy of the course, and never about themselves.
+		expect(t, call("POST", "/student/reports", tokS2, input(app1X.ID, daysAgo(40), "ABSENCE")), http.StatusForbidden)
+		expect(t, call("POST", "/student/reports", tokS3, input(app3X.ID, daysAgo(40), "ABSENCE")), http.StatusBadRequest)
+		expect(t, call("POST", "/student/reports", tokS3, input(app1Y.ID, daysAgo(40), "ABSENCE")), http.StatusBadRequest)
+
+		got := expect(t, call("POST", "/student/reports", tokS3, input(app1X.ID, daysAgo(40), "ABSENCE")), http.StatusCreated)
+		rejectID := uint(got.body["id"].(float64))
+		if got.body["status"] != "SUBMITTED" || got.body["reporter_role"] != "student" {
+			t.Fatalf("unexpected body %s", got.raw)
+		}
+		if flags() != before {
+			t.Fatal("a waiting student report must not flag the student")
+		}
+		if notes(instA.ID, "มีรายงาน Lab Boy จากนักศึกษา รอการตรวจสอบ") == 0 {
+			t.Fatal("course instructor was not notified")
+		}
+
+		// The waiting report survives a restart (startup migrations).
+		if err := database.Connect(cfg); err != nil {
+			t.Fatal(err)
+		}
+		if s := status(t, rejectID); s != models.ReportSubmitted {
+			t.Fatalf("startup migration changed a waiting student report to %s", s)
+		}
+
+		// Who can see it: the sender, the course instructor, admin.
+		expect(t, call("GET", fmt.Sprintf("/reports/%d", rejectID), tokS1, nil), http.StatusNotFound)
+		expect(t, call("GET", fmt.Sprintf("/reports/%d", rejectID), tokB, nil), http.StatusNotFound)
+		expect(t, call("GET", fmt.Sprintf("/reports/%d", rejectID), tokS3, nil), http.StatusOK)
+		expect(t, call("GET", fmt.Sprintf("/reports/%d", rejectID), tokAdmin, nil), http.StatusOK)
+		det := expect(t, call("GET", fmt.Sprintf("/reports/%d", rejectID), tokA, nil), http.StatusOK)
+		if !strings.Contains(string(det.raw), `"allowed_actions":["confirm","not_substantiated"]`) {
+			t.Fatalf("course instructor actions: %s", det.raw)
+		}
+		review := expect(t, call("GET", "/instructor/reports/review?status=SUBMITTED", tokA, nil), http.StatusOK)
+		var q ReportPageT
+		_ = json.Unmarshal(review.raw, &q)
+		if q.Total != 1 || q.Data[0].ID != rejectID || q.Data[0].ReporterName == "" {
+			t.Fatalf("review queue = %s", review.raw)
+		}
+		if gotB := expect(t, call("GET", "/instructor/reports/review", tokB, nil), http.StatusOK); !strings.Contains(string(gotB.raw), `"total":0`) {
+			t.Fatalf("B review queue = %s", gotB.raw)
+		}
+
+		// Only the course instructor decides; rejecting needs a reason.
+		expect(t, act(rejectID, tokS3, "confirm", ""), http.StatusForbidden)
+		expect(t, act(rejectID, tokB, "confirm", ""), http.StatusNotFound)
+		expect(t, act(rejectID, tokAdmin, "confirm", ""), http.StatusForbidden)
+		expect(t, act(rejectID, tokA, "not_substantiated", ""), http.StatusConflict)
+		expect(t, act(rejectID, tokA, "not_substantiated", "ไม่พบหลักฐาน"), http.StatusOK)
+		expect(t, act(rejectID, tokA, "confirm", ""), http.StatusConflict) // decision is final
+		if flags() != before {
+			t.Fatal("a rejected report must not flag the student")
+		}
+
+		got = expect(t, call("POST", "/student/reports", tokS3, input(app1X.ID, daysAgo(41), "DUTY_NEGLECT")), http.StatusCreated)
+		confirmID := uint(got.body["id"].(float64))
+		expect(t, act(confirmID, tokA, "confirm", ""), http.StatusOK)
+		if flags() != before+1 {
+			t.Fatal("a confirmed student report must flag the student")
+		}
+		expect(t, act(confirmID, tokS3, "withdraw", "x"), http.StatusConflict)
+		reviews, _ := database.ReportReviews(confirmID)
+		if len(reviews) != 1 || reviews[0].Decision != models.DecisionConfirm || reviews[0].ReviewerID != instA.ID {
+			t.Fatalf("reviews = %+v", reviews)
+		}
+
+		// The sender is told the result; the reported student is told nothing.
+		if n := notes(stu3.ID, "ผลการตรวจสอบรายงานที่คุณส่ง"); n != 2 {
+			t.Fatalf("sender got %d result notifications, want 2", n)
+		}
+		if n := notes(stu1.ID, "ผลการตรวจสอบรายงานที่คุณส่ง"); n != 0 {
+			t.Fatal("reported student must not be notified")
+		}
+
+		// The sender may withdraw while it still waits.
+		got = expect(t, call("POST", "/student/reports", tokS3, input(app1X.ID, daysAgo(42), "OTHER")), http.StatusCreated)
+		wID := uint(got.body["id"].(float64))
+		expect(t, act(wID, tokS3, "withdraw", ""), http.StatusConflict)
+		expect(t, act(wID, tokS3, "withdraw", "ส่งผิดคน"), http.StatusOK)
+
+		mine := expect(t, call("GET", "/student/reports", tokS3, nil), http.StatusOK)
+		var p ReportPageT
+		_ = json.Unmarshal(mine.raw, &p)
+		if p.Total != 3 {
+			t.Fatalf("sender's list total = %d, want 3", p.Total)
+		}
+		if other := expect(t, call("GET", "/student/reports", tokS1, nil), http.StatusOK); !strings.Contains(string(other.raw), `"total":0`) {
+			t.Fatalf("reported student's list = %s", other.raw)
+		}
 	})
 
 	t.Run("14 a failing write rolls the whole transition back", func(t *testing.T) {

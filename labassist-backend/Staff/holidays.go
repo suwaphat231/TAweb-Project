@@ -84,7 +84,7 @@ func (h *Handler) ListCalendarDates(c *gin.Context) {
 }
 
 // CreateCalendarDate godoc
-// @Summary เพิ่มวันหยุด/วันงด/วันชดเชย
+// @Summary เพิ่มวันหยุด/วันงด
 // @Tags staff
 // @Accept json
 // @Produce json
@@ -105,10 +105,11 @@ func (h *Handler) CreateCalendarDate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid date format; use YYYY-MM-DD"})
 		return
 	}
-	// Validate date_type enum.
+	// Validate date_type enum. "makeup" stays in the DB enum for old rows only:
+	// the makeup-day feature was removed, so new makeup dates are rejected.
 	switch body.DateType {
 	case models.DateTypePublicHoliday, models.DateTypeUniversityHoliday,
-		models.DateTypeNoClass, models.DateTypeCaseException, models.DateTypeMakeup:
+		models.DateTypeNoClass, models.DateTypeCaseException:
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid date_type"})
 		return

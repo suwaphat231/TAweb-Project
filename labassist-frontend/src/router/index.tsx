@@ -23,7 +23,7 @@ const InstructorProfile = lazy(() => import('../pages/instructor/InstructorProfi
 const InstructorReports = lazy(() => import('../pages/instructor/InstructorReports'))
 const InstructorReportCourse = lazy(() => import('../pages/instructor/InstructorReportCourse'))
 const ReportDetailPage = lazy(() => import('../pages/reports/ReportDetailPage'))
-const StaffReports = lazy(() => import('../pages/staff/StaffReports'))
+const AdminReports = lazy(() => import('../pages/admin/AdminReports'))
 const StudentReports = lazy(() => import('../pages/student/StudentReports'))
 
 const StaffHome = lazy(() => import('../pages/staff/StaffHome'))
@@ -77,7 +77,6 @@ export function AppRouter() {
       <Route path="/student/profile" element={<ProtectedRoute roles={['student']}><StudentProfile /></ProtectedRoute>} />
       <Route path="/student/grade-check" element={<ProtectedRoute roles={['student']}><StudentGradeCheck /></ProtectedRoute>} />
       <Route path="/student/schedule"    element={<ProtectedRoute roles={['student']}><StudentSchedule /></ProtectedRoute>} />
-      <Route path="/student/reports"     element={<ProtectedRoute roles={['student']}><StudentReports /></ProtectedRoute>} />
       <Route path="/student/courses/:id" element={<ProtectedRoute roles={['student']}><StudentCourseDetail /></ProtectedRoute>} />
 
       {/* Instructor */}
@@ -89,13 +88,15 @@ export function AppRouter() {
       <Route path="/instructor/reports"  element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorReports /></ProtectedRoute>} />
       <Route path="/instructor/reports/courses/:courseId" element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorReportCourse /></ProtectedRoute>} />
 
-      {/* Lab Boy performance report detail — every role; the API decides what each may see */}
-      <Route path="/reports/:id" element={<ProtectedRoute><ReportDetailPage /></ProtectedRoute>} />
+      <Route path="/student/reports" element={<ProtectedRoute roles={['student']}><StudentReports /></ProtectedRoute>} />
+      {/* Lab Boy report detail — whoever filed it, the course instructor for a
+          student's report, and admin (read-only); the API decides. */}
+      <Route path="/reports/:id" element={<ProtectedRoute roles={['instructor', 'admin', 'student']}><ReportDetailPage /></ProtectedRoute>} />
 
       {/* Staff */}
       <Route path="/staff/home"     element={<ProtectedRoute roles={['staff', 'admin']}><StaffHome /></ProtectedRoute>} />
       <Route path="/staff/review"   element={<ProtectedRoute roles={['staff', 'admin']}><StaffReview /></ProtectedRoute>} />
-      <Route path="/staff/reports"  element={<ProtectedRoute roles={['staff', 'admin']}><StaffReports /></ProtectedRoute>} />
+      <Route path="/admin/reports"  element={<ProtectedRoute roles={['admin']}><AdminReports /></ProtectedRoute>} />
       <Route path="/staff/settings" element={<ProtectedRoute roles={['staff', 'admin']}><StaffSettings /></ProtectedRoute>} />
       <Route path="/staff/profile"  element={<ProtectedRoute roles={['staff']}><StaffProfile /></ProtectedRoute>} />
       <Route path="/staff/course/:year/:semester/:code/:section" element={<ProtectedRoute roles={['staff', 'admin']}><StaffCourseDetail /></ProtectedRoute>} />

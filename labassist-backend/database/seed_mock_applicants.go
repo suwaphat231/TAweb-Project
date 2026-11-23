@@ -330,12 +330,9 @@ func detachDemoReportCourses(db *gorm.DB) error {
 }
 
 // seedMockReports sets up realistic dummy data for testing the blacklist
-// and performance report system across all roles (instructor, staff, student).
+// and performance report system. Every report is CONFIRMED by the
+// instructor who filed it — there is no review step.
 func seedMockReports() error {
-	staff, ok := UserByUsername(mockDemoStaff.Username)
-	if !ok {
-		return nil
-	}
 	instructor, ok := UserByUsername(mockDemoInstructor.Username)
 	if !ok {
 		return nil
@@ -403,21 +400,12 @@ func seedMockReports() error {
 					UpdatedAt:     confirmedAt,
 				}
 				if err := DB.Create(&report).Error; err == nil {
-					fromStatus := models.ReportUnderReview
-					reason := "ตรวจสอบหลักฐานการลงเวลาและบันทึกการสอนแล้ว พบว่าขาดแล็บจริงโดยไม่มีการลา จึงยืนยันรายงานเพื่อเป็นประวัติประกอบการพิจารณาในอนาคต"
+					fromStatus := models.ReportDraft
 					DB.Create(&models.LabBoyReportStatusHistory{
 						ReportID:   report.ID,
 						FromStatus: &fromStatus,
 						ToStatus:   models.ReportConfirmed,
-						ActorID:    staff.ID,
-						Reason:     reason,
-						CreatedAt:  confirmedAt,
-					})
-					DB.Create(&models.LabBoyReportReview{
-						ReportID:   report.ID,
-						ReviewerID: staff.ID,
-						Decision:   models.DecisionConfirm,
-						Reason:     reason,
+						ActorID:    instructor.ID,
 						CreatedAt:  confirmedAt,
 					})
 					// Also seed into legacy blacklists table for full compatibility
@@ -434,9 +422,7 @@ func seedMockReports() error {
 		}
 	}
 
-	// Case 2: demo_std01 (ธนภัทร ศรีวิไล) -> Awaiting Student Response
-	// When logging in with dev-login "นักศึกษา" and navigating to /student/reports,
-	// the student can view the report and test submitting an explanation.
+	// Case 2: demo_std01 (ธนภัทร ศรีวิไล) -> reported (CONFIRMED on submit)
 	if std01, ok := UserByUsername("demo_std01"); ok {
 		var existingApp models.Application
 		if err := DB.Where("student_id = ? AND course_id = ?", std01.ID, pastCourse.ID).First(&existingApp).Error; err != nil {
@@ -463,19 +449,18 @@ func seedMockReports() error {
 					Category:      models.CategoryDutyNeglect,
 					Description:   "ออกจากห้องปฏิบัติการก่อนเวลาเลิกแล็บ 45 นาที และไม่ได้ช่วยจัดเก็บอุปกรณ์คอมพิวเตอร์หลังเลิกคาบ",
 					Impact:        "เพื่อนผู้ช่วยสอนอีกคนต้องอยู่เก็บอุปกรณ์คอมพิวเตอร์เพียงคนเดียว",
-					Status:        models.ReportAwaitingResponse,
+					Status:        models.ReportConfirmed,
 					SubmittedAt:   &submittedAt,
 					CreatedAt:     submittedAt,
 					UpdatedAt:     submittedAt,
 				}
 				if err := DB.Create(&report).Error; err == nil {
-					fromStatus := models.ReportSubmitted
+					fromStatus := models.ReportDraft
 					DB.Create(&models.LabBoyReportStatusHistory{
 						ReportID:   report.ID,
 						FromStatus: &fromStatus,
-						ToStatus:   models.ReportAwaitingResponse,
-						ActorID:    staff.ID,
-						Reason:     "ขอให้นักศึกษาชี้แจงเหตุผลที่ออกจากห้องแล็บก่อนเวลาเลิกเรียน",
+						ToStatus:   models.ReportConfirmed,
+						ActorID:    instructor.ID,
 						CreatedAt:  submittedAt,
 					})
 				}
@@ -483,9 +468,7 @@ func seedMockReports() error {
 		}
 	}
 
-	// Case 3: demo_std05 (อดิศร แก้วมณี) -> Submitted / Pending Staff Review
-	// When logging in with dev-login "เจ้าหน้าที่" and navigating to /staff/reports,
-	// staff can test reviewing, requesting response, confirming, or rejecting the report.
+	// Case 3: demo_std05 (อดิศร แก้วมณี) -> reported (CONFIRMED on submit)
 	if std05, ok := UserByUsername("demo_std05"); ok {
 		var existingApp models.Application
 		if err := DB.Where("student_id = ? AND course_id = ?", std05.ID, pastCourse.ID).First(&existingApp).Error; err != nil {
@@ -512,7 +495,7 @@ func seedMockReports() error {
 					Category:      models.CategoryLateNotice,
 					Description:   "แจ้งลาการปฏิบัติหน้าที่ล่วงหน้าเพียง 10 นาทีก่อนเริ่มคาบเรียน โดยแจ้งว่าตื่นสาย",
 					Impact:        "ผู้สอนต้องประสานงานหาผู้ช่วยสอนคนอื่นมาช่วยดูแลแทนอย่างกะทันหัน",
-					Status:        models.ReportSubmitted,
+					Status:        models.ReportConfirmed,
 					SubmittedAt:   &submittedAt,
 					CreatedAt:     submittedAt,
 					UpdatedAt:     submittedAt,
@@ -522,9 +505,8 @@ func seedMockReports() error {
 					DB.Create(&models.LabBoyReportStatusHistory{
 						ReportID:   report.ID,
 						FromStatus: &fromStatus,
-						ToStatus:   models.ReportSubmitted,
+						ToStatus:   models.ReportConfirmed,
 						ActorID:    instructor.ID,
-						Reason:     "ส่งรายงานพฤติกรรมเพื่อให้เจ้าหน้าที่ภาควิชาพิจารณาตรวจสอบ",
 						CreatedAt:  submittedAt,
 					})
 				}

@@ -380,7 +380,7 @@ select.slot-control { width: 100%; cursor: pointer; }
 @media (min-width: 961px) { .report-side { position: sticky; top: calc(var(--topbar-h) + 16px); } }
 @media (max-width: 960px) { .report-layout { grid-template-columns: 1fr; } }
 
-.report-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.report-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
 @media (max-width: 720px) { .report-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* ── Data tables (admin) ───────────────────────────────────────────────── */

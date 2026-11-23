@@ -83,10 +83,9 @@ func TestTermScheduleLockedAfterAddDrop(t *testing.T) {
 		t.Fatalf("last day must still be editable: %v", err)
 	}
 
-	// A student who never saved a schedule for a closed term must still be able
-	// to save once (first save), but not change it afterwards.
-	if _, err := UpsertTermSchedule(userID+1, "1", year, slots, models.TermScheduleSet); err != nil {
-		t.Fatalf("first save in closed term must be allowed: %v", err)
+	// A student who never saved a schedule cannot enter or change it after add/drop closes.
+	if _, err := UpsertTermSchedule(userID+1, "1", year, slots, models.TermScheduleSet); !errors.Is(err, ErrAddDropClosed) {
+		t.Fatalf("first save in closed term: got %v, want ErrAddDropClosed", err)
 	}
 	t.Cleanup(func() { DB.Where("user_id = ?", userID+1).Delete(&models.TermSchedule{}) })
 	if _, err := UpsertTermSchedule(userID+1, "1", year, other, models.TermScheduleSet); !errors.Is(err, ErrAddDropClosed) {

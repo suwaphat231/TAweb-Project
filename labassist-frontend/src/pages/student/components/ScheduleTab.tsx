@@ -338,14 +338,13 @@ export function ScheduleTab() {
   const currentSlots = toScheduleSlots(drafts)
   const statusInfo = savedSchedule?.status
   const isSaved = statusInfo === 'set' || statusInfo === 'no_class'
-  const saveLimit = savedSchedule?.save_limit ?? 3
-  // After add/drop closes, a saved schedule is frozen; an unset one can still be saved once.
+  // After add/drop closes, every saved or unsaved schedule is frozen.
   const addDropClosed = (savedSchedule?.add_drop_closed ?? false) && isSaved
-  const savesLeft = addDropClosed ? 0 : Math.max(0, saveLimit - (savedSchedule?.save_count ?? 0))
+  const scheduleClosed = savedSchedule?.add_drop_closed ?? false
   // Saved schedules are read-only until the student opts into editing.
-  const locked = (isSaved && !editing) || addDropClosed
+  const locked = (isSaved && !editing) || scheduleClosed
   const formDisabled = locked || saveMut.isPending
-  const canSave = (noClass || drafts.length > 0) && confirmed && savesLeft > 0 && !saveMut.isPending
+  const canSave = (noClass || drafts.length > 0) && confirmed && !scheduleClosed && !saveMut.isPending
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -566,18 +565,16 @@ export function ScheduleTab() {
                         type="button"
                         size="sm"
                         variant="outline"
-                        disabled={savesLeft === 0}
+                        disabled={scheduleClosed}
                         onClick={() => { setEditing(true); setConfirmed(false) }}
                       >
                         แก้ไขตารางเรียน
                       </Button>
-                      <span style={{ fontSize: 12, color: savesLeft === 0 ? 'var(--red)' : 'var(--ink-500)' }}>
-                        {addDropClosed
-                          ? 'หมดช่วงเพิ่ม-ถอนแล้ว — แก้ไขไม่ได้'
-                          : savesLeft === 0
-                          ? `ใช้สิทธิ์ครบ ${saveLimit} ครั้งแล้ว — ติดต่อเจ้าหน้าที่`
-                          : `แก้ไขได้อีก ${savesLeft} ครั้ง`}
-                      </span>
+                      {scheduleClosed && (
+                        <span style={{ fontSize: 12, color: 'var(--red)' }}>
+                          หมดช่วงเพิ่ม-ถอนแล้ว — แก้ไขไม่ได้
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>
@@ -758,15 +755,12 @@ export function ScheduleTab() {
 
               <div style={{
                 fontSize: 13, marginBottom: 16, padding: '10px 14px', borderRadius: 8,
-                background: savesLeft <= 1 ? 'var(--amber-bg)' : 'var(--line-soft)',
-                color: savesLeft <= 1 ? 'var(--amber)' : 'var(--ink-700)',
+                background: scheduleClosed ? 'var(--amber-bg)' : 'var(--line-soft)',
+                color: scheduleClosed ? 'var(--amber)' : 'var(--ink-700)',
               }}>
-                {addDropClosed
+                {scheduleClosed
                   ? 'หมดช่วงเพิ่ม-ถอนของภาคเรียนนี้แล้ว — ไม่สามารถแก้ไขตารางเรียนได้'
-                  : savesLeft === 0
-                  ? `ใช้สิทธิ์บันทึกครบ ${saveLimit} ครั้งแล้วสำหรับภาคเรียนนี้ — กรุณาติดต่อเจ้าหน้าที่`
-                  : <>กรอกและแก้ไขตารางเรียนได้ภาคเรียนละไม่เกิน {saveLimit} ครั้ง ·
-                    การบันทึกครั้งนี้จะใช้สิทธิ์ 1 ครั้ง (เหลือ <strong>{savesLeft}</strong> ครั้ง)</>}
+                  : 'แก้ไขตารางเรียนได้จนสิ้นสุดช่วงเพิ่ม-ถอน'}
               </div>
 
               <label style={{
@@ -778,7 +772,7 @@ export function ScheduleTab() {
                   type="checkbox"
                   checked={confirmed}
                   onChange={(e) => setConfirmed(e.target.checked)}
-                  disabled={saveMut.isPending || savesLeft === 0}
+                  disabled={saveMut.isPending || scheduleClosed}
                   style={{ width: 16, height: 16 }}
                 />
                 ฉันตรวจสอบวันและเวลาเรียนแล้ว และยืนยันว่าข้อมูลถูกต้อง

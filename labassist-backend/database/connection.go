@@ -755,6 +755,9 @@ func Connect(cfg *config.Config) error {
 	if err := migrateBlobColumnsNullable(db); err != nil {
 		return fmt.Errorf("make blob columns nullable: %w", err)
 	}
+	if err := confirmOpenReports(db); err != nil {
+		return fmt.Errorf("confirm open Lab Boy reports: %w", err)
+	}
 	DB = db
 
 

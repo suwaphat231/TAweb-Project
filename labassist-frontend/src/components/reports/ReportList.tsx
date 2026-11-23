@@ -180,9 +180,6 @@ export function ReportList({
                   </td>
                   <td>
                     <ReportStatusBadge status={r.status} />
-                    {r.reconsideration_requested_at && r.status === 'CONFIRMED' && (
-                      <div style={{ fontSize: 12, color: 'var(--amber)', marginTop: 4, fontWeight: 600 }}>มีคำขอทบทวน</div>
-                    )}
                   </td>
                   <td aria-hidden style={{ color: 'var(--ink-400)', textAlign: 'right' }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

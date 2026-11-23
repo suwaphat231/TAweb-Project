@@ -618,10 +618,6 @@ export interface TermSchedule {
   academic_year: number
   slots: ScheduleSlot[]
   status: TermScheduleStatus
-  /** Saves used this term (entering the first time counts as one). */
-  save_count: number
-  /** Max saves allowed per term. */
-  save_limit: number
   /** True once the term's add/drop period has ended: the schedule is read-only. */
   add_drop_closed?: boolean
   /** Last day of the add/drop period (YYYY-MM-DD), when the calendar has one. */
@@ -1126,9 +1122,9 @@ export type ReportStatus =
 export type ReportCategory =
   | 'ABSENCE' | 'LATE_NOTICE' | 'DUTY_NEGLECT' | 'UNPROFESSIONAL_CONDUCT' | 'OTHER'
 
-export type ReportAction =
-  | 'submit' | 'withdraw' | 'start_review' | 'request_info' | 'confirm'
-  | 'not_substantiated' | 'reopen' | 'decline_reconsideration'
+// The instructor who files a report confirms it by submitting; there is no
+// review step, and admin can only look.
+export type ReportAction = 'submit' | 'withdraw' | 'confirm' | 'not_substantiated'
 
 export interface LabBoyReport {
   id: number
@@ -1148,6 +1144,8 @@ export interface LabBoyReport {
   student_name: string
   student_code: string
   reporter_name: string
+  /** 'student' when a fellow Lab Boy sent it in (waits for the course instructor). */
+  reporter_role?: string
   course_code: string
   course_title: string
   course_section?: number
@@ -1208,8 +1206,6 @@ export interface ReportDetail {
   allowed_actions: ReportAction[]
   can_edit: boolean
   can_add_evidence: boolean
-  can_respond: boolean
-  can_request_reconsideration: boolean
 }
 
 export interface ReportPage {

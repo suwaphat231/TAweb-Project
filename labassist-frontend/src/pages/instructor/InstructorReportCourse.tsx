@@ -16,9 +16,7 @@ import { Icon } from '../../components/reports/ReportIcons'
 import { useReportCourses } from '../../components/reports/useReportCourses'
 import { categoryLabel, formatDate } from '../../components/reports/reportLabels'
 import { displayCourseTitle } from '../../utils/courseDisplay'
-import type { Application, LabBoyReport, ReportStatus } from '../../types'
-
-const IN_PROGRESS: ReportStatus[] = ['SUBMITTED', 'UNDER_REVIEW', 'AWAITING_RESPONSE']
+import type { Application, LabBoyReport } from '../../types'
 
 function Stat({ label, value, tone }: { label: string; value: number; tone: string }) {
   return (
@@ -30,7 +28,8 @@ function Stat({ label, value, tone }: { label: string; value: number; tone: stri
 }
 
 // One course (all its sections): every Lab Boy the instructor accepted, the
-// reports already filed about each, and a button to file a new one.
+// reports about each — the instructor's own and those students sent in,
+// which wait for the instructor to confirm — and a button to file a new one.
 export default function InstructorReportCourse() {
   const { courseId } = useParams()
   const id = Number(courseId) || 0
@@ -58,8 +57,17 @@ export default function InstructorReportCourse() {
     })),
   })
 
-  const loading = applicantQueries.some((q) => q.isLoading) || reportQueries.some((q) => q.isLoading)
-  const failed = applicantQueries.some((q) => q.isError) || reportQueries.some((q) => q.isError)
+  // Reports students sent in about Lab Boys of each section (review queue).
+  const studentReportQueries = useQueries({
+    queries: sections.map((s) => ({
+      queryKey: ['instructor-review-reports', { course_id: s.id, limit: 100 }],
+      queryFn: () => reportsApi.reviewList({ course_id: s.id, limit: 100 }),
+    })),
+  })
+
+  const reportQs = [...reportQueries, ...studentReportQueries]
+  const loading = applicantQueries.some((q) => q.isLoading) || reportQs.some((q) => q.isLoading)
+  const failed = applicantQueries.some((q) => q.isError) || reportQs.some((q) => q.isError)
 
   const allLabBoys = useMemo(() =>
     applicantQueries.flatMap((r) => r.data ?? [])
@@ -72,7 +80,13 @@ export default function InstructorReportCourse() {
     return allLabBoys.filter((a) => !q || a.student_name.toLowerCase().includes(q) || a.student_code.toLowerCase().includes(q))
   }, [allLabBoys, search])
 
-  const allReports = useMemo(() => reportQueries.flatMap((q) => q.data?.data ?? []), [reportQueries])
+  const allReports = useMemo(() => {
+    const seen = new Set<number>()
+    return [...reportQueries, ...studentReportQueries]
+      .flatMap((q) => q.data?.data ?? [])
+      .filter((r) => !seen.has(r.id) && !!seen.add(r.id))
+  }, [reportQueries, studentReportQueries])
+  const pendingCount = allReports.filter((r) => r.reporter_role === 'student' && r.status === 'SUBMITTED').length
   const reportsByApp = useMemo(() => {
     const m = new Map<number, LabBoyReport[]>()
     for (const r of allReports) m.set(r.application_id, [...(m.get(r.application_id) ?? []), r])
@@ -99,9 +113,17 @@ export default function InstructorReportCourse() {
       <div className="report-stats">
         <Stat label="Lab Boy ในรายวิชา" value={allLabBoys.length} tone="var(--ink-900)" />
         <Stat label="รายงานที่บันทึก" value={allReports.length} tone="var(--primary)" />
-        <Stat label="อยู่ระหว่างตรวจสอบ" value={allReports.filter((r) => IN_PROGRESS.includes(r.status)).length} tone="var(--amber)" />
-        <Stat label="ยืนยันแล้ว" value={allReports.filter((r) => r.status === 'CONFIRMED').length} tone="var(--primary-700)" />
+        <Stat label="ฉบับร่าง" value={allReports.filter((r) => r.status === 'DRAFT').length} tone="var(--amber)" />
+        <Stat label="รอท่านตรวจสอบ (จากนักศึกษา)" value={pendingCount} tone="#B45309" />
+        <Stat label="รายงานแล้ว" value={allReports.filter((r) => r.status === 'CONFIRMED').length} tone="var(--primary-700)" />
       </div>
+
+      {pendingCount > 0 && (
+        <div role="note" style={{ display: 'flex', gap: 10, alignItems: 'center', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 10, padding: '12px 14px', fontSize: 14, color: 'var(--ink-700)', marginBottom: 16 }}>
+          <Icon name="alert" size={18} style={{ color: '#B45309' }} />
+          มีรายงานจากนักศึกษา {pendingCount} รายการรอท่านตรวจสอบ — เปิดรายงานที่ชื่อ Lab Boy แล้วกด "ยืนยันรายงาน" หรือ "ไม่รับรายงาน"
+        </div>
+      )}
 
       <div style={{ background: 'var(--bg-card)', borderRadius: 'var(--radius-card)', border: '1.5px solid var(--line)', overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', borderBottom: '1px solid var(--line)', flexWrap: 'wrap' }}>
@@ -119,7 +141,7 @@ export default function InstructorReportCourse() {
         </div>
 
         {failed ? (
-          <ErrorState compact onRetry={() => { applicantQueries.forEach((q) => q.refetch()); reportQueries.forEach((q) => q.refetch()) }} />
+          <ErrorState compact onRetry={() => { applicantQueries.forEach((q) => q.refetch()); reportQs.forEach((q) => q.refetch()) }} />
         ) : loading ? (
           <div style={{ padding: 24 }}><Skeleton lines={4} height={14} /></div>
         ) : labBoys.length === 0 ? (
@@ -130,6 +152,7 @@ export default function InstructorReportCourse() {
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {labBoys.map((a, i) => {
               const reports = reportsByApp.get(a.id) ?? []
+              const pending = reports.filter((r) => r.reporter_role === 'student' && r.status === 'SUBMITTED').length
               const open = expanded === a.id
               const panelId = `reports-${a.id}`
               return (
@@ -150,6 +173,7 @@ export default function InstructorReportCourse() {
                         style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 36, background: 'var(--primary-50)', border: '1px solid var(--primary-100)', borderRadius: 999, padding: '4px 12px', color: 'var(--primary)', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}
                       >
                         <Icon name="file" size={14} /> รายงาน {reports.length} รายการ
+                        {pending > 0 && <span style={{ background: '#FEF3C7', color: '#B45309', borderRadius: 999, padding: '0 8px', fontSize: 12 }}>รอตรวจ {pending}</span>}
                         <Icon name="chevron-right" size={14} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }} />
                       </button>
                     ) : (
@@ -170,7 +194,10 @@ export default function InstructorReportCourse() {
                         <button key={r.id} className="report-row-link" onClick={() => navigate(`/reports/${r.id}`)}>
                           <Icon name="calendar" size={14} style={{ color: 'var(--ink-400)' }} />
                           <span style={{ fontSize: 13, color: 'var(--ink-600)', minWidth: 76 }}>{formatDate(r.incident_date)}</span>
-                          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)', flex: 1, minWidth: 160 }}>{categoryLabel[r.category]}</span>
+                          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)', flex: 1, minWidth: 160 }}>
+                            {categoryLabel[r.category]}
+                            {r.reporter_role === 'student' && <span style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--ink-500)' }}>จากนักศึกษา: {r.reporter_name}</span>}
+                          </span>
                           <ReportStatusBadge status={r.status} />
                           <Icon name="chevron-right" size={16} style={{ color: 'var(--ink-400)' }} />
                         </button>

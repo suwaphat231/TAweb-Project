@@ -64,7 +64,6 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 		// report itself (reporter / the student / reviewer / admin).
 		authed.GET("/reports/:id", reportH.Detail)
 		authed.POST("/reports/:id/actions", reportH.Act)
-		authed.POST("/reports/:id/responses", reportH.Respond)
 		authed.GET("/reports/:id/evidence/:evidenceId", reportH.DownloadEvidence)
 
 		// Student
@@ -103,14 +102,16 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			studentGroup.PUT("/student/profile/term-schedule", studentH.SaveTermSchedule)
 			studentGroup.GET("/student/available-terms", studentH.GetAvailableTerms)
 			studentGroup.GET("/student/courses", studentH.StudentCourses)
+			// Report another Lab Boy of the same course; the course instructor
+			// confirms or rejects it.
+			studentGroup.GET("/student/reports", reportH.StudentMine)
+			studentGroup.POST("/student/reports", reportH.StudentCreate)
 			// OCR: อ่านข้อมูลนักศึกษาจากเอกสาร/บัตรนักศึกษา
 			studentGroup.GET("/student/profile/ocr-jobs", studentH.GetOCRJobs)
 			studentGroup.POST("/student/profile/student-info", studentH.UploadStudentInfo)
 			studentGroup.GET("/student/profile/student-info", studentH.GetStudentInfo)
 			studentGroup.POST("/student/profile/student-info/confirm", studentH.ConfirmStudentInfo)
 			studentGroup.GET("/student/profile/student-info/file", studentH.GetStudentInfoFile)
-			studentGroup.GET("/student/reports", reportH.MyReports)
-			studentGroup.POST("/student/reports", studentH.CreateStudentReport)
 			studentGroup.GET("/student/courses/:id/peers", studentH.CoursePeers)
 		}
 
@@ -145,6 +146,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			instructor.PUT("/instructor/notifications/:id/read", teacherH.MarkRead)
 			// Lab Boy performance reports (filed by the course's instructor)
 			instructor.GET("/instructor/reports", reportH.ListMine)
+			instructor.GET("/instructor/reports/review", reportH.ReviewList)
 			instructor.POST("/instructor/reports", reportH.CreateReport)
 			instructor.PUT("/instructor/reports/:id", reportH.UpdateDraft)
 			instructor.POST("/instructor/reports/:id/evidence", reportH.UploadEvidence)
@@ -171,7 +173,6 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			staffGroup.GET("/staff/profile", staffH.GetProfile)
 			staffGroup.PUT("/staff/profile", staffH.UpdateProfile)
 			staffGroup.GET("/staff/reviews", staffH.ListReviews)
-			staffGroup.GET("/staff/reports", reportH.ReviewQueue)
 			staffGroup.PUT("/staff/reviews/:courseId/verify", staffH.VerifyForm)
 			staffGroup.PUT("/staff/reviews/:courseId/return", staffH.ReturnForm)
 			staffGroup.GET("/staff/documents", staffH.ListDocuments)
@@ -249,14 +250,14 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 		adminGroup.Use(middleware.RequireRole("admin"))
 		{
 			adminGroup.GET("/admin/stats", adminH.Stats)
+			// Every Lab Boy report, read-only — only instructors file and confirm them.
+			adminGroup.GET("/admin/reports", reportH.ReviewQueue)
 			adminGroup.GET("/admin/users", adminH.Users)
 			adminGroup.POST("/admin/users", adminH.CreateUser)
 			adminGroup.PUT("/admin/users/:id", adminH.UpdateUser)
 			adminGroup.DELETE("/admin/users/:id", adminH.DeleteUser)
 			adminGroup.PUT("/admin/users/:id/status", adminH.UpdateUserStatus)
 			adminGroup.GET("/admin/users/:id/courses", adminH.InstructorCourses)
-			adminGroup.GET("/admin/users/:id/term-schedules", adminH.StudentTermSchedules)
-			adminGroup.POST("/admin/users/:id/term-schedules/:year/:semester/reset-saves", adminH.ResetStudentTermScheduleSaves)
 			adminGroup.GET("/admin/core-courses", adminH.CoreCourseCatalog)
 			adminGroup.GET("/admin/logs", adminH.Logs)
 			adminGroup.POST("/admin/courses/import", adminH.ImportCourses)

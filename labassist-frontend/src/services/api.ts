@@ -13,7 +13,7 @@ import type {
   ScheduleGroupMonth, AddGroupMonthPayload, MonthOccurrenceSummary,
   GroupMonthPlan, AddGroupMonthOccurrencePayload, PatchOccurrencePayload, HiringNoticePlanSnapshot,
   LabBoyReport, ReportDetail, ReportPage, ReportListParams, ReportInput, ReportAction, ReportEvidence,
-  ReportResponse, ConfirmedRecord, DocumentWorkflowResponse, CreateWorkflowStepPayload, DocType,
+  ConfirmedRecord, DocumentWorkflowResponse, CreateWorkflowStepPayload, DocType,
   CalendarImportEntry, CalendarImportResponse, SkippedCourse,
   CourseEditRequest, CourseEditRequestPayload, CourseEditRequestStatus,
   TranscriptImage, ClassSchedule, ClassScheduleUpload,
@@ -142,18 +142,6 @@ export const applicationsAPI = {
     api.get(`/student/applications/${applicationId}/grade-proof`, { responseType: 'blob' }).then((r) => r.data as Blob),
   instructorGradeProof: (applicationId: number) =>
     api.get(`/instructor/applications/${applicationId}/grade-proof`, { responseType: 'blob' }).then((r) => r.data as Blob),
-  getCoursePeers: (courseId: number) =>
-    api.get<Array<{
-      application_id: number
-      student_id: number
-      student_name: string
-      student_code: string
-      role_applied: string
-      status: string
-      is_self: boolean
-    }>>(`/student/courses/${courseId}/peers`).then((r) => r.data),
-  createReport: (data: { application_id: number; incident_date: string; category: string; description: string; impact: string }) =>
-    api.post('/student/reports', data).then((r) => r.data),
 }
 
 export const studentAPI = {
@@ -221,12 +209,6 @@ export const adminAPI = {
     api.put<User>(`/admin/users/${id}/status`, { is_active }).then((r) => r.data),
   deleteUser: (id: number) => api.delete(`/admin/users/${id}`).then(() => undefined),
   userCourses: (id: number) => api.get<Course[]>(`/admin/users/${id}/courses`).then((r) => r.data),
-  // ตารางเรียนที่นักศึกษาบันทึกไว้แต่ละเทอม + จำนวนครั้งที่แก้ไปแล้ว
-  studentTermSchedules: (id: number) =>
-    api.get<import('../types').TermSchedule[]>(`/admin/users/${id}/term-schedules`).then((r) => r.data),
-  // คืนโควตาการแก้ตารางให้เต็ม (ตารางไม่ถูกแตะ) — บันทึกใน activity log
-  resetTermScheduleSaves: (id: number, academicYear: number, semester: string) =>
-    api.post<import('../types').TermSchedule>(`/admin/users/${id}/term-schedules/${academicYear}/${semester}/reset-saves`).then((r) => r.data),
   // For courses an instructor asked for, or that just aren't in the Excel
   // import — admin can add one directly and assign it to any instructor.
   createCourse: (data: CreateCoursePayload) =>
@@ -568,9 +550,8 @@ function cleanParams(p?: ReportListParams) {
   return Object.fromEntries(Object.entries(p).filter(([, v]) => v !== '' && v !== undefined && v !== 0))
 }
 
-function filesForm(files: File[], fields: Record<string, string> = {}) {
+function filesForm(files: File[]) {
   const body = new FormData()
-  for (const [k, v] of Object.entries(fields)) body.append(k, v)
   for (const f of files) body.append('files', f)
   return body
 }
@@ -578,10 +559,27 @@ function filesForm(files: File[], fields: Record<string, string> = {}) {
 export const reportsApi = {
   mine: (params?: ReportListParams) =>
     api.get<ReportPage>('/instructor/reports', { params: cleanParams(params) }).then((r) => r.data),
-  reviewQueue: (params?: ReportListParams) =>
-    api.get<ReportPage>('/staff/reports', { params: cleanParams(params) }).then((r) => r.data),
-  studentReports: (params?: ReportListParams) =>
+  /** Reports students sent in for courses I teach — my review queue. */
+  reviewList: (params?: ReportListParams) =>
+    api.get<ReportPage>('/instructor/reports/review', { params: cleanParams(params) }).then((r) => r.data),
+  /** Reports I (a student) sent in, with the instructor's decision. */
+  studentMine: (params?: ReportListParams) =>
     api.get<ReportPage>('/student/reports', { params: cleanParams(params) }).then((r) => r.data),
+  studentCreate: (data: ReportInput) => api.post<LabBoyReport>('/student/reports', data).then((r) => r.data),
+  /** Accepted Lab Boys of a course, for a student picking whom to report. */
+  coursePeers: (courseId: number) =>
+    api.get<Array<{
+      application_id: number
+      student_id: number
+      student_name: string
+      student_code: string
+      role_applied: string
+      status: string
+      is_self: boolean
+    }>>(`/student/courses/${courseId}/peers`).then((r) => r.data),
+  /** Every submitted report, for admin (read-only). */
+  adminList: (params?: ReportListParams) =>
+    api.get<ReportPage>('/admin/reports', { params: cleanParams(params) }).then((r) => r.data),
   create: (data: ReportInput) => api.post<LabBoyReport>('/instructor/reports', data).then((r) => r.data),
   updateDraft: (id: number, data: ReportInput) =>
     api.put<LabBoyReport>(`/instructor/reports/${id}`, data).then((r) => r.data),
@@ -590,9 +588,6 @@ export const reportsApi = {
   detail: (id: number) => api.get<ReportDetail>(`/reports/${id}`).then((r) => r.data),
   act: (id: number, action: ReportAction, reason = '') =>
     api.post<LabBoyReport>(`/reports/${id}/actions`, { action, reason }).then((r) => r.data),
-  respond: (id: number, message: string, files: File[], reconsideration = false) =>
-    api.post<ReportResponse>(`/reports/${id}/responses`,
-      filesForm(files, { message, reconsideration: String(reconsideration) })).then((r) => r.data),
   evidenceFile: (id: number, evidenceId: number) =>
     api.get(`/reports/${id}/evidence/${evidenceId}`, { responseType: 'blob' }).then((r) => r.data as Blob),
   confirmedHistory: (applicationId: number) =>

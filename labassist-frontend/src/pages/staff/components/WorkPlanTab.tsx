@@ -868,7 +868,6 @@ export default function WorkPlanTab({ staffCase }: Props) {
                     <option value="university_holiday">วันหยุดมหาวิทยาลัย</option>
                     <option value="no_class">งดการเรียนการสอน</option>
                     <option value="case_exception">ข้อยกเว้นเฉพาะ case</option>
-                    <option value="makeup">วันชดเชย</option>
                   </select>
                 </div>
                 <div>

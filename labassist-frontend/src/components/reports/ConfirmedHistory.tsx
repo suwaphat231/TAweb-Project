@@ -4,8 +4,8 @@ import { reportsApi } from '../../services/api'
 import { Button } from '../ui/Button'
 import { categoryLabel, formatDate } from './reportLabels'
 
-// ConfirmedHistory shows an applicant's CONFIRMED work-performance records
-// inside the instructor's applicant review. Details load only when the
+// ConfirmedHistory shows the reports other instructors filed about an
+// applicant (CONFIRMED = submitted) inside the instructor's applicant review. Details load only when the
 // instructor asks for them, because every view is written to the audit log.
 export function ConfirmedHistory({ applicationId, count, defaultOpen = false }: { applicationId: number; count: number; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen && count > 0)
@@ -25,10 +25,10 @@ export function ConfirmedHistory({ applicationId, count, defaultOpen = false }: 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: reported ? '#B91C1C' : 'var(--ink-900)' }}>
-            {reported ? '⚠ นักศึกษาคนนี้มีรายงานที่ยืนยันแล้ว' : 'ประวัติการปฏิบัติงานที่ยืนยันแล้ว'}
+            {reported ? '⚠ นักศึกษาคนนี้ถูกรายงาน' : 'ประวัติการถูกรายงาน'}
           </div>
           <div style={{ fontSize: 12, color: reported ? '#DC2626' : 'var(--ink-500)', marginTop: 2 }}>
-            {reported ? `มีรายงานที่ผู้ตรวจสอบยืนยันแล้ว ${count} รายการ` : 'ไม่มีรายการที่ผ่านการตรวจสอบ'}
+            {reported ? `อาจารย์รายงานพฤติกรรมการปฏิบัติงาน ${count} รายการ` : 'ไม่มีรายงาน'}
           </div>
         </div>
         {count > 0 && !open && <Button size="sm" variant="outline" onClick={() => setOpen(true)}>ดูรายละเอียด</Button>}
@@ -46,15 +46,9 @@ export function ConfirmedHistory({ applicationId, count, defaultOpen = false }: 
                 {categoryLabel[rec.category]} · {formatDate(rec.incident_date)}
               </div>
               <div style={{ fontSize: 12, color: 'var(--ink-500)', margin: '2px 0 6px' }}>
-                {rec.course_code} {rec.course_title}{rec.course_semester ? ` (ภาคเรียนที่ ${rec.course_semester})` : ''} · ยืนยันเมื่อ {formatDate(rec.confirmed_at)}
-                {rec.student_responded && ' · นักศึกษาได้ส่งคำชี้แจงแล้ว'}
+                {rec.course_code} {rec.course_title}{rec.course_semester ? ` (ภาคเรียนที่ ${rec.course_semester})` : ''} · รายงานเมื่อ {formatDate(rec.confirmed_at)}
               </div>
               <div style={{ color: 'var(--ink-700)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{rec.description}</div>
-              {rec.review_reason && (
-                <div style={{ marginTop: 6, fontSize: 12, color: 'var(--ink-600)', borderLeft: '3px solid var(--line)', paddingLeft: 8 }}>
-                  เหตุผลของผู้ตรวจสอบ: {rec.review_reason}
-                </div>
-              )}
             </div>
           ))}
         </div>

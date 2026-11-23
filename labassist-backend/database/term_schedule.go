@@ -10,10 +10,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// ErrTermScheduleSaveLimit is returned when a student has already used all
-// MaxTermScheduleSaves saves for a term.
-var ErrTermScheduleSaveLimit = errors.New("term schedule save limit reached")
-
 // ErrAddDropClosed is returned when the term's add/drop period has ended.
 var ErrAddDropClosed = errors.New("add/drop period has ended")
 
@@ -29,12 +25,10 @@ func TermScheduleByUserTerm(userID uint, semester string, academicYear int) mode
 			AcademicYear: academicYear,
 			Slots:        []models.ScheduleSlot{},
 			Status:       models.TermScheduleUnset,
-			SaveLimit:    models.MaxTermScheduleSaves,
 		}
 		applyAddDrop(&ts)
 		return ts
 	}
-	ts.SaveLimit = models.MaxTermScheduleSaves
 	applyAddDrop(&ts)
 	return ts
 }
@@ -59,13 +53,8 @@ func HasConfirmedTermSchedule(userID uint) (bool, error) {
 }
 
 // UpsertTermSchedule saves or replaces the TermSchedule for one student/term.
-// Each save that changes the schedule uses one of MaxTermScheduleSaves; once
-// they are used up it returns ErrTermScheduleSaveLimit. Re-saving identical
-// data is a no-op and does not count.
+// Re-saving identical data is a no-op.
 func UpsertTermSchedule(userID uint, semester string, academicYear int, slots []models.ScheduleSlot, status models.TermScheduleStatus) (models.TermSchedule, error) {
-	// After add/drop closes only *changes* to an already-saved schedule are
-	// refused; a student who never saved one (status unset) may still save once,
-	// otherwise they could never satisfy the "schedule required" apply check.
 	closed, end, ok, err := AddDropClosed(academicYear, semester)
 	if err != nil {
 		// Can't tell whether the period is over: fail the save rather than
@@ -90,21 +79,16 @@ func UpsertTermSchedule(userID uint, semester string, academicYear int, slots []
 		if ts.Status == status && slices.Equal(ts.Slots, slots) {
 			return nil
 		}
-		if closed && ts.Status != models.TermScheduleUnset {
+		if closed {
 			return ErrAddDropClosed
-		}
-		if ts.SaveCount >= models.MaxTermScheduleSaves {
-			return ErrTermScheduleSaveLimit
 		}
 		ts.Slots = slots
 		ts.Status = status
-		ts.SaveCount++
 		return tx.Save(&ts).Error
 	})
 	if err != nil {
 		return models.TermSchedule{}, err
 	}
-	ts.SaveLimit = models.MaxTermScheduleSaves
 	// Reuse the window computed above instead of querying the calendar again.
 	if ok {
 		ts.AddDropClosed = closed
@@ -130,23 +114,12 @@ func DistinctCourseTerms() ([]TermOption, error) {
 }
 
 // TermSchedulesByUser lists every term a student has saved a schedule for,
-// newest first, with SaveLimit filled in.
+// newest first.
 func TermSchedulesByUser(userID uint) []models.TermSchedule {
 	var rows []models.TermSchedule
 	DB.Where("user_id = ?", userID).Order("academic_year DESC, semester ASC").Find(&rows)
 	for i := range rows {
-		rows[i].SaveLimit = models.MaxTermScheduleSaves
 		applyAddDrop(&rows[i])
 	}
 	return rows
-}
-
-// ResetTermScheduleSaves gives the student their full save allowance back for
-// one term (the schedule itself is left as it is). found is false when the
-// student has no saved schedule for that term.
-func ResetTermScheduleSaves(userID uint, semester string, academicYear int) (found bool, err error) {
-	res := DB.Model(&models.TermSchedule{}).
-		Where("user_id = ? AND semester = ? AND academic_year = ?", userID, semester, academicYear).
-		Update("save_count", 0)
-	return res.RowsAffected > 0, res.Error
 }

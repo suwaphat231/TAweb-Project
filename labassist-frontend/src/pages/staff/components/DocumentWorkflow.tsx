@@ -44,6 +44,11 @@ const STEP_HINT: Partial<Record<DocType, string>> = {
   work_report:     'ระบบสร้างรายงานผลการปฏิบัติงานจากแผนปฏิบัติงานที่ยืนยันแล้ว',
 }
 
+// Backend blocked reason (Staff/doc_workflow.go preconditions) for a form that
+// staff have not verified yet. The course page already shows a banner with the
+// verify button for it, so the step does not repeat it.
+const FORM_NOT_VERIFIED_REASON = 'ยังไม่ได้ตรวจสอบแบบฟอร์มของอาจารย์ว่าครบถ้วน'
+
 function stepStatus(view: WorkflowStepView): DocStepStatus {
   const doc = view.document
   if (!doc) return view.can_create ? 'waiting' : 'not_reached'
@@ -225,6 +230,12 @@ export function DocumentWorkflow({
 
   const confirmed = workflow.course.schedule_confirmed
   const confirmBlockers = workflow.course.confirm_blocked_reasons ?? []
+  const formVerified = workflow.course.review_status === 'verified'
+  // Scheduling Lab Boys is pointless until the form is verified and someone
+  // has been accepted; the other blockers are what scheduling itself fixes.
+  const scheduleBlocker = !formVerified
+    ? 'ยืนยันแบบฟอร์มของอาจารย์ก่อน'
+    : workflow.course.labboy_count === 0 ? 'ยังไม่มีนักศึกษาที่ผ่านการคัดเลือก' : ''
   const confirmReady = !confirmed && confirmBlockers.length === 0
   const confirmIsCurrent = currentIdx < 0 && !confirmed
 
@@ -256,9 +267,20 @@ export function DocumentWorkflow({
           const locked = currentIdx >= 0 && idx > currentIdx
           const isCurrent = idx === currentIdx
           const status = locked ? 'not_reached' : stepStatus(view)
-          const cfg = STEP_STATUS_CONFIG[status]
+          const baseCfg = STEP_STATUS_CONFIG[status]
+          // The current step is the next one to do, so "not reached" would
+          // contradict its "ขั้นตอนถัดไป" heading: say what it is waiting on.
+          const cfg = isCurrent && status === 'not_reached'
+            ? { ...baseCfg, label: formVerified ? 'ยังสร้างไม่ได้' : 'รอยืนยันแบบฟอร์ม', color: 'var(--amber)', bg: 'var(--amber-bg)' }
+            : baseCfg
+          const shownBlockers = formVerified
+            ? view.blocked_reasons
+            : view.blocked_reasons.filter((r) => r !== FORM_NOT_VERIFIED_REASON)
           const doc = view.document
           const isHiringNotice = view.type === 'hiring_notice'
+          const createBlocker = isHiringNotice
+            ? scheduleBlocker
+            : view.can_create ? '' : view.blocked_reasons[0] ?? ''
           const done = !!doc
           const item: DocumentWorkflowItem = {
             step: view.step, label: view.label, docType: view.type, status,
@@ -309,9 +331,9 @@ export function DocumentWorkflow({
                         <Button
                           onClick={() => (isHiringNotice ? setShowScheduleModal(true)
                             : oneClick(view.type) ? createMut.mutate({ type: view.type, body: {} }) : openCreate(view, false))}
-                          disabled={(!view.can_create && !isHiringNotice) || createMut.isPending}
+                          disabled={!!createBlocker || createMut.isPending}
                           loading={createMut.isPending && createMut.variables?.type === view.type}
-                          title={!view.can_create && !isHiringNotice ? view.blocked_reasons[0] : undefined}
+                          title={createBlocker || undefined}
                           style={{ minHeight: 40 }}
                         >
                           {isHiringNotice ? 'จัดตารางปฏิบัติงาน แล้วสร้างเอกสาร' : 'สร้างเอกสาร'}
@@ -345,8 +367,8 @@ export function DocumentWorkflow({
                     </div>
                   </div>
 
-                  {!doc && view.blocked_reasons.length > 0 && (
-                    <Note title="ต้องทำก่อนจึงจะสร้างได้" items={view.blocked_reasons} />
+                  {!doc && shownBlockers.length > 0 && (
+                    <Note title="ต้องทำก่อนจึงจะสร้างได้" items={shownBlockers} />
                   )}
                   {doc && view.stale_reasons.length > 0 && (
                     <Note

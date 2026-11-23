@@ -1,8 +1,11 @@
 // Package reports holds the Lab Boy performance-record endpoints. A report
-// is filed by the course's instructor, reviewed by staff/admin (never by the
-// reporter), answered by the student, and only once CONFIRMED is it shown
-// to other instructors as work-performance history. It never blocks a
-// student from applying.
+// filed by the course's instructor takes effect (CONFIRMED) as soon as that
+// instructor submits it. A student may also report another Lab Boy of the
+// same course; that report waits (SUBMITTED) until the course instructor
+// confirms or rejects it. Once CONFIRMED, other instructors see the student
+// flagged as reported when the student applies to their course. Admin may
+// look but not act; the reported student and staff never see reports. It
+// never blocks a student from applying.
 //
 // The feature spans every role, so it lives in its own package instead of
 // being split across Teacher/Student/Staff; every endpoint re-checks the
@@ -77,17 +80,31 @@ func idParam(c *gin.Context, name string) (uint, bool) {
 
 // loadVisible fetches a report and answers 404 both when it does not exist
 // and when the caller may not see it, so IDs cannot be probed.
-func loadVisible(c *gin.Context, actor Actor) (models.LabBoyReport, bool) {
+func loadVisible(c *gin.Context, actor *Actor) (models.LabBoyReport, bool) {
 	id, ok := idParam(c, "id")
 	if !ok {
 		return models.LabBoyReport{}, false
 	}
 	r, found := database.ReportByID(id)
-	if !found || !CanView(r, actor) {
+	if found {
+		*actor = withCourse(*actor, r)
+	}
+	if !found || !CanView(r, *actor) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "report not found"})
 		return models.LabBoyReport{}, false
 	}
 	return r, true
+}
+
+// withCourse marks whether the actor teaches the report's course, which is
+// what lets an instructor review a report a student sent in.
+func withCourse(actor Actor, r models.LabBoyReport) Actor {
+	if actor.isInstructor() {
+		if course, ok := database.CourseByID(r.CourseID); ok {
+			actor.CourseInstructor = database.InstructorOwnsCourse(course, actor.ID, "", false)
+		}
+	}
+	return actor
 }
 
 func denialStatus(d *Denial) int {
@@ -243,7 +260,7 @@ func (h *Handler) CreateReport(c *gin.Context) {
 // @Router       /instructor/reports/{id} [put]
 func (h *Handler) UpdateDraft(c *gin.Context) {
 	actor := actorFrom(c)
-	existing, ok := loadVisible(c, actor)
+	existing, ok := loadVisible(c, &actor)
 	if !ok {
 		return
 	}
@@ -337,12 +354,6 @@ func (h *Handler) list(c *gin.Context, scope func(f *database.ReportFilter)) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
-	actor := actorFrom(c)
-	for i := range rows {
-		if hidesReporter(rows[i], actor) {
-			anonymizeReport(&rows[i])
-		}
-	}
 	c.JSON(http.StatusOK, ReportPage{Data: rows, Total: total, Page: f.Page, Limit: f.Limit})
 }
 
@@ -367,7 +378,7 @@ func (h *Handler) ListMine(c *gin.Context) {
 }
 
 // ReviewQueue godoc
-// @Summary      รายงานทั้งหมดสำหรับแอดมิน (ไม่รวมฉบับร่าง) — เจ้าหน้าที่เห็นเฉพาะที่ยืนยันแล้ว
+// @Summary      รายงานทั้งหมดสำหรับแอดมิน (ดูอย่างเดียว ไม่รวมฉบับร่าง)
 // @Tags         reports
 // @Produce      json
 // @Security     BearerAuth
@@ -380,30 +391,82 @@ func (h *Handler) ListMine(c *gin.Context) {
 // @Param        page       query  int     false  "หน้า"
 // @Param        limit      query  int     false  "จำนวนต่อหน้า (สูงสุด 100)"
 // @Success      200  {object}  ReportPage
-// @Router       /staff/reports [get]
+// @Router       /admin/reports [get]
 func (h *Handler) ReviewQueue(c *gin.Context) {
-	actor := actorFrom(c)
-	h.list(c, func(f *database.ReportFilter) {
-		f.ExcludeDraft = true
-		if !actor.isAdmin() {
-			// Staff see only confirmed reports, never pending reports.
-			f.Statuses = []models.ReportStatus{models.ReportConfirmed}
-		}
-	})
+	h.list(c, func(f *database.ReportFilter) { f.ExcludeDraft = true })
 }
 
-// MyReports godoc
-// @Summary      รายงานที่เกี่ยวข้องกับฉัน (นักศึกษา)
+// ReviewList godoc
+// @Summary      รายงานจากนักศึกษาในรายวิชาที่ฉันสอน (คิวตรวจสอบของอาจารย์)
 // @Tags         reports
 // @Produce      json
 // @Security     BearerAuth
-// @Param        page   query  int  false  "หน้า"
-// @Param        limit  query  int  false  "จำนวนต่อหน้า (สูงสุด 100)"
+// @Param        status     query  string  false  "สถานะ (คั่นด้วย , ได้) — SUBMITTED = รอตรวจ"
+// @Param        q          query  string  false  "ค้นหาชื่อ/รหัสนักศึกษา"
+// @Param        course_id  query  int     false  "รายวิชา"
+// @Param        page       query  int     false  "หน้า"
+// @Param        limit      query  int     false  "จำนวนต่อหน้า (สูงสุด 100)"
+// @Success      200  {object}  ReportPage
+// @Router       /instructor/reports/review [get]
+func (h *Handler) ReviewList(c *gin.Context) {
+	actor := actorFrom(c)
+	h.list(c, func(f *database.ReportFilter) { f.ReviewerID = &actor.ID })
+}
+
+// StudentMine godoc
+// @Summary      รายงานที่ฉัน (นักศึกษา) ส่ง พร้อมผลการตรวจสอบของอาจารย์
+// @Tags         reports
+// @Produce      json
+// @Security     BearerAuth
+// @Param        status  query  string  false  "สถานะ (คั่นด้วย , ได้)"
+// @Param        page    query  int     false  "หน้า"
+// @Param        limit   query  int     false  "จำนวนต่อหน้า (สูงสุด 100)"
 // @Success      200  {object}  ReportPage
 // @Router       /student/reports [get]
-func (h *Handler) MyReports(c *gin.Context) {
+func (h *Handler) StudentMine(c *gin.Context) {
 	actor := actorFrom(c)
-	h.list(c, func(f *database.ReportFilter) { f.StudentID = &actor.ID; f.ExcludeDraft = true })
+	h.list(c, func(f *database.ReportFilter) { f.ReporterID = &actor.ID })
+}
+
+// StudentCreate godoc
+// @Summary      นักศึกษารายงาน Lab Boy ในรายวิชาเดียวกัน (ส่งให้อาจารย์ผู้สอนตรวจสอบ)
+// @Description  ผู้รายงานและผู้ถูกรายงานต้องเป็น Lab Boy (accepted) ของรายวิชาเดียวกัน — รายงานเป็น SUBMITTED และยังไม่มีผลจนกว่าอาจารย์จะยืนยัน
+// @Tags         reports
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body      ReportInput  true  "ข้อมูลรายงาน"
+// @Success      201   {object}  models.LabBoyReport
+// @Failure      400   {object}  handlers.ErrorResponse
+// @Failure      403   {object}  handlers.ErrorResponse
+// @Failure      409   {object}  handlers.ErrorResponse
+// @Router       /student/reports [post]
+func (h *Handler) StudentCreate(c *gin.Context) {
+	actor := actorFrom(c)
+	var in ReportInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ข้อมูลไม่ครบถ้วน"})
+		return
+	}
+	r, err := in.validate()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	r.ReporterID = actor.ID
+	if err := database.CreateSubmittedPeerReport(&r); err != nil {
+		switch {
+		case errors.Is(err, database.ErrPeerReporterNotAccepted):
+			c.JSON(http.StatusForbidden, gin.H{"error": "ส่งรายงานได้เฉพาะ Lab Boy ที่ได้รับการยืนยันในรายวิชาเดียวกัน"})
+		case errors.Is(err, database.ErrPeerTargetNotAccepted):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "รายงานได้เฉพาะ Lab Boy คนอื่นที่ได้รับการยืนยันในรายวิชาเดียวกัน"})
+		default:
+			writeDBError(c, err, "create student report")
+		}
+		return
+	}
+	saved, _ := database.ReportByID(r.ID)
+	c.JSON(http.StatusCreated, saved)
 }
 
 // ReportDetail is everything about one report the caller may see.
@@ -416,15 +479,11 @@ type ReportDetail struct {
 	AllowedActions []Action                           `json:"allowed_actions"`
 	CanEdit        bool                               `json:"can_edit"`
 	CanAddEvidence bool                               `json:"can_add_evidence"`
-	// CanRespond / CanRequestReconsideration tell the UI which response box
-	// to show; the server re-checks on submit.
-	CanRespond                bool `json:"can_respond"`
-	CanRequestReconsideration bool `json:"can_request_reconsideration"`
 }
 
 // Detail godoc
 // @Summary      รายละเอียดรายงาน พร้อมหลักฐาน คำชี้แจง ผลการตรวจสอบ และไทม์ไลน์
-// @Description  ผู้รายงาน, นักศึกษาเจ้าของรายงาน (เมื่อส่งแล้ว), เจ้าหน้าที่ (เฉพาะที่ยืนยันแล้ว) และแอดมินเท่านั้น — ผู้อื่นได้ 404
+// @Description  อาจารย์ผู้รายงาน และแอดมิน (ดูอย่างเดียว) เท่านั้น — ผู้อื่นได้ 404
 // @Tags         reports
 // @Produce      json
 // @Security     BearerAuth
@@ -434,7 +493,7 @@ type ReportDetail struct {
 // @Router       /reports/{id} [get]
 func (h *Handler) Detail(c *gin.Context) {
 	actor := actorFrom(c)
-	r, ok := loadVisible(c, actor)
+	r, ok := loadVisible(c, &actor)
 	if !ok {
 		return
 	}
@@ -447,41 +506,32 @@ func (h *Handler) Detail(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
-	_, respondDenied := ResponseKindFor(r, actor, false)
-	_, reconsDenied := ResponseKindFor(r, actor, true)
-	detail := ReportDetail{
-		Report:                    r,
-		Evidence:                  evidence,
-		Responses:                 responses,
-		Reviews:                   reviews,
-		History:                   history,
-		AllowedActions:            AllowedActions(r, actor),
-		CanEdit:                   CanEditDraft(r, actor),
-		CanAddEvidence:            CanAddEvidence(r, actor),
-		CanRespond:                respondDenied == nil,
-		CanRequestReconsideration: reconsDenied == nil,
-	}
-	if hidesReporter(r, actor) {
-		anonymizeDetail(&detail)
-	}
-	c.JSON(http.StatusOK, detail)
+	c.JSON(http.StatusOK, ReportDetail{
+		Report:         r,
+		Evidence:       evidence,
+		Responses:      responses,
+		Reviews:        reviews,
+		History:        history,
+		AllowedActions: AllowedActions(r, actor),
+		CanEdit:        CanEditDraft(r, actor),
+		CanAddEvidence: CanAddEvidence(r, actor),
+	})
 }
 
 // ActionRequest is the body for a workflow step.
 type ActionRequest struct {
-	Action string `json:"action" binding:"required" example:"confirm"`
-	Reason string `json:"reason" example:"ตรวจสอบบันทึกการเข้างานแล้วตรงกับที่รายงาน"`
+	Action string `json:"action" binding:"required" example:"submit"`
+	Reason string `json:"reason" example:"รายงานผิดคน"`
 }
 
 var actionAudit = map[Action]string{
-	ActionSubmit: "submit", ActionWithdraw: "withdraw", ActionStartReview: "start_review",
-	ActionRequestInfo: "request_info", ActionConfirm: "confirm", ActionNotSubstantiated: "not_substantiated",
-	ActionReopen: "reopen", ActionDeclineReconsideration: "decline_reconsideration",
+	ActionSubmit: "submit", ActionWithdraw: "withdraw",
+	ActionConfirm: "confirm", ActionNotSubstantiated: "not_substantiated",
 }
 
 // Act godoc
 // @Summary      ดำเนินการตาม workflow ของรายงาน
-// @Description  action: submit, withdraw (ผู้รายงาน) / start_review, request_info, confirm, not_substantiated, reopen, decline_reconsideration (เจ้าหน้าที่/แอดมินที่ไม่ใช่ผู้รายงาน) — ต้องระบุ reason ยกเว้น submit และ start_review
+// @Description  ผู้รายงาน: submit (อาจารย์ส่งแล้วมีผลทันที), withdraw (ต้องระบุ reason; นักศึกษาถอนได้เฉพาะระหว่างรอตรวจ) — อาจารย์ผู้สอนของรายวิชา สำหรับรายงานจากนักศึกษา: confirm หรือ not_substantiated (ต้องระบุ reason)
 // @Tags         reports
 // @Accept       json
 // @Produce      json
@@ -506,7 +556,7 @@ func (h *Handler) Act(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	r, ok := loadVisible(c, actor)
+	r, ok := loadVisible(c, &actor)
 	if !ok {
 		return
 	}
@@ -516,24 +566,15 @@ func (h *Handler) Act(c *gin.Context) {
 		c.JSON(denialStatus(denial), gin.H{"error": denial.Message})
 		return
 	}
-	rule := rules[action]
-	if rule.by == byReviewer && !actor.isAdmin() {
-		course, found := database.CourseByID(r.CourseID)
-		if !found || !database.InstructorOwnsCourse(course, actor.ID, "", false) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "พิจารณารายงานได้เฉพาะอาจารย์ผู้สอนของรายวิชานั้น"})
-			return
-		}
-	}
 	t := database.ReportTransition{
-		ReportID:             r.ID,
-		From:                 r.Status,
-		To:                   to,
-		ActorID:              actor.ID,
-		Reason:               reason,
-		Action:               actionAudit[action],
-		Review:               rule.review,
-		ClearReconsideration: rule.clearRecons,
-		Notifications:        notificationsFor(r, action, reason),
+		ReportID:      r.ID,
+		From:          r.Status,
+		To:            to,
+		ActorID:       actor.ID,
+		Reason:        reason,
+		Action:        actionAudit[action],
+		Review:        rules[action].review,
+		Notifications: notificationsFor(r, action, reason),
 	}
 	if err := database.ApplyReportTransition(t); err != nil {
 		writeDBError(c, err, "report transition")
@@ -543,58 +584,24 @@ func (h *Handler) Act(c *gin.Context) {
 	c.JSON(http.StatusOK, saved)
 }
 
-// notificationsFor tells the student and the reporter about steps that
-// concern them, through the existing notifications inbox.
+// notificationsFor tells a student who sent in a report what the instructor
+// decided. The reported student is never notified — they are not told they
+// were reported.
 func notificationsFor(r models.LabBoyReport, action Action, reason string) []models.Notification {
-	course := r.CourseCode
-	if r.CourseTitle != "" {
-		course += " " + r.CourseTitle
+	if action != ActionConfirm && action != ActionNotSubstantiated {
+		return nil
+	}
+	course := strings.TrimSpace(r.CourseCode + " " + r.CourseTitle)
+	result := "อาจารย์ยืนยันรายงานแล้ว"
+	if action == ActionNotSubstantiated {
+		result = "อาจารย์ไม่รับรายงาน"
+	}
+	body := fmt.Sprintf("รายงานการปฏิบัติงานของ %s ในรายวิชา %s: %s", r.StudentName, course, result)
+	if reason != "" {
+		body += "\nเหตุผล: " + reason
 	}
 	courseID := r.CourseID
-	note := func(userID uint, title, body string) models.Notification {
-		return models.Notification{UserID: userID, CourseID: &courseID, Title: title, Body: body}
-	}
-	toStudent := func(title, body string) models.Notification { return note(r.StudentID, title, body) }
-	toReporter := func(title, body string) models.Notification { return note(r.ReporterID, title, body) }
-	withReason := func(s string) string {
-		if reason == "" {
-			return s
-		}
-		return s + "\nเหตุผล: " + reason
-	}
-	switch action {
-	case ActionSubmit:
-		return []models.Notification{toStudent("มีรายงานการปฏิบัติงานที่เกี่ยวข้องกับคุณ",
-			fmt.Sprintf("มีรายงานการปฏิบัติงานในรายวิชา %s รายงานนี้ยังไม่ใช่ข้อสรุป ตัวผู้รายงานไม่เปิดเผย และอยู่ระหว่างรอการตรวจสอบ คุณสามารถส่งคำชี้แจงได้ที่หน้า \"รายงานการปฏิบัติงาน\"", course))}
-	case ActionRequestInfo:
-		return []models.Notification{
-			toStudent("ผู้ตรวจสอบขอข้อมูลเพิ่มเติม", withReason("ผู้ตรวจสอบขอคำชี้แจงหรือข้อมูลเพิ่มเติมเกี่ยวกับรายงานในรายวิชา "+course)),
-			toReporter("ผู้ตรวจสอบขอข้อมูลเพิ่มเติม", withReason(fmt.Sprintf("ผู้ตรวจสอบขอข้อมูลเพิ่มเติมเกี่ยวกับรายงานของ %s ในรายวิชา %s", r.StudentName, course))),
-		}
-	case ActionConfirm, ActionNotSubstantiated:
-		result := "ยืนยันรายงาน"
-		if action == ActionNotSubstantiated {
-			result = "ข้อมูลไม่เพียงพอที่จะยืนยันรายงาน"
-		}
-		return []models.Notification{
-			toStudent("ผลการตรวจสอบรายงานการปฏิบัติงาน", withReason(fmt.Sprintf("ผลการตรวจสอบรายงานในรายวิชา %s: %s", course, result))),
-			toReporter("ผลการตรวจสอบรายงานการปฏิบัติงาน", withReason(fmt.Sprintf("ผลการตรวจสอบรายงานของ %s ในรายวิชา %s: %s", r.StudentName, course, result))),
-		}
-	case ActionReopen:
-		return []models.Notification{
-			toStudent("รายงานถูกนำกลับมาตรวจสอบอีกครั้ง", withReason("รายงานในรายวิชา "+course+" ถูกนำกลับมาตรวจสอบอีกครั้ง")),
-			toReporter("รายงานถูกนำกลับมาตรวจสอบอีกครั้ง", withReason(fmt.Sprintf("รายงานของ %s ในรายวิชา %s ถูกนำกลับมาตรวจสอบอีกครั้ง", r.StudentName, course))),
-		}
-	case ActionDeclineReconsideration:
-		return []models.Notification{toStudent("ผลคำขอทบทวนรายงาน", withReason("ผู้ตรวจสอบพิจารณาคำขอทบทวนรายงานในรายวิชา "+course+" แล้ว และคงผลการยืนยันเดิม"))}
-	case ActionWithdraw:
-		// A draft was never shown to the student, so there is nothing to retract.
-		if r.Status == models.ReportDraft {
-			return nil
-		}
-		return []models.Notification{toStudent("รายงานถูกถอนแล้ว", withReason("อาจารย์ถอนรายงานการปฏิบัติงานในรายวิชา "+course+" แล้ว"))}
-	}
-	return nil
+	return []models.Notification{{UserID: r.ReporterID, CourseID: &courseID, Title: "ผลการตรวจสอบรายงานที่คุณส่ง", Body: body}}
 }
 
 // readFiles validates uploaded evidence: count, size and real content type
@@ -666,7 +673,7 @@ func checkFileQuota(c *gin.Context, reportID uint, adding int) bool {
 
 // UploadEvidence godoc
 // @Summary      แนบหลักฐานของผู้รายงาน (.jpg .png .pdf ไม่เกิน 5MB ต่อไฟล์)
-// @Description  เฉพาะผู้รายงาน ขณะรายงานยังไม่มีผลการพิจารณา — นักศึกษาแนบไฟล์ผ่านการส่งคำชี้แจงแทน
+// @Description  เฉพาะอาจารย์ผู้รายงาน (ยกเว้นรายงานที่ถอนแล้ว)
 // @Tags         reports
 // @Accept       multipart/form-data
 // @Produce      json
@@ -680,12 +687,12 @@ func checkFileQuota(c *gin.Context, reportID uint, adding int) bool {
 // @Router       /instructor/reports/{id}/evidence [post]
 func (h *Handler) UploadEvidence(c *gin.Context) {
 	actor := actorFrom(c)
-	r, ok := loadVisible(c, actor)
+	r, ok := loadVisible(c, &actor)
 	if !ok {
 		return
 	}
 	if !CanAddEvidence(r, actor) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "แนบหลักฐานได้เฉพาะผู้รายงาน ขณะรายงานยังไม่มีผลการพิจารณา"})
+		c.JSON(http.StatusForbidden, gin.H{"error": "แนบหลักฐานได้เฉพาะอาจารย์ผู้รายงาน"})
 		return
 	}
 	form, err := c.MultipartForm()
@@ -721,7 +728,7 @@ func (h *Handler) UploadEvidence(c *gin.Context) {
 // @Router       /reports/{id}/evidence/{evidenceId} [get]
 func (h *Handler) DownloadEvidence(c *gin.Context) {
 	actor := actorFrom(c)
-	r, ok := loadVisible(c, actor)
+	r, ok := loadVisible(c, &actor)
 	if !ok {
 		return
 	}
@@ -743,67 +750,9 @@ func (h *Handler) DownloadEvidence(c *gin.Context) {
 	c.Data(http.StatusOK, e.ContentType, e.Data)
 }
 
-// Respond godoc
-// @Summary      ส่งคำชี้แจง / ขอทบทวน (นักศึกษา) หรือเพิ่มข้อมูล (ผู้รายงาน)
-// @Description  ส่งแบบ multipart: message (จำเป็น), reconsideration=true เพื่อขอทบทวนรายงานที่ยืนยันแล้ว, files (ไม่บังคับ) — คำชี้แจงเดิมไม่ถูกแก้ไข ทุกครั้งเป็นรายการใหม่ ถ้ารายงานรอข้อมูลเพิ่มเติมอยู่ จะกลับไปอยู่ระหว่างตรวจสอบอัตโนมัติ
-// @Tags         reports
-// @Accept       multipart/form-data
-// @Produce      json
-// @Security     BearerAuth
-// @Param        id               path      int     true   "Report ID"
-// @Param        message          formData  string  true   "ข้อความ"
-// @Param        reconsideration  formData  bool    false  "ขอทบทวนรายงานที่ยืนยันแล้ว"
-// @Param        files            formData  file    false  "ไฟล์ประกอบ"
-// @Success      201  {object}  models.LabBoyReportResponse
-// @Failure      400  {object}  handlers.ErrorResponse
-// @Failure      403  {object}  handlers.ErrorResponse
-// @Failure      404  {object}  handlers.ErrorResponse
-// @Failure      409  {object}  handlers.ErrorResponse
-// @Router       /reports/{id}/responses [post]
-func (h *Handler) Respond(c *gin.Context) {
-	actor := actorFrom(c)
-	r, ok := loadVisible(c, actor)
-	if !ok {
-		return
-	}
-	reconsideration := c.PostForm("reconsideration") == "true"
-	kind, denial := ResponseKindFor(r, actor, reconsideration)
-	if denial != nil {
-		c.JSON(denialStatus(denial), gin.H{"error": denial.Message})
-		return
-	}
-	msg, err := cleanText(c.PostForm("message"), maxTextLen, "ข้อความ", true)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	var files []models.LabBoyReportEvidence
-	if form, err := c.MultipartForm(); err == nil && len(form.File["files"]) > 0 {
-		if files, err = readFiles(form.File["files"]); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		if !checkFileQuota(c, r.ID, len(files)) {
-			return
-		}
-	}
-	resp, err := database.AddReportResponse(database.NewReportResponse{
-		Response:               models.LabBoyReportResponse{ReportID: r.ID, AuthorID: actor.ID, Kind: kind, Message: msg},
-		Files:                  files,
-		ExpectStatus:           r.Status,
-		ResumeReview:           kind != models.ResponseReconsideration,
-		RequestReconsideration: kind == models.ResponseReconsideration,
-	})
-	if err != nil {
-		writeDBError(c, err, "add report response")
-		return
-	}
-	c.JSON(http.StatusCreated, resp)
-}
-
 // ConfirmedHistory godoc
 // @Summary      ประวัติการปฏิบัติงานที่ยืนยันแล้วของผู้สมัคร
-// @Description  แสดงเฉพาะรายงานสถานะ CONFIRMED (ไม่รวมหลักฐาน) สำหรับอาจารย์ผู้สอนของรายวิชาที่นักศึกษาสมัคร หรือเจ้าหน้าที่/แอดมิน — ทุกการเปิดดูถูกบันทึก
+// @Description  แสดงเฉพาะรายงานที่อาจารย์ส่งแล้ว (CONFIRMED, ไม่รวมหลักฐาน) สำหรับอาจารย์ผู้สอนของรายวิชาที่นักศึกษาสมัคร หรือแอดมิน — เจ้าหน้าที่ไม่เห็น ทุกการเปิดดูถูกบันทึก
 // @Tags         reports
 // @Produce      json
 // @Security     BearerAuth
@@ -823,14 +772,16 @@ func (h *Handler) ConfirmedHistory(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
 		return
 	}
-	if !actor.isStaffOrAdmin() {
-		course, ok := database.CourseByID(app.CourseID)
-		if !ok || !database.InstructorOwnsCourse(course, actor.ID, "", false) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
-			return
-		}
+	course, courseFound := database.CourseByID(app.CourseID)
+	if !actor.isAdmin() && (!actor.isInstructor() || !courseFound || !database.InstructorOwnsCourse(course, actor.ID, "", false)) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
 	}
-	rows, err := database.ConfirmedRecordsForStudent(app.StudentID)
+	if !courseFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "course not found"})
+		return
+	}
+	rows, err := database.ConfirmedRecordsForStudent(app.StudentID, course.AcademicYear)
 	if err != nil {
 		log.Printf("confirmed history: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})

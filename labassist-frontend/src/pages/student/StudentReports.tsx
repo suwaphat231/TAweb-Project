@@ -18,11 +18,11 @@ import { ErrorState } from '../../components/ui/ErrorState'
 import { Icon } from '../../components/reports/ReportIcons'
 import { useToast } from '../../hooks/useToast'
 import { formatSchedule } from '../../utils/schedule'
-import type { Application } from '../../types'
+import type { Application, ReportCategory, ReportInput } from '../../types'
 
 const MAIN_TABS = [
   { value: 'courses', label: 'รายวิชาและเพื่อนร่วมแล็บ' },
-  { value: 'history', label: 'ประวัติรายงานของฉัน' },
+  { value: 'history', label: 'รายงานที่ฉันส่ง' },
 ]
 
 const CATEGORY_OPTIONS = [
@@ -37,9 +37,9 @@ const today = () => new Date().toISOString().slice(0, 10)
 
 const STATUS_OPTIONS = [
   { value: '', label: 'ทั้งหมด' },
-  { value: 'SUBMITTED,UNDER_REVIEW,AWAITING_RESPONSE', label: 'อยู่ระหว่างตรวจสอบ' },
-  { value: 'CONFIRMED', label: 'ยืนยันแล้ว' },
-  { value: 'NOT_SUBSTANTIATED', label: 'ไม่ยืนยัน' },
+  { value: 'SUBMITTED', label: 'รออาจารย์ตรวจสอบ' },
+  { value: 'CONFIRMED', label: 'อาจารย์ยืนยันแล้ว' },
+  { value: 'NOT_SUBSTANTIATED', label: 'อาจารย์ไม่รับรายงาน' },
   { value: 'WITHDRAWN', label: 'ถอนแล้ว' },
 ]
 
@@ -63,7 +63,7 @@ export default function StudentReports() {
   const [reportTarget, setReportTarget] = useState<Peer | null>(null)
   const [incidentDate, setIncidentDate] = useState(today)
   const [descriptionError, setDescriptionError] = useState('')
-  const [category, setCategory] = useState('DUTY_NEGLECT')
+  const [category, setCategory] = useState<ReportCategory>('DUTY_NEGLECT')
   const [description, setDescription] = useState('')
   const [impact, setImpact] = useState('')
 
@@ -79,7 +79,7 @@ export default function StudentReports() {
   // 2. Fetch peers for the selected course
   const { data: rawPeers = [], isLoading: peersLoading, isError: peersError, refetch: refetchPeers } = useQuery<Peer[]>({
     queryKey: ['student', 'peers', selectedApp?.course_id],
-    queryFn: () => (selectedApp ? applicationsAPI.getCoursePeers(selectedApp.course_id) : Promise.resolve([])),
+    queryFn: () => (selectedApp ? reportsApi.coursePeers(selectedApp.course_id) : Promise.resolve([])),
     enabled: !!selectedApp,
   })
 
@@ -88,10 +88,9 @@ export default function StudentReports() {
 
   // 3. Submit report mutation
   const submitMutation = useMutation({
-    mutationFn: (data: { application_id: number; incident_date: string; category: string; description: string; impact: string }) =>
-      applicationsAPI.createReport(data),
+    mutationFn: (data: ReportInput) => reportsApi.studentCreate(data),
     onSuccess: () => {
-      showToast('ส่งรายงานพฤติกรรมเรียบร้อยแล้ว รายงานจะเข้าสู่กระบวนการตรวจสอบของเจ้าหน้าที่', 'success')
+      showToast('ส่งรายงานแล้ว รายงานจะส่งให้อาจารย์ผู้สอนตรวจสอบและยืนยัน', 'success')
       setReportTarget(null)
       setDescription('')
       setImpact('')
@@ -131,7 +130,7 @@ export default function StudentReports() {
     <div style={{ maxWidth: 1040, margin: '0 auto', paddingBottom: 40 }}>
       <ReportPageHeader
         title="รายงานการปฏิบัติงาน Lab Boy"
-        subtitle="ตรวจสอบรายวิชาที่ท่านปฏิบัติงาน ดูรายชื่อเพื่อนร่วมแล็บ และรายงานเหตุการณ์เพื่อการประเมินการปฏิบัติงาน"
+        subtitle="รายงานเหตุการณ์ของ Lab Boy คนอื่นในรายวิชาเดียวกัน — รายงานจะส่งให้อาจารย์ผู้สอนตรวจสอบ และมีผลเมื่ออาจารย์ยืนยันเท่านั้น"
       />
 
       {/* Tabs */}
@@ -260,7 +259,7 @@ export default function StudentReports() {
                       เพื่อนร่วมแล็บในรายวิชานี้
                     </h3>
                     <div style={{ fontSize: 13, color: 'var(--ink-500)', marginTop: 2 }}>
-                      Lab Boy ที่ได้รับการยืนยันแล้ว — หากมีเหตุการณ์ที่ต้องแจ้งอาจารย์และเจ้าหน้าที่ ให้กด "รายงานพฤติกรรม"
+                      Lab Boy ที่ได้รับการยืนยันแล้ว — หากมีเหตุการณ์ที่ต้องแจ้งอาจารย์ผู้สอน ให้กด "รายงานพฤติกรรม"
                     </div>
                   </div>
                   {!peersLoading && !peersError && <Badge variant="blue">{peers.length} คน</Badge>}
@@ -317,19 +316,18 @@ export default function StudentReports() {
         <div>
           <div style={{ marginBottom: 14 }}>
             <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)' }}>
-              รายงานที่เกี่ยวข้องกับฉัน
+              รายงานที่ฉันส่ง
             </span>
             <p style={{ fontSize: 13, color: 'var(--ink-500)', marginTop: 4 }}>
-              รายงานที่ยังไม่ผ่านการตรวจสอบไม่ใช่ข้อสรุปว่าคุณกระทำผิด สามารถกดเข้าไปเพื่อส่งคำชี้แจงหรือขอให้ทบทวนผลได้
+              ดูผลการตรวจสอบของอาจารย์ได้ที่นี่ — ถอนรายงานได้ระหว่างที่ยังรออาจารย์ตรวจสอบ
             </p>
           </div>
           <ReportList
             queryKey="student-reports"
-            fetchPage={reportsApi.studentReports}
+            fetchPage={reportsApi.studentMine}
             statusOptions={STATUS_OPTIONS}
             showSearch={false}
-            showStudent={false}
-            emptyText="ไม่มีรายงานที่เกี่ยวข้องกับคุณ"
+            emptyText="คุณยังไม่ได้ส่งรายงาน"
           />
         </div>
       )}
@@ -370,7 +368,7 @@ export default function StudentReports() {
               <Select
                 label="หมวดหมู่เหตุการณ์ *"
                 value={category}
-                onChange={(e) => setCategory(e.target.value)}
+                onChange={(e) => setCategory(e.target.value as ReportCategory)}
                 options={CATEGORY_OPTIONS}
               />
             </div>
@@ -393,7 +391,7 @@ export default function StudentReports() {
             />
 
             <p style={{ fontSize: 12, color: 'var(--ink-500)', margin: 0 }}>
-              รายงานจะส่งให้อาจารย์ผู้สอนและผู้ตรวจสอบ ตัวตนของผู้รายงานจะไม่เปิดเผยกับผู้ถูกรายงาน ผู้ถูกรายงานสามารถส่งคำชี้แจงได้ก่อนมีข้อสรุป
+              รายงานจะส่งให้อาจารย์ผู้สอนของรายวิชานี้ตรวจสอบ และมีผลเมื่ออาจารย์ยืนยันเท่านั้น อาจารย์จะเห็นชื่อผู้รายงาน ส่วนผู้ถูกรายงานจะไม่เห็นรายงานและไม่รู้ว่าใครเป็นผู้รายงาน
             </p>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>

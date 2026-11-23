@@ -48,7 +48,6 @@ export default function AdminUsers() {
 
   const [viewingUser, setViewingUser] = useState<User | null>(null)
   const [deletingUser, setDeletingUser] = useState<User | null>(null)
-  const [quotaUser, setQuotaUser] = useState<User | null>(null)
 
   const qc = useQueryClient()
 
@@ -98,19 +97,6 @@ export default function AdminUsers() {
   const deleteError = deleteMut.error
     ? (isAxiosError(deleteMut.error) && deleteMut.error.response?.data?.error) || 'ลบผู้ใช้ไม่สำเร็จ กรุณาลองใหม่'
     : ''
-  const { data: termSchedules = [], isLoading: quotaLoading } = useQuery({
-    queryKey: ['admin-term-schedules', quotaUser?.id],
-    queryFn: () => adminApi.studentTermSchedules(quotaUser!.id),
-    enabled: !!quotaUser,
-  })
-  const resetQuotaMut = useMutation({
-    mutationFn: ({ id, year, semester }: { id: number; year: number; semester: string }) =>
-      adminApi.resetTermScheduleSaves(id, year, semester),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-term-schedules', quotaUser?.id] }),
-  })
-  const resetQuotaError = resetQuotaMut.error
-    ? (isAxiosError(resetQuotaMut.error) && resetQuotaMut.error.response?.data?.error) || 'รีเซ็ตไม่สำเร็จ กรุณาลองใหม่'
-    : ''
   const toggleMut = useMutation({
     mutationFn: ({ id, is_active }: { id: number; is_active: boolean }) => adminApi.updateUserStatus(id, is_active),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-users'] }),
@@ -159,11 +145,6 @@ export default function AdminUsers() {
           {u.role === 'instructor' && (
             <Button size="sm" variant="outline" onClick={() => setViewingUser(u)}>
               วิชาที่สอน
-            </Button>
-          )}
-          {u.role === 'student' && (
-            <Button size="sm" variant="outline" onClick={() => { resetQuotaMut.reset(); setQuotaUser(u) }}>
-              โควตาตารางเรียน
             </Button>
           )}
           {u.role !== 'admin' && (
@@ -287,45 +268,6 @@ export default function AdminUsers() {
             </Button>
           </div>
         </div>
-      </Modal>
-
-      <Modal isOpen={!!quotaUser} onClose={() => setQuotaUser(null)} title={`โควตาแก้ตารางเรียน — ${quotaUser?.full_name ?? ''}`} size="md">
-        {quotaLoading ? (
-          <Skeleton lines={3} height={44} />
-        ) : termSchedules.length === 0 ? (
-          <EmptyState title="ยังไม่มีตารางที่บันทึกไว้" description="นักศึกษาคนนี้ยังไม่เคยบันทึกตารางเรียนในเทอมใดเลย" />
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>
-              รีเซ็ตแล้วนักศึกษาแก้ตารางเทอมนั้นได้เต็มโควตาอีกครั้ง (ตัวตารางไม่ถูกเปลี่ยน) และระบบบันทึกการรีเซ็ตใน activity log พร้อมชื่อแอดมิน
-            </div>
-            {termSchedules.map((t) => (
-              <div key={`${t.academic_year}-${t.semester}`} style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
-                border: '1px solid var(--line)', borderRadius: 'var(--radius-card)', padding: '10px 14px',
-              }}>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)' }}>ภาคเรียนที่ {t.semester}/{t.academic_year}</div>
-                  <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>ใช้สิทธิ์แก้ไปแล้ว {t.save_count}/{t.save_limit} ครั้ง</div>
-                </div>
-                <Button
-                  size="sm" variant="ghost"
-                  disabled={t.save_count === 0}
-                  loading={resetQuotaMut.isPending && resetQuotaMut.variables?.year === t.academic_year && resetQuotaMut.variables?.semester === t.semester}
-                  onClick={() => quotaUser && resetQuotaMut.mutate({ id: quotaUser.id, year: t.academic_year, semester: t.semester })}
-                  style={{ border: '1px solid var(--line)' }}
-                >
-                  รีเซ็ตโควตา
-                </Button>
-              </div>
-            ))}
-            {resetQuotaError && (
-              <div style={{ fontSize: 13, color: 'var(--red)', background: 'var(--red-bg)', borderRadius: 'var(--radius-input)', padding: '10px 12px' }}>
-                {resetQuotaError}
-              </div>
-            )}
-          </div>
-        )}
       </Modal>
 
       <Modal isOpen={!!viewingUser} onClose={() => setViewingUser(null)} title={`วิชาที่สอน — ${viewingUser?.full_name ?? ''}`} size="lg">

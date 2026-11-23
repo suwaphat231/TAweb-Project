@@ -37,6 +37,9 @@ type LabBoyReport struct {
 	StudentName    string `gorm:"-" json:"student_name"`
 	StudentCode    string `gorm:"-" json:"student_code"`
 	ReporterName   string `gorm:"-" json:"reporter_name"`
+	// ReporterRole is "student" for a report a fellow Lab Boy sent in (it
+	// waits for the course instructor), otherwise the instructor/admin role.
+	ReporterRole   string `gorm:"-" json:"reporter_role,omitempty"`
 	CourseCode     string `gorm:"-" json:"course_code"`
 	CourseTitle    string `gorm:"-" json:"course_title"`
 	CourseSection  int    `gorm:"-" json:"course_section,omitempty"`

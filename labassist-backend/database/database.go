@@ -1297,6 +1297,22 @@ type ReviewTxResult struct {
 	WasWithdrawn bool // true when skipped because the student withdrew after the pre-check
 	MissingProof bool // true when skipped because course requires grade proof but none uploaded
 	RosterLocked bool // true when skipped because the instructor already confirmed the Lab Boy roster
+	AutoClosed   bool // true when this accept filled the last Lab Boy slot and closed the round
+	Reopened     bool // true when this cancellation freed a slot and reopened a full-closed round
+}
+
+func recruitingStatus(s models.CourseStatus) bool {
+	return s == models.StatusOpen || s == models.StatusClosingSoon
+}
+
+// postingDeadlinePassed reports whether the application deadline (inclusive
+// of its whole day, Bangkok time) is over.
+func postingDeadlinePassed(deadline *time.Time) bool {
+	if deadline == nil {
+		return false
+	}
+	d := deadline.In(bangkokLoc)
+	return time.Now().After(time.Date(d.Year(), d.Month(), d.Day(), 23, 59, 59, 0, bangkokLoc))
 }
 
 // ReviewApplicationTx atomically checks slot availability, updates the
@@ -1366,10 +1382,31 @@ func ReviewApplicationTx(appID uint, newStatus models.AppStatus, applyFields fun
 				UpdateColumn("lab_boy_accepted", gorm.Expr("lab_boy_accepted + 1")).Error; err != nil {
 				return err
 			}
+			// The last open Lab Boy slot was just filled: stop taking
+			// applications. ClosedByInstructor stays false so a later
+			// cancellation can reopen the round automatically.
+			if app.RoleApplied == models.RoleLabBoy && posting.LabBoySlots > 0 &&
+				posting.LabBoyAccepted+1 >= posting.LabBoySlots && recruitingStatus(posting.Status) {
+				if err := tx.Model(&posting).UpdateColumn("status", models.StatusClosed).Error; err != nil {
+					return err
+				}
+				res.AutoClosed = true
+			}
 		} else if prevStatus == models.AppAccepted && newStatus != models.AppAccepted {
 			if err := tx.Model(&posting).
 				UpdateColumn("lab_boy_accepted", gorm.Expr("GREATEST(0, lab_boy_accepted - 1)")).Error; err != nil {
 				return err
+			}
+			// A slot opened up on a round that closed only because it was
+			// full (not closed by the instructor, deadline not passed):
+			// reopen it so the slot can be filled again.
+			if app.RoleApplied == models.RoleLabBoy && posting.Status == models.StatusClosed &&
+				!posting.ClosedByInstructor && !postingDeadlinePassed(posting.Deadline) &&
+				posting.LabBoyAccepted-1 < posting.LabBoySlots {
+				if err := tx.Model(&posting).UpdateColumn("status", models.StatusOpen).Error; err != nil {
+					return err
+				}
+				res.Reopened = true
 			}
 		}
 

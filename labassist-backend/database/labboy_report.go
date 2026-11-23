@@ -27,10 +27,13 @@ var ErrDuplicateReport = errors.New("duplicate report")
 // (Asia/Bangkok); a student may send only one per day.
 var ErrReporterDailyLimit = errors.New("student already reported today")
 
+// Student-filed report errors: both the reporter and the reported student
+// must be accepted Lab Boys of the same course.
 var (
 	ErrPeerReporterNotAccepted = errors.New("reporter is not an accepted Lab Boy in the course")
 	ErrPeerTargetNotAccepted   = errors.New("reported student is not an accepted Lab Boy in the course")
 )
+
 
 const reportAuditEntity = "labboy_report"
 
@@ -43,6 +46,7 @@ func enrichReport(r models.LabBoyReport) models.LabBoyReport {
 	}
 	if u, ok := UserByID(r.ReporterID); ok {
 		r.ReporterName = u.FullName
+		r.ReporterRole = string(u.Role)
 	}
 	if c, ok := CourseByID(r.CourseID); ok {
 		r.CourseCode = c.Code
@@ -154,9 +158,11 @@ func CreateReportDraft(r *models.LabBoyReport) error {
 	})
 }
 
-// CreateSubmittedPeerReport creates an anonymous student-peer report in the
-// same transaction as its status history, audit, and notifications. Both the
-// reporter and target are server-verified as accepted Lab Boys in the course.
+// CreateSubmittedPeerReport saves a report a student sent in about another
+// Lab Boy of the same course. It goes straight to SUBMITTED — there is no
+// student draft — and waits for the course instructor to confirm or reject
+// it; until then it does not flag the student. The course's instructors are
+// notified. The reported student is not.
 func CreateSubmittedPeerReport(r *models.LabBoyReport) error {
 	r.ID = 0
 	r.Status = models.ReportSubmitted
@@ -170,16 +176,11 @@ func CreateSubmittedPeerReport(r *models.LabBoyReport) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&target, r.ApplicationID).Error; err != nil {
 			return err
 		}
-		if target.Status != models.AppAccepted {
+		if target.Status != models.AppAccepted || target.StudentID == r.ReporterID {
 			return ErrPeerTargetNotAccepted
 		}
-		if target.StudentID == r.ReporterID {
-			return ErrPeerTargetNotAccepted
-		}
-
 		var reporter models.Application
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("course_id = ? AND student_id = ? AND status = ?", target.CourseID, r.ReporterID, models.AppAccepted).
+		err := tx.Where("course_id = ? AND student_id = ? AND status = ?", target.CourseID, r.ReporterID, models.AppAccepted).
 			First(&reporter).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrPeerReporterNotAccepted
@@ -213,46 +214,40 @@ func CreateSubmittedPeerReport(r *models.LabBoyReport) error {
 		if err := tx.Create(r).Error; err != nil {
 			return err
 		}
+		const note = "นักศึกษาส่งรายงาน รออาจารย์ผู้สอนตรวจสอบ"
 		from := models.ReportDraft
 		if err := tx.Create(&models.LabBoyReportStatusHistory{
 			ReportID: r.ID, FromStatus: &from, ToStatus: models.ReportSubmitted,
-			ActorID: r.ReporterID, Reason: "รายงานจากเพื่อนร่วมรายวิชา (ไม่เปิดเผยตัวตน)", CreatedAt: now,
+			ActorID: r.ReporterID, Reason: note, CreatedAt: now,
 		}).Error; err != nil {
 			return err
 		}
-		if err := writeReportAudit(tx, r.ID, "submit_peer_report", r.ReporterID, "", reportSnapshot(*r),
-			"รายงานจากเพื่อนร่วมรายวิชา (ไม่เปิดเผยตัวตน)"); err != nil {
+		if err := writeReportAudit(tx, r.ID, "submit_student_report", r.ReporterID, "", reportSnapshot(*r), note); err != nil {
 			return err
 		}
 
 		courseName := ""
-		var courseRow models.Course
-		if err := tx.First(&courseRow, r.CourseID).Error; err == nil {
-			courseName = courseRow.Code
-			if courseRow.Title != "" {
-				courseName += " " + courseRow.Title
-			}
+		var course models.Course
+		if err := tx.First(&course, r.CourseID).Error; err == nil {
+			courseName = strings.TrimSpace(course.Code + " " + course.Title)
 		}
-		notifs := []models.Notification{{
-			UserID: r.StudentID, CourseID: &r.CourseID,
-			Title: "มีรายงานการปฏิบัติงานที่เกี่ยวข้องกับคุณ",
-			Body:  "มีรายงานการปฏิบัติงานในรายวิชา " + courseName + " ตัวผู้รายงานไม่เปิดเผย และอยู่ระหว่างรอการตรวจสอบ คุณสามารถส่งคำชี้แจงได้",
-		}}
 		var links []models.CourseInstructor
 		if err := tx.Where("course_id = ? AND source = ? AND archived_at IS NULL",
 			r.CourseID, models.CourseInstructorImported).Find(&links).Error; err != nil {
 			return err
 		}
+		notifs := make([]models.Notification, 0, len(links))
 		for _, link := range links {
 			notifs = append(notifs, models.Notification{
 				UserID: link.InstructorID, CourseID: &r.CourseID,
-				Title: "มีรายงาน Lab Boy จากนักศึกษา",
-				Body:  "รายงานในรายวิชา " + courseName + " รอการพิจารณา ตัวผู้รายงานไม่เปิดเผย",
+				Title: "มีรายงาน Lab Boy จากนักศึกษา รอการตรวจสอบ",
+				Body:  "นักศึกษาส่งรายงานการปฏิบัติงานของ Lab Boy ในรายวิชา " + courseName + " กรุณาตรวจสอบและยืนยันหรือไม่รับรายงานที่เมนู \"รายงานนักศึกษา\"",
 			})
 		}
 		return createNotificationsTx(tx, notifs)
 	})
 }
+
 
 // UpdateReportDraft overwrites the editable fields of a report that is still
 // a DRAFT. The previous values go to the audit log, so even draft edits
@@ -332,7 +327,7 @@ type ReportTransition struct {
 func ApplyReportTransition(t ReportTransition) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
 		updates := map[string]any{"status": t.To, "updated_at": time.Now()}
-		if t.To == models.ReportSubmitted && t.From == models.ReportDraft {
+		if t.From == models.ReportDraft && t.To != models.ReportWithdrawn {
 			updates["submitted_at"] = time.Now()
 		}
 		if t.ClearReconsideration {
@@ -607,6 +602,9 @@ type ReportFilter struct {
 	ReporterID   *uint
 	StudentID    *uint
 	ExcludeDraft bool
+	// ReviewerID limits the list to reports sent in by students for courses
+	// this instructor teaches — the instructor's review queue.
+	ReviewerID *uint
 	Statuses     []models.ReportStatus
 	Category     models.ReportCategory
 	CourseID     uint
@@ -629,6 +627,11 @@ func ListReports(f ReportFilter) ([]models.LabBoyReport, int64, error) {
 	}
 	if f.ExcludeDraft {
 		q = q.Where("labboy_reports.status <> ?", models.ReportDraft)
+	}
+	if f.ReviewerID != nil {
+		q = q.Where("labboy_reports.status <> ?", models.ReportDraft).
+			Where("labboy_reports.reporter_id IN (SELECT id FROM users WHERE role = ?)", models.RoleStudent).
+			Where("labboy_reports.course_id IN (SELECT course_id FROM course_instructors WHERE instructor_id = ? AND source = 'imported' AND archived_at IS NULL)", *f.ReviewerID)
 	}
 	if len(f.Statuses) > 0 {
 		q = q.Where("labboy_reports.status IN ?", f.Statuses)
@@ -665,13 +668,26 @@ func ListReports(f ReportFilter) ([]models.LabBoyReport, int64, error) {
 	return rows, total, nil
 }
 
-// ConfirmedRecordsForStudent returns only CONFIRMED reports — the history
-// another course's instructor may see. Anything still under review, not
-// substantiated or withdrawn is never included.
-func ConfirmedRecordsForStudent(studentID uint) ([]models.ConfirmedRecord, error) {
+// activeConfirmedReports scopes a labboy_reports query to CONFIRMED reports
+// that still flag the student for a course in academicYear (พ.ศ.). A
+// confirmed report flags the student only for the rest of the academic year
+// of the course it was about: from the next academic year on it no longer
+// shows. The report itself is kept for staff/admin either way.
+func activeConfirmedReports(academicYear int) *gorm.DB {
+	return DB.Model(&models.LabBoyReport{}).
+		Joins("JOIN courses ON courses.id = labboy_reports.course_id").
+		Where("labboy_reports.status = ? AND courses.academic_year >= ?", models.ReportConfirmed, academicYear)
+}
+
+// ConfirmedRecordsForStudent returns only CONFIRMED reports still in force
+// for a course in academicYear — the history another course's instructor may
+// see. Anything still under review, not substantiated or withdrawn is never
+// included.
+func ConfirmedRecordsForStudent(studentID uint, academicYear int) ([]models.ConfirmedRecord, error) {
 	var reports []models.LabBoyReport
-	if err := DB.Where("student_id = ? AND status = ?", studentID, models.ReportConfirmed).
-		Order("incident_date DESC").Find(&reports).Error; err != nil {
+	if err := activeConfirmedReports(academicYear).Select("labboy_reports.*").
+		Where("labboy_reports.student_id = ?", studentID).
+		Order("labboy_reports.incident_date DESC").Find(&reports).Error; err != nil {
 		return nil, err
 	}
 	out := make([]models.ConfirmedRecord, 0, len(reports))
@@ -703,9 +719,9 @@ func ConfirmedRecordsForStudent(studentID uint) ([]models.ConfirmedRecord, error
 	return out, nil
 }
 
-// ConfirmedRecordCounts maps student ID → number of CONFIRMED reports, for
-// flagging applicants in one query.
-func ConfirmedRecordCounts(studentIDs []uint) (map[uint]int, error) {
+// ConfirmedRecordCounts maps student ID → number of CONFIRMED reports still
+// in force for a course in academicYear, for flagging applicants in one query.
+func ConfirmedRecordCounts(studentIDs []uint, academicYear int) (map[uint]int, error) {
 	out := make(map[uint]int)
 	if len(studentIDs) == 0 {
 		return out, nil
@@ -714,13 +730,56 @@ func ConfirmedRecordCounts(studentIDs []uint) (map[uint]int, error) {
 		StudentID uint
 		N         int
 	}
-	if err := DB.Model(&models.LabBoyReport{}).Select("student_id, COUNT(*) AS n").
-		Where("status = ? AND student_id IN ?", models.ReportConfirmed, studentIDs).
-		Group("student_id").Scan(&rows).Error; err != nil {
+	if err := activeConfirmedReports(academicYear).Select("labboy_reports.student_id, COUNT(*) AS n").
+		Where("labboy_reports.student_id IN ?", studentIDs).
+		Group("labboy_reports.student_id").Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	for _, r := range rows {
 		out[r.StudentID] = r.N
 	}
 	return out, nil
+}
+
+// confirmOpenReports finishes reports filed before the review step was
+// removed: anything still SUBMITTED / UNDER_REVIEW / AWAITING_RESPONSE was
+// already sent by its instructor, so it becomes CONFIRMED (the instructor's
+// submission is the confirmation). A timeline row records the change. Safe
+// to run on every start. Reports sent in by students are skipped: those
+// wait for the course instructor to confirm or reject them.
+func confirmOpenReports(db *gorm.DB) error {
+	if !db.Migrator().HasTable(&models.LabBoyReport{}) {
+		return nil
+	}
+	open := []models.ReportStatus{models.ReportSubmitted, models.ReportUnderReview, models.ReportAwaitingResponse}
+	return db.Transaction(func(tx *gorm.DB) error {
+		var rows []models.LabBoyReport
+		studentFiled := tx.Model(&models.User{}).Select("id").Where("role = ?", models.RoleStudent)
+		if err := tx.Where("status IN ? AND reporter_id NOT IN (?)", open, studentFiled).Find(&rows).Error; err != nil {
+			return err
+		}
+		if len(rows) == 0 {
+			return nil
+		}
+		now := time.Now()
+		for _, r := range rows {
+			from := r.Status
+			if err := tx.Create(&models.LabBoyReportStatusHistory{
+				ReportID: r.ID, FromStatus: &from, ToStatus: models.ReportConfirmed, ActorID: r.ReporterID,
+				Reason: "ยกเลิกขั้นตอนตรวจสอบ — รายงานที่อาจารย์ส่งแล้วมีผลทันที", CreatedAt: now,
+			}).Error; err != nil {
+				return err
+			}
+		}
+		ids := make([]uint, len(rows))
+		for i, r := range rows {
+			ids[i] = r.ID
+		}
+		if err := tx.Model(&models.LabBoyReport{}).Where("id IN ?", ids).
+			Updates(map[string]any{"status": models.ReportConfirmed, "reconsideration_requested_at": nil, "updated_at": now}).Error; err != nil {
+			return err
+		}
+		log.Printf("confirmed %d Lab Boy report(s) left open by the removed review step", len(rows))
+		return nil
+	})
 }
