@@ -34,6 +34,7 @@ type workflowResp struct {
 		Instructors  []string `json:"instructors"`
 		// ScheduleConfirmed is set once staff confirm the Lab Boy schedule.
 		ScheduleConfirmed     bool     `json:"schedule_confirmed"`
+		ReviewStatus          string   `json:"review_status"`
 		ConfirmBlockedReasons []string `json:"confirm_blocked_reasons"`
 	} `json:"course"`
 	Steps []struct {
@@ -176,6 +177,15 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// Only the instructor selects Lab Boys: staff may read the applicants
+		// for the documents but never decide them.
+		reviewPath := fmt.Sprintf("/instructor/applications/%d/review", accept3.ID)
+		expect(t, 200, "GET", fmt.Sprintf("/instructor/courses/%d/applicants", course.ID), tokStaff, nil)
+		expect(t, 403, "PUT", reviewPath, tokStaff, map[string]any{"status": "rejected"})
+		expect(t, 403, "PUT", "/instructor/applications/bulk-review", tokStaff, map[string]any{"application_ids": []uint{accept3.ID}, "status": "rejected"})
+		expect(t, 403, "PUT", fmt.Sprintf("/instructor/applications/%d/withdraw-request", accept3.ID), tokStaff, map[string]any{"approve": true})
+		expect(t, 403, "PUT", fmt.Sprintf("/instructor/applications/%d/cancel", accept3.ID), tokStaff, nil)
+		expect(t, 403, "POST", fmt.Sprintf("/instructor/courses/%d/notify", course.ID), tokStaff, nil)
 		expect(t, 409, "PUT", fmt.Sprintf("/instructor/applications/%d/review", accept3.ID), tokInst, map[string]any{"status": "accepted"})
 		expect(t, 200, "PUT", fmt.Sprintf("/instructor/applications/%d/review", accept3.ID), tokInst, map[string]any{"status": "rejected"})
 		// Reopen and confirm again while staff have not started.
@@ -215,7 +225,13 @@ func TestDocumentWorkflowEndToEnd(t *testing.T) {
 	})
 
 	t.Run("the work plan opens with Lab Boys; the schedule waits for signed documents", func(t *testing.T) {
-		expect(t, 200, "PUT", fmt.Sprintf("/staff/reviews/%d/verify", course.ID), tokStaff, nil)
+		// Staff no longer verify or return the instructor's form: the
+		// confirmed roster is the hand-off, so the course is ready as is.
+		expect(t, 404, "PUT", fmt.Sprintf("/staff/reviews/%d/verify", course.ID), tokStaff, nil)
+		expect(t, 404, "PUT", fmt.Sprintf("/staff/reviews/%d/return", course.ID), tokStaff, map[string]any{"note": "x"})
+		if rs := getWF(t).Course.ReviewStatus; rs != "verified" {
+			t.Fatalf("review status = %q, want verified once the roster is confirmed", rs)
+		}
 		w := getWF(t)
 		if len(w.Course.ConfirmBlockedReasons) != 4 {
 			t.Fatalf("confirm blockers = %v, want the 4 unsigned steps", w.Course.ConfirmBlockedReasons)

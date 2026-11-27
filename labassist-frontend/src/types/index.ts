@@ -28,6 +28,10 @@ export interface User {
   transcript_grades?: Record<string, string>
   /** Course names for transcript_grades, keyed by course code. */
   transcript_course_titles?: Record<string, string>
+  /** Admin user list only, students only: status OCR read off the REG profile card (null = unread / not uploaded). */
+  ocr_student_status?: string | null
+  /** Admin user list only, students only: a REG profile card image was uploaded. */
+  has_reg_card?: boolean
   transcript_status?: 'pass' | 'needs_review' | 'fail'
   transcript_message?: string
   transcript_confidence?: number

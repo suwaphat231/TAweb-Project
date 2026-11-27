@@ -26,7 +26,7 @@ const routeMeta: Record<string, { title: string; breadcrumb: string }> = {
   '/instructor/select':   { title: 'คัดเลือกผู้สมัคร',   breadcrumb: 'อาจารย์' },
   '/instructor/profile':  { title: 'ข้อมูลส่วนตัว',      breadcrumb: 'อาจารย์' },
   '/staff/home':          { title: 'ภาพรวม',              breadcrumb: 'เจ้าหน้าที่' },
-  '/staff/review':        { title: 'ตรวจสอบแบบฟอร์ม',   breadcrumb: 'เจ้าหน้าที่' },
+  '/staff/review':        { title: 'จัดการเอกสาร',   breadcrumb: 'เจ้าหน้าที่' },
   '/staff/profile':       { title: 'ข้อมูลส่วนตัว',       breadcrumb: 'เจ้าหน้าที่' },
   '/admin/overview':      { title: 'ภาพรวมระบบ',         breadcrumb: 'ผู้ดูแลระบบ' },
   '/admin/courses':       { title: 'จัดการรายวิชา',      breadcrumb: 'ผู้ดูแลระบบ' },

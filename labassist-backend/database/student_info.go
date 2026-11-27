@@ -79,6 +79,36 @@ func mustStudentInfoDocument(userID uint, fallback models.StudentInfoDocument) m
 	return fallback
 }
 
+// StudentRegCard is what the admin user list shows about a student's REG
+// profile card: the status OCR read off it and whether an image exists.
+type StudentRegCard struct {
+	OcrStudentStatus *string
+	HasImage         bool
+}
+
+// StudentRegCardsByUserIDs loads the REG card summary of many students in
+// one query (no file data). Students who never uploaded are absent.
+func StudentRegCardsByUserIDs(userIDs []uint) (map[uint]StudentRegCard, error) {
+	out := make(map[uint]StudentRegCard, len(userIDs))
+	if len(userIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		UserID           uint
+		OcrStudentStatus *string
+		HasImage         bool
+	}
+	if err := DB.Model(&models.StudentInfoDocument{}).
+		Select("user_id, ocr_student_status, (file_key <> '' OR COALESCE(LENGTH(file_data), 0) > 0) AS has_image").
+		Where("user_id IN ?", userIDs).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r.UserID] = StudentRegCard{OcrStudentStatus: r.OcrStudentStatus, HasImage: r.HasImage}
+	}
+	return out, nil
+}
+
 // StudentInfoDocumentByUserID returns the student's info doc (no file data).
 func StudentInfoDocumentByUserID(userID uint) (models.StudentInfoDocument, bool) {
 	var doc models.StudentInfoDocument

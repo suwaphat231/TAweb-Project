@@ -78,7 +78,7 @@ export default function StaffHome() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <a href="/staff/review" className="btn btn-white">ตรวจสอบแบบฟอร์ม</a>
+            <a href="/staff/review" className="btn btn-white">จัดการเอกสาร</a>
           </div>
         </div>
       </div>

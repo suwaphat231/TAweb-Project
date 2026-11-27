@@ -220,11 +220,12 @@ func scheduleConfirmBlockers(accepted []models.Application, docs []models.StaffD
 
 // preconditions lists what still blocks creating any pre-work document for
 // this offering. It is checked again on create, never trusted from the UI.
-func preconditions(review models.FormReview, sc *models.StaffCase, accepted []models.Application) []string {
+//
+// There is no separate staff "form verified" gate: the instructor confirming
+// the Lab Boy roster is the hand-off, and staff only ever see confirmed
+// offerings. Staff never send the form back to the instructor.
+func preconditions(sc *models.StaffCase, accepted []models.Application) []string {
 	reasons := []string{}
-	if review.Status != models.ReviewVerified {
-		reasons = append(reasons, "ยังไม่ได้ตรวจสอบแบบฟอร์มของอาจารย์ว่าครบถ้วน")
-	}
 	if len(accepted) == 0 {
 		reasons = append(reasons, "ยังไม่มีนักศึกษาที่ผ่านการคัดเลือก")
 	}
@@ -300,7 +301,7 @@ func (h *Handler) GetDocumentWorkflow(c *gin.Context) {
 	}
 	sort.Slice(acceptedIDs, func(i, j int) bool { return acceptedIDs[i] < acceptedIDs[j] })
 
-	blocked := preconditions(review, sc, accepted)
+	blocked := preconditions(sc, accepted)
 	active := map[models.DocType]*models.StaffDocument{}
 	for _, st := range preWorkSteps {
 		v := WorkflowStepView{Step: st.Step, Type: st.Type, Label: st.Label, History: []models.StaffDocument{},
@@ -458,12 +459,11 @@ func buildStepDocument(step workflowStep, course models.Course, posting models.P
 	if err != nil {
 		return models.StaffDocument{}, nil, err
 	}
-	review := database.ReviewForPosting(posting.ID, course.ID)
 	var sc *models.StaffCase
 	if found, ok := database.StaffCaseByPostingID(posting.ID); ok {
 		sc = &found
 	}
-	if reasons := preconditions(review, sc, accepted); len(reasons) > 0 {
+	if reasons := preconditions(sc, accepted); len(reasons) > 0 {
 		return models.StaffDocument{}, reasons, nil
 	}
 

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { findStaffReview } from '../../utils/staffOffering'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { staffApi, applicationsAPI, coursesAPI } from '../../services/api'
 import { buildCourseOffering, docProgress } from './staffCourseUtils'
 import { DocumentWorkflow } from './components/DocumentWorkflow'
@@ -105,17 +105,6 @@ export default function StaffCourseDetail() {
     allCases.find((sc) => review?.posting_id ? sc.posting_id === review.posting_id : sc.course_id === review?.course_id),
     [allCases, review],
   )
-
-  const qc = useQueryClient()
-
-  const verifyMut = useMutation({
-    mutationFn: () => staffApi.verifyReview(review!.course_id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['staff-reviews'] })
-      qc.invalidateQueries({ queryKey: ['staff-documents'] })
-      qc.invalidateQueries({ queryKey: ['document-workflow'] })
-    },
-  })
 
   const loading = reviewsLoading || docsLoading
 
@@ -245,34 +234,6 @@ export default function StaffCourseDetail() {
           <div style={{ display: 'flex', gap: 0, flexWrap: 'wrap' }}>
             {/* Workflow main area */}
             <div style={{ flex: '1 1 480px', padding: '20px 24px' }}>
-              {/* Inline verify banner — shown when review is still pending */}
-              {review.status !== 'verified' && (
-                <div style={{
-                  marginBottom: 20, padding: '12px 16px',
-                  background: review.status === 'returned' ? 'var(--red-bg)' : 'var(--amber-bg)',
-                  border: `1px solid ${review.status === 'returned' ? '#FECACA' : '#FCD34D'}`,
-                  borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
-                }}>
-                  <div style={{ flex: '1 1 240px' }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: review.status === 'returned' ? 'var(--red)' : 'var(--amber)' }}>
-                      {review.status === 'returned' ? 'แบบฟอร์มถูกส่งกลับให้อาจารย์แก้ไข' : 'แบบฟอร์มยังไม่ได้รับการยืนยัน'}
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--ink-600)', marginTop: 2, lineHeight: 1.5 }}>
-                      {review.status === 'returned' && review.note
-                        ? <>หมายเหตุ: {review.note}</>
-                        : 'ยืนยันแบบฟอร์มก่อนเพื่อเริ่มสร้างเอกสาร'}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => verifyMut.mutate()}
-                    disabled={verifyMut.isPending}
-                    className="btn btn-amber"
-                    style={{ flexShrink: 0 }}
-                  >
-                    {verifyMut.isPending ? 'กำลังยืนยัน...' : 'ยืนยันแบบฟอร์ม'}
-                  </button>
-                </div>
-              )}
               <DocumentWorkflow
                 courseId={offering.courseId}
                 courseRef={courseRef}
@@ -349,15 +310,8 @@ export default function StaffCourseDetail() {
               <InfoRow label="ปีการศึกษา" value={`${offering.academicYear}`} />
               <InfoRow label="ตารางเรียน" value={formatSchedule(courseDetail?.schedule, { separator: ' / ' }) || '—'} />
               <InfoRow label="ห้องเรียน" value={offering.room ?? '—'} />
-              <InfoRow label="สถานะแบบฟอร์ม" value={review.status === 'verified' ? 'ผ่านการตรวจสอบ' : review.status === 'returned' ? 'ส่งกลับแก้ไข' : 'รอตรวจสอบ'} />
               <InfoRow label="จำนวน Lab Boy (ที่ยืนยัน / ทั้งหมด)" value={`${offering.labboyAccepted} / ${offering.labboySlots} คน`} />
             </div>
-            {review.note && (
-              <div style={{ marginTop: 20, padding: '12px 16px', background: 'var(--amber-bg)', borderRadius: 8, border: '1px solid #FCD34D', fontSize: 13, color: 'var(--ink-700)' }}>
-                <span style={{ fontWeight: 600, color: 'var(--amber)' }}>หมายเหตุ: </span>
-                {review.note}
-              </div>
-            )}
           </div>
         )}
 
@@ -436,7 +390,6 @@ export default function StaffCourseDetail() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {[
                 { date: review.submitted_at, event: 'ส่งแบบฟอร์มแจ้งความประสงค์', color: 'var(--primary)' },
-                review.status !== 'pending' ? { date: review.updated_at, event: review.status === 'verified' ? 'ผ่านการตรวจสอบจากเจ้าหน้าที่' : 'ส่งกลับแก้ไข', color: review.status === 'verified' ? 'var(--green)' : 'var(--amber)' } : null,
                 ...courseDocs.map((d) => ({
                   date: d.created_at,
                   event: `สร้างเอกสาร: ${d.name}`,

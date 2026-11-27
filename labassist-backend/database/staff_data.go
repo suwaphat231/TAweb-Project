@@ -77,12 +77,18 @@ func ReviewForPosting(postingID, courseID uint) models.FormReview {
 	return reviewByPostingID(postingID, courseID)
 }
 
-// reviewByPostingID returns the existing review for a posting or a synthetic pending one.
+// reviewByPostingID returns the review for a posting. Staff no longer verify
+// or return the instructor's form: the instructor confirming the Lab Boy
+// roster is the hand-off, and staff only see confirmed offerings — so every
+// review reads as verified, including old rows left "returned" or "pending"
+// by the removed verify/return buttons.
 func reviewByPostingID(postingID, courseID uint) models.FormReview {
 	var r models.FormReview
 	if DB.Where("posting_id = ?", postingID).First(&r).Error != nil {
-		return models.FormReview{PostingID: postingID, CourseID: courseID, Status: models.ReviewPending}
+		r = models.FormReview{PostingID: postingID, CourseID: courseID}
 	}
+	r.Status = models.ReviewVerified
+	r.Note = ""
 	return r
 }
 

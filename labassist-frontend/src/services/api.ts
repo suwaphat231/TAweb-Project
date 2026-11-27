@@ -209,6 +209,8 @@ export const adminAPI = {
     api.put<User>(`/admin/users/${id}/status`, { is_active }).then((r) => r.data),
   deleteUser: (id: number) => api.delete(`/admin/users/${id}`).then(() => undefined),
   userCourses: (id: number) => api.get<Course[]>(`/admin/users/${id}/courses`).then((r) => r.data),
+  studentRegCard: (id: number) =>
+    api.get(`/admin/users/${id}/student-info/file`, { responseType: 'blob' }).then((r) => r.data as Blob),
   // For courses an instructor asked for, or that just aren't in the Excel
   // import — admin can add one directly and assign it to any instructor.
   createCourse: (data: CreateCoursePayload) =>
@@ -390,10 +392,6 @@ export const staffApi = {
   // Form reviews
   listReviews: (params?: { status?: string; q?: string }) =>
     api.get<FormReview[]>('/staff/reviews', { params }).then((r) => r.data),
-  verifyForm: (courseId: number) =>
-    api.put<FormReview>(`/staff/reviews/${courseId}/verify`).then((r) => r.data),
-  returnForm: (courseId: number, note: string) =>
-    api.put<FormReview>(`/staff/reviews/${courseId}/return`, { note }).then((r) => r.data),
 
   // Documents
   listDocuments: (params?: { type?: string; status?: string; q?: string }) =>
@@ -416,8 +414,6 @@ export const staffApi = {
   updateDocumentSchedule: (id: number, data: { work_schedule?: WorkDaySlot[]; sessions_per_month?: number }) =>
     api.put<StaffDocument>(`/staff/documents/${id}/schedule`, data).then((r) => r.data),
   // Review verification (inline from course detail page)
-  verifyReview: (courseId: number) =>
-    api.put(`/staff/reviews/${courseId}/verify`).then((r) => r.data),
 
   // Staff Cases
   initCase: (courseId: number) =>

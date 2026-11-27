@@ -83,7 +83,7 @@ export function AppRouter() {
       <Route path="/instructor/home"     element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorHome /></ProtectedRoute>} />
       <Route path="/instructor/courses"  element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorMyCourses /></ProtectedRoute>} />
       <Route path="/instructor/announce" element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorAnnounce /></ProtectedRoute>} />
-      <Route path="/instructor/select"   element={<ProtectedRoute roles={['instructor', 'staff', 'admin']}><InstructorSelect /></ProtectedRoute>} />
+      <Route path="/instructor/select"   element={<ProtectedRoute roles={['instructor']}><InstructorSelect /></ProtectedRoute>} />
       <Route path="/instructor/profile"  element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorProfile /></ProtectedRoute>} />
       <Route path="/instructor/reports"  element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorReports /></ProtectedRoute>} />
       <Route path="/instructor/reports/courses/:courseId" element={<ProtectedRoute roles={['instructor', 'admin']}><InstructorReportCourse /></ProtectedRoute>} />

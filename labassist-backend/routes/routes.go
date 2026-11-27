@@ -152,16 +152,23 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			instructor.POST("/instructor/reports/:id/evidence", reportH.UploadEvidence)
 		}
 
-		// Instructor + Staff + Admin for applicants and reviews
+		// Selecting Lab Boys is the instructor's job only: staff handle the
+		// documents and admin only watches, so neither may decide applicants.
+		selection := authed.Group("")
+		selection.Use(middleware.RequireRole("instructor"))
+		{
+			selection.POST("/instructor/courses/:id/notify", teacherH.NotifyCourse)
+			selection.PUT("/instructor/applications/:id/review", teacherH.Review)
+			selection.PUT("/instructor/applications/:id/cancel", teacherH.CancelAcceptance)
+			selection.PUT("/instructor/applications/:id/withdraw-request", teacherH.ResolveWithdraw)
+			selection.PUT("/instructor/applications/bulk-review", teacherH.BulkReview)
+		}
+
+		// Read-only applicant data: staff need it for the documents.
 		review := authed.Group("")
 		review.Use(middleware.RequireRole("instructor", "staff", "admin"))
 		{
 			review.GET("/instructor/courses/:id/applicants", teacherH.Applicants)
-			review.POST("/instructor/courses/:id/notify", teacherH.NotifyCourse)
-			review.PUT("/instructor/applications/:id/review", teacherH.Review)
-			review.PUT("/instructor/applications/:id/cancel", teacherH.CancelAcceptance)
-			review.PUT("/instructor/applications/:id/withdraw-request", teacherH.ResolveWithdraw)
-			review.PUT("/instructor/applications/bulk-review", teacherH.BulkReview)
 			review.GET("/instructor/applications/:id/grade-proof", teacherH.GradeProof)
 			review.GET("/instructor/applications/:id/performance-records", reportH.ConfirmedHistory)
 		}
@@ -173,8 +180,6 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			staffGroup.GET("/staff/profile", staffH.GetProfile)
 			staffGroup.PUT("/staff/profile", staffH.UpdateProfile)
 			staffGroup.GET("/staff/reviews", staffH.ListReviews)
-			staffGroup.PUT("/staff/reviews/:courseId/verify", staffH.VerifyForm)
-			staffGroup.PUT("/staff/reviews/:courseId/return", staffH.ReturnForm)
 			staffGroup.GET("/staff/documents", staffH.ListDocuments)
 			staffGroup.POST("/staff/documents", staffH.CreateDocument)
 			staffGroup.DELETE("/staff/documents/:id", staffH.DeleteDocument)
@@ -258,6 +263,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			adminGroup.DELETE("/admin/users/:id", adminH.DeleteUser)
 			adminGroup.PUT("/admin/users/:id/status", adminH.UpdateUserStatus)
 			adminGroup.GET("/admin/users/:id/courses", adminH.InstructorCourses)
+			adminGroup.GET("/admin/users/:id/student-info/file", adminH.StudentRegCardFile)
 			adminGroup.GET("/admin/core-courses", adminH.CoreCourseCatalog)
 			adminGroup.GET("/admin/logs", adminH.Logs)
 			adminGroup.POST("/admin/courses/import", adminH.ImportCourses)

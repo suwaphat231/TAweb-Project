@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
@@ -14,6 +14,7 @@ import { Select } from '../../components/ui/Select'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { EmptyState } from '../../components/ui/EmptyState'
 import type { User, UserRole } from '../../types'
+import { isNormalStudentStatus } from '../../utils/studentStatus'
 
 const ROLE_TABS: { label: string; value: UserRole | '' }[] = [
   { label: 'ทั้งหมด', value: '' },
@@ -48,6 +49,8 @@ export default function AdminUsers() {
 
   const [viewingUser, setViewingUser] = useState<User | null>(null)
   const [deletingUser, setDeletingUser] = useState<User | null>(null)
+  const [suspendingUser, setSuspendingUser] = useState<User | null>(null)
+  const [regCardUser, setRegCardUser] = useState<User | null>(null)
 
   const qc = useQueryClient()
 
@@ -99,8 +102,14 @@ export default function AdminUsers() {
     : ''
   const toggleMut = useMutation({
     mutationFn: ({ id, is_active }: { id: number; is_active: boolean }) => adminApi.updateUserStatus(id, is_active),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-users'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-users'] })
+      setSuspendingUser(null)
+    },
   })
+  const suspendError = toggleMut.error
+    ? (isAxiosError(toggleMut.error) && toggleMut.error.response?.data?.error) || 'ระงับบัญชีไม่สำเร็จ กรุณาลองใหม่'
+    : ''
 
   function set(k: keyof typeof form) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm(f => ({ ...f, [k]: e.target.value }))
@@ -135,7 +144,18 @@ export default function AdminUsers() {
     },
     { key: 'role', header: 'บทบาท', render: (u: User) => <StatusBadge value={u.role} /> },
     {
-      key: 'is_active', header: 'สถานะ',
+      key: 'ocr_student_status', header: 'สถานภาพนักศึกษา (OCR)',
+      render: (u: User) => {
+        if (u.role !== 'student') return <span className="cell-sub">—</span>
+        const status = u.ocr_student_status?.trim()
+        if (!status) {
+          return <Badge variant="gray">{u.has_reg_card ? 'อ่านสถานภาพไม่ได้' : 'ยังไม่อัปโหลดบัตร REG'}</Badge>
+        }
+        return <Badge variant={isNormalStudentStatus(status) ? 'green' : 'red'} showDot wrap>{status}</Badge>
+      },
+    },
+    {
+      key: 'is_active', header: 'สถานะบัญชี',
       render: (u: User) => <Badge variant={u.is_active ? 'green' : 'red'} showDot>{u.is_active ? 'ใช้งาน' : 'ระงับ'}</Badge>,
     },
     {
@@ -145,6 +165,11 @@ export default function AdminUsers() {
           {u.role === 'instructor' && (
             <Button size="sm" variant="outline" onClick={() => setViewingUser(u)}>
               วิชาที่สอน
+            </Button>
+          )}
+          {u.role === 'student' && u.has_reg_card && (
+            <Button size="sm" variant="outline" onClick={() => setRegCardUser(u)}>
+              ดูบัตร REG
             </Button>
           )}
           {u.role !== 'admin' && (
@@ -158,6 +183,14 @@ export default function AdminUsers() {
               onClick={() => { deleteMut.reset(); setDeletingUser(u) }}
             >
               ลบ
+            </Button>
+          )}
+          {u.is_active && u.id !== currentUser?.id && (
+            <Button
+              size="sm" variant="danger-ghost"
+              onClick={() => { toggleMut.reset(); setSuspendingUser(u) }}
+            >
+              ระงับ
             </Button>
           )}
           {!u.is_active && (
@@ -270,6 +303,40 @@ export default function AdminUsers() {
         </div>
       </Modal>
 
+      <Modal isOpen={!!suspendingUser} onClose={() => setSuspendingUser(null)} title="ระงับบัญชี" size="md">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <p style={{ fontSize: 14, color: 'var(--ink-700)' }}>
+            ต้องการระงับบัญชี <strong>{suspendingUser?.full_name}</strong> ใช่หรือไม่?
+          </p>
+          {suspendingUser?.role === 'student' && suspendingUser.ocr_student_status && (
+            <p style={{ fontSize: 13, color: 'var(--ink-500)' }}>
+              สถานภาพจากบัตร REG: <strong>{suspendingUser.ocr_student_status}</strong>
+            </p>
+          )}
+          <p style={{ fontSize: 13, color: 'var(--ink-500)' }}>
+            ผู้ใช้จะเข้าสู่ระบบไม่ได้จนกว่าจะกด "เปิดใช้" อีกครั้ง ประวัติในระบบยังคงอยู่ครบ
+          </p>
+          {suspendError && (
+            <div style={{ fontSize: 13, color: 'var(--red)', background: 'var(--red-bg)', borderRadius: 'var(--radius-input)', padding: '10px 12px' }}>
+              {suspendError}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <Button type="button" variant="ghost" onClick={() => setSuspendingUser(null)}>ยกเลิก</Button>
+            <Button
+              type="button" variant="danger" loading={toggleMut.isPending}
+              onClick={() => suspendingUser && toggleMut.mutate({ id: suspendingUser.id, is_active: false })}
+            >
+              ระงับบัญชี
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={!!regCardUser} onClose={() => setRegCardUser(null)} title={`บัตร REG — ${regCardUser?.full_name ?? ''}`} size="lg">
+        {regCardUser && <RegCardImage userId={regCardUser.id} />}
+      </Modal>
+
       <Modal isOpen={!!viewingUser} onClose={() => setViewingUser(null)} title={`วิชาที่สอน — ${viewingUser?.full_name ?? ''}`} size="lg">
         {coursesLoading ? (
           <Skeleton lines={4} height={48} />
@@ -297,4 +364,18 @@ export default function AdminUsers() {
       </Modal>
     </div>
   )
+}
+
+/** The student's uploaded REG profile card, fetched with the admin's token. */
+function RegCardImage({ userId }: { userId: number }) {
+  const { data: url, isLoading, isError } = useQuery({
+    queryKey: ['admin-reg-card', userId],
+    queryFn: async () => URL.createObjectURL(await adminApi.studentRegCard(userId)),
+    staleTime: Infinity,
+    gcTime: 0,
+  })
+  useEffect(() => () => { if (url) URL.revokeObjectURL(url) }, [url])
+  if (isLoading) return <Skeleton lines={1} height={240} />
+  if (isError || !url) return <EmptyState title="เปิดรูปบัตร REG ไม่ได้" description="นักศึกษาอาจยังไม่ได้อัปโหลด หรือไฟล์ถูกลบไปแล้ว" />
+  return <img src={url} alt="บัตรโปรไฟล์ REG ของนักศึกษา" style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid var(--line)' }} />
 }

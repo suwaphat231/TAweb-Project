@@ -44,11 +44,6 @@ const STEP_HINT: Partial<Record<DocType, string>> = {
   work_report:     'ระบบสร้างรายงานผลการปฏิบัติงานจากแผนปฏิบัติงานที่ยืนยันแล้ว',
 }
 
-// Backend blocked reason (Staff/doc_workflow.go preconditions) for a form that
-// staff have not verified yet. The course page already shows a banner with the
-// verify button for it, so the step does not repeat it.
-const FORM_NOT_VERIFIED_REASON = 'ยังไม่ได้ตรวจสอบแบบฟอร์มของอาจารย์ว่าครบถ้วน'
-
 function stepStatus(view: WorkflowStepView): DocStepStatus {
   const doc = view.document
   if (!doc) return view.can_create ? 'waiting' : 'not_reached'
@@ -230,12 +225,9 @@ export function DocumentWorkflow({
 
   const confirmed = workflow.course.schedule_confirmed
   const confirmBlockers = workflow.course.confirm_blocked_reasons ?? []
-  const formVerified = workflow.course.review_status === 'verified'
-  // Scheduling Lab Boys is pointless until the form is verified and someone
-  // has been accepted; the other blockers are what scheduling itself fixes.
-  const scheduleBlocker = !formVerified
-    ? 'ยืนยันแบบฟอร์มของอาจารย์ก่อน'
-    : workflow.course.labboy_count === 0 ? 'ยังไม่มีนักศึกษาที่ผ่านการคัดเลือก' : ''
+  // Scheduling Lab Boys is pointless until someone has been accepted; the
+  // other blockers are what scheduling itself fixes.
+  const scheduleBlocker = workflow.course.labboy_count === 0 ? 'ยังไม่มีนักศึกษาที่ผ่านการคัดเลือก' : ''
   const confirmReady = !confirmed && confirmBlockers.length === 0
   const confirmIsCurrent = currentIdx < 0 && !confirmed
 
@@ -271,11 +263,9 @@ export function DocumentWorkflow({
           // The current step is the next one to do, so "not reached" would
           // contradict its "ขั้นตอนถัดไป" heading: say what it is waiting on.
           const cfg = isCurrent && status === 'not_reached'
-            ? { ...baseCfg, label: formVerified ? 'ยังสร้างไม่ได้' : 'รอยืนยันแบบฟอร์ม', color: 'var(--amber)', bg: 'var(--amber-bg)' }
+            ? { ...baseCfg, label: 'ยังสร้างไม่ได้', color: 'var(--amber)', bg: 'var(--amber-bg)' }
             : baseCfg
-          const shownBlockers = formVerified
-            ? view.blocked_reasons
-            : view.blocked_reasons.filter((r) => r !== FORM_NOT_VERIFIED_REASON)
+          const shownBlockers = view.blocked_reasons
           const doc = view.document
           const isHiringNotice = view.type === 'hiring_notice'
           const createBlocker = isHiringNotice

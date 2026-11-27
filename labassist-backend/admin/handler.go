@@ -5,7 +5,9 @@
 package admin
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"labassist/config"
 	"labassist/database"
 	"labassist/models"
@@ -124,7 +126,79 @@ func (h *Handler) Users(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
-	c.JSON(http.StatusOK, users)
+	rows, err := withRegCards(users)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, rows)
+}
+
+// withRegCards adds, for students, the status OCR read off their REG card
+// (ocr_student_status) and whether the card image exists (has_reg_card), so
+// the admin can spot students who are no longer ปกติ and suspend them.
+// models.User has its own MarshalJSON, so the fields are merged into its
+// JSON object rather than added by embedding.
+func withRegCards(users []models.User) ([]map[string]any, error) {
+	ids := make([]uint, 0, len(users))
+	for _, u := range users {
+		if u.Role == models.RoleStudent {
+			ids = append(ids, u.ID)
+		}
+	}
+	cards, err := database.StudentRegCardsByUserIDs(ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]map[string]any, 0, len(users))
+	for _, u := range users {
+		raw, err := json.Marshal(u)
+		if err != nil {
+			return nil, err
+		}
+		row := map[string]any{}
+		if err := json.Unmarshal(raw, &row); err != nil {
+			return nil, err
+		}
+		if u.Role == models.RoleStudent {
+			card := cards[u.ID]
+			row["ocr_student_status"] = card.OcrStudentStatus
+			row["has_reg_card"] = card.HasImage
+		}
+		out = append(out, row)
+	}
+	return out, nil
+}
+
+// StudentRegCardFile godoc
+// @Summary      รูปบัตรโปรไฟล์ REG ของนักศึกษา (แอดมิน)
+// @Tags         admin
+// @Produce      image/png
+// @Security     BearerAuth
+// @Param        id  path  int  true  "User ID ของนักศึกษา"
+// @Router       /admin/users/{id}/student-info/file [get]
+func (h *Handler) StudentRegCardFile(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	u, ok := database.UserByID(uint(id))
+	if !ok || u.Role != models.RoleStudent {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ไม่พบนักศึกษา"})
+		return
+	}
+	fileName, data, ok := database.StudentInfoImageByUserID(u.ID)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "นักศึกษายังไม่ได้อัปโหลดบัตร REG"})
+		return
+	}
+	contentType := http.DetectContentType(data)
+	if !strings.HasPrefix(contentType, "image/") {
+		contentType = "application/octet-stream"
+	}
+	c.Header("Content-Disposition", fmt.Sprintf(`inline; filename=%q`, fileName))
+	c.Data(http.StatusOK, contentType, data)
 }
 
 // CreateUser godoc
