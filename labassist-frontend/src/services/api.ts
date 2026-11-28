@@ -13,6 +13,7 @@ import type {
   ScheduleGroupMonth, AddGroupMonthPayload, MonthOccurrenceSummary,
   GroupMonthPlan, AddGroupMonthOccurrencePayload, PatchOccurrencePayload, HiringNoticePlanSnapshot,
   LabBoyReport, ReportDetail, ReportPage, ReportListParams, ReportInput, ReportAction, ReportEvidence,
+  StudentRecord, PeerReportEligibility,
   ConfirmedRecord, DocumentWorkflowResponse, CreateWorkflowStepPayload, DocType,
   CalendarImportEntry, CalendarImportResponse, SkippedCourse,
   CourseEditRequest, CourseEditRequestPayload, CourseEditRequestStatus,
@@ -562,6 +563,20 @@ export const reportsApi = {
   studentMine: (params?: ReportListParams) =>
     api.get<ReportPage>('/student/reports', { params: cleanParams(params) }).then((r) => r.data),
   studentCreate: (data: ReportInput) => api.post<LabBoyReport>('/student/reports', data).then((r) => r.data),
+  /** Whether students of a course may report each other (needs 6+ accepted Lab Boys). */
+  reportEligibility: (courseId: number) =>
+    api.get<PeerReportEligibility>(`/student/courses/${courseId}/report-eligibility`).then((r) => r.data),
+  /** Records that took effect against me, without who filed them. */
+  studentRecords: () => api.get<StudentRecord[]>('/student/reports/about-me').then((r) => r.data),
+  /** My one appeal against a record, with optional evidence files. */
+  studentAppeal: (reportId: number, message: string, files: File[]) => {
+    const body = filesForm(files)
+    body.append('message', message)
+    return api.post<StudentRecord>(`/student/reports/about-me/${reportId}/appeal`, body).then((r) => r.data)
+  },
+  /** Appeals against reports I confirmed — mine to decide. */
+  appealList: (params?: ReportListParams) =>
+    api.get<ReportPage>('/instructor/reports/appeals', { params: cleanParams(params) }).then((r) => r.data),
   /** Accepted Lab Boys of a course, for a student picking whom to report. */
   coursePeers: (courseId: number) =>
     api.get<Array<{

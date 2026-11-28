@@ -10,6 +10,9 @@ type Actor struct {
 	// CourseInstructor is set by the handler, per report, when the actor
 	// teaches the report's course. Only then may they review it.
 	CourseInstructor bool
+	// Confirmer is set by the handler when the actor is the one who made the
+	// report take effect. They decide the reported student's appeal.
+	Confirmer bool
 }
 
 func (a Actor) isAdmin() bool      { return a.Role == string(models.RoleAdmin) }
@@ -22,6 +25,10 @@ func (a Actor) isStudent() bool    { return a.Role == string(models.RoleStudent)
 // submit it. A report a student sends in about another Lab Boy of the same
 // course starts SUBMITTED and has no effect until the course's instructor
 // confirms it — or rejects it, with a reason. Admin may only look.
+//
+// Once a report takes effect the reported student is told (without who
+// filed it) and may appeal once; whoever confirmed it then upholds it or
+// overturns it to NOT_SUBSTANTIATED. That decision is final.
 type Action string
 
 const (
@@ -29,6 +36,8 @@ const (
 	ActionWithdraw         Action = "withdraw"
 	ActionConfirm          Action = "confirm"
 	ActionNotSubstantiated Action = "not_substantiated"
+	ActionAppealUphold     Action = "appeal_uphold"
+	ActionAppealOverturn   Action = "appeal_overturn"
 )
 
 type actorKind int
@@ -36,6 +45,7 @@ type actorKind int
 const (
 	byReporter actorKind = iota
 	byReviewer
+	byAppealReviewer
 )
 
 type transitionRule struct {
@@ -44,6 +54,8 @@ type transitionRule struct {
 	by          actorKind
 	needsReason bool
 	review      *models.ReviewDecision
+	// needsAppeal: only while the reported student's appeal waits.
+	needsAppeal bool
 }
 
 func decision(d models.ReviewDecision) *models.ReviewDecision { return &d }
@@ -75,6 +87,21 @@ var rules = map[Action]transitionRule{
 		from: []models.ReportStatus{models.ReportSubmitted}, to: models.ReportNotSubstantiated,
 		by: byReviewer, needsReason: true, review: decision(models.DecisionNotSubstantiated),
 	},
+	ActionAppealUphold: {
+		from: []models.ReportStatus{models.ReportConfirmed}, to: models.ReportConfirmed,
+		by: byAppealReviewer, needsReason: true, needsAppeal: true,
+		review: decision(models.DecisionDeclineReconsideration),
+	},
+	ActionAppealOverturn: {
+		from: []models.ReportStatus{models.ReportConfirmed}, to: models.ReportNotSubstantiated,
+		by: byAppealReviewer, needsReason: true, needsAppeal: true,
+		review: decision(models.DecisionNotSubstantiated),
+	},
+}
+
+// allActions is the order AllowedActions reports them in.
+var allActions = []Action{
+	ActionSubmit, ActionWithdraw, ActionConfirm, ActionNotSubstantiated, ActionAppealUphold, ActionAppealOverturn,
 }
 
 // Denial explains why an action is not allowed. Forbidden means the actor
@@ -108,6 +135,13 @@ func CheckAction(r models.LabBoyReport, actor Actor, action Action, reason strin
 		if !actor.isInstructor() || !actor.CourseInstructor || r.ReporterID == actor.ID || r.ReporterRole != string(models.RoleStudent) {
 			return "", &Denial{Forbidden: true, Message: "พิจารณารายงานได้เฉพาะอาจารย์ผู้สอนของรายวิชานั้น"}
 		}
+	case byAppealReviewer:
+		if !actor.isInstructor() || !actor.Confirmer {
+			return "", &Denial{Forbidden: true, Message: "พิจารณาอุทธรณ์ได้เฉพาะอาจารย์ผู้ยืนยันรายงานนี้"}
+		}
+	}
+	if rule.needsAppeal && r.ReconsiderationRequestedAt == nil {
+		return "", &Denial{Message: "ไม่มีคำอุทธรณ์ที่รอพิจารณา"}
 	}
 	if !statusIn(r.Status, rule.from) {
 		return "", &Denial{Message: "ไม่สามารถทำรายการนี้ในสถานะปัจจุบันของรายงานได้"}
@@ -131,7 +165,7 @@ func statusIn(s models.ReportStatus, list []models.ReportStatus) bool {
 // show the right buttons. The server still re-checks every request.
 func AllowedActions(r models.LabBoyReport, actor Actor) []Action {
 	out := make([]Action, 0)
-	for _, a := range []Action{ActionSubmit, ActionWithdraw, ActionConfirm, ActionNotSubstantiated} {
+	for _, a := range allActions {
 		if _, d := CheckAction(r, actor, a, "x"); d == nil {
 			out = append(out, a)
 		}
@@ -143,12 +177,16 @@ func AllowedActions(r models.LabBoyReport, actor Actor) []Action {
 // it, admin (read-only), and — for a report a student sent in — the
 // instructors of its course, who review it. Other instructors learn a
 // student was reported only through the applicant list (ConfirmedHistory).
-// The reported student never sees reports, nor who filed them.
+// The reported student never opens the report itself; they get a redacted
+// record (database.StudentRecords) once it takes effect. Whoever confirmed
+// it can always open it, to decide an appeal.
 func CanView(r models.LabBoyReport, actor Actor) bool {
 	switch {
 	case actor.isAdmin():
 		return true
 	case r.ReporterID == actor.ID:
+		return true
+	case actor.isInstructor() && actor.Confirmer:
 		return true
 	case actor.isInstructor():
 		return actor.CourseInstructor && r.ReporterRole == string(models.RoleStudent) && r.Status != models.ReportDraft

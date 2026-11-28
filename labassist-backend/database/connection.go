@@ -759,6 +759,10 @@ func Connect(cfg *config.Config) error {
 		return fmt.Errorf("confirm open Lab Boy reports: %w", err)
 	}
 	DB = db
+	// Needs DB set: the notices look courses up through it.
+	if err := openAppealsForExistingRecords(db); err != nil {
+		return fmt.Errorf("open appeals for existing Lab Boy records: %w", err)
+	}
 
 
 	// Classlist instructors and courses are real production data — seed them

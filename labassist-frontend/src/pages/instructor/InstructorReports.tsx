@@ -14,6 +14,7 @@ import { Icon } from '../../components/reports/ReportIcons'
 const TABS = [
   { value: 'courses', label: 'รายวิชาของฉัน' },
   { value: 'review', label: 'รายงานจากนักศึกษา' },
+  { value: 'appeals', label: 'คำอุทธรณ์' },
   { value: 'all', label: 'รายงานทั้งหมดที่ส่ง' },
 ]
 
@@ -22,6 +23,12 @@ const REVIEW_STATUS_OPTIONS = [
   { value: 'CONFIRMED', label: 'ยืนยันแล้ว' },
   { value: 'NOT_SUBSTANTIATED', label: 'ไม่รับรายงาน' },
   { value: 'WITHDRAWN', label: 'ผู้ส่งถอนแล้ว' },
+  { value: '', label: 'ทั้งหมด' },
+]
+
+const APPEAL_STATUS_OPTIONS = [
+  { value: 'CONFIRMED', label: 'รอพิจารณา / คงผลเดิม' },
+  { value: 'NOT_SUBSTANTIATED', label: 'รับอุทธรณ์แล้ว' },
   { value: '', label: 'ทั้งหมด' },
 ]
 
@@ -36,7 +43,7 @@ export default function InstructorReports() {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const tabParam = params.get('tab')
-  const tab = tabParam === 'all' || tabParam === 'review' ? tabParam : 'courses'
+  const tab = tabParam === 'all' || tabParam === 'review' || tabParam === 'appeals' ? tabParam : 'courses'
   const [search, setSearch] = useState('')
   const { data: groups = [], isLoading, isError, refetch } = useReportCourses()
 
@@ -55,14 +62,28 @@ export default function InstructorReports() {
     <div style={{ maxWidth: 1100, margin: '0 auto' }}>
       <ReportPageHeader
         title="บันทึกการปฏิบัติงาน Lab Boy"
-        subtitle="เลือกรายวิชาเพื่อดูรายชื่อ Lab Boy และรายงานพฤติกรรมการปฏิบัติงาน — รายงานของท่านส่งแล้วมีผลทันที ส่วนรายงานที่นักศึกษาส่งมาต้องให้ท่านยืนยันก่อน อาจารย์รายวิชาอื่นจะเห็นว่านักศึกษาถูกรายงาน ผู้ถูกรายงานไม่เห็น และไม่ตัดสิทธิ์การสมัคร"
+        subtitle="เลือกรายวิชาเพื่อดูรายชื่อ Lab Boy และรายงานพฤติกรรมการปฏิบัติงาน — รายงานของท่านส่งแล้วมีผลทันที ส่วนรายงานที่นักศึกษาส่งมาต้องให้ท่านยืนยันก่อน เมื่อมีผลแล้ว อาจารย์รายวิชาอื่นจะเห็นว่านักศึกษาถูกรายงาน นักศึกษาที่ถูกรายงานจะได้รับแจ้งโดยไม่ระบุชื่อผู้รายงาน และอุทธรณ์ได้ 1 ครั้งภายใน 7 วัน โดยผู้ยืนยันรายงานเป็นผู้พิจารณา ไม่ตัดสิทธิ์การสมัคร"
       />
 
       <div style={{ marginBottom: 16 }}>
         <FilterChips options={TABS} value={tab} onChange={(v) => setParams(v === 'courses' ? {} : { tab: v }, { replace: true })} />
       </div>
 
-      {tab === 'review' ? (
+      {tab === 'appeals' ? (
+        <>
+          <p style={{ fontSize: 13, color: 'var(--ink-500)', margin: '0 0 12px' }}>
+            คำอุทธรณ์จากนักศึกษาต่อรายงานที่ท่านเป็นผู้ยืนยัน — เปิดรายงานเพื่ออ่านคำอุทธรณ์และหลักฐาน แล้วกด "รับอุทธรณ์" หรือ "คงผลเดิม" พร้อมเหตุผล ผลเป็นที่สุด
+          </p>
+          <ReportList
+            queryKey="instructor-appeal-reports"
+            fetchPage={reportsApi.appealList}
+            statusOptions={APPEAL_STATUS_OPTIONS}
+            courseOptions={courseOptions}
+            showReporter
+            emptyText="ไม่มีคำอุทธรณ์"
+          />
+        </>
+      ) : tab === 'review' ? (
         <>
           <p style={{ fontSize: 13, color: 'var(--ink-500)', margin: '0 0 12px' }}>
             รายงานที่นักศึกษา Lab Boy ส่งมาเกี่ยวกับเพื่อนในรายวิชาที่ท่านสอน — ยังไม่มีผลจนกว่าท่านจะเปิดรายงานแล้วกดยืนยัน หรือไม่รับรายงานพร้อมเหตุผล

@@ -16,6 +16,7 @@ import { Skeleton, SkeletonCard } from '../../components/ui/Skeleton'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorState } from '../../components/ui/ErrorState'
 import { Icon } from '../../components/reports/ReportIcons'
+import { StudentRecordList } from '../../components/reports/StudentRecordList'
 import { useToast } from '../../hooks/useToast'
 import { formatSchedule } from '../../utils/schedule'
 import type { Application, ReportCategory, ReportInput } from '../../types'
@@ -23,6 +24,7 @@ import type { Application, ReportCategory, ReportInput } from '../../types'
 const MAIN_TABS = [
   { value: 'courses', label: 'รายวิชาและเพื่อนร่วมแล็บ' },
   { value: 'history', label: 'รายงานที่ฉันส่ง' },
+  { value: 'about-me', label: 'บันทึกเกี่ยวกับฉัน' },
 ]
 
 const CATEGORY_OPTIONS = [
@@ -85,6 +87,16 @@ export default function StudentReports() {
 
   // แสดงเฉพาะเพื่อนร่วมแล็บคนอื่นๆ ที่ได้รับการยืนยันเข้าปฏิบัติงานแล้ว (status === 'accepted') และไม่ใช่ตนเอง
   const peers = rawPeers.filter((p) => !p.is_self && p.status === 'accepted')
+
+  // Students may report each other only in a course with 6+ accepted Lab
+  // Boys, so the reported student cannot easily tell who sent it. The
+  // server enforces this too; this only hides the buttons.
+  const { data: eligibility } = useQuery({
+    queryKey: ['student', 'report-eligibility', selectedApp?.course_id],
+    queryFn: () => reportsApi.reportEligibility(selectedApp!.course_id),
+    enabled: !!selectedApp,
+  })
+  const canReport = eligibility?.allowed === true
 
   // 3. Submit report mutation
   const submitMutation = useMutation({
@@ -265,6 +277,16 @@ export default function StudentReports() {
                   {!peersLoading && !peersError && <Badge variant="blue">{peers.length} คน</Badge>}
                 </div>
 
+                {eligibility && !eligibility.allowed && (
+                  <div role="note" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', background: 'var(--blue-bg)', border: '1px solid #BFDBFE', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: 'var(--ink-700)', marginBottom: 12, lineHeight: 1.6 }}>
+                    <Icon name="alert" size={18} style={{ color: 'var(--primary)', flexShrink: 0, marginTop: 1 }} />
+                    <span>
+                      รายวิชานี้มี Lab Boy {eligibility.accepted_count} คน (น้อยกว่า {eligibility.min_required} คน) จึงไม่เปิดให้นักศึกษารายงานกันเอง
+                      เพื่อไม่ให้ระบุตัวผู้รายงานได้ง่าย — หากพบปัญหาโปรดแจ้งอาจารย์ผู้สอนโดยตรง
+                    </span>
+                  </div>
+                )}
+
                 {peersLoading ? (
                   <Skeleton lines={4} height={20} />
                 ) : peersError ? (
@@ -291,7 +313,7 @@ export default function StudentReports() {
                             <div style={{ fontSize: 13, color: 'var(--ink-500)', fontVariantNumeric: 'tabular-nums' }}>{peer.student_code || '—'}</div>
                           </div>
                         </div>
-                        <Button
+                        {canReport && <Button
                           size="sm"
                           variant="outline"
                           onClick={() => handleOpenReport(peer)}
@@ -300,7 +322,7 @@ export default function StudentReports() {
                         >
                           <Icon name="flag" size={13} />
                           <span>รายงานพฤติกรรม</span>
-                        </Button>
+                        </Button>}
                       </li>
                     ))}
                   </ul>
@@ -331,6 +353,8 @@ export default function StudentReports() {
           />
         </div>
       )}
+
+      {tab === 'about-me' && <StudentRecordList />}
 
       {/* Report Modal */}
       {reportTarget && (
@@ -391,7 +415,9 @@ export default function StudentReports() {
             />
 
             <p style={{ fontSize: 12, color: 'var(--ink-500)', margin: 0 }}>
-              รายงานจะส่งให้อาจารย์ผู้สอนของรายวิชานี้ตรวจสอบ และมีผลเมื่ออาจารย์ยืนยันเท่านั้น อาจารย์จะเห็นชื่อผู้รายงาน ส่วนผู้ถูกรายงานจะไม่เห็นรายงานและไม่รู้ว่าใครเป็นผู้รายงาน
+              รายงานจะส่งให้อาจารย์ผู้สอนของรายวิชานี้ตรวจสอบ และมีผลเมื่ออาจารย์ยืนยันเท่านั้น อาจารย์จะเห็นชื่อผู้รายงาน
+              หากอาจารย์ยืนยัน ผู้ถูกรายงานจะได้รับแจ้งเรื่องและรายละเอียดเหตุการณ์ (ไม่ระบุว่าใครเป็นผู้รายงาน) และยื่นอุทธรณ์ได้ 1 ครั้ง — โปรดเขียนตามข้อเท็จจริง
+              ส่งได้วันละ 1 รายงาน
             </p>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>

@@ -1126,9 +1126,11 @@ export type ReportStatus =
 export type ReportCategory =
   | 'ABSENCE' | 'LATE_NOTICE' | 'DUTY_NEGLECT' | 'UNPROFESSIONAL_CONDUCT' | 'OTHER'
 
-// The instructor who files a report confirms it by submitting; there is no
-// review step, and admin can only look.
-export type ReportAction = 'submit' | 'withdraw' | 'confirm' | 'not_substantiated'
+// The instructor who files a report confirms it by submitting; a student's
+// report waits for the course instructor. Once a report takes effect the
+// reported student may appeal once, and whoever confirmed it decides
+// (appeal_uphold / appeal_overturn). Admin can only look.
+export type ReportAction = 'submit' | 'withdraw' | 'confirm' | 'not_substantiated' | 'appeal_uphold' | 'appeal_overturn'
 
 export interface LabBoyReport {
   id: number
@@ -1142,7 +1144,10 @@ export interface LabBoyReport {
   impact?: string
   status: ReportStatus
   submitted_at?: string
+  /** Set while the reported student's appeal waits for a decision. */
   reconsideration_requested_at?: string
+  /** Set when the report took effect; the student may appeal until then. */
+  appeal_deadline?: string
   created_at: string
   updated_at: string
   student_name: string
@@ -1250,6 +1255,38 @@ export interface ConfirmedRecord {
   confirmed_at: string
   review_reason: string
   student_responded: boolean
+  appeal_pending: boolean
+}
+
+/** A record that took effect against me (the reported student), redacted:
+ *  nothing says who filed it or whether it came from a student. */
+export interface StudentRecord {
+  report_id: number
+  course_code: string
+  course_title: string
+  course_section?: number
+  course_semester?: string
+  course_academic_year?: number
+  category: ReportCategory
+  incident_date: string
+  description: string
+  status: 'CONFIRMED' | 'NOT_SUBSTANTIATED' | 'WITHDRAWN'
+  confirmed_at?: string
+  appeal_deadline?: string
+  can_appeal: boolean
+  appeal?: {
+    message: string
+    submitted_at: string
+    outcome: 'pending' | 'upheld' | 'overturned'
+    decided_at?: string
+    reason?: string
+  }
+}
+
+export interface PeerReportEligibility {
+  allowed: boolean
+  accepted_count: number
+  min_required: number
 }
 
 // ── Staff per-course document workflow (GET /staff/courses/:id/document-workflow) ──

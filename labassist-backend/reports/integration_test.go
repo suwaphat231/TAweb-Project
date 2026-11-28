@@ -229,17 +229,20 @@ func TestReportWorkflowEndToEnd(t *testing.T) {
 		}
 	})
 
-	t.Run("submit confirms at once, without telling the student", func(t *testing.T) {
+	t.Run("submit confirms at once and tells the student, without naming the reporter", func(t *testing.T) {
 		var before int64
 		database.DB.Model(&models.Notification{}).Where("user_id = ?", stu1.ID).Count(&before)
 		got := expect(t, act(reportID, tokA, "submit", ""), http.StatusOK)
-		if got.body["status"] != "CONFIRMED" || got.body["submitted_at"] == nil {
+		if got.body["status"] != "CONFIRMED" || got.body["submitted_at"] == nil || got.body["appeal_deadline"] == nil {
 			t.Fatalf("body = %s", got.raw)
 		}
-		var after int64
-		database.DB.Model(&models.Notification{}).Where("user_id = ?", stu1.ID).Count(&after)
-		if after != before {
-			t.Fatal("student must not be notified")
+		var notes []models.Notification
+		database.DB.Where("user_id = ?", stu1.ID).Order("id").Find(&notes)
+		if int64(len(notes)) != before+1 || notes[len(notes)-1].Title != "คุณได้รับบันทึกการปฏิบัติงาน" {
+			t.Fatalf("student should get exactly one record notice, got %+v", notes)
+		}
+		if strings.Contains(notes[len(notes)-1].Body, instA.FullName) {
+			t.Fatal("the notice must not name the reporter")
 		}
 		expect(t, call("PUT", fmt.Sprintf("/instructor/reports/%d", reportID), tokA, input(app1X.ID, daysAgo(3), "ABSENCE")), http.StatusConflict)
 		expect(t, act(reportID, tokA, "submit", ""), http.StatusConflict)
@@ -411,14 +414,40 @@ func TestReportWorkflowEndToEnd(t *testing.T) {
 			return n
 		}
 		before := flags()
+		accept := func(name string) {
+			u, _ := mkUser(name, models.RoleStudent)
+			mkApp(u, courseX, true)
+		}
+		// Students may send the next report from the following day.
+		nextDay := func() {
+			database.DB.Exec("UPDATE labboy_reports SET created_at = created_at - INTERVAL 1 DAY WHERE reporter_id = ?", stu3.ID)
+		}
 
 		// Only an accepted Lab Boy of the course, and never about themselves.
 		expect(t, call("POST", "/student/reports", tokS2, input(app1X.ID, daysAgo(40), "ABSENCE")), http.StatusForbidden)
 		expect(t, call("POST", "/student/reports", tokS3, input(app3X.ID, daysAgo(40), "ABSENCE")), http.StatusBadRequest)
 		expect(t, call("POST", "/student/reports", tokS3, input(app1Y.ID, daysAgo(40), "ABSENCE")), http.StatusBadRequest)
 
+		// Fewer than 6 accepted Lab Boys (S1, S3 + 3 more = 5): students may
+		// not report each other.
+		for _, n := range []string{"Peer4", "Peer5", "Peer6"} {
+			accept(n)
+		}
+		elig := expect(t, call("GET", fmt.Sprintf("/student/courses/%d/report-eligibility", courseX.ID), tokS3, nil), http.StatusOK)
+		if elig.body["allowed"] != false || elig.body["accepted_count"] != float64(5) {
+			t.Fatalf("eligibility with 5 = %s", elig.raw)
+		}
+		expect(t, call("POST", "/student/reports", tokS3, input(app1X.ID, daysAgo(40), "ABSENCE")), http.StatusForbidden)
+		accept("Peer7") // 6 — allowed from here on
+		elig = expect(t, call("GET", fmt.Sprintf("/student/courses/%d/report-eligibility", courseX.ID), tokS3, nil), http.StatusOK)
+		if elig.body["allowed"] != true {
+			t.Fatalf("eligibility with 6 = %s", elig.raw)
+		}
+
 		got := expect(t, call("POST", "/student/reports", tokS3, input(app1X.ID, daysAgo(40), "ABSENCE")), http.StatusCreated)
 		rejectID := uint(got.body["id"].(float64))
+		// One report per day, answered as such (not a server error).
+		expect(t, call("POST", "/student/reports", tokS3, input(app1X.ID, daysAgo(43), "ABSENCE")), http.StatusTooManyRequests)
 		if got.body["status"] != "SUBMITTED" || got.body["reporter_role"] != "student" {
 			t.Fatalf("unexpected body %s", got.raw)
 		}
@@ -467,6 +496,7 @@ func TestReportWorkflowEndToEnd(t *testing.T) {
 			t.Fatal("a rejected report must not flag the student")
 		}
 
+		nextDay()
 		got = expect(t, call("POST", "/student/reports", tokS3, input(app1X.ID, daysAgo(41), "DUTY_NEGLECT")), http.StatusCreated)
 		confirmID := uint(got.body["id"].(float64))
 		expect(t, act(confirmID, tokA, "confirm", ""), http.StatusOK)
@@ -474,12 +504,36 @@ func TestReportWorkflowEndToEnd(t *testing.T) {
 			t.Fatal("a confirmed student report must flag the student")
 		}
 		expect(t, act(confirmID, tokS3, "withdraw", "x"), http.StatusConflict)
+
+		// The reported student appeals; the instructor who confirmed decides.
+		// The student who sent the report never sees the appeal or its files.
+		pdf := []byte("%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%" + "EOF")
+		expect(t, call("POST", fmt.Sprintf("/student/reports/about-me/%d/appeal", confirmID), tokS1,
+			newMultipart(t, map[string]string{"message": "secret-appeal-text"}, map[string][]byte{"medical.pdf": pdf})), http.StatusCreated)
+		if q := expect(t, call("GET", "/instructor/reports/appeals", tokA, nil), http.StatusOK); !strings.Contains(string(q.raw), fmt.Sprintf(`"id":%d,`, confirmID)) {
+			t.Fatalf("student-filed appeal missing from the confirmer's queue: %s", q.raw)
+		}
+		if d := expect(t, call("GET", fmt.Sprintf("/reports/%d", confirmID), tokA, nil), http.StatusOK); !strings.Contains(string(d.raw), "secret-appeal-text") {
+			t.Fatalf("confirmer must read the appeal: %s", d.raw)
+		}
+		expect(t, act(confirmID, tokA, "appeal_uphold", "secret-ruling-reason"), http.StatusOK)
+		sender := expect(t, call("GET", fmt.Sprintf("/reports/%d", confirmID), tokS3, nil), http.StatusOK)
+		for _, leak := range []string{"secret-appeal-text", "medical.pdf", "secret-ruling-reason"} {
+			if strings.Contains(string(sender.raw), leak) {
+				t.Fatalf("the student who sent the report sees %q: %s", leak, sender.raw)
+			}
+		}
+		var appealFile models.LabBoyReportEvidence
+		database.DB.Where("report_id = ? AND response_id IS NOT NULL", confirmID).First(&appealFile)
+		expect(t, call("GET", fmt.Sprintf("/reports/%d/evidence/%d", confirmID, appealFile.ID), tokS3, nil), http.StatusNotFound)
+		expect(t, call("GET", fmt.Sprintf("/reports/%d/evidence/%d", confirmID, appealFile.ID), tokA, nil), http.StatusOK)
 		reviews, _ := database.ReportReviews(confirmID)
-		if len(reviews) != 1 || reviews[0].Decision != models.DecisionConfirm || reviews[0].ReviewerID != instA.ID {
+		if len(reviews) != 2 || reviews[1].Decision != models.DecisionDeclineReconsideration || reviews[0].Decision != models.DecisionConfirm || reviews[0].ReviewerID != instA.ID {
 			t.Fatalf("reviews = %+v", reviews)
 		}
 
-		// The sender is told the result; the reported student is told nothing.
+		// The sender is told the result; the reported student gets only the
+		// record notice once it took effect, never the sender's result.
 		if n := notes(stu3.ID, "ผลการตรวจสอบรายงานที่คุณส่ง"); n != 2 {
 			t.Fatalf("sender got %d result notifications, want 2", n)
 		}
@@ -488,6 +542,7 @@ func TestReportWorkflowEndToEnd(t *testing.T) {
 		}
 
 		// The sender may withdraw while it still waits.
+		nextDay()
 		got = expect(t, call("POST", "/student/reports", tokS3, input(app1X.ID, daysAgo(42), "OTHER")), http.StatusCreated)
 		wID := uint(got.body["id"].(float64))
 		expect(t, act(wID, tokS3, "withdraw", ""), http.StatusConflict)
@@ -501,6 +556,136 @@ func TestReportWorkflowEndToEnd(t *testing.T) {
 		}
 		if other := expect(t, call("GET", "/student/reports", tokS1, nil), http.StatusOK); !strings.Contains(string(other.raw), `"total":0`) {
 			t.Fatalf("reported student's list = %s", other.raw)
+		}
+	})
+
+	t.Run("the reported student appeals once; whoever confirmed decides", func(t *testing.T) {
+		notes := func(u uint, title string) int64 {
+			var n int64
+			database.DB.Model(&models.Notification{}).Where("user_id = ? AND title = ?", u, title).Count(&n)
+			return n
+		}
+		record := func(id uint) map[string]any {
+			got := expect(t, call("GET", "/student/reports/about-me", tokS1, nil), http.StatusOK)
+			if strings.Contains(string(got.raw), instA.FullName) || strings.Contains(string(got.raw), "reporter") {
+				t.Fatalf("redacted records leak the reporter: %s", got.raw)
+			}
+			var recs []map[string]any
+			_ = json.Unmarshal(got.raw, &recs)
+			for _, r := range recs {
+				if uint(r["report_id"].(float64)) == id {
+					return r
+				}
+			}
+			t.Fatalf("report %d not in about-me: %s", id, got.raw)
+			return nil
+		}
+		appeal := func(id uint, tok string, files map[string][]byte) resp {
+			return call("POST", fmt.Sprintf("/student/reports/about-me/%d/appeal", id), tok,
+				newMultipart(t, map[string]string{"message": "วันนั้นลาป่วยและแจ้งอาจารย์แล้ว"}, files))
+		}
+		submitted := func(date, cat string) uint {
+			got := expect(t, call("POST", "/instructor/reports", tokA, input(app1X.ID, date, cat)), http.StatusCreated)
+			id := uint(got.body["id"].(float64))
+			expect(t, act(id, tokA, "submit", ""), http.StatusOK)
+			return id
+		}
+		flags := func() int {
+			n, _ := database.ConfirmedRecordCounts([]uint{stu1.ID}, courseX.AcademicYear)
+			return n[stu1.ID]
+		}
+
+		upheld := submitted(daysAgo(50), "LATE_NOTICE")
+		if r := record(upheld); r["can_appeal"] != true || r["appeal"] != nil {
+			t.Fatalf("fresh record = %v", r)
+		}
+		// Only the reported student, and only through this endpoint.
+		expect(t, appeal(upheld, tokS2, nil), http.StatusNotFound)
+		expect(t, appeal(upheld, tokB, nil), http.StatusForbidden)
+		expect(t, call("POST", fmt.Sprintf("/student/reports/about-me/%d/appeal", upheld), tokS1,
+			newMultipart(t, map[string]string{"message": "  "}, nil)), http.StatusBadRequest)
+		pdf := []byte("%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%" + "EOF")
+		expect(t, appeal(upheld, tokS1, map[string][]byte{"proof.pdf": pdf}), http.StatusCreated)
+		expect(t, appeal(upheld, tokS1, nil), http.StatusConflict) // once only
+		if notes(instA.ID, "มีคำอุทธรณ์บันทึกการปฏิบัติงาน รอการพิจารณา") == 0 {
+			t.Fatal("the confirmer was not told about the appeal")
+		}
+		recs, _ := database.ConfirmedRecordsForStudent(stu1.ID, courseX.AcademicYear)
+		pending := false
+		for _, rec := range recs {
+			pending = pending || (rec.ReportID == upheld && rec.AppealPending)
+		}
+		if !pending {
+			t.Fatal("other instructors should see the appeal is pending")
+		}
+
+		// The confirmer's queue has it; nobody else decides.
+		q := expect(t, call("GET", "/instructor/reports/appeals", tokA, nil), http.StatusOK)
+		if !strings.Contains(string(q.raw), fmt.Sprintf(`"id":%d,`, upheld)) {
+			t.Fatalf("appeal queue = %s", q.raw)
+		}
+		if qb := expect(t, call("GET", "/instructor/reports/appeals", tokB, nil), http.StatusOK); !strings.Contains(string(qb.raw), `"total":0`) {
+			t.Fatalf("B appeal queue = %s", qb.raw)
+		}
+		expect(t, act(upheld, tokB, "appeal_uphold", "x"), http.StatusNotFound)
+		expect(t, act(upheld, tokAdmin, "appeal_uphold", "x"), http.StatusForbidden)
+		det := expect(t, call("GET", fmt.Sprintf("/reports/%d", upheld), tokA, nil), http.StatusOK)
+		if !strings.Contains(string(det.raw), `"appeal_uphold","appeal_overturn"`) || !strings.Contains(string(det.raw), "proof.pdf") {
+			t.Fatalf("confirmer detail = %s", det.raw)
+		}
+		expect(t, act(upheld, tokA, "appeal_uphold", ""), http.StatusConflict)
+		expect(t, act(upheld, tokA, "appeal_uphold", "ตรวจสอบแล้ว ไม่พบการแจ้งลา"), http.StatusOK)
+		expect(t, act(upheld, tokA, "appeal_overturn", "x"), http.StatusConflict) // final
+		expect(t, appeal(upheld, tokS1, nil), http.StatusConflict)                // still once only
+		if r := record(upheld); r["can_appeal"] != false || r["appeal"].(map[string]any)["outcome"] != "upheld" {
+			t.Fatalf("upheld record = %v", r)
+		}
+
+		// Overturning takes the flag away.
+		overturned := submitted(daysAgo(51), "OTHER")
+		before := flags()
+		expect(t, appeal(overturned, tokS1, nil), http.StatusCreated)
+		expect(t, act(overturned, tokA, "appeal_overturn", "มีใบรับรองแพทย์"), http.StatusOK)
+		if s := status(t, overturned); s != models.ReportNotSubstantiated {
+			t.Fatalf("overturned status = %s", s)
+		}
+		if flags() != before-1 {
+			t.Fatal("an overturned record must no longer flag the student")
+		}
+		if r := record(overturned); r["status"] != "NOT_SUBSTANTIATED" || r["appeal"].(map[string]any)["outcome"] != "overturned" {
+			t.Fatalf("overturned record = %v", r)
+		}
+		if n := notes(stu1.ID, "ผลการพิจารณาอุทธรณ์"); n != 3 { // + the student-filed one above
+			t.Fatalf("student got %d appeal results, want 3", n)
+		}
+
+		// After the window the appeal is refused.
+		late := submitted(daysAgo(52), "ABSENCE")
+		database.DB.Model(&models.LabBoyReport{}).Where("id = ?", late).UpdateColumn("appeal_deadline", time.Now().Add(-time.Minute))
+		if r := record(late); r["can_appeal"] != false {
+			t.Fatalf("late record = %v", r)
+		}
+		expect(t, appeal(late, tokS1, nil), http.StatusConflict)
+
+		// Records confirmed before appeals existed get a window from now,
+		// and the student is told once.
+		legacy := submitted(daysAgo(53), "DUTY_NEGLECT")
+		database.DB.Model(&models.LabBoyReport{}).Where("id = ?", legacy).UpdateColumn("appeal_deadline", nil)
+		noticesBefore := notes(stu1.ID, "คุณได้รับบันทึกการปฏิบัติงาน")
+		if err := database.Connect(cfg); err != nil {
+			t.Fatal(err)
+		}
+		if r := record(legacy); r["can_appeal"] != true {
+			t.Fatalf("legacy record = %v", r)
+		}
+		if notes(stu1.ID, "คุณได้รับบันทึกการปฏิบัติงาน") != noticesBefore+1 {
+			t.Fatal("the student should be told about the legacy record once")
+		}
+		if err := database.Connect(cfg); err != nil {
+			t.Fatal(err)
+		}
+		if notes(stu1.ID, "คุณได้รับบันทึกการปฏิบัติงาน") != noticesBefore+1 {
+			t.Fatal("a restart must not notify again")
 		}
 	})
 

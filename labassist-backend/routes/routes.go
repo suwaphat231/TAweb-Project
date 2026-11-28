@@ -106,6 +106,9 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			// confirms or rejects it.
 			studentGroup.GET("/student/reports", reportH.StudentMine)
 			studentGroup.POST("/student/reports", reportH.StudentCreate)
+			studentGroup.GET("/student/reports/about-me", reportH.StudentRecords)
+			studentGroup.POST("/student/reports/about-me/:id/appeal", reportH.StudentAppeal)
+			studentGroup.GET("/student/courses/:id/report-eligibility", reportH.StudentReportEligibility)
 			// OCR: อ่านข้อมูลนักศึกษาจากเอกสาร/บัตรนักศึกษา
 			studentGroup.GET("/student/profile/ocr-jobs", studentH.GetOCRJobs)
 			studentGroup.POST("/student/profile/student-info", studentH.UploadStudentInfo)
@@ -147,6 +150,7 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 			// Lab Boy performance reports (filed by the course's instructor)
 			instructor.GET("/instructor/reports", reportH.ListMine)
 			instructor.GET("/instructor/reports/review", reportH.ReviewList)
+			instructor.GET("/instructor/reports/appeals", reportH.AppealQueue)
 			instructor.POST("/instructor/reports", reportH.CreateReport)
 			instructor.PUT("/instructor/reports/:id", reportH.UpdateDraft)
 			instructor.POST("/instructor/reports/:id/evidence", reportH.UploadEvidence)

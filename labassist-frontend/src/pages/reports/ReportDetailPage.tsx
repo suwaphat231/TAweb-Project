@@ -23,13 +23,15 @@ import {
 import type { ReportAction, ReportDetail, ReportEvidence } from '../../types'
 
 const actionInfo: Record<ReportAction, { label: string; variant: 'primary' | 'outline' | 'danger-ghost'; needsReason: boolean; prompt: string }> = {
-  submit:   { label: 'ยืนยันส่งรายงาน', variant: 'primary', needsReason: false, prompt: 'การส่งคือการยืนยันรายงาน มีผลทันที อาจารย์รายวิชาอื่นที่นักศึกษาสมัครจะเห็นว่านักศึกษาคนนี้ถูกรายงาน — ส่งแล้วแก้ไขไม่ได้' },
-  confirm:  { label: 'ยืนยันรายงาน', variant: 'primary', needsReason: false, prompt: 'ยืนยันรายงานที่นักศึกษาส่งมา — รายงานจะมีผลทันที อาจารย์รายวิชาอื่นที่นักศึกษาสมัครจะเห็นว่านักศึกษาคนนี้ถูกรายงาน และผู้ส่งรายงานจะได้รับแจ้งผล ยืนยันแล้วเปลี่ยนไม่ได้' },
+  submit:   { label: 'ยืนยันส่งรายงาน', variant: 'primary', needsReason: false, prompt: 'การส่งคือการยืนยันรายงาน มีผลทันที อาจารย์รายวิชาอื่นที่นักศึกษาสมัครจะเห็นว่านักศึกษาคนนี้ถูกรายงาน นักศึกษาจะได้รับแจ้ง (ไม่ระบุชื่อผู้รายงาน) และอุทธรณ์ได้ 1 ครั้งภายใน 7 วัน โดยท่านเป็นผู้พิจารณา — ส่งแล้วแก้ไขไม่ได้' },
+  confirm:  { label: 'ยืนยันรายงาน', variant: 'primary', needsReason: false, prompt: 'ยืนยันรายงานที่นักศึกษาส่งมา — รายงานจะมีผลทันที อาจารย์รายวิชาอื่นที่นักศึกษาสมัครจะเห็นว่านักศึกษาคนนี้ถูกรายงาน ผู้ส่งรายงานจะได้รับแจ้งผล นักศึกษาที่ถูกรายงานจะได้รับแจ้ง (ไม่ระบุชื่อผู้รายงาน) และอุทธรณ์ได้ 1 ครั้งภายใน 7 วัน โดยท่านเป็นผู้พิจารณา' },
   not_substantiated: { label: 'ไม่รับรายงาน', variant: 'outline', needsReason: true, prompt: 'ระบุเหตุผลที่ไม่รับรายงาน — รายงานจะปิดโดยไม่มีผลต่อนักศึกษาที่ถูกรายงาน ผู้ส่งรายงานจะเห็นผลพร้อมเหตุผลนี้ เปลี่ยนภายหลังไม่ได้' },
   withdraw: { label: 'ถอนรายงาน', variant: 'danger-ghost', needsReason: true, prompt: 'ระบุเหตุผลที่ถอนรายงาน — รายงานจะไม่มีผลอีกต่อไป ประวัติการดำเนินการยังถูกเก็บไว้' },
+  appeal_uphold:   { label: 'คงผลเดิม (ไม่รับอุทธรณ์)', variant: 'outline', needsReason: true, prompt: 'ระบุเหตุผลที่คงผลเดิม — รายงานยังมีผลต่อไป นักศึกษาจะเห็นผลพร้อมเหตุผลนี้ และอุทธรณ์ซ้ำไม่ได้ ผลนี้เป็นที่สุด' },
+  appeal_overturn: { label: 'รับอุทธรณ์ (ไม่มีมูล)', variant: 'primary', needsReason: true, prompt: 'ระบุเหตุผลที่รับอุทธรณ์ — รายงานจะเปลี่ยนเป็น "ไม่มีมูล" และไม่มีผลต่อนักศึกษาอีก อาจารย์รายวิชาอื่นจะไม่เห็นรายงานนี้ ผลนี้เป็นที่สุด' },
 }
 
-const ACTION_ORDER: ReportAction[] = ['submit', 'confirm', 'not_substantiated', 'withdraw']
+const ACTION_ORDER: ReportAction[] = ['submit', 'confirm', 'not_substantiated', 'appeal_overturn', 'appeal_uphold', 'withdraw']
 
 function Section({ title, children, extra, count }: { title: string; children: ReactNode; extra?: ReactNode; count?: number }) {
   return (
@@ -76,7 +78,7 @@ export default function ReportDetailPage() {
 
   function refresh() {
     qc.invalidateQueries({ queryKey: ['report-detail', reportId] })
-    for (const k of ['instructor-reports', 'instructor-review-reports', 'student-reports', 'admin-reports']) qc.invalidateQueries({ queryKey: [k] })
+    for (const k of ['instructor-reports', 'instructor-review-reports', 'instructor-appeal-reports', 'student-reports', 'admin-reports']) qc.invalidateQueries({ queryKey: [k] })
   }
 
   const actMut = useMutation({
@@ -170,6 +172,15 @@ export default function ReportDetailPage() {
         </div>
       )}
 
+      {r.reconsideration_requested_at && r.status === 'CONFIRMED' && (
+        <div role="note" style={{ display: 'flex', gap: 10, alignItems: 'center', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 10, padding: '12px 14px', fontSize: 14, color: 'var(--ink-700)', marginBottom: 16 }}>
+          <Icon name="alert" size={18} style={{ color: '#B45309' }} />
+          {d.allowed_actions.includes('appeal_uphold')
+            ? 'นักศึกษาที่ถูกรายงานยื่นอุทธรณ์ — อ่านคำอุทธรณ์ด้านล่าง แล้วกด "รับอุทธรณ์" หรือ "คงผลเดิม" พร้อมเหตุผล (พิจารณาได้ครั้งเดียว)'
+            : 'นักศึกษาที่ถูกรายงานยื่นอุทธรณ์ อยู่ระหว่างรออาจารย์ผู้ยืนยันรายงานพิจารณา'}
+        </div>
+      )}
+
       {reviewing && r.status === 'SUBMITTED' && (
         <div role="note" style={{ display: 'flex', gap: 10, alignItems: 'center', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 10, padding: '12px 14px', fontSize: 14, color: 'var(--ink-700)', marginBottom: 16 }}>
           <Icon name="alert" size={18} style={{ color: '#B45309' }} />
@@ -204,7 +215,7 @@ export default function ReportDetailPage() {
           </Section>
 
           {d.responses.length > 0 && (
-          <Section title="คำชี้แจงและข้อมูลเพิ่มเติม (ข้อมูลเดิม)" count={d.responses.length}>
+          <Section title="คำอุทธรณ์และคำชี้แจงของนักศึกษา" count={d.responses.length}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {d.responses.map((resp) => {
                   const fromStudent = resp.author_role === 'student'
@@ -224,7 +235,7 @@ export default function ReportDetailPage() {
           )}
 
           {d.reviews.length > 0 && (
-          <Section title="ผลการตรวจสอบของอาจารย์" count={d.reviews.length}>
+          <Section title="ผลการพิจารณาของอาจารย์" count={d.reviews.length}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {d.reviews.map((rv) => (
                   <div key={rv.id} style={{ borderLeft: '3px solid var(--primary)', background: 'var(--line-soft)', borderRadius: '0 10px 10px 0', padding: '12px 14px' }}>
@@ -300,7 +311,7 @@ export default function ReportDetailPage() {
         footer={pendingAction && <>
           <Button variant="outline" onClick={() => setPendingAction(null)} disabled={actMut.isPending}>ยกเลิก</Button>
           <Button
-            variant={pendingAction === 'withdraw' || pendingAction === 'not_substantiated' ? 'danger' : 'primary'}
+            variant={pendingAction === 'withdraw' || pendingAction === 'not_substantiated' || pendingAction === 'appeal_uphold' ? 'danger' : 'primary'}
             loading={actMut.isPending}
             disabled={actionInfo[pendingAction].needsReason && !reason.trim()}
             onClick={() => actMut.mutate({ action: pendingAction, why: reason.trim() })}

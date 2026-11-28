@@ -12,8 +12,8 @@ export const statusInfo: Record<ReportStatus, { label: string; variant: BadgeVar
   SUBMITTED:         { label: 'รออาจารย์ตรวจสอบ',        variant: 'blue',   hint: 'นักศึกษาส่งรายงานแล้ว ยังไม่มีผลจนกว่าอาจารย์ผู้สอนของรายวิชาจะยืนยัน' },
   UNDER_REVIEW:      { label: 'อยู่ระหว่างตรวจสอบ',      variant: 'amber',  hint: 'ผู้ตรวจสอบกำลังพิจารณา ยังไม่ใช่ข้อสรุป' },
   AWAITING_RESPONSE: { label: 'รอคำชี้แจง/ข้อมูลเพิ่ม',  variant: 'amber',  hint: 'ผู้ตรวจสอบขอข้อมูลเพิ่มเติมก่อนพิจารณาต่อ' },
-  CONFIRMED:         { label: 'รายงานแล้ว', variant: 'purple', hint: 'อาจารย์ยืนยันรายงานแล้ว อาจารย์รายวิชาอื่นที่นักศึกษาสมัครจะเห็นว่านักศึกษาคนนี้ถูกรายงาน' },
-  NOT_SUBSTANTIATED: { label: 'อาจารย์ไม่รับรายงาน', variant: 'green', hint: 'อาจารย์ผู้สอนพิจารณาแล้วไม่รับรายงานนี้ ไม่มีผลต่อนักศึกษาที่ถูกรายงาน' },
+  CONFIRMED:         { label: 'รายงานแล้ว', variant: 'purple', hint: 'รายงานมีผลแล้ว อาจารย์รายวิชาอื่นที่นักศึกษาสมัครจะเห็นว่านักศึกษาคนนี้ถูกรายงาน นักศึกษาที่ถูกรายงานได้รับแจ้ง (ไม่ระบุผู้รายงาน) และอุทธรณ์ได้ 1 ครั้งภายใน 7 วัน' },
+  NOT_SUBSTANTIATED: { label: 'ไม่มีมูล', variant: 'green', hint: 'อาจารย์พิจารณาแล้วว่ารายงานนี้ไม่มีมูล (ไม่รับรายงาน หรือรับอุทธรณ์) ไม่มีผลต่อนักศึกษาที่ถูกรายงาน' },
   WITHDRAWN:         { label: 'ถอนรายงานแล้ว',           variant: 'gray',   hint: 'ผู้รายงานถอนรายงานพร้อมเหตุผล ไม่แสดงแก่อาจารย์คนอื่นแล้ว' },
 }
 
@@ -33,12 +33,12 @@ export const decisionLabel: Record<ReportReview['decision'], string> = {
   CONFIRM:                 'อาจารย์ยืนยันรายงาน',
   NOT_SUBSTANTIATED:       'อาจารย์ไม่รับรายงาน',
   REOPEN:                  'นำกลับมาตรวจสอบใหม่',
-  DECLINE_RECONSIDERATION: 'คงผลเดิม (ไม่รับคำขอทบทวน)',
+  DECLINE_RECONSIDERATION: 'คงผลเดิม (ไม่รับอุทธรณ์)',
 }
 
 export const responseKindLabel: Record<ReportResponse['kind'], string> = {
   EXPLANATION:     'คำชี้แจงของนักศึกษา',
-  RECONSIDERATION: 'คำขอทบทวน',
+  RECONSIDERATION: 'คำอุทธรณ์ของนักศึกษา',
   REPORTER_INFO:   'ข้อมูลเพิ่มเติมจากผู้รายงาน',
 }
 

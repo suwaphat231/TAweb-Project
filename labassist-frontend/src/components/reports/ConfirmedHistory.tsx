@@ -44,6 +44,11 @@ export function ConfirmedHistory({ applicationId, count, defaultOpen = false }: 
             <div key={rec.report_id} style={{ background: '#fff', border: '1px solid #FECACA', borderRadius: 8, padding: '10px 12px', fontSize: 13 }}>
               <div style={{ fontWeight: 600, color: 'var(--ink-900)' }}>
                 {categoryLabel[rec.category]} · {formatDate(rec.incident_date)}
+                {rec.appeal_pending && (
+                  <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, color: '#B45309', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 999, padding: '1px 8px' }}>
+                    อยู่ระหว่างอุทธรณ์
+                  </span>
+                )}
               </div>
               <div style={{ fontSize: 12, color: 'var(--ink-500)', margin: '2px 0 6px' }}>
                 {rec.course_code} {rec.course_title}{rec.course_semester ? ` (ภาคเรียนที่ ${rec.course_semester})` : ''} · รายงานเมื่อ {formatDate(rec.confirmed_at)}

@@ -30,7 +30,11 @@ type LabBoyReport struct {
 	// CONFIRMED report to be reviewed again; cleared when a reviewer
 	// reopens or declines the request.
 	ReconsiderationRequestedAt *time.Time `json:"reconsideration_requested_at,omitempty"`
-	CreatedAt                  time.Time  `json:"created_at"`
+	// AppealDeadline is set when the report takes effect (CONFIRMED): the
+	// reported student is told then, and may appeal once until this time.
+	// A report that never took effect has none — the student is never told.
+	AppealDeadline *time.Time `json:"appeal_deadline,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt                  time.Time  `json:"updated_at"`
 
 	// Display fields filled in by the database layer, not stored.
@@ -187,4 +191,40 @@ type ConfirmedRecord struct {
 	ReviewReason   string         `json:"review_reason"`
 	// StudentResponded tells the reader the student gave their side.
 	StudentResponded bool `json:"student_responded"`
+	// AppealPending: the student appealed and the decision is not in yet.
+	AppealPending bool `json:"appeal_pending"`
+}
+
+// StudentRecord is what the reported student sees about a report that took
+// effect against them. It is an allow-list: nothing here tells the student
+// who filed the report or whether it came from a fellow student or an
+// instructor (no reporter fields, no timeline actors, no evidence).
+type StudentRecord struct {
+	ReportID       uint           `json:"report_id"`
+	CourseCode     string         `json:"course_code"`
+	CourseTitle    string         `json:"course_title"`
+	CourseSection  int            `json:"course_section,omitempty"`
+	CourseSemester string         `json:"course_semester,omitempty"`
+	CourseYear     int            `json:"course_academic_year,omitempty"`
+	Category       ReportCategory `json:"category"`
+	IncidentDate   time.Time      `json:"incident_date"`
+	Description    string         `json:"description"`
+	// Status is CONFIRMED (in force), NOT_SUBSTANTIATED (overturned on
+	// appeal) or WITHDRAWN (taken back after it took effect).
+	Status         ReportStatus `json:"status"`
+	ConfirmedAt    *time.Time   `json:"confirmed_at,omitempty"`
+	AppealDeadline *time.Time   `json:"appeal_deadline,omitempty"`
+	CanAppeal      bool         `json:"can_appeal"`
+	// Appeal is nil until the student appeals.
+	Appeal *StudentAppeal `json:"appeal,omitempty"`
+}
+
+// StudentAppeal is the student's one appeal and its outcome.
+type StudentAppeal struct {
+	Message     string    `json:"message"`
+	SubmittedAt time.Time `json:"submitted_at"`
+	// Outcome is "pending", "upheld" (the record stays) or "overturned".
+	Outcome   string     `json:"outcome"`
+	DecidedAt *time.Time `json:"decided_at,omitempty"`
+	Reason    string     `json:"reason,omitempty"`
 }

@@ -32,7 +32,34 @@ var ErrReporterDailyLimit = errors.New("student already reported today")
 var (
 	ErrPeerReporterNotAccepted = errors.New("reporter is not an accepted Lab Boy in the course")
 	ErrPeerTargetNotAccepted   = errors.New("reported student is not an accepted Lab Boy in the course")
+	// ErrPeerCourseTooSmall: students may report a fellow Lab Boy only in a
+	// course (section) with at least MinPeerReportLabBoys accepted Lab Boys,
+	// so the reported student cannot easily tell who sent it.
+	ErrPeerCourseTooSmall = errors.New("course has too few Lab Boys for student reports")
 )
+
+// MinPeerReportLabBoys is how many accepted Lab Boys (the reporter included)
+// a course needs before its students may report each other (user rule,
+// 2026-11-28: 6 or more).
+const MinPeerReportLabBoys = 6
+
+// AppealWindow is how long the reported student has, from the moment a
+// report takes effect, to send their one appeal.
+const AppealWindow = 7 * 24 * time.Hour
+
+// Appeal errors.
+var (
+	ErrAppealClosed   = errors.New("appeal window is closed")
+	ErrAlreadyAppealed = errors.New("report was already appealed")
+)
+
+// AcceptedLabBoyCount is how many accepted Lab Boys a course (one section
+// row) has — what the student-report threshold is checked against.
+func AcceptedLabBoyCount(courseID uint) (int64, error) {
+	var n int64
+	err := DB.Model(&models.Application{}).Where("course_id = ? AND status = ?", courseID, models.AppAccepted).Count(&n).Error
+	return n, err
+}
 
 
 const reportAuditEntity = "labboy_report"
@@ -189,6 +216,15 @@ func CreateSubmittedPeerReport(r *models.LabBoyReport) error {
 			return err
 		}
 
+		var accepted int64
+		if err := tx.Model(&models.Application{}).Where("course_id = ? AND status = ?", target.CourseID, models.AppAccepted).
+			Count(&accepted).Error; err != nil {
+			return err
+		}
+		if accepted < MinPeerReportLabBoys {
+			return ErrPeerCourseTooSmall
+		}
+
 		// One report per student per day. The reporter's application row is
 		// locked above, so two concurrent sends cannot both pass this check.
 		bangkok := time.FixedZone("Asia/Bangkok", 7*60*60)
@@ -315,7 +351,9 @@ type ReportTransition struct {
 	// ClearReconsideration resets the student's pending reconsideration
 	// request (when a reviewer reopens or declines it).
 	ClearReconsideration bool
-	Notifications        []models.Notification
+	// AppealDeadline is stored when the report takes effect (→ CONFIRMED).
+	AppealDeadline *time.Time
+	Notifications  []models.Notification
 }
 
 // ApplyReportTransition moves a report from t.From to t.To in one
@@ -332,6 +370,9 @@ func ApplyReportTransition(t ReportTransition) error {
 		}
 		if t.ClearReconsideration {
 			updates["reconsideration_requested_at"] = nil
+		}
+		if t.AppealDeadline != nil {
+			updates["appeal_deadline"] = *t.AppealDeadline
 		}
 		res := tx.Model(&models.LabBoyReport{}).Where("id = ? AND status = ?", t.ReportID, t.From).Updates(updates)
 		if res.Error != nil {
@@ -384,8 +425,11 @@ type NewReportResponse struct {
 	// ResumeReview moves AWAITING_RESPONSE back to UNDER_REVIEW now that the
 	// requested information has arrived.
 	ResumeReview bool
-	// RequestReconsideration flags a CONFIRMED report for another look.
+	// RequestReconsideration flags a CONFIRMED report for another look: the
+	// reported student's appeal. Only once per report, and only until its
+	// AppealDeadline.
 	RequestReconsideration bool
+	Notifications          []models.Notification
 }
 
 // AddReportResponse saves an append-only response with its files, and the
@@ -404,8 +448,23 @@ func AddReportResponse(n NewReportResponse) (models.LabBoyReportResponse, error)
 		if r.Status != n.ExpectStatus {
 			return ErrStaleReport
 		}
-		if n.RequestReconsideration && r.ReconsiderationRequestedAt != nil {
-			return ErrStaleReport
+		if n.RequestReconsideration {
+			if r.StudentID != resp.AuthorID {
+				return ErrStaleReport
+			}
+			if r.AppealDeadline == nil || time.Now().After(*r.AppealDeadline) {
+				return ErrAppealClosed
+			}
+			// One appeal per report, ever: the pending marker is cleared
+			// once decided, so check the appeal row itself.
+			var prior int64
+			if err := tx.Model(&models.LabBoyReportResponse{}).
+				Where("report_id = ? AND kind = ?", r.ID, models.ResponseReconsideration).Count(&prior).Error; err != nil {
+				return err
+			}
+			if prior > 0 || r.ReconsiderationRequestedAt != nil {
+				return ErrAlreadyAppealed
+			}
 		}
 		resp.ID = 0
 		if err := tx.Create(&resp).Error; err != nil {
@@ -449,7 +508,7 @@ func AddReportResponse(n NewReportResponse) (models.LabBoyReportResponse, error)
 				return err
 			}
 		}
-		return nil
+		return createNotificationsTx(tx, n.Notifications)
 	})
 	if err != nil {
 		removeFiles(keys)
@@ -605,6 +664,10 @@ type ReportFilter struct {
 	// ReviewerID limits the list to reports sent in by students for courses
 	// this instructor teaches — the instructor's review queue.
 	ReviewerID *uint
+	// AppealReviewerID limits the list to reports this user confirmed that
+	// the reported student appealed — the appeal queue. The one who confirmed
+	// decides the appeal (user rule, 2026-11-28).
+	AppealReviewerID *uint
 	Statuses     []models.ReportStatus
 	Category     models.ReportCategory
 	CourseID     uint
@@ -632,6 +695,11 @@ func ListReports(f ReportFilter) ([]models.LabBoyReport, int64, error) {
 		q = q.Where("labboy_reports.status <> ?", models.ReportDraft).
 			Where("labboy_reports.reporter_id IN (SELECT id FROM users WHERE role = ?)", models.RoleStudent).
 			Where("labboy_reports.course_id IN (SELECT course_id FROM course_instructors WHERE instructor_id = ? AND source = 'imported' AND archived_at IS NULL)", *f.ReviewerID)
+	}
+	if f.AppealReviewerID != nil {
+		appealed := DB.Model(&models.LabBoyReportResponse{}).Select("report_id").Where("kind = ?", models.ResponseReconsideration)
+		q = q.Where("labboy_reports.id IN (?)", appealed).
+			Where("labboy_reports.id IN (?)", confirmedBy(*f.AppealReviewerID))
 	}
 	if len(f.Statuses) > 0 {
 		q = q.Where("labboy_reports.status IN ?", f.Statuses)
@@ -679,6 +747,78 @@ func activeConfirmedReports(academicYear int) *gorm.DB {
 		Where("labboy_reports.status = ? AND courses.academic_year >= ?", models.ReportConfirmed, academicYear)
 }
 
+// confirmedBy selects the IDs of reports whose step into CONFIRMED was taken
+// by userID: the instructor who submitted their own report, or the course
+// instructor who confirmed a student's.
+func confirmedBy(userID uint) *gorm.DB {
+	return DB.Model(&models.LabBoyReportStatusHistory{}).Select("report_id").
+		Where("to_status = ? AND actor_id = ?", models.ReportConfirmed, userID)
+}
+
+// ReportConfirmation is who made a report take effect, and when. Read from
+// the timeline, which both paths into CONFIRMED write — updated_at moves on
+// every later change, so it cannot be used.
+func ReportConfirmation(reportID uint) (actorID uint, at time.Time, ok bool) {
+	var h models.LabBoyReportStatusHistory
+	if DB.Where("report_id = ? AND to_status = ?", reportID, models.ReportConfirmed).Order("id DESC").First(&h).Error != nil {
+		return 0, time.Time{}, false
+	}
+	return h.ActorID, h.CreatedAt, true
+}
+
+// ReportAppeal returns the reported student's appeal on a report, if any.
+func ReportAppeal(reportID uint) (models.LabBoyReportResponse, bool) {
+	var resp models.LabBoyReportResponse
+	if DB.Where("report_id = ? AND kind = ?", reportID, models.ResponseReconsideration).Order("id").First(&resp).Error != nil {
+		return resp, false
+	}
+	return resp, true
+}
+
+// StudentRecords lists the reports that took effect against a student — the
+// ones they were told about — in the redacted shape the student may see.
+func StudentRecords(studentID uint) ([]models.StudentRecord, error) {
+	var reports []models.LabBoyReport
+	if err := DB.Where("student_id = ? AND appeal_deadline IS NOT NULL AND status IN ?", studentID,
+		[]models.ReportStatus{models.ReportConfirmed, models.ReportNotSubstantiated, models.ReportWithdrawn}).
+		Order("incident_date DESC, id DESC").Find(&reports).Error; err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	out := make([]models.StudentRecord, 0, len(reports))
+	for _, r := range reports {
+		r = enrichReport(r)
+		rec := models.StudentRecord{
+			ReportID: r.ID, CourseCode: r.CourseCode, CourseTitle: r.CourseTitle, CourseSection: r.CourseSection,
+			CourseSemester: r.CourseSemester, CourseYear: r.CourseYear, Category: r.Category,
+			IncidentDate: r.IncidentDate, Description: r.Description, Status: r.Status, AppealDeadline: r.AppealDeadline,
+		}
+		if _, at, ok := ReportConfirmation(r.ID); ok {
+			rec.ConfirmedAt = &at
+		}
+		appeal, appealed := ReportAppeal(r.ID)
+		if appealed {
+			a := &models.StudentAppeal{Message: appeal.Message, SubmittedAt: appeal.CreatedAt, Outcome: "pending"}
+			// The decision on the appeal is the first review after it.
+			var rev models.LabBoyReportReview
+			if DB.Where("report_id = ? AND created_at >= ? AND decision IN ?", r.ID, appeal.CreatedAt,
+				[]models.ReviewDecision{models.DecisionDeclineReconsideration, models.DecisionNotSubstantiated}).
+				Order("id").First(&rev).Error == nil {
+				a.Outcome = "upheld"
+				if rev.Decision == models.DecisionNotSubstantiated {
+					a.Outcome = "overturned"
+				}
+				decided := rev.CreatedAt
+				a.DecidedAt, a.Reason = &decided, rev.Reason
+			}
+			rec.Appeal = a
+		}
+		rec.CanAppeal = !appealed && r.Status == models.ReportConfirmed && r.AppealDeadline != nil && now.Before(*r.AppealDeadline)
+		out = append(out, rec)
+	}
+	return out, nil
+}
+
 // ConfirmedRecordsForStudent returns only CONFIRMED reports still in force
 // for a course in academicYear — the history another course's instructor may
 // see. Anything still under review, not substantiated or withdrawn is never
@@ -703,13 +843,15 @@ func ConfirmedRecordsForStudent(studentID uint, academicYear int) ([]models.Conf
 			CourseYear:     r.CourseYear,
 			Description:    r.Description,
 			ConfirmedAt:    r.UpdatedAt,
+			AppealPending:  r.ReconsiderationRequestedAt != nil,
 		}
-		// The latest CONFIRM decision carries the reviewer's reasoning and
-		// the actual confirmation time.
+		if _, at, ok := ReportConfirmation(r.ID); ok {
+			rec.ConfirmedAt = at
+		}
+		// The latest CONFIRM decision carries the reviewer's reasoning.
 		var rev models.LabBoyReportReview
 		if DB.Where("report_id = ? AND decision = ?", r.ID, models.DecisionConfirm).Order("id DESC").First(&rev).Error == nil {
 			rec.ReviewReason = rev.Reason
-			rec.ConfirmedAt = rev.CreatedAt
 		}
 		var n int64
 		DB.Model(&models.LabBoyReportResponse{}).Where("report_id = ? AND author_id = ?", r.ID, r.StudentID).Count(&n)
@@ -739,6 +881,71 @@ func ConfirmedRecordCounts(studentIDs []uint, academicYear int) (map[uint]int, e
 		out[r.StudentID] = r.N
 	}
 	return out, nil
+}
+
+// AppealCategoryLabel is the Thai name of a report category, for messages
+// sent to the reported student.
+var AppealCategoryLabel = map[models.ReportCategory]string{
+	models.CategoryAbsence:               "ขาดการปฏิบัติงาน",
+	models.CategoryLateNotice:            "ไม่แจ้งล่วงหน้า / แจ้งล่าช้า",
+	models.CategoryDutyNeglect:           "ไม่ปฏิบัติหน้าที่ตามที่ได้รับมอบหมาย",
+	models.CategoryUnprofessionalConduct: "พฤติกรรมไม่เหมาะสมระหว่างปฏิบัติงาน",
+	models.CategoryOther:                 "อื่น ๆ",
+}
+
+// RecordTakenEffectNotice is the one message the reported student gets when
+// a report takes effect. It is the same whether a fellow student or an
+// instructor filed it, and never names the reporter.
+func RecordTakenEffectNotice(r models.LabBoyReport, deadline time.Time) models.Notification {
+	course := ""
+	if c, ok := CourseByID(r.CourseID); ok {
+		course = strings.TrimSpace(c.Code + " " + c.Title)
+	}
+	bkk := time.FixedZone("Asia/Bangkok", 7*60*60)
+	body := fmt.Sprintf("รายวิชา %s: มีบันทึกการปฏิบัติงานเรื่อง \"%s\" (วันที่เกิดเหตุ %s) ซึ่งมีผลแล้ว "+
+		"หากเห็นว่าไม่ถูกต้อง ยื่นอุทธรณ์ได้ 1 ครั้งภายใน %s ที่เมนู รายงานแลปบอย > บันทึกเกี่ยวกับฉัน",
+		course, AppealCategoryLabel[r.Category], r.IncidentDate.Format("02/01/2006"), deadline.In(bkk).Format("02/01/2006 15:04"))
+	courseID := r.CourseID
+	return models.Notification{UserID: r.StudentID, CourseID: &courseID, Title: "คุณได้รับบันทึกการปฏิบัติงาน", Body: body}
+}
+
+// openAppealsForExistingRecords gives reports that took effect before the
+// appeal step existed the same chance: the student is told now and has
+// AppealWindow from now (user decision, 2026-11-28). Only rows without a
+// deadline are touched, so it runs once per report however often the
+// server starts.
+func openAppealsForExistingRecords(db *gorm.DB) error {
+	if !db.Migrator().HasColumn(&models.LabBoyReport{}, "appeal_deadline") {
+		return nil
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		var rows []models.LabBoyReport
+		if err := tx.Where("status = ? AND appeal_deadline IS NULL", models.ReportConfirmed).Find(&rows).Error; err != nil {
+			return err
+		}
+		if len(rows) == 0 {
+			return nil
+		}
+		deadline := time.Now().Add(AppealWindow)
+		ids := make([]uint, len(rows))
+		notifs := make([]models.Notification, 0, len(rows))
+		for i, r := range rows {
+			ids[i] = r.ID
+			n := RecordTakenEffectNotice(r, deadline)
+			n.ID = 0
+			n.CreatedAt = time.Now()
+			notifs = append(notifs, n)
+		}
+		if err := tx.Model(&models.LabBoyReport{}).Where("id IN ?", ids).
+			UpdateColumn("appeal_deadline", deadline).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&notifs).Error; err != nil {
+			return err
+		}
+		log.Printf("opened a %v appeal window for %d existing Lab Boy record(s)", AppealWindow, len(rows))
+		return nil
+	})
 }
 
 // confirmOpenReports finishes reports filed before the review step was

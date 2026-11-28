@@ -2,10 +2,13 @@
 // filed by the course's instructor takes effect (CONFIRMED) as soon as that
 // instructor submits it. A student may also report another Lab Boy of the
 // same course; that report waits (SUBMITTED) until the course instructor
-// confirms or rejects it. Once CONFIRMED, other instructors see the student
-// flagged as reported when the student applies to their course. Admin may
-// look but not act; the reported student and staff never see reports. It
-// never blocks a student from applying.
+// confirms or rejects it — and only in a course with at least
+// database.MinPeerReportLabBoys accepted Lab Boys. Once CONFIRMED, other
+// instructors see the student flagged as reported when the student applies
+// to their course, and the reported student is told (never by whom) and may
+// appeal once within database.AppealWindow; whoever confirmed the report
+// decides the appeal. Admin may look but not act; staff never see reports.
+// It never blocks a student from applying.
 //
 // The feature spans every role, so it lives in its own package instead of
 // being split across Teacher/Student/Staff; every endpoint re-checks the
@@ -103,6 +106,9 @@ func withCourse(actor Actor, r models.LabBoyReport) Actor {
 		if course, ok := database.CourseByID(r.CourseID); ok {
 			actor.CourseInstructor = database.InstructorOwnsCourse(course, actor.ID, "", false)
 		}
+		if by, _, ok := database.ReportConfirmation(r.ID); ok && by == actor.ID {
+			actor.Confirmer = true
+		}
 	}
 	return actor
 }
@@ -193,12 +199,22 @@ func resolveApplication(c *gin.Context, actor Actor, r *models.LabBoyReport) boo
 	return true
 }
 
+var peerTooSmallMessage = fmt.Sprintf("รายวิชานี้มี Lab Boy น้อยกว่า %d คน จึงไม่เปิดให้นักศึกษารายงานกันเอง หากพบปัญหาโปรดแจ้งอาจารย์ผู้สอนโดยตรง", database.MinPeerReportLabBoys)
+
 func writeDBError(c *gin.Context, err error, what string) {
 	switch {
 	case errors.Is(err, database.ErrDuplicateReport):
 		c.JSON(http.StatusConflict, gin.H{"error": "มีรายงานเหตุการณ์ประเภทนี้ของนักศึกษาคนนี้ในวันเดียวกันอยู่แล้ว"})
 	case errors.Is(err, database.ErrStaleReport):
 		c.JSON(http.StatusConflict, gin.H{"error": "สถานะรายงานเปลี่ยนไปแล้ว กรุณาโหลดหน้าใหม่"})
+	case errors.Is(err, database.ErrReporterDailyLimit):
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "ส่งรายงานได้วันละ 1 ครั้ง กรุณาลองใหม่ในวันถัดไป"})
+	case errors.Is(err, database.ErrPeerCourseTooSmall):
+		c.JSON(http.StatusForbidden, gin.H{"error": peerTooSmallMessage})
+	case errors.Is(err, database.ErrAppealClosed):
+		c.JSON(http.StatusConflict, gin.H{"error": "พ้นกำหนดยื่นอุทธรณ์แล้ว"})
+	case errors.Is(err, database.ErrAlreadyAppealed):
+		c.JSON(http.StatusConflict, gin.H{"error": "ยื่นอุทธรณ์ได้เพียง 1 ครั้งต่อบันทึก"})
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "report not found"})
 	default:
@@ -413,6 +429,21 @@ func (h *Handler) ReviewList(c *gin.Context) {
 	h.list(c, func(f *database.ReportFilter) { f.ReviewerID = &actor.ID })
 }
 
+// AppealQueue godoc
+// @Summary      คำอุทธรณ์ของนักศึกษาต่อรายงานที่ฉันเป็นผู้ยืนยัน
+// @Tags         reports
+// @Produce      json
+// @Security     BearerAuth
+// @Param        status  query  string  false  "สถานะ (คั่นด้วย , ได้)"
+// @Param        page    query  int     false  "หน้า"
+// @Param        limit   query  int     false  "จำนวนต่อหน้า (สูงสุด 100)"
+// @Success      200  {object}  ReportPage
+// @Router       /instructor/reports/appeals [get]
+func (h *Handler) AppealQueue(c *gin.Context) {
+	actor := actorFrom(c)
+	h.list(c, func(f *database.ReportFilter) { f.AppealReviewerID = &actor.ID })
+}
+
 // StudentMine godoc
 // @Summary      รายงานที่ฉัน (นักศึกษา) ส่ง พร้อมผลการตรวจสอบของอาจารย์
 // @Tags         reports
@@ -456,6 +487,8 @@ func (h *Handler) StudentCreate(c *gin.Context) {
 	r.ReporterID = actor.ID
 	if err := database.CreateSubmittedPeerReport(&r); err != nil {
 		switch {
+		case errors.Is(err, database.ErrPeerCourseTooSmall):
+			c.JSON(http.StatusForbidden, gin.H{"error": peerTooSmallMessage})
 		case errors.Is(err, database.ErrPeerReporterNotAccepted):
 			c.JSON(http.StatusForbidden, gin.H{"error": "ส่งรายงานได้เฉพาะ Lab Boy ที่ได้รับการยืนยันในรายวิชาเดียวกัน"})
 		case errors.Is(err, database.ErrPeerTargetNotAccepted):
@@ -506,6 +539,9 @@ func (h *Handler) Detail(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
+	if actor.isStudent() {
+		evidence, responses, reviews, history = forStudentReporter(evidence, responses, reviews, history)
+	}
 	c.JSON(http.StatusOK, ReportDetail{
 		Report:         r,
 		Evidence:       evidence,
@@ -518,6 +554,43 @@ func (h *Handler) Detail(c *gin.Context) {
 	})
 }
 
+// forStudentReporter trims a report's detail for the student who sent it in:
+// they see their own report and the instructor's first decision, but never
+// the reported student's appeal, its files, or the reasoning on it — the
+// appeal is between the reported student and the instructor who confirmed.
+func forStudentReporter(evidence []models.LabBoyReportEvidence, responses []models.LabBoyReportResponse,
+	reviews []models.LabBoyReportReview, history []models.LabBoyReportStatusHistory,
+) ([]models.LabBoyReportEvidence, []models.LabBoyReportResponse, []models.LabBoyReportReview, []models.LabBoyReportStatusHistory) {
+	ev := make([]models.LabBoyReportEvidence, 0, len(evidence))
+	for _, e := range evidence {
+		if e.ResponseID == nil {
+			ev = append(ev, e)
+		}
+	}
+	resp := make([]models.LabBoyReportResponse, 0)
+	for _, x := range responses {
+		if x.Kind != models.ResponseReconsideration {
+			resp = append(resp, x)
+		}
+	}
+	// Only the decision on the report itself; later rows are appeal rulings.
+	if len(reviews) > 1 {
+		reviews = reviews[:1]
+	}
+	hist := make([]models.LabBoyReportStatusHistory, len(history))
+	copy(hist, history)
+	for i := range hist {
+		if hist[i].FromStatus != nil && *hist[i].FromStatus == models.ReportConfirmed && hist[i].ToStatus == models.ReportNotSubstantiated {
+			hist[i].Reason = ""
+		}
+	}
+	return ev, resp, reviews, hist
+}
+
+// isAppealFile reports whether an evidence file came with a response (the
+// reported student's appeal) rather than from the reporter.
+func isAppealFile(e models.LabBoyReportEvidence) bool { return e.ResponseID != nil }
+
 // ActionRequest is the body for a workflow step.
 type ActionRequest struct {
 	Action string `json:"action" binding:"required" example:"submit"`
@@ -527,6 +600,7 @@ type ActionRequest struct {
 var actionAudit = map[Action]string{
 	ActionSubmit: "submit", ActionWithdraw: "withdraw",
 	ActionConfirm: "confirm", ActionNotSubstantiated: "not_substantiated",
+	ActionAppealUphold: "appeal_uphold", ActionAppealOverturn: "appeal_overturn",
 }
 
 // Act godoc
@@ -576,6 +650,14 @@ func (h *Handler) Act(c *gin.Context) {
 		Review:        rules[action].review,
 		Notifications: notificationsFor(r, action, reason),
 	}
+	if action == ActionAppealUphold || action == ActionAppealOverturn {
+		t.ClearReconsideration = true
+	}
+	if to == models.ReportConfirmed && r.Status != models.ReportConfirmed {
+		deadline := time.Now().Add(database.AppealWindow)
+		t.AppealDeadline = &deadline
+		t.Notifications = append(t.Notifications, database.RecordTakenEffectNotice(r, deadline))
+	}
 	if err := database.ApplyReportTransition(t); err != nil {
 		writeDBError(c, err, "report transition")
 		return
@@ -585,9 +667,24 @@ func (h *Handler) Act(c *gin.Context) {
 }
 
 // notificationsFor tells a student who sent in a report what the instructor
-// decided. The reported student is never notified — they are not told they
-// were reported.
+// decided, and tells the reported student how their appeal ended. (The
+// notice that a report took effect is added in Act, the same for both
+// paths into CONFIRMED.) Nothing sent to the reported student names the
+// reporter or says whether it was a student.
 func notificationsFor(r models.LabBoyReport, action Action, reason string) []models.Notification {
+	if action == ActionAppealUphold || action == ActionAppealOverturn {
+		course := strings.TrimSpace(r.CourseCode + " " + r.CourseTitle)
+		courseID := r.CourseID
+		result := "คงบันทึกเดิม"
+		if action == ActionAppealOverturn {
+			result = "รับอุทธรณ์ — บันทึกนี้ไม่มีผลแล้ว"
+		}
+		body := fmt.Sprintf("ผลอุทธรณ์บันทึกการปฏิบัติงานรายวิชา %s: %s", course, result)
+		if reason != "" {
+			body += "\nเหตุผล: " + reason
+		}
+		return []models.Notification{{UserID: r.StudentID, CourseID: &courseID, Title: "ผลการพิจารณาอุทธรณ์", Body: body}}
+	}
 	if action != ActionConfirm && action != ActionNotSubstantiated {
 		return nil
 	}
@@ -737,7 +834,8 @@ func (h *Handler) DownloadEvidence(c *gin.Context) {
 		return
 	}
 	e, found := database.ReportEvidenceFile(r.ID, eid)
-	if !found {
+	// A student reporter never gets the reported student's appeal files.
+	if !found || (actor.isStudent() && isAppealFile(e)) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
 		return
 	}
@@ -792,4 +890,131 @@ func (h *Handler) ConfirmedHistory(c *gin.Context) {
 		log.Printf("audit history view: %v", err)
 	}
 	c.JSON(http.StatusOK, rows)
+}
+
+// StudentRecords godoc
+// @Summary      บันทึกการปฏิบัติงานที่มีผลกับฉัน (นักศึกษาผู้ถูกรายงาน)
+// @Description  เฉพาะบันทึกที่มีผลแล้ว ไม่ระบุผู้รายงานและไม่บอกว่ามาจากนักศึกษาหรืออาจารย์ — พร้อมสถานะอุทธรณ์
+// @Tags         reports
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {array}  models.StudentRecord
+// @Router       /student/reports/about-me [get]
+func (h *Handler) StudentRecords(c *gin.Context) {
+	actor := actorFrom(c)
+	rows, err := database.StudentRecords(actor.ID)
+	if err != nil {
+		log.Printf("student records: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, rows)
+}
+
+// StudentAppeal godoc
+// @Summary      ยื่นอุทธรณ์บันทึกการปฏิบัติงาน (1 ครั้งต่อบันทึก ภายในกำหนด)
+// @Description  ส่งให้อาจารย์ผู้ยืนยันบันทึกพิจารณา — แนบไฟล์ .jpg .png .pdf ได้
+// @Tags         reports
+// @Accept       multipart/form-data
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id       path      int     true   "Report ID"
+// @Param        message  formData  string  true   "เหตุผลที่อุทธรณ์"
+// @Param        files    formData  file    false  "หลักฐาน"
+// @Success      201  {object}  models.StudentRecord
+// @Failure      400  {object}  handlers.ErrorResponse
+// @Failure      404  {object}  handlers.ErrorResponse
+// @Failure      409  {object}  handlers.ErrorResponse
+// @Router       /student/reports/about-me/{id}/appeal [post]
+func (h *Handler) StudentAppeal(c *gin.Context) {
+	actor := actorFrom(c)
+	id, ok := idParam(c, "id")
+	if !ok {
+		return
+	}
+	r, found := database.ReportByID(id)
+	// 404 for anything that is not a record the student was told about.
+	if !found || r.StudentID != actor.ID || r.AppealDeadline == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "report not found"})
+		return
+	}
+	if r.Status != models.ReportConfirmed {
+		c.JSON(http.StatusConflict, gin.H{"error": "บันทึกนี้ไม่มีผลแล้ว จึงไม่ต้องอุทธรณ์"})
+		return
+	}
+	message, err := cleanText(c.PostForm("message"), maxTextLen, "เหตุผลที่อุทธรณ์", true)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var files []models.LabBoyReportEvidence
+	if form, err := c.MultipartForm(); err == nil && len(form.File["files"]) > 0 {
+		if files, err = readFiles(form.File["files"]); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if !checkFileQuota(c, r.ID, len(files)) {
+			return
+		}
+	}
+	var notifs []models.Notification
+	if by, _, ok := database.ReportConfirmation(r.ID); ok {
+		course := strings.TrimSpace(r.CourseCode + " " + r.CourseTitle)
+		courseID := r.CourseID
+		notifs = append(notifs, models.Notification{
+			UserID: by, CourseID: &courseID, Title: "มีคำอุทธรณ์บันทึกการปฏิบัติงาน รอการพิจารณา",
+			Body: fmt.Sprintf("%s อุทธรณ์บันทึกที่ท่านยืนยันในรายวิชา %s กรุณาพิจารณาที่เมนู \"บันทึกการปฏิบัติงาน\" > \"คำอุทธรณ์\"", r.StudentName, course),
+		})
+	}
+	_, err = database.AddReportResponse(database.NewReportResponse{
+		Response: models.LabBoyReportResponse{
+			ReportID: r.ID, AuthorID: actor.ID, Kind: models.ResponseReconsideration, Message: message,
+		},
+		Files:                  files,
+		ExpectStatus:           models.ReportConfirmed,
+		RequestReconsideration: true,
+		Notifications:          notifs,
+	})
+	if err != nil {
+		writeDBError(c, err, "student appeal")
+		return
+	}
+	rows, _ := database.StudentRecords(actor.ID)
+	for _, rec := range rows {
+		if rec.ReportID == r.ID {
+			c.JSON(http.StatusCreated, rec)
+			return
+		}
+	}
+	c.JSON(http.StatusCreated, gin.H{"report_id": r.ID})
+}
+
+// PeerReportEligibility is whether students of a course may report each other.
+type PeerReportEligibility struct {
+	Allowed       bool  `json:"allowed"`
+	AcceptedCount int64 `json:"accepted_count"`
+	MinRequired   int   `json:"min_required"`
+}
+
+// StudentReportEligibility godoc
+// @Summary      รายวิชานี้เปิดให้นักศึกษารายงานกันเองหรือไม่ (ต้องมี Lab Boy ที่ได้รับเลือกตั้งแต่ 6 คน)
+// @Tags         reports
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      int  true  "Course ID"
+// @Success      200  {object}  PeerReportEligibility
+// @Router       /student/courses/{id}/report-eligibility [get]
+func (h *Handler) StudentReportEligibility(c *gin.Context) {
+	id, ok := idParam(c, "id")
+	if !ok {
+		return
+	}
+	n, err := database.AcceptedLabBoyCount(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, PeerReportEligibility{
+		Allowed: n >= database.MinPeerReportLabBoys, AcceptedCount: n, MinRequired: database.MinPeerReportLabBoys,
+	})
 }
